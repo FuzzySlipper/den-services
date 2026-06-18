@@ -13,3 +13,9 @@ reaper:
   sweep_interval: "60s"
   pending_ttl: "5m"
   running_ttl: "30m"
+
+runtime_http:
+  timeout: "5s"
+
+http:
+  read_header_timeout: "5s"

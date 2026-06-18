@@ -8,3 +8,7 @@ heartbeat:
   interval: "30s"
   stale_threshold: "90s"
   dead_threshold: "300s"
+  sweep_interval: "30s"
+
+http:
+  read_header_timeout: "5s"
