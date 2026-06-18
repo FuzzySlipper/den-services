@@ -20,4 +20,5 @@ config.yaml
 
 # Local tool caches
 .golangci-cache/
+.golangci-lint-cache/
 .gocache/

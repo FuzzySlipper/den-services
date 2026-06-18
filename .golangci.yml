@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
   tests: true
@@ -10,31 +12,37 @@ linters:
     - forbidigo
     - gochecknoglobals
     - gochecknoinits
-    - gofumpt
-    - goimports
     - govet
     - sqlclosecheck
 
-linters-settings:
-  forbidigo:
-    forbid:
-      - pattern: \binit\s*\(
-        msg: init functions are forbidden; wire dependencies explicitly.
-      - pattern: \bpanic\s*\(
-        msg: panic is forbidden outside initialization entry points.
-      - pattern: \blog\.Fatal(f|ln)?\s*\(
-        msg: log.Fatal is only allowed in cmd main wiring.
-      - pattern: (?i)select\s+\*
-        msg: SQL queries must specify explicit column lists.
-  goimports:
-    local-prefixes: den-services
+  settings:
+    forbidigo:
+      forbid:
+        - pattern: \binit\s*\(
+          msg: init functions are forbidden; wire dependencies explicitly.
+        - pattern: \bpanic\s*\(
+          msg: panic is forbidden outside initialization entry points.
+        - pattern: \blog\.Fatal(f|ln)?\s*\(
+          msg: log.Fatal is only allowed in cmd main wiring.
+        - pattern: (?i)select\s+\*
+          msg: SQL queries must specify explicit column lists.
 
 issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - gochecknoglobals
-    - path: /cmd/
-      linters:
-        - forbidigo
-      text: log.Fatal
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gochecknoglobals
+      - path: /cmd/
+        linters:
+          - forbidigo
+        text: log.Fatal
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - den-services

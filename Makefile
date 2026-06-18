@@ -1,5 +1,6 @@
 SERVICES := shared delivery runtime observation gateway conversation migration integration
 GOCACHE ?= $(CURDIR)/.gocache
+GOLANGCI_LINT_CACHE ?= $(CURDIR)/.golangci-lint-cache
 
 .PHONY: test build build-all lint
 
@@ -23,4 +24,4 @@ build-all:
 	done
 
 lint:
-	GOCACHE=$(GOCACHE) golangci-lint run ./...
+	GOCACHE=$(GOCACHE) GOLANGCI_LINT_CACHE=$(GOLANGCI_LINT_CACHE) golangci-lint run ./...
