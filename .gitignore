@@ -1,0 +1,23 @@
+# Go build outputs
+bin/
+dist/
+*.exe
+*.test
+*.out
+migrate
+coverage.*
+
+# Local config and secrets
+config.yaml
+*.env
+
+# Editor and OS files
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Local tool caches
+.golangci-cache/
+.gocache/

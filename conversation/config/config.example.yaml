@@ -1,0 +1,5 @@
+# Conversation module configuration.
+# Copy to config.yaml and customize for the deployment.
+
+bind_addr: "127.0.0.1:8083"
+database_url: "${DEN_CHANNELS_DATABASE_URL}"

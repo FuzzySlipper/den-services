@@ -1,0 +1,6 @@
+# Gateway module configuration.
+# Copy to config.yaml and customize for the deployment.
+
+bind_addr: "127.0.0.1:8079"
+legacy_den_channels_url: "http://127.0.0.1:5080"
+routing_config_path: "config/routes.yaml"

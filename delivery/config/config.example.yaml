@@ -1,0 +1,15 @@
+# Delivery module configuration.
+# Copy to config.yaml and customize for the deployment.
+
+bind_addr: "127.0.0.1:8080"
+database_url: "${DEN_DELIVERY_DATABASE_URL}"
+runtime_service_url: "http://127.0.0.1:8081"
+
+delivery:
+  default_ttl: "5m"
+  max_ttl: "1h"
+
+reaper:
+  sweep_interval: "60s"
+  pending_ttl: "5m"
+  running_ttl: "30m"

@@ -1,0 +1,13 @@
+go 1.26
+
+use (
+	.
+	./conversation
+	./delivery
+	./gateway
+	./integration
+	./migration
+	./observation
+	./runtime
+	./shared
+)
