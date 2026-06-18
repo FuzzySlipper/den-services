@@ -1,0 +1,28 @@
+\set ON_ERROR_STOP on
+
+select format('create role den_delivery_app login password %L', :'DEN_DELIVERY_APP_PASSWORD')
+where not exists (select 1 from pg_roles where rolname = 'den_delivery_app')
+\gexec
+
+select format('create role den_runtime_app login password %L', :'DEN_RUNTIME_APP_PASSWORD')
+where not exists (select 1 from pg_roles where rolname = 'den_runtime_app')
+\gexec
+
+select format('create role den_observation_app login password %L', :'DEN_OBSERVATION_APP_PASSWORD')
+where not exists (select 1 from pg_roles where rolname = 'den_observation_app')
+\gexec
+
+select format('create role den_channels_app login password %L', :'DEN_CHANNELS_APP_PASSWORD')
+where not exists (select 1 from pg_roles where rolname = 'den_channels_app')
+\gexec
+
+alter role den_delivery_app login password :'DEN_DELIVERY_APP_PASSWORD';
+alter role den_runtime_app login password :'DEN_RUNTIME_APP_PASSWORD';
+alter role den_observation_app login password :'DEN_OBSERVATION_APP_PASSWORD';
+alter role den_channels_app login password :'DEN_CHANNELS_APP_PASSWORD';
+
+revoke create on schema public from public;
+
+select 'create database denservices_test owner den_migration'
+where not exists (select 1 from pg_database where datname = 'denservices_test')
+\gexec
