@@ -1,0 +1,8 @@
+# Gateway route table.
+# Phase 1 keeps every route on legacy den-channels.
+
+routes:
+  - name: "legacy-den-channels-all"
+    path_pattern: "/"
+    legacy_upstream_url: "http://127.0.0.1:5080"
+    successor_upstream_url: ""
