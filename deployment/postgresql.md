@@ -16,6 +16,11 @@ not one of the rootless Docker PostgreSQL containers. Docker already owns port
 - Listener: `127.0.0.1:5433`
 - Secret env file: `/etc/den-services/postgresql.env`
 
+From development hosts such as `den-k8`, connect to the database host over the
+LAN address `192.168.1.10:5433` when remote access is needed. Deployed services
+on `den-srv` should use `127.0.0.1:5433`, because they run on the same machine
+as the database.
+
 ## Migration connection
 
 The migration runner uses the migration role only:
@@ -28,6 +33,12 @@ The actual URL/password are stored only in:
 
 ```text
 /etc/den-services/postgresql.env
+```
+
+Current env variable name:
+
+```text
+DEN_MIGRATION_DATABASE_URL
 ```
 
 Runtime services must not use the migration role.
@@ -65,7 +76,7 @@ set -a
 . /etc/den-services/postgresql.env
 set +a
 
-psql "$DEN_SERVICES_MIGRATION_DATABASE_URL" \
+psql "$DEN_MIGRATION_DATABASE_URL" \
   -v DEN_DELIVERY_APP_PASSWORD="$DEN_DELIVERY_APP_PASSWORD" \
   -v DEN_RUNTIME_APP_PASSWORD="$DEN_RUNTIME_APP_PASSWORD" \
   -v DEN_OBSERVATION_APP_PASSWORD="$DEN_OBSERVATION_APP_PASSWORD" \
@@ -73,9 +84,25 @@ psql "$DEN_SERVICES_MIGRATION_DATABASE_URL" \
   -f deployment/postgresql-app-roles.psql
 ```
 
-The script creates the four runtime app roles and a `denservices_test` database
-for store-level tests. It does not grant cross-schema access; schema grants are
-owned by the versioned migration files.
+The script creates the four runtime app roles. It does not grant cross-schema
+access; schema grants are owned by the versioned migration files.
+
+If `den_migration` does not have `CREATEDB`, create the test database through
+the cluster admin path:
+
+```sh
+sudo bash -c '
+  set -e
+  conf=/etc/postgresql/17/denservices/pg_hba.conf
+  backup=/tmp/pg_hba.denservices.backup
+  cp "$conf" "$backup"
+  trap "cp \"$backup\" \"$conf\"; pg_ctlcluster 17 denservices reload; rm -f \"$backup\"" EXIT
+  { echo "local   all             postgres                                peer"; cat "$backup"; } > "$conf"
+  pg_ctlcluster 17 denservices reload
+  runuser -u postgres -- psql -p 5433 -d denservices -c \
+    "create database denservices_test owner den_migration"
+'
+```
 
 ## Applying migrations
 
@@ -86,9 +113,9 @@ set -a
 . /etc/den-services/postgresql.env
 set +a
 
-den-services-migrate -database-url "$DEN_SERVICES_MIGRATION_DATABASE_URL" status
-den-services-migrate -database-url "$DEN_SERVICES_MIGRATION_DATABASE_URL" up
-den-services-migrate -database-url "$DEN_SERVICES_MIGRATION_DATABASE_URL" status
+den-services-migrate -database-url "$DEN_MIGRATION_DATABASE_URL" status
+den-services-migrate -database-url "$DEN_MIGRATION_DATABASE_URL" up
+den-services-migrate -database-url "$DEN_MIGRATION_DATABASE_URL" status
 ```
 
 The runner creates successor schemas if missing and then records migration
