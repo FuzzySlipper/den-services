@@ -27,5 +27,5 @@ No substantial service code should be considered ready without:
 
 - focused unit tests;
 - integration or haunt-regression tests when lane/cutover behavior is involved;
-- `gofmt`/`go test ./...` evidence once Go modules exist;
+- `gofumpt`/`go test ./...` evidence once Go modules exist;
 - Den task or document evidence for architectural decisions.
