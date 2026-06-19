@@ -11,12 +11,12 @@ func TestRouteTableMatchesLongestPrefix(t *testing.T) {
 		t.Fatalf("NewRouteTable() error = %v", err)
 	}
 
-	target, ok := table.Match("/api/channels", false)
+	match, ok := table.Match("/api/channels", false)
 	if !ok {
 		t.Fatal("Match() ok = false")
 	}
-	if target.String() != "http://api-legacy" {
-		t.Fatalf("target = %s, want api legacy", target.String())
+	if match.Target.String() != "http://api-legacy" {
+		t.Fatalf("target = %s, want api legacy", match.Target.String())
 	}
 }
 
@@ -29,20 +29,26 @@ func TestRouteTableUsesSuccessorOnlyWhenHeaderCanSelectConfiguredRoute(t *testin
 		t.Fatalf("NewRouteTable() error = %v", err)
 	}
 
-	target, ok := table.Match("/v1/delivery/intents", true)
+	match, ok := table.Match("/v1/delivery/intents", true)
 	if !ok {
 		t.Fatal("Match() ok = false")
 	}
-	if target.String() != "http://successor" {
-		t.Fatalf("successor target = %s, want http://successor", target.String())
+	if !match.UsesSuccessor {
+		t.Fatal("UsesSuccessor = false, want true")
+	}
+	if match.Target.String() != "http://successor" {
+		t.Fatalf("successor target = %s, want http://successor", match.Target.String())
 	}
 
-	target, ok = table.Match("/api/legacy", true)
+	match, ok = table.Match("/api/legacy", true)
 	if !ok {
 		t.Fatal("Match() ok = false")
 	}
-	if target.String() != "http://legacy" {
-		t.Fatalf("legacy target = %s, want http://legacy", target.String())
+	if match.UsesSuccessor {
+		t.Fatal("UsesSuccessor = true, want false")
+	}
+	if match.Target.String() != "http://legacy" {
+		t.Fatalf("legacy target = %s, want http://legacy", match.Target.String())
 	}
 }
 

@@ -18,10 +18,17 @@ type RouteTable struct {
 }
 
 type Route struct {
-	name         string
-	pathPattern  string
-	legacyURL    *url.URL
-	successorURL *url.URL
+	name                string
+	pathPattern         string
+	legacyURL           *url.URL
+	successorURL        *url.URL
+	identityTranslation IdentityTranslation
+}
+
+type RouteMatch struct {
+	Target              *url.URL
+	IdentityTranslation IdentityTranslation
+	UsesSuccessor       bool
 }
 
 type routeConfigFile struct {
@@ -29,10 +36,11 @@ type routeConfigFile struct {
 }
 
 type routeFile struct {
-	Name                 string `yaml:"name"`
-	PathPattern          string `yaml:"path_pattern"`
-	LegacyUpstreamURL    string `yaml:"legacy_upstream_url"`
-	SuccessorUpstreamURL string `yaml:"successor_upstream_url"`
+	Name                 string                  `yaml:"name"`
+	PathPattern          string                  `yaml:"path_pattern"`
+	LegacyUpstreamURL    string                  `yaml:"legacy_upstream_url"`
+	SuccessorUpstreamURL string                  `yaml:"successor_upstream_url"`
+	IdentityTranslation  identityTranslationFile `yaml:"identity_translation"`
 }
 
 func LoadRouteTable(path string) (*RouteTable, error) {
@@ -84,11 +92,19 @@ func newRoute(file routeFile) (Route, error) {
 			return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
 		}
 	}
+	translation, err := newIdentityTranslation(file.IdentityTranslation)
+	if err != nil {
+		return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
+	}
+	if translation.Enabled() && successorURL == nil {
+		return Route{}, fmt.Errorf("route %s identity_translation requires successor_upstream_url", file.Name)
+	}
 	return Route{
-		name:         file.Name,
-		pathPattern:  pattern,
-		legacyURL:    legacyURL,
-		successorURL: successorURL,
+		name:                file.Name,
+		pathPattern:         pattern,
+		legacyURL:           legacyURL,
+		successorURL:        successorURL,
+		identityTranslation: translation,
 	}, nil
 }
 
@@ -109,17 +125,21 @@ func parseUpstreamURL(name string, raw string) (*url.URL, error) {
 	return parsed, nil
 }
 
-func (t *RouteTable) Match(path string, preferSuccessor bool) (*url.URL, bool) {
+func (t *RouteTable) Match(path string, preferSuccessor bool) (RouteMatch, bool) {
 	for _, route := range t.routes {
 		if !route.matches(path) {
 			continue
 		}
 		if preferSuccessor && route.successorURL != nil {
-			return cloneURL(route.successorURL), true
+			return RouteMatch{
+				Target:              cloneURL(route.successorURL),
+				IdentityTranslation: route.identityTranslation,
+				UsesSuccessor:       true,
+			}, true
 		}
-		return cloneURL(route.legacyURL), true
+		return RouteMatch{Target: cloneURL(route.legacyURL)}, true
 	}
-	return nil, false
+	return RouteMatch{}, false
 }
 
 func (r Route) matches(path string) bool {
