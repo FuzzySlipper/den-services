@@ -11,11 +11,7 @@ usage() {
 Usage:
   scripts/den-services-deploy.sh [service] [--repo PATH] [--pull|--no-pull]
 
-Services:
-  gateway
-  runtime
-  delivery
-  observation
+Services are read from deployment/services.yaml.
 
 Builds the registered service binary with version metadata, runs tests, installs
 to /data/services/<service>, restarts den-go@<service>.service, and smokes
@@ -67,51 +63,74 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-case "${service}" in
-  gateway)
-    module="gateway"
-    binary_name="gateway"
-    binary_path="./gateway/cmd/proxy"
-    config_example="gateway/config/config.example.yaml"
-    env_example="gateway/config/gateway.env.example"
-    health_url="http://127.0.0.1:8079/health"
-    version_url="http://127.0.0.1:8079/version"
-    ;;
-  runtime)
-    module="runtime"
-    binary_name="runtime"
-    binary_path="./runtime/cmd/presence"
-    config_example="runtime/config/config.example.yaml"
-    env_example="runtime/config/runtime.env.example"
-    health_url="http://127.0.0.1:8081/health"
-    version_url="http://127.0.0.1:8081/version"
-    ;;
-  delivery)
-    module="delivery"
-    binary_name="delivery"
-    binary_path="./delivery/cmd/intent-ingest"
-    config_example="delivery/config/config.example.yaml"
-    env_example="delivery/config/delivery.env.example"
-    health_url="http://127.0.0.1:8080/health"
-    version_url="http://127.0.0.1:8080/version"
-    ;;
-  observation)
-    module="observation"
-    binary_name="observation"
-    binary_path="./observation/cmd/lane"
-    config_example="observation/config/config.example.yaml"
-    env_example="observation/config/observation.env.example"
-    health_url="http://127.0.0.1:8082/health"
-    version_url="http://127.0.0.1:8082/version"
-    ;;
-  *)
-    echo "unknown service ${service}" >&2
-    usage
-    exit 2
-    ;;
-esac
+load_service_metadata() {
+  local registry_path="${repo_root}/deployment/services.yaml"
+  if [[ ! -f "${registry_path}" ]]; then
+    echo "missing deployment registry: ${registry_path}" >&2
+    exit 1
+  fi
+  python3 - "${registry_path}" "${service}" <<'PY'
+import shlex
+import sys
 
-unit="den-go@${service}.service"
+registry_path = sys.argv[1]
+target_name = sys.argv[2]
+services = []
+current = None
+
+with open(registry_path, "r", encoding="utf-8") as handle:
+    for raw_line in handle:
+        line = raw_line.split("#", 1)[0].rstrip()
+        if not line.strip():
+            continue
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            if current is not None:
+                services.append(current)
+            current = {}
+            stripped = stripped[2:].strip()
+            if stripped:
+                key, _, value = stripped.partition(":")
+                current[key.strip()] = value.strip().strip('"').strip("'")
+            continue
+        if current is None or ":" not in stripped:
+            continue
+        key, _, value = stripped.partition(":")
+        current[key.strip()] = value.strip().strip('"').strip("'")
+
+if current is not None:
+    services.append(current)
+
+matches = [service for service in services if service.get("name") == target_name]
+if len(matches) != 1:
+    names = ", ".join(service.get("name", "<unnamed>") for service in services)
+    print(f"unknown service {target_name}; registry services: {names}", file=sys.stderr)
+    sys.exit(2)
+
+service = matches[0]
+required = [
+    "module",
+    "binary_name",
+    "binary_path",
+    "config_example",
+    "env_example",
+    "health_url",
+    "version_url",
+    "systemd_unit",
+]
+missing = [key for key in required if not service.get(key)]
+if missing:
+    print(f"service {target_name} missing registry fields: {', '.join(missing)}", file=sys.stderr)
+    sys.exit(1)
+
+for key in required:
+    print(f"{key}={shlex.quote(service[key])}")
+PY
+}
+
+eval "$(load_service_metadata)"
+
+unit="${systemd_unit}"
 service_root="/data/services/${service}"
 
 run_root() {
