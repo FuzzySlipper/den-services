@@ -53,7 +53,21 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Discover(DefaultFS()) error = %v", err)
 	}
-	if len(migrations) != 4 {
-		t.Fatalf("len(migrations) = %d, want 4", len(migrations))
+	versionsBySchema := make(map[string]int)
+	for _, migration := range migrations {
+		if migration.Version > versionsBySchema[migration.Schema] {
+			versionsBySchema[migration.Schema] = migration.Version
+		}
+	}
+	wantVersions := map[string]int{
+		"den_channels":    2,
+		"den_delivery":    2,
+		"den_observation": 2,
+		"den_runtime":     2,
+	}
+	for schema, want := range wantVersions {
+		if versionsBySchema[schema] != want {
+			t.Fatalf("%s current version = %d, want %d", schema, versionsBySchema[schema], want)
+		}
 	}
 }

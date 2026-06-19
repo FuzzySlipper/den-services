@@ -4,5 +4,12 @@
 bind_addr: "127.0.0.1:8082"
 database_url: "${DEN_OBSERVATION_DATABASE_URL}"
 
+query:
+  default_limit: 100
+  max_limit: 500
+
 retention:
   activity_ttl: "720h"
+
+http:
+  read_header_timeout: "5s"

@@ -15,6 +15,7 @@ Services:
   gateway
   runtime
   delivery
+  observation
 
 Builds the registered service binary with version metadata, runs tests, installs
 to /data/services/<service>, restarts den-go@<service>.service, and smokes
@@ -93,6 +94,15 @@ case "${service}" in
     env_example="delivery/config/delivery.env.example"
     health_url="http://127.0.0.1:8080/health"
     version_url="http://127.0.0.1:8080/version"
+    ;;
+  observation)
+    module="observation"
+    binary_name="observation"
+    binary_path="./observation/cmd/lane"
+    config_example="observation/config/config.example.yaml"
+    env_example="observation/config/observation.env.example"
+    health_url="http://127.0.0.1:8082/health"
+    version_url="http://127.0.0.1:8082/version"
     ;;
   *)
     echo "unknown service ${service}" >&2
