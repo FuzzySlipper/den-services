@@ -11,17 +11,18 @@ import (
 )
 
 type Config struct {
-	BindAddr          string
-	DatabaseURL       string
-	RuntimeServiceURL string
-	ServiceToken      string
-	DefaultTTL        time.Duration
-	MaxTTL            time.Duration
-	PendingTTL        time.Duration
-	RunningTTL        time.Duration
-	SweepInterval     time.Duration
-	RuntimeHTTP       RuntimeHTTPConfig
-	HTTP              HTTPConfig
+	BindAddr            string
+	DatabaseURL         string
+	RuntimeServiceURL   string
+	RuntimeServiceToken string
+	ServiceToken        string
+	DefaultTTL          time.Duration
+	MaxTTL              time.Duration
+	PendingTTL          time.Duration
+	RunningTTL          time.Duration
+	SweepInterval       time.Duration
+	RuntimeHTTP         RuntimeHTTPConfig
+	HTTP                HTTPConfig
 }
 
 type RuntimeHTTPConfig struct {
@@ -111,17 +112,18 @@ func LoadConfigFromPath(path string) (*Config, error) {
 		return nil, err
 	}
 	cfg := &Config{
-		BindAddr:          file.BindAddr,
-		DatabaseURL:       databaseURL,
-		RuntimeServiceURL: file.RuntimeServiceURL,
-		ServiceToken:      os.Getenv("DEN_DELIVERY_SERVICE_TOKEN"),
-		DefaultTTL:        defaultTTL,
-		MaxTTL:            maxTTL,
-		PendingTTL:        pendingTTL,
-		RunningTTL:        runningTTL,
-		SweepInterval:     sweepInterval,
-		RuntimeHTTP:       runtimeHTTP,
-		HTTP:              httpConfig,
+		BindAddr:            file.BindAddr,
+		DatabaseURL:         databaseURL,
+		RuntimeServiceURL:   file.RuntimeServiceURL,
+		RuntimeServiceToken: os.Getenv("DEN_DELIVERY_RUNTIME_SERVICE_TOKEN"),
+		ServiceToken:        os.Getenv("DEN_DELIVERY_SERVICE_TOKEN"),
+		DefaultTTL:          defaultTTL,
+		MaxTTL:              maxTTL,
+		PendingTTL:          pendingTTL,
+		RunningTTL:          runningTTL,
+		SweepInterval:       sweepInterval,
+		RuntimeHTTP:         runtimeHTTP,
+		HTTP:                httpConfig,
 	}
 	if err := cfg.validate(); err != nil {
 		return nil, err
@@ -138,6 +140,9 @@ func (c *Config) validate() error {
 	}
 	if c.RuntimeServiceURL == "" {
 		return errors.New("runtime_service_url is required")
+	}
+	if c.RuntimeServiceToken == "" {
+		return ErrMissingRuntimeAuth
 	}
 	if c.DefaultTTL <= 0 || c.MaxTTL <= 0 || c.PendingTTL <= 0 || c.RunningTTL <= 0 || c.SweepInterval <= 0 {
 		return errors.New("delivery ttl values must be positive")

@@ -31,7 +31,7 @@ func main() {
 	defer pool.Close()
 
 	store := delivery.NewStore(pool)
-	runtimeClient := delivery.NewRuntimeClient(cfg.RuntimeServiceURL, cfg.RuntimeHTTP.Timeout)
+	runtimeClient := delivery.NewRuntimeClient(cfg.RuntimeServiceURL, cfg.RuntimeServiceToken, cfg.RuntimeHTTP.Timeout)
 	service := delivery.NewIntentService(store, runtimeClient, time.Now, cfg.DefaultTTL, cfg.MaxTTL, cfg.PendingTTL, cfg.RunningTTL)
 
 	log.Printf("delivery intent-reaper running every %s", cfg.SweepInterval)

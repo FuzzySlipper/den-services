@@ -7,16 +7,17 @@ import (
 )
 
 var (
-	ErrInvalidIntent          = errors.New("invalid delivery intent")       //nolint:gochecknoglobals
-	ErrInvalidIntentState     = errors.New("invalid delivery intent state") //nolint:gochecknoglobals
-	ErrIntentNotFound         = errors.New("delivery intent not found")     //nolint:gochecknoglobals
-	ErrIntentAlreadyClaimed   = errors.New("intent already claimed")        //nolint:gochecknoglobals
-	ErrIntentAlreadyCompleted = errors.New("intent already completed")      //nolint:gochecknoglobals
-	ErrIntentExpired          = errors.New("intent expired")                //nolint:gochecknoglobals
-	ErrIntentTargetMismatch   = errors.New("intent target mismatch")        //nolint:gochecknoglobals
-	ErrRuntimeNotAlive        = errors.New("runtime is not alive")          //nolint:gochecknoglobals
-	ErrInvalidLifecycleEvent  = errors.New("invalid lifecycle event")       //nolint:gochecknoglobals
-	ErrInvalidClaimToken      = errors.New("invalid claim token")           //nolint:gochecknoglobals
+	ErrInvalidIntent          = errors.New("invalid delivery intent")           //nolint:gochecknoglobals
+	ErrInvalidIntentState     = errors.New("invalid delivery intent state")     //nolint:gochecknoglobals
+	ErrIntentNotFound         = errors.New("delivery intent not found")         //nolint:gochecknoglobals
+	ErrIntentAlreadyClaimed   = errors.New("intent already claimed")            //nolint:gochecknoglobals
+	ErrIntentAlreadyCompleted = errors.New("intent already completed")          //nolint:gochecknoglobals
+	ErrIntentExpired          = errors.New("intent expired")                    //nolint:gochecknoglobals
+	ErrIntentTargetMismatch   = errors.New("intent target mismatch")            //nolint:gochecknoglobals
+	ErrRuntimeNotAlive        = errors.New("runtime is not alive")              //nolint:gochecknoglobals
+	ErrMissingRuntimeAuth     = errors.New("runtime service token is required") //nolint:gochecknoglobals
+	ErrInvalidLifecycleEvent  = errors.New("invalid lifecycle event")           //nolint:gochecknoglobals
+	ErrInvalidClaimToken      = errors.New("invalid claim token")               //nolint:gochecknoglobals
 )
 
 type ServiceError struct {

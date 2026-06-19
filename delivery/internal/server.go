@@ -20,7 +20,7 @@ func NewHTTPServer(cfg *Config, buildInfo health.BuildInfo) (*http.Server, error
 	}
 	pool := postgres.MustConnect(cfg.DatabaseURL)
 	store := NewStore(pool)
-	runtimeClient := NewRuntimeClient(cfg.RuntimeServiceURL, cfg.RuntimeHTTP.Timeout)
+	runtimeClient := NewRuntimeClient(cfg.RuntimeServiceURL, cfg.RuntimeServiceToken, cfg.RuntimeHTTP.Timeout)
 	service := NewIntentService(store, runtimeClient, time.Now, cfg.DefaultTTL, cfg.MaxTTL, cfg.PendingTTL, cfg.RunningTTL)
 	handler := NewHandler(service)
 
