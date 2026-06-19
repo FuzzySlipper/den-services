@@ -14,7 +14,8 @@ Usage:
 
 Build-only creates a staged artifact directory and prints the install command.
 Install validates the staged artifacts, installs to /data/services/gateway,
-restarts den-go@gateway.service, smokes /health, and prints rollback commands.
+restarts den-go@gateway.service, smokes /health and /version, and prints
+rollback commands.
 USAGE
 }
 
@@ -67,6 +68,15 @@ build_gateway() {
   go build -trimpath \
     -ldflags "-s -w -X main.version=0.1.0 -X main.commit=${commit} -X main.builtAt=${built_at}" \
     -o "${stage_dir}/bin/${service}" ./gateway/cmd/proxy
+  local version_output
+  version_output="$("${stage_dir}/bin/${service}" --version)"
+  case "${version_output}" in
+    *"${service}"*"${commit}"*) ;;
+    *)
+      echo "--version output did not include service ${service} and commit ${commit}: ${version_output}" >&2
+      exit 1
+      ;;
+  esac
   cp gateway/config/config.example.yaml "${stage_dir}/config/config.yaml"
   cp gateway/config/routes.example.yaml "${stage_dir}/config/routes.yaml"
   cp gateway/config/gateway.env.example "${stage_dir}/env/gateway.env.example"
@@ -75,6 +85,7 @@ build_gateway() {
 Description=Den Go service - %i
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -87,7 +98,6 @@ Environment=SERVICE_ROOT=/data/services/%i
 ExecStart=/data/services/%i/bin/%i
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=0
 KillMode=mixed
 KillSignal=SIGTERM
 TimeoutStopSec=30
@@ -116,7 +126,8 @@ install_gateway() {
   local stage_dir="$1"
   local root="/data/services/${service}"
   local unit="den-go@${service}.service"
-  local smoke_url="${GATEWAY_SMOKE_URL:-http://127.0.0.1:8079/health}"
+  local health_url="${GATEWAY_SMOKE_URL:-http://127.0.0.1:8079/health}"
+  local version_url="${GATEWAY_VERSION_URL:-http://127.0.0.1:8079/version}"
 
   if [[ "${EUID}" -ne 0 ]]; then
     echo "--install-from must be run as root" >&2
@@ -153,14 +164,27 @@ install_gateway() {
 
   systemctl daemon-reload
   systemctl restart "${unit}"
-  curl -fsS "${smoke_url}" >/dev/null
+  curl -fsS "${health_url}" >/dev/null
+  local version_response
+  version_response="$(curl -fsS "${version_url}")"
+  if [[ -f "${stage_dir}/build-info.json" ]]; then
+    local expected_commit
+    local reported_commit
+    expected_commit="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("commit", ""))' "${stage_dir}/build-info.json")"
+    reported_commit="$(printf '%s' "${version_response}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("commit", ""))')"
+    if [[ "${reported_commit}" != "${expected_commit}" ]]; then
+      echo "/version reported commit ${reported_commit}, want ${expected_commit}" >&2
+      exit 1
+    fi
+  fi
 
   echo "Installed and smoked ${unit}"
   echo "Rollback:"
   echo "  sudo systemctl stop ${unit}"
   echo "  sudo install -D -m 0755 ${root}/bin/${service}.previous ${root}/bin/${service}"
   echo "  sudo systemctl start ${unit}"
-  echo "  curl -fsS ${smoke_url}"
+  echo "  curl -fsS ${health_url}"
+  echo "  curl -fsS ${version_url}"
 }
 
 if [[ "${build_only}" == "true" ]]; then

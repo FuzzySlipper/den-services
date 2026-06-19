@@ -1,0 +1,35 @@
+# Deployable den-services Go services.
+# This registry is intentionally small and operational: deploy scripts and tests
+# use it to keep service names, primary binaries, health, and version contracts
+# aligned.
+
+services:
+  - name: "gateway"
+    module: "gateway"
+    binary_name: "gateway"
+    binary_path: "./gateway/cmd/proxy"
+    config_example: "gateway/config/config.example.yaml"
+    env_example: "gateway/config/gateway.env.example"
+    health_url: "http://127.0.0.1:8079/health"
+    version_url: "http://127.0.0.1:8079/version"
+    systemd_unit: "den-go@gateway.service"
+
+  - name: "runtime"
+    module: "runtime"
+    binary_name: "runtime"
+    binary_path: "./runtime/cmd/presence"
+    config_example: "runtime/config/config.example.yaml"
+    env_example: "runtime/config/runtime.env.example"
+    health_url: "http://127.0.0.1:8081/health"
+    version_url: "http://127.0.0.1:8081/version"
+    systemd_unit: "den-go@runtime.service"
+
+  - name: "delivery"
+    module: "delivery"
+    binary_name: "delivery"
+    binary_path: "./delivery/cmd/intent-ingest"
+    config_example: "delivery/config/config.example.yaml"
+    env_example: "delivery/config/delivery.env.example"
+    health_url: "http://127.0.0.1:8080/health"
+    version_url: "http://127.0.0.1:8080/version"
+    systemd_unit: "den-go@delivery.service"

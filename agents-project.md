@@ -118,6 +118,25 @@ For code tasks, include evidence appropriate to the change:
 - gateway route smoke evidence for cutover work;
 - Den task/document handles for architectural decisions.
 
+## Deployment contract
+
+Every deployable Go service is registered in `deployment/services.yaml`. The
+registry is the operational contract for service name, primary binary path,
+systemd unit, loopback health URL, loopback version URL, config example, and env
+example.
+
+Deployable HTTP services must support:
+
+- `GET /health` with build metadata;
+- `GET /version` with the same build metadata;
+- `<binary> --version`, also reporting service name, version, commit, and build
+  timestamp.
+
+The deployment contract test builds every registered primary binary and runs
+`--version`. Deployment tooling must also smoke `/health` and `/version` and
+verify the reported commit matches the built commit. Add a service to the
+registry only when this contract is implemented.
+
 ## Den task hygiene
 
 When implementing under Den workflow:

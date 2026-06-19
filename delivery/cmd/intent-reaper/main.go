@@ -2,14 +2,27 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"os"
 	"time"
 
 	delivery "den-services/delivery/internal"
 	"den-services/shared/postgres"
 )
 
+var (
+	version = "dev"                  //nolint:gochecknoglobals
+	commit  = "unknown"              //nolint:gochecknoglobals
+	builtAt = "1970-01-01T00:00:00Z" //nolint:gochecknoglobals
+)
+
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Printf("delivery %s %s %s\n", version, commit, builtAt)
+		return
+	}
+
 	cfg, err := delivery.LoadConfig()
 	if err != nil {
 		log.Fatalf("loading config: %v", err)

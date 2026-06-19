@@ -123,6 +123,11 @@ edge cases. Service tests mock dependencies. Store tests use a real Postgres
 test database when SQL behavior matters. Integration tests live in the
 `integration/` module.
 
+Deployable service contract tests live at the repo root and validate
+`deployment/services.yaml`. Every registered deployable service must build and
+answer `--version`; HTTP services must also expose public `/health` and
+`/version` endpoints for deployment smoke checks.
+
 ## DTO And JSON Conventions
 
 API request and response structs are separate from domain types. Domain types do
