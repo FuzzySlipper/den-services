@@ -20,7 +20,16 @@ func NewHTTPServer(cfg *Config, buildInfo health.BuildInfo) (*http.Server, error
 	}
 	pool := postgres.MustConnect(cfg.DatabaseURL)
 	store := NewStore(pool)
-	service := NewObservationService(store, time.Now, cfg.DefaultLimit, cfg.MaxLimit)
+	observationStore := ObservationStore(store)
+	if cfg.ChatSource.Mode == ChatSourceModeLegacyHTTP {
+		chatSource, err := NewLegacyChannelsChatSource(cfg.ChatSource.LegacyChannelsBaseURL, cfg.ChatSource.LegacyHTTPTimeout)
+		if err != nil {
+			pool.Close()
+			return nil, err
+		}
+		observationStore = NewStoreWithChatSource(observationStore, chatSource)
+	}
+	service := NewObservationService(observationStore, time.Now, cfg.DefaultLimit, cfg.MaxLimit)
 	handler := NewHandler(service)
 
 	apiMux := http.NewServeMux()

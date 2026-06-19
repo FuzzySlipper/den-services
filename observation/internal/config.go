@@ -16,8 +16,22 @@ type Config struct {
 	ServiceToken string
 	DefaultLimit int
 	MaxLimit     int
+	ChatSource   ChatSourceConfig
 	Retention    RetentionConfig
 	HTTP         HTTPConfig
+}
+
+type ChatSourceMode string
+
+const (
+	ChatSourceModePostgresView ChatSourceMode = "postgres_view"
+	ChatSourceModeLegacyHTTP   ChatSourceMode = "legacy_http"
+)
+
+type ChatSourceConfig struct {
+	Mode                  ChatSourceMode
+	LegacyChannelsBaseURL string
+	LegacyHTTPTimeout     time.Duration
 }
 
 type RetentionConfig struct {
@@ -29,16 +43,23 @@ type HTTPConfig struct {
 }
 
 type configFile struct {
-	BindAddr    string              `yaml:"bind_addr"`
-	DatabaseURL string              `yaml:"database_url"`
-	Query       queryConfigFile     `yaml:"query"`
-	Retention   retentionConfigFile `yaml:"retention"`
-	HTTP        httpConfigFile      `yaml:"http"`
+	BindAddr    string               `yaml:"bind_addr"`
+	DatabaseURL string               `yaml:"database_url"`
+	Query       queryConfigFile      `yaml:"query"`
+	ChatSource  chatSourceConfigFile `yaml:"chat_source"`
+	Retention   retentionConfigFile  `yaml:"retention"`
+	HTTP        httpConfigFile       `yaml:"http"`
 }
 
 type queryConfigFile struct {
 	DefaultLimit int `yaml:"default_limit"`
 	MaxLimit     int `yaml:"max_limit"`
+}
+
+type chatSourceConfigFile struct {
+	Mode                  string `yaml:"mode"`
+	LegacyChannelsBaseURL string `yaml:"legacy_channels_base_url"`
+	LegacyHTTPTimeout     string `yaml:"legacy_http_timeout"`
 }
 
 type retentionConfigFile struct {
@@ -78,12 +99,17 @@ func LoadConfigFromPath(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	chatSource, err := file.ChatSource.toConfig()
+	if err != nil {
+		return nil, err
+	}
 	cfg := &Config{
 		BindAddr:     file.BindAddr,
 		DatabaseURL:  databaseURL,
 		ServiceToken: os.Getenv("DEN_OBSERVATION_SERVICE_TOKEN"),
 		DefaultLimit: file.Query.DefaultLimit,
 		MaxLimit:     file.Query.MaxLimit,
+		ChatSource:   chatSource,
 		Retention:    retention,
 		HTTP:         httpConfig,
 	}
@@ -109,7 +135,39 @@ func (c *Config) validate() error {
 	if c.HTTP.ReadHeaderTimeout <= 0 {
 		return errors.New("http read_header_timeout must be positive")
 	}
+	if c.ChatSource.Mode != ChatSourceModePostgresView && c.ChatSource.Mode != ChatSourceModeLegacyHTTP {
+		return errors.New("chat_source.mode must be postgres_view or legacy_http")
+	}
+	if c.ChatSource.Mode == ChatSourceModeLegacyHTTP && c.ChatSource.LegacyChannelsBaseURL == "" {
+		return errors.New("chat_source.legacy_channels_base_url is required when mode is legacy_http")
+	}
+	if c.ChatSource.Mode == ChatSourceModeLegacyHTTP && c.ChatSource.LegacyHTTPTimeout <= 0 {
+		return errors.New("chat_source.legacy_http_timeout must be positive when mode is legacy_http")
+	}
 	return nil
+}
+
+func (c chatSourceConfigFile) toConfig() (ChatSourceConfig, error) {
+	mode := ChatSourceMode(c.Mode)
+	if mode == "" {
+		mode = ChatSourceModePostgresView
+	}
+	legacyTimeout := time.Duration(0)
+	if c.LegacyHTTPTimeout != "" {
+		parsed, err := time.ParseDuration(c.LegacyHTTPTimeout)
+		if err != nil {
+			return ChatSourceConfig{}, fmt.Errorf("parsing chat_source.legacy_http_timeout: %w", err)
+		}
+		legacyTimeout = parsed
+	}
+	if mode == ChatSourceModeLegacyHTTP && legacyTimeout == 0 {
+		legacyTimeout = 5 * time.Second
+	}
+	return ChatSourceConfig{
+		Mode:                  mode,
+		LegacyChannelsBaseURL: c.LegacyChannelsBaseURL,
+		LegacyHTTPTimeout:     legacyTimeout,
+	}, nil
 }
 
 func (c retentionConfigFile) toConfig() (RetentionConfig, error) {

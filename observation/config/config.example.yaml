@@ -8,6 +8,16 @@ query:
   default_limit: 100
   max_limit: 500
 
+# Interim task #2759 decision: while den-channels conversation data still lives
+# in the legacy service, observation can read chat display history through the
+# read-only HTTP API. This imports only display conversation messages into the
+# lane and never writes to Channels or Delivery. Switch back to postgres_view
+# when den_channels.chat_history is backed by real conversation data.
+chat_source:
+  mode: "legacy_http" # legacy_http or postgres_view
+  legacy_channels_base_url: "http://127.0.0.1:18081"
+  legacy_http_timeout: "5s"
+
 retention:
   activity_ttl: "720h"
 
