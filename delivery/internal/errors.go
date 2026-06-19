@@ -13,6 +13,7 @@ var (
 	ErrIntentAlreadyClaimed   = errors.New("intent already claimed")        //nolint:gochecknoglobals
 	ErrIntentAlreadyCompleted = errors.New("intent already completed")      //nolint:gochecknoglobals
 	ErrIntentExpired          = errors.New("intent expired")                //nolint:gochecknoglobals
+	ErrIntentTargetMismatch   = errors.New("intent target mismatch")        //nolint:gochecknoglobals
 	ErrRuntimeNotAlive        = errors.New("runtime is not alive")          //nolint:gochecknoglobals
 	ErrInvalidLifecycleEvent  = errors.New("invalid lifecycle event")       //nolint:gochecknoglobals
 	ErrInvalidClaimToken      = errors.New("invalid claim token")           //nolint:gochecknoglobals
@@ -64,6 +65,8 @@ func errorCode(err error) string {
 		return "intent_already_completed"
 	case errors.Is(err, ErrIntentExpired):
 		return "intent_expired"
+	case errors.Is(err, ErrIntentTargetMismatch):
+		return "intent_target_mismatch"
 	case errors.Is(err, ErrRuntimeNotAlive):
 		return "runtime_not_alive"
 	case errors.Is(err, ErrInvalidClaimToken):

@@ -67,15 +67,27 @@ func (s *IntentService) Claim(ctx context.Context, id int64, req ClaimRequest) (
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err)
 	}
+	now := s.clock()
+	intent, err := s.store.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if intent.TargetIdentity() != req.ClaimedBy {
+		return nil, conflict(ErrIntentTargetMismatch)
+	}
+	if intent.State() == IntentStatePending && !now.Before(intent.ExpiresAt()) {
+		_ = s.store.ExpireIfPending(ctx, id, now)
+		return nil, conflict(ErrIntentExpired)
+	}
 	alive, err := s.runtime.IsAlive(ctx, req.ClaimedBy.InstanceID)
 	if err != nil {
 		return nil, err
 	}
 	if !alive {
-		_ = s.store.ExpireIfPending(ctx, id, s.clock())
+		_ = s.store.ExpireIfPending(ctx, id, now)
 		return nil, conflict(ErrRuntimeNotAlive)
 	}
-	return s.store.ClaimPending(ctx, id, req.ClaimToken, req.ClaimedBy, s.clock())
+	return s.store.ClaimPending(ctx, id, req.ClaimToken, req.ClaimedBy, now)
 }
 
 func (s *IntentService) ReportEvent(ctx context.Context, id int64, req LifecycleEventRequest) (*DeliveryIntent, error) {

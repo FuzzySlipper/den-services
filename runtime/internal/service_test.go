@@ -65,6 +65,40 @@ func TestRuntimeReconnectUsesNewInstanceID(t *testing.T) {
 	}
 }
 
+func TestCursorReplayCannotMoveSubscriptionBackward(t *testing.T) {
+	store := newMemoryRuntimeStore(t)
+	service := NewRuntimeService(store, fixedClock(), 90*time.Second, 300*time.Second)
+
+	if _, err := service.Register(context.Background(), RegisterInstanceRequest{
+		InstanceID:      identity.AgentInstanceID("planner@den-srv"),
+		ProfileIdentity: identity.ProfileIdentity("planner"),
+		Host:            "den-srv",
+	}); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	subscription, err := service.CreateSubscription(context.Background(), CreateSubscriptionRequest{
+		RuntimeInstanceID: identity.AgentInstanceID("planner@den-srv"),
+		ChannelID:         42,
+	})
+	if err != nil {
+		t.Fatalf("CreateSubscription() error = %v", err)
+	}
+
+	if _, err := service.Stream(context.Background(), subscription.SubscriptionID(), 10); err != nil {
+		t.Fatalf("Stream(10) error = %v", err)
+	}
+	replayed, err := service.Stream(context.Background(), subscription.SubscriptionID(), 7)
+	if err != nil {
+		t.Fatalf("Stream(7) error = %v", err)
+	}
+	if replayed.CursorPosition() != 10 {
+		t.Fatalf("cursor after replay = %d, want 10", replayed.CursorPosition())
+	}
+	if len(store.instances) != 1 || len(store.subscriptions) != 1 {
+		t.Fatalf("store sizes instances=%d subscriptions=%d, want 1/1", len(store.instances), len(store.subscriptions))
+	}
+}
+
 func fixedClock() func() time.Time {
 	return func() time.Time {
 		return time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)

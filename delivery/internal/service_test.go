@@ -28,6 +28,22 @@ func TestStaleRuntimeCannotClaimFreshWork(t *testing.T) {
 	}
 }
 
+func TestExpiredIntentCannotBeClaimed(t *testing.T) {
+	store := newMemoryIntentStore(t)
+	runtime := &memoryRuntimeChecker{alive: true}
+	service := NewIntentService(store, runtime, fixedClock(), 5*time.Minute, time.Hour, 5*time.Minute, 30*time.Minute)
+	intent := store.mustCreateIntent(t, IntentStatePending)
+	intent.expiresAt = fixedClock()().Add(-time.Second)
+
+	_, err := service.Claim(context.Background(), intent.ID(), ClaimRequest{ClaimToken: "token", ClaimedBy: testIdentity()})
+	if !errors.Is(err, ErrIntentExpired) {
+		t.Fatalf("Claim() error = %v, want %v", err, ErrIntentExpired)
+	}
+	if intent.State() != IntentStateExpired {
+		t.Fatalf("state = %s, want %s", intent.State(), IntentStateExpired)
+	}
+}
+
 func TestDuplicateClaimRejected(t *testing.T) {
 	store := newMemoryIntentStore(t)
 	runtime := &memoryRuntimeChecker{alive: true}
@@ -52,6 +68,63 @@ func TestTerminalIntentCannotExecuteAgain(t *testing.T) {
 	_, err := service.Claim(context.Background(), intent.ID(), ClaimRequest{ClaimToken: "token", ClaimedBy: testIdentity()})
 	if !errors.Is(err, ErrIntentAlreadyCompleted) {
 		t.Fatalf("Claim() error = %v, want %v", err, ErrIntentAlreadyCompleted)
+	}
+}
+
+func TestDisplayOnlyIntentCannotExecute(t *testing.T) {
+	store := newMemoryIntentStore(t)
+	runtime := &memoryRuntimeChecker{alive: true}
+	service := NewIntentService(store, runtime, fixedClock(), 5*time.Minute, time.Hour, 5*time.Minute, 30*time.Minute)
+	intent := store.mustCreateIntent(t, IntentStateDisplayOnly)
+
+	_, err := service.Claim(context.Background(), intent.ID(), ClaimRequest{ClaimToken: "token", ClaimedBy: testIdentity()})
+	if !errors.Is(err, ErrIntentAlreadyCompleted) {
+		t.Fatalf("Claim() error = %v, want %v", err, ErrIntentAlreadyCompleted)
+	}
+}
+
+func TestCutoverWatermarkDisplayOnlyIntentCannotExecute(t *testing.T) {
+	store := newMemoryIntentStore(t)
+	runtime := &memoryRuntimeChecker{alive: true}
+	service := NewIntentService(store, runtime, fixedClock(), 5*time.Minute, time.Hour, 5*time.Minute, 30*time.Minute)
+	intent := store.mustCreateIntent(t, IntentStateDisplayOnly)
+	watermark := "legacy-delivery:42"
+	intent.cutoverWatermark = &watermark
+
+	_, err := service.Claim(context.Background(), intent.ID(), ClaimRequest{ClaimToken: "token", ClaimedBy: testIdentity()})
+	if !errors.Is(err, ErrIntentAlreadyCompleted) {
+		t.Fatalf("Claim() error = %v, want %v", err, ErrIntentAlreadyCompleted)
+	}
+	if intent.CutoverWatermark() == nil || *intent.CutoverWatermark() != watermark {
+		t.Fatalf("watermark = %v, want %s", intent.CutoverWatermark(), watermark)
+	}
+}
+
+func TestReconnectCannotClaimOldInstanceWork(t *testing.T) {
+	store := newMemoryIntentStore(t)
+	runtime := &memoryRuntimeChecker{
+		aliveByID: map[identity.AgentInstanceID]bool{
+			"planner@old": false,
+			"planner@new": true,
+		},
+	}
+	service := NewIntentService(store, runtime, fixedClock(), 5*time.Minute, time.Hour, 5*time.Minute, 30*time.Minute)
+	intent := store.mustCreateIntentFor(t, oldIdentity(), IntentStatePending)
+
+	_, err := service.Claim(context.Background(), intent.ID(), ClaimRequest{ClaimToken: "new-token", ClaimedBy: newIdentity()})
+	if !errors.Is(err, ErrIntentTargetMismatch) {
+		t.Fatalf("Claim(new instance) error = %v, want %v", err, ErrIntentTargetMismatch)
+	}
+	if intent.State() != IntentStatePending {
+		t.Fatalf("state after new instance claim = %s, want %s", intent.State(), IntentStatePending)
+	}
+
+	_, err = service.Claim(context.Background(), intent.ID(), ClaimRequest{ClaimToken: "old-token", ClaimedBy: oldIdentity()})
+	if !errors.Is(err, ErrRuntimeNotAlive) {
+		t.Fatalf("Claim(old stale instance) error = %v, want %v", err, ErrRuntimeNotAlive)
+	}
+	if intent.State() != IntentStateExpired {
+		t.Fatalf("state after stale old claim = %s, want %s", intent.State(), IntentStateExpired)
 	}
 }
 
@@ -161,13 +234,17 @@ func TestConcurrentClaimOnlyOneSucceeds(t *testing.T) {
 }
 
 type memoryRuntimeChecker struct {
-	alive bool
-	err   error
+	alive     bool
+	aliveByID map[identity.AgentInstanceID]bool
+	err       error
 }
 
-func (c *memoryRuntimeChecker) IsAlive(_ context.Context, _ identity.AgentInstanceID) (bool, error) {
+func (c *memoryRuntimeChecker) IsAlive(_ context.Context, instanceID identity.AgentInstanceID) (bool, error) {
 	if c.err != nil {
 		return false, c.err
+	}
+	if c.aliveByID != nil {
+		return c.aliveByID[instanceID], nil
 	}
 	return c.alive, nil
 }
@@ -182,5 +259,19 @@ func testIdentity() identity.AgentIdentity {
 	return identity.AgentIdentity{
 		Profile:    identity.ProfileIdentity("planner"),
 		InstanceID: identity.AgentInstanceID("planner@den-srv"),
+	}
+}
+
+func oldIdentity() identity.AgentIdentity {
+	return identity.AgentIdentity{
+		Profile:    identity.ProfileIdentity("planner"),
+		InstanceID: identity.AgentInstanceID("planner@old"),
+	}
+}
+
+func newIdentity() identity.AgentIdentity {
+	return identity.AgentIdentity{
+		Profile:    identity.ProfileIdentity("planner"),
+		InstanceID: identity.AgentInstanceID("planner@new"),
 	}
 }

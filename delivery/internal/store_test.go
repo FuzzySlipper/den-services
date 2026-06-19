@@ -26,8 +26,13 @@ func newMemoryIntentStore(t *testing.T) *memoryIntentStore {
 
 func (s *memoryIntentStore) mustCreateIntent(t *testing.T, state IntentState) *DeliveryIntent {
 	t.Helper()
+	return s.mustCreateIntentFor(t, testIdentity(), state)
+}
+
+func (s *memoryIntentStore) mustCreateIntentFor(t *testing.T, target identity.AgentIdentity, state IntentState) *DeliveryIntent {
+	t.Helper()
 	key := fmt.Sprintf("op:1:planner:nonce-%d", s.nextID)
-	intent, err := NewDeliveryIntent(testIdentity(), key, 5*time.Minute, nil, nil, fixedClock()())
+	intent, err := NewDeliveryIntent(target, key, 5*time.Minute, nil, nil, fixedClock()())
 	if err != nil {
 		t.Fatalf("NewDeliveryIntent() error = %v", err)
 	}
