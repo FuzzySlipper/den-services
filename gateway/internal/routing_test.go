@@ -22,7 +22,13 @@ func TestRouteTableMatchesLongestPrefix(t *testing.T) {
 
 func TestRouteTableUsesSuccessorOnlyWhenHeaderCanSelectConfiguredRoute(t *testing.T) {
 	table, err := NewRouteTable([]routeFile{
-		{Name: "delivery", PathPattern: "/v1/delivery", LegacyUpstreamURL: "http://legacy", SuccessorUpstreamURL: "http://successor"},
+		{
+			Name:                 "delivery",
+			PathPattern:          "/v1/delivery",
+			LegacyUpstreamURL:    "http://legacy",
+			SuccessorUpstreamURL: "http://successor",
+			SuccessorAuth:        testSuccessorAuth(),
+		},
 		{Name: "all", PathPattern: "/", LegacyUpstreamURL: "http://legacy"},
 	})
 	if err != nil {
@@ -57,4 +63,20 @@ func TestRouteTableRejectsMissingLegacyUpstream(t *testing.T) {
 	if err == nil {
 		t.Fatal("NewRouteTable() error = nil, want error")
 	}
+}
+
+func TestRouteTableRejectsSuccessorWithoutAuth(t *testing.T) {
+	_, err := NewRouteTable([]routeFile{{
+		Name:                 "delivery",
+		PathPattern:          "/v1/delivery",
+		LegacyUpstreamURL:    "http://legacy",
+		SuccessorUpstreamURL: "http://successor",
+	}})
+	if err == nil {
+		t.Fatal("NewRouteTable() error = nil, want missing successor auth error")
+	}
+}
+
+func testSuccessorAuth() upstreamAuthFile {
+	return upstreamAuthFile{BearerToken: "successor-token"}
 }

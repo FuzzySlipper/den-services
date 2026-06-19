@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	sharedconfig "den-services/shared/config"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -22,13 +24,19 @@ type Route struct {
 	pathPattern         string
 	legacyURL           *url.URL
 	successorURL        *url.URL
+	successorAuth       UpstreamAuth
 	identityTranslation IdentityTranslation
 }
 
 type RouteMatch struct {
 	Target              *url.URL
+	Auth                UpstreamAuth
 	IdentityTranslation IdentityTranslation
 	UsesSuccessor       bool
+}
+
+type UpstreamAuth struct {
+	bearerToken string
 }
 
 type routeConfigFile struct {
@@ -40,10 +48,19 @@ type routeFile struct {
 	PathPattern          string                  `yaml:"path_pattern"`
 	LegacyUpstreamURL    string                  `yaml:"legacy_upstream_url"`
 	SuccessorUpstreamURL string                  `yaml:"successor_upstream_url"`
+	SuccessorAuth        upstreamAuthFile        `yaml:"successor_auth"`
 	IdentityTranslation  identityTranslationFile `yaml:"identity_translation"`
 }
 
+type upstreamAuthFile struct {
+	BearerToken string `yaml:"bearer_token"`
+}
+
 func LoadRouteTable(path string) (*RouteTable, error) {
+	values, err := sharedconfig.Load()
+	if err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading gateway routes %s: %w", path, err)
@@ -52,16 +69,20 @@ func LoadRouteTable(path string) (*RouteTable, error) {
 	if err := yaml.Unmarshal(data, &file); err != nil {
 		return nil, fmt.Errorf("parsing gateway routes %s: %w", path, err)
 	}
-	return NewRouteTable(file.Routes)
+	return NewRouteTableWithValues(file.Routes, values)
 }
 
 func NewRouteTable(files []routeFile) (*RouteTable, error) {
+	return NewRouteTableWithValues(files, sharedconfig.FromMap(nil))
+}
+
+func NewRouteTableWithValues(files []routeFile, values sharedconfig.Values) (*RouteTable, error) {
 	if len(files) == 0 {
 		return nil, errors.New("at least one route is required")
 	}
 	routes := make([]Route, 0, len(files))
 	for _, file := range files {
-		route, err := newRoute(file)
+		route, err := newRoute(file, values)
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +94,7 @@ func NewRouteTable(files []routeFile) (*RouteTable, error) {
 	return &RouteTable{routes: routes}, nil
 }
 
-func newRoute(file routeFile) (Route, error) {
+func newRoute(file routeFile, values sharedconfig.Values) (Route, error) {
 	if strings.TrimSpace(file.Name) == "" {
 		return Route{}, errors.New("route name is required")
 	}
@@ -92,6 +113,16 @@ func newRoute(file routeFile) (Route, error) {
 			return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
 		}
 	}
+	successorAuth, err := newUpstreamAuth(file.SuccessorAuth, values)
+	if err != nil {
+		return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
+	}
+	if successorURL != nil && !successorAuth.Enabled() {
+		return Route{}, fmt.Errorf("route %s successor_auth.bearer_token is required when successor_upstream_url is set", file.Name)
+	}
+	if successorURL == nil && successorAuth.Enabled() {
+		return Route{}, fmt.Errorf("route %s successor_auth requires successor_upstream_url", file.Name)
+	}
 	translation, err := newIdentityTranslation(file.IdentityTranslation)
 	if err != nil {
 		return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
@@ -104,8 +135,40 @@ func newRoute(file routeFile) (Route, error) {
 		pathPattern:         pattern,
 		legacyURL:           legacyURL,
 		successorURL:        successorURL,
+		successorAuth:       successorAuth,
 		identityTranslation: translation,
 	}, nil
+}
+
+func newUpstreamAuth(file upstreamAuthFile, values sharedconfig.Values) (UpstreamAuth, error) {
+	rawToken := strings.TrimSpace(file.BearerToken)
+	if rawToken == "" {
+		return UpstreamAuth{}, nil
+	}
+	token, err := values.Expand(rawToken)
+	if err != nil {
+		return UpstreamAuth{}, fmt.Errorf("expanding successor_auth.bearer_token: %w", err)
+	}
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return UpstreamAuth{}, errors.New("successor_auth.bearer_token must not be empty")
+	}
+	return UpstreamAuth{bearerToken: token}, nil
+}
+
+func (a UpstreamAuth) Enabled() bool {
+	return a.bearerToken != ""
+}
+
+func (a UpstreamAuth) Apply(headers httpHeader) {
+	if !a.Enabled() {
+		return
+	}
+	headers.Set("Authorization", "Bearer "+a.bearerToken)
+}
+
+type httpHeader interface {
+	Set(key string, value string)
 }
 
 func parseUpstreamURL(name string, raw string) (*url.URL, error) {
@@ -133,6 +196,7 @@ func (t *RouteTable) Match(path string, preferSuccessor bool) (RouteMatch, bool)
 		if preferSuccessor && route.successorURL != nil {
 			return RouteMatch{
 				Target:              cloneURL(route.successorURL),
+				Auth:                route.successorAuth,
 				IdentityTranslation: route.identityTranslation,
 				UsesSuccessor:       true,
 			}, true

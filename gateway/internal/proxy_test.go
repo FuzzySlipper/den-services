@@ -29,6 +29,9 @@ func TestGatewayProxiesRequestWithoutPayloadModification(t *testing.T) {
 		if r.Header.Get("X-Test-Header") != "kept" {
 			t.Fatalf("X-Test-Header = %q, want kept", r.Header.Get("X-Test-Header"))
 		}
+		if r.Header.Get("Authorization") != "Bearer token" {
+			t.Fatalf("Authorization = %q, want caller token preserved on legacy route", r.Header.Get("Authorization"))
+		}
 		w.Header().Set("X-Upstream", "legacy")
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte("accepted"))
@@ -69,6 +72,9 @@ func TestGatewayTranslatesIdentityOnlyForSuccessorRoute(t *testing.T) {
 		if !strings.Contains(string(body), `"profile":"pi-crew-planner"`) {
 			t.Fatalf("canonical profile missing from successor body: %s", string(body))
 		}
+		if r.Header.Get("Authorization") != "Bearer upstream-token" {
+			t.Fatalf("Authorization = %q, want upstream token", r.Header.Get("Authorization"))
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer upstream.Close()
@@ -78,6 +84,7 @@ func TestGatewayTranslatesIdentityOnlyForSuccessorRoute(t *testing.T) {
 		PathPattern:          "/v1/delivery",
 		LegacyUpstreamURL:    "http://127.0.0.1:1",
 		SuccessorUpstreamURL: upstream.URL,
+		SuccessorAuth:        upstreamAuthFile{BearerToken: "upstream-token"},
 		IdentityTranslation: identityTranslationFile{
 			Enabled: true,
 			Targets: []identityTargetFile{{
@@ -121,6 +128,7 @@ func TestGatewayDoesNotTranslateLegacyPassThroughRoute(t *testing.T) {
 		PathPattern:          "/v1/delivery",
 		LegacyUpstreamURL:    upstream.URL,
 		SuccessorUpstreamURL: "http://127.0.0.1:1",
+		SuccessorAuth:        testSuccessorAuth(),
 		IdentityTranslation: identityTranslationFile{
 			Enabled: true,
 			Targets: []identityTargetFile{{
@@ -151,6 +159,7 @@ func TestGatewayRejectsUnknownIdentityOnSuccessorRoute(t *testing.T) {
 		PathPattern:          "/v1/delivery",
 		LegacyUpstreamURL:    "http://127.0.0.1:1",
 		SuccessorUpstreamURL: "http://127.0.0.1:2",
+		SuccessorAuth:        testSuccessorAuth(),
 		IdentityTranslation: identityTranslationFile{
 			Enabled: true,
 			Targets: []identityTargetFile{{

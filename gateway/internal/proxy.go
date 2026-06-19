@@ -46,7 +46,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(request *httputil.ProxyRequest) {
-			rewriteProxyRequest(request, match.Target)
+			rewriteProxyRequest(request, match.Target, match.Auth)
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			h.logger.Error("gateway proxy failed", "method", r.Method, "path", r.URL.Path, "error", err)
@@ -60,13 +60,14 @@ func preferSuccessor(r *http.Request) bool {
 	return strings.EqualFold(strings.TrimSpace(r.Header.Get(migratedFunctionsHeader)), "true")
 }
 
-func rewriteProxyRequest(request *httputil.ProxyRequest, target *url.URL) {
+func rewriteProxyRequest(request *httputil.ProxyRequest, target *url.URL, auth UpstreamAuth) {
 	request.Out.URL.Scheme = target.Scheme
 	request.Out.URL.Host = target.Host
 	request.Out.URL.Path = joinPaths(target.Path, request.In.URL.Path)
 	request.Out.URL.RawPath = ""
 	request.Out.URL.RawQuery = request.In.URL.RawQuery
 	request.Out.Host = target.Host
+	auth.Apply(request.Out.Header)
 }
 
 func translatedRequest(r *http.Request, translation IdentityTranslation) (*http.Request, error) {
