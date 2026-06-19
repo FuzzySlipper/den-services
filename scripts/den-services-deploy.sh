@@ -133,7 +133,7 @@ eval "$(load_service_metadata)"
 unit="${systemd_unit}"
 service_root="/data/services/${service}"
 
-run_root() {
+run_systemctl() {
   if [[ "${EUID}" -eq 0 ]]; then
     "$@"
   else
@@ -161,10 +161,10 @@ json_field() {
 }
 
 rollback() {
-  if run_root test -x "${service_root}/bin/${binary_name}.previous"; then
+  if [[ -x "${service_root}/bin/${binary_name}.previous" ]]; then
     echo "Smoke failed; rolling back ${unit}" >&2
-    run_root install -m 0755 "${service_root}/bin/${binary_name}.previous" "${service_root}/bin/${binary_name}"
-    run_root systemctl restart "${unit}"
+    install -m 0755 "${service_root}/bin/${binary_name}.previous" "${service_root}/bin/${binary_name}"
+    run_systemctl /bin/systemctl restart "${unit}"
   fi
 }
 
@@ -211,7 +211,16 @@ cat > "${stage_dir}/build-info.json" <<INFO
 INFO
 
 echo "Installing ${service} ${commit}"
-run_root install -d -m 0755 \
+if [[ ! -d "${service_root}" ]]; then
+  echo "${service_root} does not exist; create it owned by agent:agents before deploying ${service}" >&2
+  exit 1
+fi
+if [[ ! -w "${service_root}" ]]; then
+  echo "${service_root} is not writable by $(id -un); fix ownership before deploying ${service}" >&2
+  exit 1
+fi
+
+install -d -m 0755 \
   "${service_root}/bin" \
   "${service_root}/releases" \
   "${service_root}/config" \
@@ -221,28 +230,28 @@ run_root install -d -m 0755 \
   "${service_root}/backups"
 
 release_dir="${service_root}/releases/${built_at//[:-]/}"
-run_root install -d -m 0755 "${release_dir}"
-run_root install -m 0755 "${stage_dir}/bin/${binary_name}" "${release_dir}/${binary_name}"
-run_root install -m 0644 "${stage_dir}/build-info.json" "${release_dir}/build-info.json"
+install -d -m 0755 "${release_dir}"
+install -m 0755 "${stage_dir}/bin/${binary_name}" "${release_dir}/${binary_name}"
+install -m 0644 "${stage_dir}/build-info.json" "${release_dir}/build-info.json"
 
-if run_root test -x "${service_root}/bin/${binary_name}"; then
-  run_root install -m 0755 "${service_root}/bin/${binary_name}" "${service_root}/bin/${binary_name}.previous"
+if [[ -x "${service_root}/bin/${binary_name}" ]]; then
+  install -m 0755 "${service_root}/bin/${binary_name}" "${service_root}/bin/${binary_name}.previous"
 fi
-run_root install -m 0755 "${stage_dir}/bin/${binary_name}" "${service_root}/bin/${binary_name}"
+install -m 0755 "${stage_dir}/bin/${binary_name}" "${service_root}/bin/${binary_name}"
 
-if [[ -f "${config_example}" ]] && ! run_root test -f "${service_root}/config/config.yaml"; then
-  run_root install -m 0644 "${config_example}" "${service_root}/config/config.yaml"
+if [[ -f "${config_example}" && ! -f "${service_root}/config/config.yaml" ]]; then
+  install -m 0644 "${config_example}" "${service_root}/config/config.yaml"
 fi
-if [[ "${service}" == "gateway" && -f gateway/config/routes.example.yaml ]] && ! run_root test -f "${service_root}/config/routes.yaml"; then
-  run_root install -m 0644 gateway/config/routes.example.yaml "${service_root}/config/routes.yaml"
+if [[ "${service}" == "gateway" && -f gateway/config/routes.example.yaml && ! -f "${service_root}/config/routes.yaml" ]]; then
+  install -m 0644 gateway/config/routes.example.yaml "${service_root}/config/routes.yaml"
 fi
 
-if ! run_root test -f "/etc/den-services/${service}.env"; then
+if [[ ! -f "/etc/den-services/${service}.env" ]]; then
   echo "warning: /etc/den-services/${service}.env is missing; create it from ${env_example}" >&2
 fi
 
-run_root systemctl daemon-reload
-run_root systemctl restart "${unit}"
+run_systemctl /bin/systemctl daemon-reload
+run_systemctl /bin/systemctl restart "${unit}"
 
 health_response="$(retry_curl "${health_url}")" || {
   rollback
