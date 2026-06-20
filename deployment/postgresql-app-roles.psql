@@ -16,9 +16,14 @@ select format('create role den_channels_app login password %L', :'DEN_CHANNELS_A
 where not exists (select 1 from pg_roles where rolname = 'den_channels_app')
 \gexec
 
+select format('create role den_timeline_app login password %L', :'DEN_TIMELINE_APP_PASSWORD')
+where not exists (select 1 from pg_roles where rolname = 'den_timeline_app')
+\gexec
+
 alter role den_delivery_app login password :'DEN_DELIVERY_APP_PASSWORD';
 alter role den_runtime_app login password :'DEN_RUNTIME_APP_PASSWORD';
 alter role den_observation_app login password :'DEN_OBSERVATION_APP_PASSWORD';
 alter role den_channels_app login password :'DEN_CHANNELS_APP_PASSWORD';
+alter role den_timeline_app login password :'DEN_TIMELINE_APP_PASSWORD';
 
 revoke create on schema public from public;

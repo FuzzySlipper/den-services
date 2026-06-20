@@ -1,0 +1,16 @@
+# Timeline module configuration.
+# Copy to /data/services/timeline/config/config.yaml for deployment.
+
+bind_addr: "127.0.0.1:8085" # Loopback HTTP listen address.
+database_url: "${DEN_TIMELINE_DATABASE_URL}" # Timeline read-only Postgres app role URL.
+
+query:
+  default_limit: 50 # Default page size for item reads.
+  max_limit: 200 # Maximum accepted page size.
+
+stream:
+  poll_interval: "2s" # How often SSE polls for new timeline items.
+  heartbeat_interval: "15s" # How often SSE emits heartbeat events.
+
+http:
+  read_header_timeout: "5s" # Maximum time to read request headers.

@@ -99,6 +99,20 @@ routes:
 #      bearer_token: "${DEN_GATEWAY_CONVERSATION_WRITE_TOKEN}"
 #    successor_auth:
 #      bearer_token: "${DEN_GATEWAY_CONVERSATION_UPSTREAM_TOKEN}"
+
+# Timeline read/stream route example. Timeline is read-only and may be routed
+# always-successor after the service is deployed and direct/Gateway smoke passes.
+#
+#  - name: "timeline-reads"
+#    path_pattern: "/v1/timeline"
+#    methods: ["GET"]
+#    legacy_upstream_url: "http://127.0.0.1:5080"
+#    successor_upstream_url: "http://127.0.0.1:8085"
+#    successor_mode: "always"
+#    caller_auth:
+#      bearer_token: "${DEN_GATEWAY_TIMELINE_READ_TOKEN}"
+#    successor_auth:
+#      bearer_token: "${DEN_GATEWAY_TIMELINE_UPSTREAM_TOKEN}"
 #
 #  - name: "conversation-reads-canary"
 #    path_pattern: "/v1/conversation"

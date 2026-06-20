@@ -10,4 +10,5 @@ use (
 	./observation
 	./runtime
 	./shared
+	./timeline
 )
