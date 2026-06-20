@@ -61,7 +61,7 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 		}
 	}
 	wantVersions := map[string]int{
-		"den_channels":    3,
+		"den_channels":    4,
 		"den_delivery":    2,
 		"den_observation": 2,
 		"den_runtime":     2,
@@ -69,6 +69,36 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 	for schema, want := range wantVersions {
 		if versionsBySchema[schema] != want {
 			t.Fatalf("%s current version = %d, want %d", schema, versionsBySchema[schema], want)
+		}
+	}
+}
+
+func TestConversationLegacyImportMigrationDefinesMappingTables(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("Discover(DefaultFS()) error = %v", err)
+	}
+	var legacyImport Migration
+	for _, migration := range migrations {
+		if migration.Schema == "den_channels" && migration.Version == 4 {
+			legacyImport = migration
+			break
+		}
+	}
+	if legacyImport.Path == "" {
+		t.Fatal("den_channels version 4 migration was not discovered")
+	}
+	for _, want := range []string{
+		"create table den_channels.legacy_import_channels",
+		"create table den_channels.legacy_import_messages",
+		"create table den_channels.legacy_import_memberships",
+		"create table den_channels.legacy_import_reactions",
+		"create table den_channels.legacy_import_read_cursors",
+		"m.metadata->>'legacy_source_kind' = 'wake_event'",
+		"grant select on den_channels.chat_history to den_observation_app",
+	} {
+		if !strings.Contains(legacyImport.SQL, want) {
+			t.Fatalf("legacy import SQL missing %q", want)
 		}
 	}
 }
