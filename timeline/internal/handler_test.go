@@ -103,6 +103,9 @@ func TestSSEStreamSendsOpenItemAndHeartbeat(t *testing.T) {
 			t.Fatalf("stream missing %q:\n%s", fragment, body)
 		}
 	}
+	if count := strings.Count(body, `"timeline_id":"msg:10"`); count != 1 {
+		t.Fatalf("stream emitted msg:10 %d times, want 1:\n%s", count, body)
+	}
 }
 
 func testServer(t *testing.T, store TimelineStore, now time.Time) *http.Server {

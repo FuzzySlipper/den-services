@@ -84,7 +84,9 @@ func emitTimelineItems(
 			return err
 		}
 	}
-	*currentCursor = response.NextCursor
+	if response.NextCursor != nil {
+		*currentCursor = response.NextCursor
+	}
 	return nil
 }
 
