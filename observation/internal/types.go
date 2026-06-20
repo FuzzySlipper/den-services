@@ -2,6 +2,7 @@ package observation
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"den-services/shared/identity"
@@ -46,7 +47,7 @@ func NewActivityEvent(
 ) (*ActivityEvent, error) {
 	event := &ActivityEvent{
 		sourceDomain:      sourceDomain,
-		eventType:         eventType,
+		eventType:         strings.TrimSpace(eventType),
 		agentIdentity:     agentIdentity,
 		runtimeInstanceID: runtimeInstanceID,
 		payload:           normalizePayload(payload),
@@ -72,7 +73,7 @@ func rehydrateActivityEvent(
 	event := &ActivityEvent{
 		eventID:           eventID,
 		sourceDomain:      sourceDomain,
-		eventType:         eventType,
+		eventType:         strings.TrimSpace(eventType),
 		agentIdentity:     agentIdentity,
 		runtimeInstanceID: runtimeInstanceID,
 		payload:           normalizePayload(payload),
@@ -86,7 +87,7 @@ func rehydrateActivityEvent(
 }
 
 func (e *ActivityEvent) IsValid() bool {
-	if !e.sourceDomain.IsValid() || e.eventType == "" || e.createdAt.IsZero() {
+	if !e.sourceDomain.IsValid() || strings.TrimSpace(e.eventType) == "" || e.createdAt.IsZero() {
 		return false
 	}
 	if e.agentIdentity != nil && !e.agentIdentity.IsValid() {
@@ -174,4 +175,5 @@ type AgentOverview struct {
 	AgentID          string
 	RuntimeInstances []RuntimeProjection
 	ActiveWork       []ActiveWorkItem
+	ActivityEvents   []LaneEvent
 }

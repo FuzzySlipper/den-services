@@ -19,6 +19,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/observation/agents/{id}/overview", h.agentOverview)
 	mux.HandleFunc("GET /v1/observation/active-work", h.activeWork)
 	mux.HandleFunc("POST /v1/observation/lifecycle-events", h.createLifecycleEvent)
+	mux.HandleFunc("POST /v1/observation/activity-events", h.createLifecycleEvent)
 }
 
 func (h *Handler) lane(w http.ResponseWriter, r *http.Request) {

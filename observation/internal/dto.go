@@ -3,6 +3,8 @@ package observation
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"den-services/shared/identity"
@@ -20,7 +22,7 @@ func (r CreateLifecycleEventRequest) Validate() error {
 	if !r.SourceDomain.IsValid() {
 		return ErrInvalidSourceDomain
 	}
-	if r.EventType == "" {
+	if strings.TrimSpace(r.EventType) == "" {
 		return ErrInvalidActivityEvent
 	}
 	if r.AgentIdentity != nil && !r.AgentIdentity.IsValid() {
@@ -32,7 +34,236 @@ func (r CreateLifecycleEventRequest) Validate() error {
 	if len(r.Payload) > 0 && !json.Valid(r.Payload) {
 		return ErrInvalidActivityEvent
 	}
+	if err := validateAgentActivityPayload(r.EventType, r.Payload); err != nil {
+		return err
+	}
 	return nil
+}
+
+type agentActivityPayload struct {
+	Kind          string                  `json:"kind"`
+	SchemaVersion *int                    `json:"schema_version"`
+	Summary       string                  `json:"summary"`
+	Severity      AgentActivitySeverity   `json:"severity"`
+	Visibility    AgentActivityVisibility `json:"visibility"`
+	Adapter       AgentActivityAdapter    `json:"adapter"`
+	Surface       AgentActivitySurface    `json:"surface"`
+	WorkRef       *AgentActivityWorkRef   `json:"work_ref,omitempty"`
+	SessionKey    string                  `json:"session_key,omitempty"`
+	ToolName      string                  `json:"tool_name,omitempty"`
+	Model         string                  `json:"model,omitempty"`
+	ReasonCode    string                  `json:"reason_code,omitempty"`
+	ResultRef     *AgentActivityResultRef `json:"result_ref,omitempty"`
+}
+
+type AgentActivitySeverity string
+
+const (
+	AgentActivitySeverityInfo    AgentActivitySeverity = "info"
+	AgentActivitySeveritySuccess AgentActivitySeverity = "success"
+	AgentActivitySeverityWarning AgentActivitySeverity = "warning"
+	AgentActivitySeverityError   AgentActivitySeverity = "error"
+)
+
+func (s AgentActivitySeverity) IsValid() bool {
+	switch s {
+	case AgentActivitySeverityInfo, AgentActivitySeveritySuccess, AgentActivitySeverityWarning, AgentActivitySeverityError:
+		return true
+	}
+	return false
+}
+
+type AgentActivityVisibility string
+
+const (
+	AgentActivityVisibilityChannel AgentActivityVisibility = "channel"
+	AgentActivityVisibilityTask    AgentActivityVisibility = "task"
+	AgentActivityVisibilityAgent   AgentActivityVisibility = "agent"
+	AgentActivityVisibilityDebug   AgentActivityVisibility = "debug"
+)
+
+func (v AgentActivityVisibility) IsValid() bool {
+	switch v {
+	case AgentActivityVisibilityChannel, AgentActivityVisibilityTask, AgentActivityVisibilityAgent, AgentActivityVisibilityDebug:
+		return true
+	}
+	return false
+}
+
+type AgentActivityAdapter string
+
+const (
+	AgentActivityAdapterHermes      AgentActivityAdapter = "hermes"
+	AgentActivityAdapterPiCrew      AgentActivityAdapter = "pi-crew"
+	AgentActivityAdapterDenServices AgentActivityAdapter = "den-services"
+	AgentActivityAdapterDenChannels AgentActivityAdapter = "den-channels"
+	AgentActivityAdapterDenWeb      AgentActivityAdapter = "den-web"
+)
+
+func (a AgentActivityAdapter) IsValid() bool {
+	switch a {
+	case AgentActivityAdapterHermes, AgentActivityAdapterPiCrew, AgentActivityAdapterDenServices, AgentActivityAdapterDenChannels, AgentActivityAdapterDenWeb:
+		return true
+	}
+	return false
+}
+
+type AgentActivitySurface string
+
+const (
+	AgentActivitySurfaceChannel     AgentActivitySurface = "channel"
+	AgentActivitySurfaceTask        AgentActivitySurface = "task"
+	AgentActivitySurfaceWorker      AgentActivitySurface = "worker"
+	AgentActivitySurfaceReview      AgentActivitySurface = "review"
+	AgentActivitySurfaceDirectDebug AgentActivitySurface = "direct-debug"
+	AgentActivitySurfaceGateway     AgentActivitySurface = "gateway"
+	AgentActivitySurfaceRuntime     AgentActivitySurface = "runtime"
+	AgentActivitySurfaceObservation AgentActivitySurface = "observation"
+)
+
+func (s AgentActivitySurface) IsValid() bool {
+	switch s {
+	case AgentActivitySurfaceChannel, AgentActivitySurfaceTask, AgentActivitySurfaceWorker, AgentActivitySurfaceReview,
+		AgentActivitySurfaceDirectDebug, AgentActivitySurfaceGateway, AgentActivitySurfaceRuntime, AgentActivitySurfaceObservation:
+		return true
+	}
+	return false
+}
+
+type AgentActivityWorkRef struct {
+	ProjectID        string `json:"project_id,omitempty"`
+	TaskID           *int64 `json:"task_id,omitempty"`
+	AssignmentID     string `json:"assignment_id,omitempty"`
+	RunID            string `json:"run_id,omitempty"`
+	ReviewRoundID    string `json:"review_round_id,omitempty"`
+	ChannelID        *int64 `json:"channel_id,omitempty"`
+	ChannelMessageID *int64 `json:"channel_message_id,omitempty"`
+}
+
+func (r AgentActivityWorkRef) HasReference() bool {
+	return strings.TrimSpace(r.ProjectID) != "" ||
+		r.TaskID != nil ||
+		strings.TrimSpace(r.AssignmentID) != "" ||
+		strings.TrimSpace(r.RunID) != "" ||
+		strings.TrimSpace(r.ReviewRoundID) != "" ||
+		r.ChannelID != nil ||
+		r.ChannelMessageID != nil
+}
+
+type AgentActivityResultRef struct {
+	DocumentSlug string `json:"document_slug,omitempty"`
+	MessageID    *int64 `json:"message_id,omitempty"`
+	Commit       string `json:"commit,omitempty"`
+	ArtifactPath string `json:"artifact_path,omitempty"`
+}
+
+func (r AgentActivityResultRef) HasReference() bool {
+	return strings.TrimSpace(r.DocumentSlug) != "" ||
+		r.MessageID != nil ||
+		strings.TrimSpace(r.Commit) != "" ||
+		strings.TrimSpace(r.ArtifactPath) != ""
+}
+
+func validateAgentActivityPayload(eventType string, payloadJSON json.RawMessage) error {
+	if len(payloadJSON) == 0 {
+		return fmt.Errorf("%w: payload is required", ErrInvalidActivityEvent)
+	}
+	var payload agentActivityPayload
+	if err := json.Unmarshal(payloadJSON, &payload); err != nil {
+		return fmt.Errorf("%w: decoding payload: %w", ErrInvalidActivityEvent, err)
+	}
+	if payload.Kind != "agent_activity.v1" {
+		return fmt.Errorf("%w: payload.kind must be agent_activity.v1", ErrInvalidActivityEvent)
+	}
+	if payload.SchemaVersion == nil || *payload.SchemaVersion != 1 {
+		return fmt.Errorf("%w: payload.schema_version must be 1", ErrInvalidActivityEvent)
+	}
+	if strings.TrimSpace(payload.Summary) == "" {
+		return fmt.Errorf("%w: payload.summary is required", ErrInvalidActivityEvent)
+	}
+	if len(payload.Summary) > 240 {
+		return fmt.Errorf("%w: payload.summary must be 240 characters or fewer", ErrInvalidActivityEvent)
+	}
+	if !payload.Severity.IsValid() {
+		return fmt.Errorf("%w: payload.severity is invalid", ErrInvalidActivityEvent)
+	}
+	if !payload.Visibility.IsValid() {
+		return fmt.Errorf("%w: payload.visibility is invalid", ErrInvalidActivityEvent)
+	}
+	if !payload.Adapter.IsValid() {
+		return fmt.Errorf("%w: payload.adapter is invalid", ErrInvalidActivityEvent)
+	}
+	if !payload.Surface.IsValid() {
+		return fmt.Errorf("%w: payload.surface is invalid", ErrInvalidActivityEvent)
+	}
+	return validateAgentActivityEventSpecificFields(eventType, payload)
+}
+
+func validateAgentActivityEventSpecificFields(eventType string, payload agentActivityPayload) error {
+	switch eventType {
+	case "agent_session_started", "agent_session_resumed":
+		return requirePayloadFields(payload, requiredPayloadFieldSessionKey)
+	case "agent_session_idle", "agent_session_stopped":
+		return requirePayloadFields(payload, requiredPayloadFieldSessionKey)
+	case "agent_session_blocked", "agent_session_failed":
+		return requirePayloadFields(payload, requiredPayloadFieldSessionKey, requiredPayloadFieldReasonCode)
+	case "work_started", "work_checkpoint":
+		return requirePayloadFields(payload, requiredPayloadFieldWorkRef)
+	case "work_waiting", "work_failed":
+		return requirePayloadFields(payload, requiredPayloadFieldWorkRef, requiredPayloadFieldReasonCode)
+	case "work_completed":
+		return requirePayloadFields(payload, requiredPayloadFieldWorkRef, requiredPayloadFieldResultRef)
+	case "model_turn_started", "model_turn_completed":
+		return requirePayloadFields(payload, requiredPayloadFieldSessionKey)
+	case "tool_call_started":
+		return requirePayloadFields(payload, requiredPayloadFieldToolName)
+	case "tool_call_completed":
+		return requirePayloadFields(payload, requiredPayloadFieldToolName, requiredPayloadFieldResultRef)
+	case "tool_call_failed":
+		return requirePayloadFields(payload, requiredPayloadFieldToolName, requiredPayloadFieldReasonCode)
+	case "adapter_connected", "adapter_recovered":
+		return nil
+	case "adapter_disconnected", "adapter_degraded":
+		return requirePayloadFields(payload, requiredPayloadFieldReasonCode)
+	default:
+		return nil
+	}
+}
+
+type requiredPayloadField string
+
+const (
+	requiredPayloadFieldSessionKey requiredPayloadField = "session_key"
+	requiredPayloadFieldWorkRef    requiredPayloadField = "work_ref"
+	requiredPayloadFieldToolName   requiredPayloadField = "tool_name"
+	requiredPayloadFieldReasonCode requiredPayloadField = "reason_code"
+	requiredPayloadFieldResultRef  requiredPayloadField = "result_ref"
+)
+
+func requirePayloadFields(payload agentActivityPayload, fields ...requiredPayloadField) error {
+	for _, field := range fields {
+		if payloadFieldMissing(payload, field) {
+			return fmt.Errorf("%w: payload.%s is required for %s", ErrInvalidActivityEvent, field, payload.Kind)
+		}
+	}
+	return nil
+}
+
+func payloadFieldMissing(payload agentActivityPayload, field requiredPayloadField) bool {
+	switch field {
+	case requiredPayloadFieldSessionKey:
+		return strings.TrimSpace(payload.SessionKey) == ""
+	case requiredPayloadFieldWorkRef:
+		return payload.WorkRef == nil || !payload.WorkRef.HasReference()
+	case requiredPayloadFieldToolName:
+		return strings.TrimSpace(payload.ToolName) == ""
+	case requiredPayloadFieldReasonCode:
+		return strings.TrimSpace(payload.ReasonCode) == ""
+	case requiredPayloadFieldResultRef:
+		return payload.ResultRef == nil || !payload.ResultRef.HasReference()
+	default:
+		return true
+	}
 }
 
 type ActivityEventResponse struct {
@@ -129,6 +360,7 @@ type AgentOverviewResponse struct {
 	AgentID          string                      `json:"agent_id"`
 	RuntimeInstances []RuntimeProjectionResponse `json:"runtime_instances"`
 	ActiveWork       []ActiveWorkItemResponse    `json:"active_work"`
+	ActivityEvents   []LaneEventResponse         `json:"activity_events"`
 }
 
 type RuntimeProjectionResponse struct {
@@ -158,6 +390,7 @@ func toAgentOverviewResponse(overview AgentOverview) AgentOverviewResponse {
 		AgentID:          overview.AgentID,
 		RuntimeInstances: runtimes,
 		ActiveWork:       toActiveWorkResponse(overview.ActiveWork).Items,
+		ActivityEvents:   toLaneResponse(overview.ActivityEvents).Events,
 	}
 }
 

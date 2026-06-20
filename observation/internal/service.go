@@ -13,6 +13,7 @@ type ObservationStore interface {
 	ListDeliveryEvents(ctx context.Context, limit int) ([]LaneEvent, error)
 	ListRuntimeEvents(ctx context.Context, limit int) ([]LaneEvent, error)
 	ListChatEvents(ctx context.Context, limit int) ([]LaneEvent, error)
+	ListActivityEventsForAgent(ctx context.Context, agentID string, limit int) ([]LaneEvent, error)
 	ListActiveWork(ctx context.Context) ([]ActiveWorkItem, error)
 	ListRuntimeProjections(ctx context.Context, agentID string) ([]RuntimeProjection, error)
 	ListActiveWorkForAgent(ctx context.Context, agentID string) ([]ActiveWorkItem, error)
@@ -79,13 +80,18 @@ func (s *ObservationService) AgentOverview(ctx context.Context, agentID string) 
 	if err != nil {
 		return AgentOverview{}, err
 	}
-	if len(runtimes) == 0 && len(activeWork) == 0 {
+	activityEvents, err := s.store.ListActivityEventsForAgent(ctx, agentID, s.defaultLimit)
+	if err != nil {
+		return AgentOverview{}, err
+	}
+	if len(runtimes) == 0 && len(activeWork) == 0 && len(activityEvents) == 0 {
 		return AgentOverview{}, notFound("agent", agentID)
 	}
 	return AgentOverview{
 		AgentID:          agentID,
 		RuntimeInstances: runtimes,
 		ActiveWork:       activeWork,
+		ActivityEvents:   activityEvents,
 	}, nil
 }
 

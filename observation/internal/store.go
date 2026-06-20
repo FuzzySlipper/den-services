@@ -53,6 +53,15 @@ func (s *Store) ListActivityEvents(ctx context.Context, limit int) ([]LaneEvent,
 	return scanLaneEvents(rows)
 }
 
+func (s *Store) ListActivityEventsForAgent(ctx context.Context, agentID string, limit int) ([]LaneEvent, error) {
+	rows, err := s.pool.Query(ctx, listActivityEventsForAgentSQL, agentID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("listing observation activity events for %s: %w", agentID, err)
+	}
+	defer rows.Close()
+	return scanLaneEvents(rows)
+}
+
 func (s *Store) ListDeliveryEvents(ctx context.Context, limit int) ([]LaneEvent, error) {
 	rows, err := s.pool.Query(ctx, listDeliveryEventsSQL, limit)
 	if err != nil {
@@ -320,6 +329,22 @@ select 'observation:' || event_id::text as event_id,
 from den_observation.activity_events
 order by created_at desc
 limit $1`
+
+const listActivityEventsForAgentSQL = `
+select 'observation:' || event_id::text as event_id,
+	source_domain,
+	event_type,
+	agent_identity,
+	runtime_instance_id,
+	payload,
+	display_only,
+	created_at
+from den_observation.activity_events
+where agent_identity ->> 'profile' = $1
+	or agent_identity ->> 'instance_id' = $1
+	or runtime_instance_id = $1
+order by created_at desc
+limit $2`
 
 const listDeliveryEventsSQL = `
 select 'delivery:' || intent_id::text as event_id,
