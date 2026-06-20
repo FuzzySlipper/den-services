@@ -264,6 +264,92 @@ func TestGatewayObservationRoutesUseSeparateReadAndWriteAuth(t *testing.T) {
 	}
 }
 
+func TestGatewayConversationCanaryUsesSeparateReadWriteCallerTokens(t *testing.T) {
+	var upstreamRequests []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer conversation-upstream-token" {
+			t.Fatalf("Authorization = %q, want conversation upstream token", r.Header.Get("Authorization"))
+		}
+		upstreamRequests = append(upstreamRequests, r.Method+" "+r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+
+	legacy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer gateway-default-token" {
+			t.Fatalf("legacy Authorization = %q, want default token", r.Header.Get("Authorization"))
+		}
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer legacy.Close()
+
+	table, err := NewRouteTable([]routeFile{
+		{
+			Name:                 "conversation-writes-canary",
+			PathPattern:          "/v1/conversation",
+			Methods:              []string{http.MethodPost, http.MethodPut},
+			LegacyUpstreamURL:    legacy.URL,
+			SuccessorUpstreamURL: upstream.URL,
+			SuccessorAuth:        upstreamAuthFile{BearerToken: "conversation-upstream-token"},
+			SuccessorCallerAuth:  callerAuthFile{BearerToken: "conversation-write-token"},
+		},
+		{
+			Name:                 "conversation-reads-canary",
+			PathPattern:          "/v1/conversation",
+			Methods:              []string{http.MethodGet},
+			LegacyUpstreamURL:    legacy.URL,
+			SuccessorUpstreamURL: upstream.URL,
+			SuccessorAuth:        upstreamAuthFile{BearerToken: "conversation-upstream-token"},
+			SuccessorCallerAuth:  callerAuthFile{BearerToken: "conversation-read-token"},
+		},
+		{Name: "all", PathPattern: "/", LegacyUpstreamURL: legacy.URL},
+	})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	server := newTestGatewayServerWithRoutes(t, table, "gateway-default-token")
+
+	legacyRequest := httptest.NewRequest(http.MethodGet, "/v1/conversation/channels", nil)
+	legacyRequest.Header.Set("Authorization", "Bearer gateway-default-token")
+	legacyRecorder := httptest.NewRecorder()
+	server.ServeHTTP(legacyRecorder, legacyRequest)
+	if legacyRecorder.Code != http.StatusTeapot {
+		t.Fatalf("legacy status = %d, want %d body=%s", legacyRecorder.Code, http.StatusTeapot, legacyRecorder.Body.String())
+	}
+
+	readRequest := httptest.NewRequest(http.MethodGet, "/v1/conversation/channels", nil)
+	readRequest.Header.Set("Authorization", "Bearer conversation-read-token")
+	readRequest.Header.Set("X-Den-Migrated-Functions", "true")
+	readRecorder := httptest.NewRecorder()
+	server.ServeHTTP(readRecorder, readRequest)
+	if readRecorder.Code != http.StatusOK {
+		t.Fatalf("read status = %d, want %d body=%s", readRecorder.Code, http.StatusOK, readRecorder.Body.String())
+	}
+
+	writeRequest := httptest.NewRequest(http.MethodPost, "/v1/conversation/channels/1/messages", strings.NewReader(`{}`))
+	writeRequest.Header.Set("Authorization", "Bearer conversation-write-token")
+	writeRequest.Header.Set("X-Den-Migrated-Functions", "true")
+	writeRecorder := httptest.NewRecorder()
+	server.ServeHTTP(writeRecorder, writeRequest)
+	if writeRecorder.Code != http.StatusOK {
+		t.Fatalf("write status = %d, want %d body=%s", writeRecorder.Code, http.StatusOK, writeRecorder.Body.String())
+	}
+
+	blockedWrite := httptest.NewRequest(http.MethodPost, "/v1/conversation/channels/1/messages", strings.NewReader(`{}`))
+	blockedWrite.Header.Set("Authorization", "Bearer conversation-read-token")
+	blockedWrite.Header.Set("X-Den-Migrated-Functions", "true")
+	blockedRecorder := httptest.NewRecorder()
+	server.ServeHTTP(blockedRecorder, blockedWrite)
+	if blockedRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("blocked write status = %d, want %d body=%s", blockedRecorder.Code, http.StatusUnauthorized, blockedRecorder.Body.String())
+	}
+
+	if got := strings.Join(upstreamRequests, ","); got != "GET /v1/conversation/channels,POST /v1/conversation/channels/1/messages" {
+		t.Fatalf("upstream requests = %s", got)
+	}
+}
+
 func TestGatewayRejectsUnauthenticatedProxyRequest(t *testing.T) {
 	server := newTestGatewayServer(t, "http://127.0.0.1:1", "token")
 	request := httptest.NewRequest(http.MethodGet, "/api/messages", nil)

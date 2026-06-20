@@ -30,6 +30,8 @@ type Route struct {
 	successorMode       SuccessorMode
 	successorAuth       UpstreamAuth
 	callerAuth          CallerAuth
+	legacyCallerAuth    CallerAuth
+	successorCallerAuth CallerAuth
 	identityTranslation IdentityTranslation
 }
 
@@ -65,6 +67,8 @@ type routeFile struct {
 	SuccessorMode        string                  `yaml:"successor_mode"`
 	SuccessorAuth        upstreamAuthFile        `yaml:"successor_auth"`
 	CallerAuth           callerAuthFile          `yaml:"caller_auth"`
+	LegacyCallerAuth     callerAuthFile          `yaml:"legacy_caller_auth"`
+	SuccessorCallerAuth  callerAuthFile          `yaml:"successor_caller_auth"`
 	IdentityTranslation  identityTranslationFile `yaml:"identity_translation"`
 }
 
@@ -158,6 +162,17 @@ func newRoute(file routeFile, values sharedconfig.Values) (Route, error) {
 	if err != nil {
 		return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
 	}
+	legacyCallerAuth, err := newCallerAuth(file.LegacyCallerAuth, values)
+	if err != nil {
+		return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
+	}
+	successorCallerAuth, err := newCallerAuth(file.SuccessorCallerAuth, values)
+	if err != nil {
+		return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
+	}
+	if successorCallerAuth.Enabled() && successorURL == nil {
+		return Route{}, fmt.Errorf("route %s successor_caller_auth requires successor_upstream_url", file.Name)
+	}
 	translation, err := newIdentityTranslation(file.IdentityTranslation)
 	if err != nil {
 		return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
@@ -174,6 +189,8 @@ func newRoute(file routeFile, values sharedconfig.Values) (Route, error) {
 		successorMode:       successorMode,
 		successorAuth:       successorAuth,
 		callerAuth:          callerAuth,
+		legacyCallerAuth:    legacyCallerAuth,
+		successorCallerAuth: successorCallerAuth,
 		identityTranslation: translation,
 	}, nil
 }
@@ -267,22 +284,27 @@ func (t *RouteTable) Match(method string, path string, preferSuccessor bool) (Ro
 		if !route.matches(method, path) {
 			continue
 		}
-		callerAuth := t.authForRoute(route)
 		if route.usesSuccessor(preferSuccessor) {
 			return RouteMatch{
 				Target:              cloneURL(route.successorURL),
 				Auth:                route.successorAuth,
-				CallerAuth:          callerAuth,
+				CallerAuth:          t.authForRoute(route, true),
 				IdentityTranslation: route.identityTranslation,
 				UsesSuccessor:       true,
 			}, true
 		}
-		return RouteMatch{Target: cloneURL(route.legacyURL), CallerAuth: callerAuth}, true
+		return RouteMatch{Target: cloneURL(route.legacyURL), CallerAuth: t.authForRoute(route, false)}, true
 	}
 	return RouteMatch{}, false
 }
 
-func (t *RouteTable) authForRoute(route Route) CallerAuth {
+func (t *RouteTable) authForRoute(route Route, usesSuccessor bool) CallerAuth {
+	if usesSuccessor && route.successorCallerAuth.Enabled() {
+		return route.successorCallerAuth
+	}
+	if !usesSuccessor && route.legacyCallerAuth.Enabled() {
+		return route.legacyCallerAuth
+	}
 	if route.callerAuth.Enabled() {
 		return route.callerAuth
 	}

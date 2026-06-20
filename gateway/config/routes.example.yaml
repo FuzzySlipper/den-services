@@ -72,3 +72,30 @@ routes:
 #      bearer_token: "${DEN_GATEWAY_OBSERVATION_READ_TOKEN}"
 #    successor_auth:
 #      bearer_token: "${DEN_GATEWAY_OBSERVATION_UPSTREAM_TOKEN}"
+
+# Conversation canary route examples. These remain header-gated by default:
+# only requests with X-Den-Migrated-Functions: true are sent to the successor.
+# No-header traffic keeps using legacy fallback and the Gateway default caller
+# token. Successor reads and writes intentionally use separate caller tokens,
+# and Gateway replaces the inbound caller token with the conversation upstream
+# service token before proxying.
+#
+#  - name: "conversation-writes-canary"
+#    path_pattern: "/v1/conversation"
+#    methods: ["POST", "PUT"]
+#    legacy_upstream_url: "http://127.0.0.1:5080"
+#    successor_upstream_url: "http://127.0.0.1:8084"
+#    successor_caller_auth:
+#      bearer_token: "${DEN_GATEWAY_CONVERSATION_WRITE_TOKEN}"
+#    successor_auth:
+#      bearer_token: "${DEN_GATEWAY_CONVERSATION_UPSTREAM_TOKEN}"
+#
+#  - name: "conversation-reads-canary"
+#    path_pattern: "/v1/conversation"
+#    methods: ["GET"]
+#    legacy_upstream_url: "http://127.0.0.1:5080"
+#    successor_upstream_url: "http://127.0.0.1:8084"
+#    successor_caller_auth:
+#      bearer_token: "${DEN_GATEWAY_CONVERSATION_READ_TOKEN}"
+#    successor_auth:
+#      bearer_token: "${DEN_GATEWAY_CONVERSATION_UPSTREAM_TOKEN}"

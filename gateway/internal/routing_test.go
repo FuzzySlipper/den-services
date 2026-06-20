@@ -157,6 +157,55 @@ func TestRouteTableRejectsMissingCallerAuthExpansion(t *testing.T) {
 	}
 }
 
+func TestRouteTableUsesSuccessorCallerAuthOnlyForCanarySelection(t *testing.T) {
+	table, err := NewRouteTableWithValuesAndDefaultAuth([]routeFile{{
+		Name:                 "conversation-read-canary",
+		PathPattern:          "/v1/conversation",
+		Methods:              []string{httpMethodGet},
+		LegacyUpstreamURL:    "http://legacy",
+		SuccessorUpstreamURL: "http://conversation",
+		SuccessorAuth:        testSuccessorAuth(),
+		SuccessorCallerAuth:  callerAuthFile{BearerToken: "conversation-read-token"},
+	}}, sharedconfig.FromMap(nil), CallerAuth{bearerToken: "gateway-default-token"})
+	if err != nil {
+		t.Fatalf("NewRouteTableWithValuesAndDefaultAuth() error = %v", err)
+	}
+
+	match, ok := table.Match(httpMethodGet, "/v1/conversation/channels", false)
+	if !ok {
+		t.Fatal("legacy fallback did not match")
+	}
+	if match.UsesSuccessor {
+		t.Fatal("legacy fallback UsesSuccessor = true, want false")
+	}
+	if match.CallerAuth.bearerToken != "gateway-default-token" {
+		t.Fatalf("legacy caller token = %q, want gateway default", match.CallerAuth.bearerToken)
+	}
+
+	match, ok = table.Match(httpMethodGet, "/v1/conversation/channels", true)
+	if !ok {
+		t.Fatal("successor canary did not match")
+	}
+	if !match.UsesSuccessor {
+		t.Fatal("successor canary UsesSuccessor = false, want true")
+	}
+	if match.CallerAuth.bearerToken != "conversation-read-token" {
+		t.Fatalf("successor caller token = %q, want conversation read", match.CallerAuth.bearerToken)
+	}
+}
+
+func TestRouteTableRejectsSuccessorCallerAuthWithoutSuccessor(t *testing.T) {
+	_, err := NewRouteTable([]routeFile{{
+		Name:                "bad",
+		PathPattern:         "/v1/conversation",
+		LegacyUpstreamURL:   "http://legacy",
+		SuccessorCallerAuth: callerAuthFile{BearerToken: "conversation-read-token"},
+	}})
+	if err == nil {
+		t.Fatal("NewRouteTable() error = nil, want successor_caller_auth without successor error")
+	}
+}
+
 func testSuccessorAuth() upstreamAuthFile {
 	return upstreamAuthFile{BearerToken: "successor-token"}
 }
