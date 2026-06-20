@@ -30,7 +30,7 @@ func NewHTTPServerWithStore(cfg *Config, buildInfo health.BuildInfo, store Conve
 	if err != nil {
 		return nil, err
 	}
-	service := NewService(store, time.Now)
+	service := NewService(store, time.Now, cfg)
 	handler := NewHandler(service)
 
 	apiMux := http.NewServeMux()

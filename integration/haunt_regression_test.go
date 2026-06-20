@@ -17,12 +17,34 @@ type hauntRegressionCase struct {
 func TestHauntRegressionCoverage(t *testing.T) {
 	tests := []hauntRegressionCase{
 		{
-			name:     "conversation display never wakes",
-			deferred: true,
+			name:       "conversation display never wakes",
+			sourceFile: filepath.Join("..", "conversation", "internal", "service_test.go"),
+			testFunc:   "TestConversationDisplayNeverWakes",
 		},
 		{
-			name:     "conversation human cursors are not agent cursors",
-			deferred: true,
+			name:       "conversation human cursors are not agent cursors",
+			sourceFile: filepath.Join("..", "conversation", "internal", "service_test.go"),
+			testFunc:   "TestHumanReadCursorDoesNotCreateAgentCursor",
+		},
+		{
+			name:       "old conversation rows replay for display only",
+			sourceFile: filepath.Join("..", "conversation", "internal", "service_test.go"),
+			testFunc:   "TestConversationReplayDoesNotCreateDeliveryIntent",
+		},
+		{
+			name:       "conversation write idempotency",
+			sourceFile: filepath.Join("..", "conversation", "internal", "service_test.go"),
+			testFunc:   "TestConversationWriteIdempotency",
+		},
+		{
+			name:       "conversation has no activity-event write authority",
+			sourceFile: filepath.Join("..", "conversation", "internal", "service_test.go"),
+			testFunc:   "TestConversationNoActivityEventRegressionRoutes",
+		},
+		{
+			name:       "conversation observation view compatibility",
+			sourceFile: filepath.Join("..", "migration", "migrations_test.go"),
+			testFunc:   "TestConversationPilotMigrationDefinesViewContract",
 		},
 		{
 			name:       "observation historical rows display but never execute",
