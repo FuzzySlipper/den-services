@@ -8,10 +8,11 @@ import (
 	"os"
 	"time"
 
-	runtime "den-services/runtime/internal"
 	"den-services/shared/api"
 	"den-services/shared/health"
 	"den-services/shared/postgres"
+
+	runtime "den-services/runtime/internal"
 )
 
 var (

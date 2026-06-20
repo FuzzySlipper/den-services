@@ -10,9 +10,7 @@ import (
 	"den-services/shared/identity"
 )
 
-var (
-	ErrIdentityTranslationFailed = errors.New("identity translation failed") //nolint:gochecknoglobals
-)
+var ErrIdentityTranslationFailed = errors.New("identity translation failed") //nolint:gochecknoglobals
 
 type IdentityTranslation struct {
 	enabled  bool

@@ -7,8 +7,9 @@ import (
 	"os"
 	"time"
 
-	gateway "den-services/gateway/internal"
 	"den-services/shared/health"
+
+	gateway "den-services/gateway/internal"
 )
 
 var (

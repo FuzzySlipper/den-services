@@ -6,8 +6,9 @@ import (
 	"os"
 	"time"
 
-	observation "den-services/observation/internal"
 	"den-services/shared/health"
+
+	observation "den-services/observation/internal"
 )
 
 var (

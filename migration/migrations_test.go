@@ -2,6 +2,7 @@ package migration
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -60,7 +61,7 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 		}
 	}
 	wantVersions := map[string]int{
-		"den_channels":    2,
+		"den_channels":    3,
 		"den_delivery":    2,
 		"den_observation": 2,
 		"den_runtime":     2,
@@ -68,6 +69,36 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 	for schema, want := range wantVersions {
 		if versionsBySchema[schema] != want {
 			t.Fatalf("%s current version = %d, want %d", schema, versionsBySchema[schema], want)
+		}
+	}
+}
+
+func TestConversationPilotMigrationDefinesViewContract(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("Discover(DefaultFS()) error = %v", err)
+	}
+	var pilot Migration
+	for _, migration := range migrations {
+		if migration.Schema == "den_channels" && migration.Version == 3 {
+			pilot = migration
+			break
+		}
+	}
+	if pilot.Path == "" {
+		t.Fatal("den_channels version 3 migration was not discovered")
+	}
+	for _, want := range []string{
+		"create table den_channels.channels",
+		"create table den_channels.channel_messages",
+		"create table den_channels.channel_memberships",
+		"create table den_channels.channel_reactions",
+		"create table den_channels.channel_read_cursors",
+		"create or replace view den_channels.chat_history",
+		"grant select on den_channels.chat_history to den_observation_app",
+	} {
+		if !strings.Contains(pilot.SQL, want) {
+			t.Fatalf("pilot SQL missing %q", want)
 		}
 	}
 }

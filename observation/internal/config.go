@@ -6,8 +6,9 @@ import (
 	"os"
 	"time"
 
-	sharedconfig "den-services/shared/config"
 	"gopkg.in/yaml.v3"
+
+	sharedconfig "den-services/shared/config"
 )
 
 type Config struct {

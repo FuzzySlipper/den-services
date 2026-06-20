@@ -138,7 +138,9 @@ func (r *Runner) apply(ctx context.Context, migration Migration) (AppliedMigrati
 	if err != nil {
 		return AppliedMigration{}, fmt.Errorf("beginning migration %s: %w", migration.Path, err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	if _, err := tx.Exec(ctx, migration.SQL); err != nil {
 		return AppliedMigration{}, fmt.Errorf("applying migration %s: %w", migration.Path, err)

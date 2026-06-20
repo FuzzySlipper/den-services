@@ -85,6 +85,4 @@ func (c *MockDeliveryClient) CreatedIntents() []DeliveryIntentRequest {
 	return append([]DeliveryIntentRequest(nil), c.createdIntents...)
 }
 
-var (
-	ErrInvalidMockIntent = errors.New("invalid mock delivery intent") //nolint:gochecknoglobals
-)
+var ErrInvalidMockIntent = errors.New("invalid mock delivery intent") //nolint:gochecknoglobals

@@ -96,6 +96,4 @@ func generateNonce() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-var (
-	ErrInvalidKey = errors.New("invalid idempotency key") //nolint:gochecknoglobals
-)
+var ErrInvalidKey = errors.New("invalid idempotency key") //nolint:gochecknoglobals

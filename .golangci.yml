@@ -27,7 +27,6 @@ linters:
         - pattern: (?i)select\s+\*
           msg: SQL queries must specify explicit column lists.
 
-issues:
   exclusions:
     rules:
       - path: _test\.go
@@ -43,6 +42,8 @@ formatters:
     - gofumpt
     - goimports
   settings:
+    gofumpt:
+      module-path: den-services
     goimports:
       local-prefixes:
         - den-services

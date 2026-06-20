@@ -7,8 +7,9 @@ import (
 	"os"
 	"time"
 
-	delivery "den-services/delivery/internal"
 	"den-services/shared/postgres"
+
+	delivery "den-services/delivery/internal"
 )
 
 var (

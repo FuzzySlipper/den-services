@@ -6,8 +6,9 @@ import (
 	"os"
 	"time"
 
-	delivery "den-services/delivery/internal"
 	"den-services/shared/health"
+
+	delivery "den-services/delivery/internal"
 )
 
 var (
