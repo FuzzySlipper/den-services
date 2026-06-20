@@ -350,6 +350,94 @@ func TestGatewayConversationCanaryUsesSeparateReadWriteCallerTokens(t *testing.T
 	}
 }
 
+func TestGatewayLiveRouteFamilyMix(t *testing.T) {
+	var deliveryRequests []string
+	delivery := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer delivery-upstream-token" {
+			t.Fatalf("delivery Authorization = %q, want delivery upstream token", r.Header.Get("Authorization"))
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("ReadAll() error = %v", err)
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/delivery/intents" {
+			if strings.Contains(string(body), "member_identity") {
+				t.Fatalf("legacy identity leaked to delivery create body: %s", string(body))
+			}
+			if !strings.Contains(string(body), `"target_identity"`) {
+				t.Fatalf("delivery create body missing target_identity: %s", string(body))
+			}
+		}
+		deliveryRequests = append(deliveryRequests, r.Method+" "+r.URL.RequestURI())
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer delivery.Close()
+
+	var observationRequests []string
+	observation := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer observation-upstream-token" {
+			t.Fatalf("observation Authorization = %q, want observation upstream token", r.Header.Get("Authorization"))
+		}
+		observationRequests = append(observationRequests, r.Method+" "+r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer observation.Close()
+
+	var conversationRequests []string
+	conversation := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer conversation-upstream-token" {
+			t.Fatalf("conversation Authorization = %q, want conversation upstream token", r.Header.Get("Authorization"))
+		}
+		conversationRequests = append(conversationRequests, r.Method+" "+r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer conversation.Close()
+
+	var legacyRequests []string
+	legacy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer gateway-default-token" {
+			t.Fatalf("legacy Authorization = %q, want gateway default token", r.Header.Get("Authorization"))
+		}
+		legacyRequests = append(legacyRequests, r.Method+" "+r.URL.Path)
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer legacy.Close()
+
+	table, err := NewRouteTable(liveRouteFamilyTestRoutes(legacy.URL, delivery.URL, observation.URL, conversation.URL))
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	server := newTestGatewayServerWithRoutes(t, table, "gateway-default-token")
+
+	assertGatewayStatus(t, server, http.MethodGet, "/v1/delivery/intents?limit=1", "gateway-default-token", "", "", http.StatusTeapot)
+	assertGatewayStatus(t, server, http.MethodGet, "/v1/delivery/intents?limit=1", "gateway-default-token", "false", "", http.StatusTeapot)
+	assertGatewayStatus(t, server, http.MethodGet, "/v1/delivery/intents?limit=1", "gateway-default-token", "true", "", http.StatusOK)
+	assertGatewayStatus(t, server, http.MethodPost, "/v1/delivery/intents", "gateway-default-token", "true", `{"member_identity":"pi-crew-planner","concrete_identity":"pi-crew-planner@den-srv","idempotency_key":"wake:pi-crew-planner:test"}`, http.StatusOK)
+	assertGatewayStatus(t, server, http.MethodPost, "/v1/delivery/intents/42/claim", "gateway-default-token", "true", `{"claim_token":"claim","claimed_by":{"profile":"pi-crew-planner","instance_id":"pi-crew-planner@den-srv"}}`, http.StatusOK)
+	assertGatewayStatus(t, server, http.MethodGet, "/v1/observation/lane", "observation-read-token", "", "", http.StatusOK)
+	assertGatewayStatus(t, server, http.MethodPost, "/v1/observation/activity-events", "observation-write-token", "", `{}`, http.StatusOK)
+	assertGatewayStatus(t, server, http.MethodGet, "/v1/conversation/channels", "gateway-default-token", "", "", http.StatusTeapot)
+	assertGatewayStatus(t, server, http.MethodGet, "/v1/conversation/channels", "conversation-read-token", "true", "", http.StatusOK)
+	assertGatewayStatus(t, server, http.MethodPost, "/v1/conversation/channels/1/messages", "conversation-read-token", "true", `{}`, http.StatusUnauthorized)
+	assertGatewayStatus(t, server, http.MethodGet, "/api/messages", "gateway-default-token", "", "", http.StatusTeapot)
+
+	if got := strings.Join(deliveryRequests, ","); got != "GET /v1/delivery/intents?limit=1,POST /v1/delivery/intents,POST /v1/delivery/intents/42/claim" {
+		t.Fatalf("delivery requests = %s", got)
+	}
+	if got := strings.Join(observationRequests, ","); got != "GET /v1/observation/lane,POST /v1/observation/activity-events" {
+		t.Fatalf("observation requests = %s", got)
+	}
+	if got := strings.Join(conversationRequests, ","); got != "GET /v1/conversation/channels" {
+		t.Fatalf("conversation requests = %s", got)
+	}
+	if got := strings.Join(legacyRequests, ","); got != "GET /v1/delivery/intents,GET /v1/delivery/intents,GET /v1/conversation/channels,GET /api/messages" {
+		t.Fatalf("legacy requests = %s", got)
+	}
+}
+
 func TestGatewayRejectsUnauthenticatedProxyRequest(t *testing.T) {
 	server := newTestGatewayServer(t, "http://127.0.0.1:1", "token")
 	request := httptest.NewRequest(http.MethodGet, "/api/messages", nil)
@@ -373,6 +461,118 @@ func TestGatewayHealthAndVersionArePublic(t *testing.T) {
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("%s status = %d, want %d", path, recorder.Code, http.StatusOK)
 		}
+	}
+}
+
+func assertGatewayStatus(t *testing.T, handler http.Handler, method string, target string, token string, migrated string, body string, wantStatus int) {
+	t.Helper()
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+	request := httptest.NewRequest(method, target, reader)
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
+	if migrated != "" {
+		request.Header.Set("X-Den-Migrated-Functions", migrated)
+	}
+	if body != "" {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != wantStatus {
+		t.Fatalf("%s %s status = %d, want %d body=%s", method, target, recorder.Code, wantStatus, recorder.Body.String())
+	}
+}
+
+func liveRouteFamilyTestRoutes(legacyURL string, deliveryURL string, observationURL string, conversationURL string) []routeFile {
+	return []routeFile{
+		{
+			Name:                 "delivery-successor-canary-child-canonical",
+			PathPattern:          "/v1/delivery/intents/",
+			Methods:              []string{http.MethodGet, http.MethodPost},
+			LegacyUpstreamURL:    legacyURL,
+			SuccessorUpstreamURL: deliveryURL,
+			SuccessorAuth:        upstreamAuthFile{BearerToken: "delivery-upstream-token"},
+		},
+		{
+			Name:                 "delivery-successor-canary-list-canonical",
+			PathPattern:          "/v1/delivery/intents",
+			Methods:              []string{http.MethodGet},
+			LegacyUpstreamURL:    legacyURL,
+			SuccessorUpstreamURL: deliveryURL,
+			SuccessorAuth:        upstreamAuthFile{BearerToken: "delivery-upstream-token"},
+		},
+		{
+			Name:                 "delivery-successor-canary",
+			PathPattern:          "/v1/delivery",
+			Methods:              []string{http.MethodPost},
+			LegacyUpstreamURL:    legacyURL,
+			SuccessorUpstreamURL: deliveryURL,
+			SuccessorAuth:        upstreamAuthFile{BearerToken: "delivery-upstream-token"},
+			IdentityTranslation: identityTranslationFile{
+				Enabled: true,
+				Targets: []identityTargetFile{{
+					CanonicalField: "target_identity",
+					Required:       true,
+					ProfileFields:  []string{"member_identity", "agent_identity", "profile_identity", "profile"},
+					InstanceFields: []string{"agent_instance_id", "concrete_identity", "instance_id"},
+					SessionFields:  []string{"session_key", "hermes_session_key", "session_id"},
+				}},
+				Mappings: []identityMappingFile{{LegacyIdentity: "pi-crew-planner", Profile: "pi-crew-planner"}},
+			},
+		},
+		{
+			Name:                 "observation-activity-writes",
+			PathPattern:          "/v1/observation/activity-events",
+			Methods:              []string{http.MethodPost},
+			LegacyUpstreamURL:    legacyURL,
+			SuccessorUpstreamURL: observationURL,
+			SuccessorMode:        string(SuccessorModeAlways),
+			CallerAuth:           callerAuthFile{BearerToken: "observation-write-token"},
+			SuccessorAuth:        upstreamAuthFile{BearerToken: "observation-upstream-token"},
+		},
+		{
+			Name:                 "observation-lifecycle-writes",
+			PathPattern:          "/v1/observation/lifecycle-events",
+			Methods:              []string{http.MethodPost},
+			LegacyUpstreamURL:    legacyURL,
+			SuccessorUpstreamURL: observationURL,
+			SuccessorMode:        string(SuccessorModeAlways),
+			CallerAuth:           callerAuthFile{BearerToken: "observation-write-token"},
+			SuccessorAuth:        upstreamAuthFile{BearerToken: "observation-upstream-token"},
+		},
+		{
+			Name:                 "observation-reads",
+			PathPattern:          "/v1/observation",
+			Methods:              []string{http.MethodGet},
+			LegacyUpstreamURL:    legacyURL,
+			SuccessorUpstreamURL: observationURL,
+			SuccessorMode:        string(SuccessorModeAlways),
+			CallerAuth:           callerAuthFile{BearerToken: "observation-read-token"},
+			SuccessorAuth:        upstreamAuthFile{BearerToken: "observation-upstream-token"},
+		},
+		{
+			Name:                 "conversation-writes-canary",
+			PathPattern:          "/v1/conversation",
+			Methods:              []string{http.MethodPost, http.MethodPut},
+			LegacyUpstreamURL:    legacyURL,
+			SuccessorUpstreamURL: conversationURL,
+			SuccessorCallerAuth:  callerAuthFile{BearerToken: "conversation-write-token"},
+			SuccessorAuth:        upstreamAuthFile{BearerToken: "conversation-upstream-token"},
+		},
+		{
+			Name:                 "conversation-reads-canary",
+			PathPattern:          "/v1/conversation",
+			Methods:              []string{http.MethodGet},
+			LegacyUpstreamURL:    legacyURL,
+			SuccessorUpstreamURL: conversationURL,
+			SuccessorCallerAuth:  callerAuthFile{BearerToken: "conversation-read-token"},
+			SuccessorAuth:        upstreamAuthFile{BearerToken: "conversation-upstream-token"},
+		},
+		{Name: "legacy-den-channels-all", PathPattern: "/", LegacyUpstreamURL: legacyURL},
 	}
 }
 

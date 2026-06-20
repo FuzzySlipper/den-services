@@ -112,6 +112,9 @@ func NewRouteTableWithValuesAndDefaultAuth(files []routeFile, values sharedconfi
 		}
 		routes = append(routes, route)
 	}
+	if err := validateUniqueRouteCoverage(routes); err != nil {
+		return nil, err
+	}
 	sort.SliceStable(routes, func(i int, j int) bool {
 		if len(routes[i].pathPattern) != len(routes[j].pathPattern) {
 			return len(routes[i].pathPattern) > len(routes[j].pathPattern)
@@ -119,6 +122,34 @@ func NewRouteTableWithValuesAndDefaultAuth(files []routeFile, values sharedconfi
 		return len(routes[i].methods) > len(routes[j].methods)
 	})
 	return &RouteTable{routes: routes, defaultAuth: defaultAuth, hasDefaultAuth: defaultAuth.Enabled()}, nil
+}
+
+func validateUniqueRouteCoverage(routes []Route) error {
+	names := make(map[string]struct{}, len(routes))
+	for i, route := range routes {
+		if _, exists := names[route.name]; exists {
+			return fmt.Errorf("duplicate route name %s", route.name)
+		}
+		names[route.name] = struct{}{}
+		for _, existing := range routes[:i] {
+			if route.pathPattern == existing.pathPattern && methodsOverlap(route.methods, existing.methods) {
+				return fmt.Errorf("route %s overlaps route %s for path %s", route.name, existing.name, route.pathPattern)
+			}
+		}
+	}
+	return nil
+}
+
+func methodsOverlap(left map[string]struct{}, right map[string]struct{}) bool {
+	if len(left) == 0 || len(right) == 0 {
+		return true
+	}
+	for method := range left {
+		if _, exists := right[method]; exists {
+			return true
+		}
+	}
+	return false
 }
 
 func newRoute(file routeFile, values sharedconfig.Values) (Route, error) {

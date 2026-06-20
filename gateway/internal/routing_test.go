@@ -206,6 +206,36 @@ func TestRouteTableRejectsSuccessorCallerAuthWithoutSuccessor(t *testing.T) {
 	}
 }
 
+func TestRouteTableRejectsDuplicateRouteNames(t *testing.T) {
+	_, err := NewRouteTable([]routeFile{
+		{Name: "duplicate", PathPattern: "/v1/first", LegacyUpstreamURL: "http://legacy"},
+		{Name: "duplicate", PathPattern: "/v1/second", LegacyUpstreamURL: "http://legacy"},
+	})
+	if err == nil {
+		t.Fatal("NewRouteTable() error = nil, want duplicate route name error")
+	}
+}
+
+func TestRouteTableRejectsOverlappingExactPathAndMethod(t *testing.T) {
+	_, err := NewRouteTable([]routeFile{
+		{Name: "first", PathPattern: "/v1/observation", Methods: []string{httpMethodGet}, LegacyUpstreamURL: "http://legacy"},
+		{Name: "second", PathPattern: "/v1/observation", Methods: []string{httpMethodGet}, LegacyUpstreamURL: "http://legacy"},
+	})
+	if err == nil {
+		t.Fatal("NewRouteTable() error = nil, want overlapping method error")
+	}
+}
+
+func TestRouteTableAllowsDisjointMethodsForSamePath(t *testing.T) {
+	_, err := NewRouteTable([]routeFile{
+		{Name: "conversation-read", PathPattern: "/v1/conversation", Methods: []string{httpMethodGet}, LegacyUpstreamURL: "http://legacy"},
+		{Name: "conversation-write", PathPattern: "/v1/conversation", Methods: []string{httpMethodPost}, LegacyUpstreamURL: "http://legacy"},
+	})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v, want nil", err)
+	}
+}
+
 func testSuccessorAuth() upstreamAuthFile {
 	return upstreamAuthFile{BearerToken: "successor-token"}
 }

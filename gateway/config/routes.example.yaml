@@ -10,8 +10,25 @@ routes:
 # Phase 2 successor route example. Leave commented until the successor
 # service is deployed and ready for explicit header-based testing.
 #
-#  - name: "delivery-successor"
+#  - name: "delivery-successor-canonical-children"
+#    path_pattern: "/v1/delivery/intents/"
+#    methods: ["GET", "POST"]
+#    legacy_upstream_url: "http://127.0.0.1:5080"
+#    successor_upstream_url: "http://127.0.0.1:8080"
+#    successor_auth:
+#      bearer_token: "${DEN_GATEWAY_DELIVERY_UPSTREAM_TOKEN}"
+#
+#  - name: "delivery-successor-canonical-list"
+#    path_pattern: "/v1/delivery/intents"
+#    methods: ["GET"]
+#    legacy_upstream_url: "http://127.0.0.1:5080"
+#    successor_upstream_url: "http://127.0.0.1:8080"
+#    successor_auth:
+#      bearer_token: "${DEN_GATEWAY_DELIVERY_UPSTREAM_TOKEN}"
+#
+#  - name: "delivery-successor-create"
 #    path_pattern: "/v1/delivery"
+#    methods: ["POST"]
 #    legacy_upstream_url: "http://127.0.0.1:5080"
 #    successor_upstream_url: "http://127.0.0.1:8080"
 #    successor_auth:
@@ -29,13 +46,6 @@ routes:
 #          profile: "pi-crew-planner"
 #        - legacy_identity: "den-mcp-runner"
 #          profile: "den-mcp-runner"
-#
-#  - name: "delivery-successor-canonical-children"
-#    path_pattern: "/v1/delivery/intents/"
-#    legacy_upstream_url: "http://127.0.0.1:5080"
-#    successor_upstream_url: "http://127.0.0.1:8080"
-#    successor_auth:
-#      bearer_token: "${DEN_GATEWAY_DELIVERY_UPSTREAM_TOKEN}"
 
 # Observation route example. Read and write routes intentionally use different
 # caller tokens while Gateway forwards the same Observation upstream token.
