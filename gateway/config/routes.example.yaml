@@ -37,13 +37,38 @@ routes:
 #    successor_auth:
 #      bearer_token: "${DEN_GATEWAY_DELIVERY_UPSTREAM_TOKEN}"
 
-# Observation route example. Do not expose write routes to browser clients until
-# Gateway has an explicit read/write policy split for Den Web reads vs trusted
-# adapter writes.
+# Observation route example. Read and write routes intentionally use different
+# caller tokens while Gateway forwards the same Observation upstream token.
 #
-#  - name: "observation-successor"
-#    path_pattern: "/v1/observation"
+#  - name: "observation-activity-writes"
+#    path_pattern: "/v1/observation/activity-events"
+#    methods: ["POST"]
 #    legacy_upstream_url: "http://127.0.0.1:5080"
 #    successor_upstream_url: "http://127.0.0.1:8082"
+#    successor_mode: "always"
+#    caller_auth:
+#      bearer_token: "${DEN_GATEWAY_OBSERVATION_WRITE_TOKEN}"
+#    successor_auth:
+#      bearer_token: "${DEN_GATEWAY_OBSERVATION_UPSTREAM_TOKEN}"
+#
+#  - name: "observation-lifecycle-writes"
+#    path_pattern: "/v1/observation/lifecycle-events"
+#    methods: ["POST"]
+#    legacy_upstream_url: "http://127.0.0.1:5080"
+#    successor_upstream_url: "http://127.0.0.1:8082"
+#    successor_mode: "always"
+#    caller_auth:
+#      bearer_token: "${DEN_GATEWAY_OBSERVATION_WRITE_TOKEN}"
+#    successor_auth:
+#      bearer_token: "${DEN_GATEWAY_OBSERVATION_UPSTREAM_TOKEN}"
+#
+#  - name: "observation-reads"
+#    path_pattern: "/v1/observation"
+#    methods: ["GET"]
+#    legacy_upstream_url: "http://127.0.0.1:5080"
+#    successor_upstream_url: "http://127.0.0.1:8082"
+#    successor_mode: "always"
+#    caller_auth:
+#      bearer_token: "${DEN_GATEWAY_OBSERVATION_READ_TOKEN}"
 #    successor_auth:
 #      bearer_token: "${DEN_GATEWAY_OBSERVATION_UPSTREAM_TOKEN}"

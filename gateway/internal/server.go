@@ -4,7 +4,6 @@ import (
 	"log/slog"
 	"net/http"
 
-	"den-services/shared/api"
 	"den-services/shared/health"
 )
 
@@ -17,15 +16,13 @@ func NewHTTPServer(cfg *Config, routes *RouteTable, buildInfo health.BuildInfo, 
 	if err != nil {
 		return nil, err
 	}
-	auth, err := api.NewServiceTokenAuth(cfg.ServiceToken)
-	if err != nil {
-		return nil, err
-	}
+	routes.defaultAuth = CallerAuth{bearerToken: cfg.ServiceToken}
+	routes.hasDefaultAuth = true
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /health", healthHandler)
 	mux.Handle("GET /version", versionHandler)
-	mux.Handle("/", auth.Middleware(NewProxyHandler(routes, logger)))
+	mux.Handle("/", NewProxyHandler(routes, logger))
 
 	return &http.Server{
 		Addr:              cfg.BindAddr,

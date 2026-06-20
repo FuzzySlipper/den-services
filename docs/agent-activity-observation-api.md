@@ -142,14 +142,15 @@ Unknown future `event_type` values are accepted when the common envelope is vali
 
 Observation itself remains loopback-bound on den-srv. Browser clients should not call it directly.
 
-Expected Gateway posture:
+Gateway supports this posture with method-scoped routes:
 
 - Den Web read access: authenticated Gateway route to `GET /v1/observation/lane`, `GET /v1/observation/agents/{id}/overview`, and `GET /v1/observation/active-work`.
 - Trusted adapter writes: authenticated Gateway route to `POST /v1/observation/activity-events` and `POST /v1/observation/lifecycle-events`.
-- Read and write routes should be separable in policy. Do not expose trusted adapter writes as browser-callable routes.
-- Gateway should forward to Observation with an Observation-accepted upstream credential, not by leaking the browser or adapter inbound token.
+- Read routes use `DEN_GATEWAY_OBSERVATION_READ_TOKEN`.
+- Write routes use `DEN_GATEWAY_OBSERVATION_WRITE_TOKEN`.
+- Gateway forwards to Observation with `DEN_GATEWAY_OBSERVATION_UPSTREAM_TOKEN`, replacing inbound browser/adapter tokens before proxying.
 
-Route implementation is intentionally deferred from #2810. Track it as a Gateway/auth follow-up before Den Web or adapters depend on LAN-facing observation routes.
+Do not configure a single broad caller credential for all `/v1/observation` methods. A read token must not be able to POST activity events.
 
 ## Non-Actuation Rule
 

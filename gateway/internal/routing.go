@@ -16,21 +16,27 @@ import (
 const migratedFunctionsHeader = "X-Den-Migrated-Functions"
 
 type RouteTable struct {
-	routes []Route
+	routes         []Route
+	defaultAuth    CallerAuth
+	hasDefaultAuth bool
 }
 
 type Route struct {
 	name                string
 	pathPattern         string
+	methods             map[string]struct{}
 	legacyURL           *url.URL
 	successorURL        *url.URL
+	successorMode       SuccessorMode
 	successorAuth       UpstreamAuth
+	callerAuth          CallerAuth
 	identityTranslation IdentityTranslation
 }
 
 type RouteMatch struct {
 	Target              *url.URL
 	Auth                UpstreamAuth
+	CallerAuth          CallerAuth
 	IdentityTranslation IdentityTranslation
 	UsesSuccessor       bool
 }
@@ -39,6 +45,13 @@ type UpstreamAuth struct {
 	bearerToken string
 }
 
+type SuccessorMode string
+
+const (
+	SuccessorModeHeader SuccessorMode = "header"
+	SuccessorModeAlways SuccessorMode = "always"
+)
+
 type routeConfigFile struct {
 	Routes []routeFile `yaml:"routes"`
 }
@@ -46,9 +59,12 @@ type routeConfigFile struct {
 type routeFile struct {
 	Name                 string                  `yaml:"name"`
 	PathPattern          string                  `yaml:"path_pattern"`
+	Methods              []string                `yaml:"methods"`
 	LegacyUpstreamURL    string                  `yaml:"legacy_upstream_url"`
 	SuccessorUpstreamURL string                  `yaml:"successor_upstream_url"`
+	SuccessorMode        string                  `yaml:"successor_mode"`
 	SuccessorAuth        upstreamAuthFile        `yaml:"successor_auth"`
+	CallerAuth           callerAuthFile          `yaml:"caller_auth"`
 	IdentityTranslation  identityTranslationFile `yaml:"identity_translation"`
 }
 
@@ -77,6 +93,10 @@ func NewRouteTable(files []routeFile) (*RouteTable, error) {
 }
 
 func NewRouteTableWithValues(files []routeFile, values sharedconfig.Values) (*RouteTable, error) {
+	return NewRouteTableWithValuesAndDefaultAuth(files, values, CallerAuth{})
+}
+
+func NewRouteTableWithValuesAndDefaultAuth(files []routeFile, values sharedconfig.Values, defaultAuth CallerAuth) (*RouteTable, error) {
 	if len(files) == 0 {
 		return nil, errors.New("at least one route is required")
 	}
@@ -89,9 +109,12 @@ func NewRouteTableWithValues(files []routeFile, values sharedconfig.Values) (*Ro
 		routes = append(routes, route)
 	}
 	sort.SliceStable(routes, func(i int, j int) bool {
-		return len(routes[i].pathPattern) > len(routes[j].pathPattern)
+		if len(routes[i].pathPattern) != len(routes[j].pathPattern) {
+			return len(routes[i].pathPattern) > len(routes[j].pathPattern)
+		}
+		return len(routes[i].methods) > len(routes[j].methods)
 	})
-	return &RouteTable{routes: routes}, nil
+	return &RouteTable{routes: routes, defaultAuth: defaultAuth, hasDefaultAuth: defaultAuth.Enabled()}, nil
 }
 
 func newRoute(file routeFile, values sharedconfig.Values) (Route, error) {
@@ -101,6 +124,10 @@ func newRoute(file routeFile, values sharedconfig.Values) (Route, error) {
 	pattern := strings.TrimSpace(file.PathPattern)
 	if !strings.HasPrefix(pattern, "/") {
 		return Route{}, fmt.Errorf("route %s path_pattern must start with /", file.Name)
+	}
+	methods, err := parseMethods(file.Name, file.Methods)
+	if err != nil {
+		return Route{}, err
 	}
 	legacyURL, err := parseUpstreamURL("legacy_upstream_url", file.LegacyUpstreamURL)
 	if err != nil {
@@ -113,6 +140,10 @@ func newRoute(file routeFile, values sharedconfig.Values) (Route, error) {
 			return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
 		}
 	}
+	successorMode, err := parseSuccessorMode(file.Name, file.SuccessorMode, successorURL != nil)
+	if err != nil {
+		return Route{}, err
+	}
 	successorAuth, err := newUpstreamAuth(file.SuccessorAuth, values)
 	if err != nil {
 		return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
@@ -122,6 +153,10 @@ func newRoute(file routeFile, values sharedconfig.Values) (Route, error) {
 	}
 	if successorURL == nil && successorAuth.Enabled() {
 		return Route{}, fmt.Errorf("route %s successor_auth requires successor_upstream_url", file.Name)
+	}
+	callerAuth, err := newCallerAuth(file.CallerAuth, values)
+	if err != nil {
+		return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
 	}
 	translation, err := newIdentityTranslation(file.IdentityTranslation)
 	if err != nil {
@@ -133,9 +168,12 @@ func newRoute(file routeFile, values sharedconfig.Values) (Route, error) {
 	return Route{
 		name:                file.Name,
 		pathPattern:         pattern,
+		methods:             methods,
 		legacyURL:           legacyURL,
 		successorURL:        successorURL,
+		successorMode:       successorMode,
 		successorAuth:       successorAuth,
+		callerAuth:          callerAuth,
 		identityTranslation: translation,
 	}, nil
 }
@@ -188,29 +226,89 @@ func parseUpstreamURL(name string, raw string) (*url.URL, error) {
 	return parsed, nil
 }
 
-func (t *RouteTable) Match(path string, preferSuccessor bool) (RouteMatch, bool) {
+func parseMethods(routeName string, rawMethods []string) (map[string]struct{}, error) {
+	if len(rawMethods) == 0 {
+		return nil, nil
+	}
+	methods := make(map[string]struct{}, len(rawMethods))
+	for _, raw := range rawMethods {
+		method := strings.ToUpper(strings.TrimSpace(raw))
+		if method == "" {
+			return nil, fmt.Errorf("route %s methods must not contain empty values", routeName)
+		}
+		if _, exists := methods[method]; exists {
+			return nil, fmt.Errorf("route %s duplicate method %s", routeName, method)
+		}
+		methods[method] = struct{}{}
+	}
+	return methods, nil
+}
+
+func parseSuccessorMode(routeName string, raw string, hasSuccessor bool) (SuccessorMode, error) {
+	mode := SuccessorMode(strings.ToLower(strings.TrimSpace(raw)))
+	if mode == "" {
+		mode = SuccessorModeHeader
+	}
+	switch mode {
+	case SuccessorModeHeader:
+		return mode, nil
+	case SuccessorModeAlways:
+		if !hasSuccessor {
+			return "", fmt.Errorf("route %s successor_mode always requires successor_upstream_url", routeName)
+		}
+		return mode, nil
+	default:
+		return "", fmt.Errorf("route %s successor_mode must be header or always", routeName)
+	}
+}
+
+func (t *RouteTable) Match(method string, path string, preferSuccessor bool) (RouteMatch, bool) {
 	for _, route := range t.routes {
-		if !route.matches(path) {
+		if !route.matches(method, path) {
 			continue
 		}
-		if preferSuccessor && route.successorURL != nil {
+		callerAuth := t.authForRoute(route)
+		if route.usesSuccessor(preferSuccessor) {
 			return RouteMatch{
 				Target:              cloneURL(route.successorURL),
 				Auth:                route.successorAuth,
+				CallerAuth:          callerAuth,
 				IdentityTranslation: route.identityTranslation,
 				UsesSuccessor:       true,
 			}, true
 		}
-		return RouteMatch{Target: cloneURL(route.legacyURL)}, true
+		return RouteMatch{Target: cloneURL(route.legacyURL), CallerAuth: callerAuth}, true
 	}
 	return RouteMatch{}, false
 }
 
-func (r Route) matches(path string) bool {
+func (t *RouteTable) authForRoute(route Route) CallerAuth {
+	if route.callerAuth.Enabled() {
+		return route.callerAuth
+	}
+	if t.hasDefaultAuth {
+		return t.defaultAuth
+	}
+	return CallerAuth{}
+}
+
+func (r Route) matches(method string, path string) bool {
+	if len(r.methods) > 0 {
+		if _, ok := r.methods[strings.ToUpper(strings.TrimSpace(method))]; !ok {
+			return false
+		}
+	}
 	if r.pathPattern == "/" {
 		return true
 	}
 	return path == r.pathPattern || strings.HasPrefix(path, strings.TrimRight(r.pathPattern, "/")+"/")
+}
+
+func (r Route) usesSuccessor(preferSuccessor bool) bool {
+	if r.successorURL == nil {
+		return false
+	}
+	return r.successorMode == SuccessorModeAlways || preferSuccessor
 }
 
 func cloneURL(value *url.URL) *url.URL {

@@ -1,6 +1,10 @@
 package gateway
 
-import "testing"
+import (
+	"testing"
+
+	sharedconfig "den-services/shared/config"
+)
 
 func TestRouteTableMatchesLongestPrefix(t *testing.T) {
 	table, err := NewRouteTable([]routeFile{
@@ -11,7 +15,7 @@ func TestRouteTableMatchesLongestPrefix(t *testing.T) {
 		t.Fatalf("NewRouteTable() error = %v", err)
 	}
 
-	match, ok := table.Match("/api/channels", false)
+	match, ok := table.Match("GET", "/api/channels", false)
 	if !ok {
 		t.Fatal("Match() ok = false")
 	}
@@ -35,7 +39,7 @@ func TestRouteTableUsesSuccessorOnlyWhenHeaderCanSelectConfiguredRoute(t *testin
 		t.Fatalf("NewRouteTable() error = %v", err)
 	}
 
-	match, ok := table.Match("/v1/delivery/intents", true)
+	match, ok := table.Match("POST", "/v1/delivery/intents", true)
 	if !ok {
 		t.Fatal("Match() ok = false")
 	}
@@ -46,7 +50,7 @@ func TestRouteTableUsesSuccessorOnlyWhenHeaderCanSelectConfiguredRoute(t *testin
 		t.Fatalf("successor target = %s, want http://successor", match.Target.String())
 	}
 
-	match, ok = table.Match("/api/legacy", true)
+	match, ok = table.Match("GET", "/api/legacy", true)
 	if !ok {
 		t.Fatal("Match() ok = false")
 	}
@@ -77,6 +81,87 @@ func TestRouteTableRejectsSuccessorWithoutAuth(t *testing.T) {
 	}
 }
 
+func TestRouteTableMatchesConfiguredMethods(t *testing.T) {
+	table, err := NewRouteTable([]routeFile{
+		{Name: "observation-read", PathPattern: "/v1/observation", Methods: []string{"GET"}, LegacyUpstreamURL: "http://legacy"},
+		{Name: "observation-write", PathPattern: "/v1/observation/activity-events", Methods: []string{"POST"}, LegacyUpstreamURL: "http://legacy"},
+		{Name: "all", PathPattern: "/", LegacyUpstreamURL: "http://all"},
+	})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+
+	match, ok := table.Match(httpMethodGet, "/v1/observation/lane", false)
+	if !ok {
+		t.Fatal("GET observation route did not match")
+	}
+	if match.Target.String() != "http://legacy" {
+		t.Fatalf("GET target = %s, want observation route", match.Target.String())
+	}
+
+	match, ok = table.Match(httpMethodPost, "/v1/observation/activity-events", false)
+	if !ok {
+		t.Fatal("POST observation route did not match")
+	}
+	if match.Target.String() != "http://legacy" {
+		t.Fatalf("POST target = %s, want observation write route", match.Target.String())
+	}
+
+	match, ok = table.Match(httpMethodPost, "/v1/observation/lane", false)
+	if !ok {
+		t.Fatal("POST unmatched observation route should fall through")
+	}
+	if match.Target.String() != "http://all" {
+		t.Fatalf("fallback target = %s, want http://all", match.Target.String())
+	}
+}
+
+func TestRouteTableUsesAlwaysSuccessorWithoutMigrationHeader(t *testing.T) {
+	table, err := NewRouteTable([]routeFile{
+		{
+			Name:                 "observation-read",
+			PathPattern:          "/v1/observation",
+			Methods:              []string{"GET"},
+			LegacyUpstreamURL:    "http://legacy",
+			SuccessorUpstreamURL: "http://observation",
+			SuccessorMode:        "always",
+			SuccessorAuth:        testSuccessorAuth(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+
+	match, ok := table.Match(httpMethodGet, "/v1/observation/lane", false)
+	if !ok {
+		t.Fatal("Match() ok = false")
+	}
+	if !match.UsesSuccessor {
+		t.Fatal("UsesSuccessor = false, want true")
+	}
+	if match.Target.String() != "http://observation" {
+		t.Fatalf("target = %s, want http://observation", match.Target.String())
+	}
+}
+
+func TestRouteTableRejectsMissingCallerAuthExpansion(t *testing.T) {
+	_, err := NewRouteTableWithValues([]routeFile{{
+		Name:              "observation-read",
+		PathPattern:       "/v1/observation",
+		Methods:           []string{"GET"},
+		LegacyUpstreamURL: "http://legacy",
+		CallerAuth:        callerAuthFile{BearerToken: "${MISSING_OBSERVATION_READ_TOKEN}"},
+	}}, sharedconfig.FromMap(nil))
+	if err == nil {
+		t.Fatal("NewRouteTableWithValues() error = nil, want missing caller auth env error")
+	}
+}
+
 func testSuccessorAuth() upstreamAuthFile {
 	return upstreamAuthFile{BearerToken: "successor-token"}
 }
+
+const (
+	httpMethodGet  = "GET"
+	httpMethodPost = "POST"
+)

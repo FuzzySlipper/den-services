@@ -185,6 +185,85 @@ func TestGatewayRejectsUnknownIdentityOnSuccessorRoute(t *testing.T) {
 	}
 }
 
+func TestGatewayObservationRoutesUseSeparateReadAndWriteAuth(t *testing.T) {
+	var upstreamRequests []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer observation-upstream-token" {
+			t.Fatalf("Authorization = %q, want observation upstream token", r.Header.Get("Authorization"))
+		}
+		upstreamRequests = append(upstreamRequests, r.Method+" "+r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+
+	table, err := NewRouteTable([]routeFile{
+		{
+			Name:                 "observation-write-activity",
+			PathPattern:          "/v1/observation/activity-events",
+			Methods:              []string{http.MethodPost},
+			LegacyUpstreamURL:    "http://127.0.0.1:1",
+			SuccessorUpstreamURL: upstream.URL,
+			SuccessorMode:        string(SuccessorModeAlways),
+			SuccessorAuth:        upstreamAuthFile{BearerToken: "observation-upstream-token"},
+			CallerAuth:           callerAuthFile{BearerToken: "observation-write-token"},
+		},
+		{
+			Name:                 "observation-write-lifecycle",
+			PathPattern:          "/v1/observation/lifecycle-events",
+			Methods:              []string{http.MethodPost},
+			LegacyUpstreamURL:    "http://127.0.0.1:1",
+			SuccessorUpstreamURL: upstream.URL,
+			SuccessorMode:        string(SuccessorModeAlways),
+			SuccessorAuth:        upstreamAuthFile{BearerToken: "observation-upstream-token"},
+			CallerAuth:           callerAuthFile{BearerToken: "observation-write-token"},
+		},
+		{
+			Name:                 "observation-read",
+			PathPattern:          "/v1/observation",
+			Methods:              []string{http.MethodGet},
+			LegacyUpstreamURL:    "http://127.0.0.1:1",
+			SuccessorUpstreamURL: upstream.URL,
+			SuccessorMode:        string(SuccessorModeAlways),
+			SuccessorAuth:        upstreamAuthFile{BearerToken: "observation-upstream-token"},
+			CallerAuth:           callerAuthFile{BearerToken: "observation-read-token"},
+		},
+		{Name: "all", PathPattern: "/", LegacyUpstreamURL: "http://127.0.0.1:1"},
+	})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	server := newTestGatewayServerWithRoutes(t, table, "gateway-default-token")
+
+	readRequest := httptest.NewRequest(http.MethodGet, "/v1/observation/lane", nil)
+	readRequest.Header.Set("Authorization", "Bearer observation-read-token")
+	readRecorder := httptest.NewRecorder()
+	server.ServeHTTP(readRecorder, readRequest)
+	if readRecorder.Code != http.StatusOK {
+		t.Fatalf("read status = %d, want %d body=%s", readRecorder.Code, http.StatusOK, readRecorder.Body.String())
+	}
+
+	writeRequest := httptest.NewRequest(http.MethodPost, "/v1/observation/activity-events", strings.NewReader(`{}`))
+	writeRequest.Header.Set("Authorization", "Bearer observation-write-token")
+	writeRecorder := httptest.NewRecorder()
+	server.ServeHTTP(writeRecorder, writeRequest)
+	if writeRecorder.Code != http.StatusOK {
+		t.Fatalf("write status = %d, want %d body=%s", writeRecorder.Code, http.StatusOK, writeRecorder.Body.String())
+	}
+
+	blockedRequest := httptest.NewRequest(http.MethodPost, "/v1/observation/activity-events", strings.NewReader(`{}`))
+	blockedRequest.Header.Set("Authorization", "Bearer observation-read-token")
+	blockedRecorder := httptest.NewRecorder()
+	server.ServeHTTP(blockedRecorder, blockedRequest)
+	if blockedRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("blocked status = %d, want %d body=%s", blockedRecorder.Code, http.StatusUnauthorized, blockedRecorder.Body.String())
+	}
+
+	if got := strings.Join(upstreamRequests, ","); got != "GET /v1/observation/lane,POST /v1/observation/activity-events" {
+		t.Fatalf("upstream requests = %s", got)
+	}
+}
+
 func TestGatewayRejectsUnauthenticatedProxyRequest(t *testing.T) {
 	server := newTestGatewayServer(t, "http://127.0.0.1:1", "token")
 	request := httptest.NewRequest(http.MethodGet, "/api/messages", nil)

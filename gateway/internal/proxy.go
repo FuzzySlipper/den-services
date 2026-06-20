@@ -26,9 +26,13 @@ func NewProxyHandler(routes *RouteTable, logger *slog.Logger) *ProxyHandler {
 }
 
 func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	match, ok := h.routes.Match(r.URL.Path, preferSuccessor(r))
+	match, ok := h.routes.Match(r.Method, r.URL.Path, preferSuccessor(r))
 	if !ok {
 		http.NotFound(w, r)
+		return
+	}
+	if !match.CallerAuth.Authorizes(r) {
+		api.WriteServiceError(w, api.ErrUnauthorized)
 		return
 	}
 	request := r
