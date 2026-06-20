@@ -21,11 +21,12 @@ func Run(ctx context.Context, options Options, destination Destination) (*Report
 		SourceName: sourceName,
 		DryRun:     options.DryRun,
 		Counts: ImportCounts{
-			Channels:    len(data.Channels),
-			Messages:    len(data.Messages),
-			Memberships: len(data.Memberships),
-			Reactions:   len(data.Reactions),
-			ReadCursors: len(data.ReadCursors),
+			Channels:     len(data.Channels),
+			Messages:     len(data.Messages),
+			Memberships:  len(data.Memberships),
+			Reactions:    len(data.Reactions),
+			ReadCursors:  len(data.ReadCursors),
+			ProjectLinks: len(data.ProjectLinks),
 		},
 		Exclusions: exclusions,
 	}
@@ -43,6 +44,17 @@ func Run(ctx context.Context, options Options, destination Destination) (*Report
 			return nil, fmt.Errorf("importing legacy channel %d: %w", channel.ID, err)
 		}
 		channelIDs[channel.ID] = channelID
+	}
+
+	for _, link := range data.ProjectLinks {
+		channelID, ok := channelIDs[link.ChannelID]
+		if !ok {
+			report.Exclusions.UnmappedProjectLinks++
+			continue
+		}
+		if _, err := destination.UpsertProjectLink(ctx, sourceName, link, channelID); err != nil {
+			return nil, fmt.Errorf("importing legacy project link %d: %w", link.ID, err)
+		}
 	}
 
 	messageIDs := map[int64]int64{}

@@ -30,6 +30,9 @@ func TestLoadSQLiteCountsConversationSurfacesAndFiltersNonHumanCursors(t *testin
 	if len(data.ReadCursors) != 1 {
 		t.Fatalf("read cursors = %d, want 1", len(data.ReadCursors))
 	}
+	if len(data.ProjectLinks) != 1 {
+		t.Fatalf("project links = %d, want 1", len(data.ProjectLinks))
+	}
 	if exclusions.NonHumanReadCursors != 1 {
 		t.Fatalf("non-human cursor exclusions = %d, want 1", exclusions.NonHumanReadCursors)
 	}
@@ -73,6 +76,9 @@ func TestRunImportsIdempotentlyThroughDestination(t *testing.T) {
 	}
 	if destination.cursorsCreated != 1 {
 		t.Fatalf("cursors created = %d, want 1", destination.cursorsCreated)
+	}
+	if destination.projectLinksCreated != 1 {
+		t.Fatalf("project links created = %d, want 1", destination.projectLinksCreated)
 	}
 	message := destination.messages["legacy_den_channels_sqlite/10"]
 	if message.LegacySourceKind == nil || *message.LegacySourceKind != "wake_event" {
@@ -172,6 +178,15 @@ func createLegacySQLiteFixture(t *testing.T) string {
 			last_read_channel_message_id integer,
 			last_read_at text
 		)`,
+		`create table channel_project_links (
+			id integer primary key,
+			channel_id integer not null,
+			project_id text not null,
+			relation_kind text not null,
+			is_primary integer not null,
+			created_at text,
+			settings_json text
+		)`,
 		`insert into channels values (
 			1, 'den-services', 'den-services', 'project_default', 'den-services', null,
 			'legacy', 'normal', '{"legacy":true}', '2026-06-19T01:00:00Z',
@@ -199,6 +214,9 @@ func createLegacySQLiteFixture(t *testing.T) string {
 		`insert into channel_read_cursors values (
 			41, 1, 'agent', 'spawned-coder', 'agent@host', 10, '2026-06-19T01:07:00Z'
 		)`,
+		`insert into channel_project_links values (
+			50, 1, 'den-services', 'linked', 1, '2026-06-19T01:08:00Z', '{"primary":true}'
+		)`,
 	}
 	for _, statement := range statements {
 		if _, err := db.Exec(statement); err != nil {
@@ -209,18 +227,20 @@ func createLegacySQLiteFixture(t *testing.T) string {
 }
 
 type fakeDestination struct {
-	channels           map[string]int64
-	messages           map[string]LegacyMessage
-	messageIDs         map[int64]int64
-	messageThreadRefs  map[int64]int64
-	memberships        map[string]int64
-	reactions          map[string]int64
-	cursors            map[string]bool
-	channelsCreated    int
-	messagesCreated    int
-	membershipsCreated int
-	reactionsCreated   int
-	cursorsCreated     int
+	channels            map[string]int64
+	messages            map[string]LegacyMessage
+	messageIDs          map[int64]int64
+	messageThreadRefs   map[int64]int64
+	memberships         map[string]int64
+	reactions           map[string]int64
+	cursors             map[string]bool
+	projectLinks        map[string]int64
+	channelsCreated     int
+	messagesCreated     int
+	membershipsCreated  int
+	reactionsCreated    int
+	cursorsCreated      int
+	projectLinksCreated int
 }
 
 func newFakeDestination() *fakeDestination {
@@ -232,6 +252,7 @@ func newFakeDestination() *fakeDestination {
 		memberships:       map[string]int64{},
 		reactions:         map[string]int64{},
 		cursors:           map[string]bool{},
+		projectLinks:      map[string]int64{},
 	}
 }
 
@@ -298,14 +319,26 @@ func (d *fakeDestination) UpsertReadCursor(_ context.Context, source string, cur
 	return nil
 }
 
+func (d *fakeDestination) UpsertProjectLink(_ context.Context, source string, link LegacyProjectLink, _ int64) (int64, error) {
+	key := source + "/" + stringID(link.ID)
+	if id, ok := d.projectLinks[key]; ok {
+		return id, nil
+	}
+	id := int64(len(d.projectLinks) + 500)
+	d.projectLinks[key] = id
+	d.projectLinksCreated++
+	return id, nil
+}
+
 func (d *fakeDestination) Counts(context.Context) (DestinationCounts, error) {
 	return DestinationCounts{
-		Channels:    len(d.channels),
-		Messages:    len(d.messageIDs),
-		Memberships: len(d.memberships),
-		Reactions:   len(d.reactions),
-		ReadCursors: len(d.cursors),
-		ChatHistory: len(d.messageIDs),
+		Channels:     len(d.channels),
+		Messages:     len(d.messageIDs),
+		Memberships:  len(d.memberships),
+		Reactions:    len(d.reactions),
+		ReadCursors:  len(d.cursors),
+		ProjectLinks: len(d.projectLinks),
+		ChatHistory:  len(d.messageIDs),
 	}, nil
 }
 

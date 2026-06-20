@@ -51,6 +51,10 @@ func LoadSQLite(ctx context.Context, path string, limit int) (*SourceData, Exclu
 	if err != nil {
 		return nil, ExclusionCounts{}, err
 	}
+	data.ProjectLinks, err = loadProjectLinks(ctx, db, schema, limit)
+	if err != nil {
+		return nil, ExclusionCounts{}, err
+	}
 
 	exclusions := ExclusionCounts{}
 	filtered := data.ReadCursors[:0]
@@ -453,6 +457,52 @@ func loadReadCursors(ctx context.Context, db *sql.DB, schema sqliteSchema, limit
 		return nil, fmt.Errorf("reading legacy read cursors: %w", err)
 	}
 	return cursors, nil
+}
+
+func loadProjectLinks(ctx context.Context, db *sql.DB, schema sqliteSchema, limit int) ([]LegacyProjectLink, error) {
+	if !schema.hasTable("channel_project_links") {
+		return nil, nil
+	}
+	query := "select " + strings.Join([]string{
+		column(schema, "channel_project_links", "id", "0"),
+		column(schema, "channel_project_links", "channel_id", "0"),
+		column(schema, "channel_project_links", "project_id", "''"),
+		column(schema, "channel_project_links", "relation_kind", "'linked'"),
+		column(schema, "channel_project_links", "is_primary", "0"),
+		column(schema, "channel_project_links", "settings_json", "null"),
+		column(schema, "channel_project_links", "created_at", "null"),
+	}, ", ") + " from channel_project_links order by id asc" + limitClause(limit)
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("querying legacy project links: %w", err)
+	}
+	defer rows.Close()
+
+	var links []LegacyProjectLink
+	for rows.Next() {
+		var link LegacyProjectLink
+		var isPrimary int
+		var settings, createdAt sql.NullString
+		if err := rows.Scan(
+			&link.ID,
+			&link.ChannelID,
+			&link.ProjectID,
+			&link.RelationKind,
+			&isPrimary,
+			&settings,
+			&createdAt,
+		); err != nil {
+			return nil, fmt.Errorf("scanning legacy project link: %w", err)
+		}
+		link.IsPrimary = isPrimary != 0
+		link.Settings = jsonObject(settings)
+		link.CreatedAt = parseTimeOrNow(createdAt)
+		links = append(links, link)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading legacy project links: %w", err)
+	}
+	return links, nil
 }
 
 func (s sqliteSchema) hasTable(table string) bool {

@@ -61,7 +61,7 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 		}
 	}
 	wantVersions := map[string]int{
-		"den_channels":    4,
+		"den_channels":    5,
 		"den_delivery":    2,
 		"den_observation": 2,
 		"den_runtime":     2,
@@ -69,6 +69,33 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 	for schema, want := range wantVersions {
 		if versionsBySchema[schema] != want {
 			t.Fatalf("%s current version = %d, want %d", schema, versionsBySchema[schema], want)
+		}
+	}
+}
+
+func TestConversationLegacyProjectLinkMigrationDefinesMappingTable(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("Discover(DefaultFS()) error = %v", err)
+	}
+	var legacyProjectLink Migration
+	for _, migration := range migrations {
+		if migration.Schema == "den_channels" && migration.Version == 5 {
+			legacyProjectLink = migration
+			break
+		}
+	}
+	if legacyProjectLink.Path == "" {
+		t.Fatal("den_channels version 5 migration was not discovered")
+	}
+	for _, want := range []string{
+		"create table den_channels.legacy_import_project_links",
+		"legacy_is_primary boolean not null default false",
+		"legacy_settings jsonb not null default '{}'::jsonb",
+		"grant select, insert, update on den_channels.legacy_import_project_links to den_channels_app",
+	} {
+		if !strings.Contains(legacyProjectLink.SQL, want) {
+			t.Fatalf("legacy project link SQL missing %q", want)
 		}
 	}
 }

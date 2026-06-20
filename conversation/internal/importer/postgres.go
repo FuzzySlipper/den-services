@@ -160,6 +160,26 @@ func (d *PostgresDestination) UpsertReadCursor(ctx context.Context, source strin
 	return err
 }
 
+func (d *PostgresDestination) UpsertProjectLink(ctx context.Context, source string, link LegacyProjectLink, channelID int64) (int64, error) {
+	var projectLinkID int64
+	err := d.pool.QueryRow(ctx, upsertProjectLinkSQL,
+		source,
+		link.ID,
+		link.ChannelID,
+		channelID,
+		link.ProjectID,
+		normalizeLinkKind(link.RelationKind),
+		"legacy-import",
+		link.CreatedAt,
+		link.IsPrimary,
+		link.Settings,
+	).Scan(&projectLinkID)
+	if err != nil {
+		return 0, err
+	}
+	return projectLinkID, nil
+}
+
 func (d *PostgresDestination) Counts(ctx context.Context) (DestinationCounts, error) {
 	var counts DestinationCounts
 	err := d.pool.QueryRow(ctx, destinationCountsSQL).Scan(
@@ -168,6 +188,7 @@ func (d *PostgresDestination) Counts(ctx context.Context) (DestinationCounts, er
 		&counts.Memberships,
 		&counts.Reactions,
 		&counts.ReadCursors,
+		&counts.ProjectLinks,
 		&counts.ChatHistory,
 	)
 	if err != nil {
@@ -221,6 +242,13 @@ func normalizeVisibility(value string) string {
 func normalizeMessageKind(value string) string {
 	if strings.TrimSpace(value) == "" {
 		return "system_event"
+	}
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func normalizeLinkKind(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "linked"
 	}
 	return strings.ToLower(strings.TrimSpace(value))
 }
@@ -437,6 +465,34 @@ on conflict (source, legacy_id) do update set
 	reader_identity = excluded.reader_identity,
 	imported_at = now()`
 
+const upsertProjectLinkSQL = `
+with upserted as (
+	insert into den_channels.channel_project_links (
+		channel_id, project_id, link_kind, created_by, created_at
+	) values ($4, $5, $6, $7, $8)
+	on conflict (channel_id, project_id, link_kind) do update set
+		created_by = excluded.created_by,
+		created_at = excluded.created_at,
+		deleted_at = null
+	returning id
+),
+mapped as (
+	insert into den_channels.legacy_import_project_links (
+		source, legacy_id, project_link_id, legacy_channel_id, legacy_is_primary, legacy_settings
+	)
+	select $1, $2, id, $3, $9, $10
+	from upserted
+	on conflict (source, legacy_id) do update set
+		project_link_id = excluded.project_link_id,
+		legacy_channel_id = excluded.legacy_channel_id,
+		legacy_is_primary = excluded.legacy_is_primary,
+		legacy_settings = excluded.legacy_settings,
+		imported_at = now()
+	returning project_link_id
+)
+select project_link_id
+from mapped`
+
 const destinationCountsSQL = `
 select
 	(select count(*) from den_channels.channels) as channels,
@@ -444,4 +500,5 @@ select
 	(select count(*) from den_channels.channel_memberships) as memberships,
 	(select count(*) from den_channels.channel_reactions) as reactions,
 	(select count(*) from den_channels.channel_read_cursors) as read_cursors,
+	(select count(*) from den_channels.channel_project_links) as project_links,
 	(select count(*) from den_channels.chat_history) as chat_history`

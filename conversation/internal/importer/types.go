@@ -26,34 +26,38 @@ type Report struct {
 }
 
 type ImportCounts struct {
-	Channels    int `json:"channels"`
-	Messages    int `json:"messages"`
-	Memberships int `json:"memberships"`
-	Reactions   int `json:"reactions"`
-	ReadCursors int `json:"read_cursors"`
+	Channels     int `json:"channels"`
+	Messages     int `json:"messages"`
+	Memberships  int `json:"memberships"`
+	Reactions    int `json:"reactions"`
+	ReadCursors  int `json:"read_cursors"`
+	ProjectLinks int `json:"project_links"`
 }
 
 type ExclusionCounts struct {
-	NonHumanReadCursors int `json:"non_human_read_cursors"`
-	UnmappedReactions   int `json:"unmapped_reactions"`
-	UnmappedReadCursors int `json:"unmapped_read_cursors"`
+	NonHumanReadCursors  int `json:"non_human_read_cursors"`
+	UnmappedReactions    int `json:"unmapped_reactions"`
+	UnmappedReadCursors  int `json:"unmapped_read_cursors"`
+	UnmappedProjectLinks int `json:"unmapped_project_links"`
 }
 
 type DestinationCounts struct {
-	Channels    int `json:"channels"`
-	Messages    int `json:"messages"`
-	Memberships int `json:"memberships"`
-	Reactions   int `json:"reactions"`
-	ReadCursors int `json:"read_cursors"`
-	ChatHistory int `json:"chat_history"`
+	Channels     int `json:"channels"`
+	Messages     int `json:"messages"`
+	Memberships  int `json:"memberships"`
+	Reactions    int `json:"reactions"`
+	ReadCursors  int `json:"read_cursors"`
+	ProjectLinks int `json:"project_links"`
+	ChatHistory  int `json:"chat_history"`
 }
 
 type SourceData struct {
-	Channels    []LegacyChannel
-	Messages    []LegacyMessage
-	Memberships []LegacyMembership
-	Reactions   []LegacyReaction
-	ReadCursors []LegacyReadCursor
+	Channels     []LegacyChannel
+	Messages     []LegacyMessage
+	Memberships  []LegacyMembership
+	Reactions    []LegacyReaction
+	ReadCursors  []LegacyReadCursor
+	ProjectLinks []LegacyProjectLink
 }
 
 type LegacyChannel struct {
@@ -140,6 +144,16 @@ type LegacyReadCursor struct {
 	LastReadAt        time.Time
 }
 
+type LegacyProjectLink struct {
+	ID           int64
+	ChannelID    int64
+	ProjectID    string
+	RelationKind string
+	IsPrimary    bool
+	Settings     json.RawMessage
+	CreatedAt    time.Time
+}
+
 type Destination interface {
 	UpsertChannel(ctx context.Context, source string, channel LegacyChannel) (int64, error)
 	UpsertMessage(ctx context.Context, source string, message LegacyMessage, channelID int64) (int64, error)
@@ -147,5 +161,6 @@ type Destination interface {
 	UpsertMembership(ctx context.Context, source string, membership LegacyMembership, channelID int64) (int64, error)
 	UpsertReaction(ctx context.Context, source string, reaction LegacyReaction, messageID int64, channelID int64) (int64, error)
 	UpsertReadCursor(ctx context.Context, source string, cursor LegacyReadCursor, channelID int64, messageID *int64) error
+	UpsertProjectLink(ctx context.Context, source string, link LegacyProjectLink, channelID int64) (int64, error)
 	Counts(ctx context.Context) (DestinationCounts, error)
 }
