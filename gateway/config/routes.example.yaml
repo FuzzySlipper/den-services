@@ -123,3 +123,30 @@ routes:
 #      bearer_token: "${DEN_GATEWAY_CONVERSATION_READ_TOKEN}"
 #    successor_auth:
 #      bearer_token: "${DEN_GATEWAY_CONVERSATION_UPSTREAM_TOKEN}"
+
+# Runtime heartbeat/liveness route example. Runtime remains bound to den-srv
+# loopback; non-local adapters call Gateway with the runtime caller token, and
+# Gateway replaces it with the Runtime service token before proxying upstream.
+# Do not expose DEN_RUNTIME_SERVICE_TOKEN to browser/Den Web callers.
+#
+#  - name: "runtime-instance-writes"
+#    path_pattern: "/v1/runtime/instances"
+#    methods: ["POST"]
+#    legacy_upstream_url: "http://127.0.0.1:5080"
+#    successor_upstream_url: "http://127.0.0.1:8081"
+#    successor_mode: "always"
+#    caller_auth:
+#      bearer_token: "${DEN_GATEWAY_RUNTIME_CALLER_TOKEN}"
+#    successor_auth:
+#      bearer_token: "${DEN_GATEWAY_RUNTIME_UPSTREAM_TOKEN}"
+#
+#  - name: "runtime-instance-readback"
+#    path_pattern: "/v1/runtime/instances"
+#    methods: ["GET"]
+#    legacy_upstream_url: "http://127.0.0.1:5080"
+#    successor_upstream_url: "http://127.0.0.1:8081"
+#    successor_mode: "always"
+#    caller_auth:
+#      bearer_token: "${DEN_GATEWAY_RUNTIME_CALLER_TOKEN}"
+#    successor_auth:
+#      bearer_token: "${DEN_GATEWAY_RUNTIME_UPSTREAM_TOKEN}"

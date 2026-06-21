@@ -157,6 +157,39 @@ func TestRouteTableRejectsMissingCallerAuthExpansion(t *testing.T) {
 	}
 }
 
+func TestRouteTableRuntimeRouteUsesAlwaysSuccessorAndDedicatedCallerAuth(t *testing.T) {
+	table, err := NewRouteTableWithValues([]routeFile{{
+		Name:                 "runtime-instances",
+		PathPattern:          "/v1/runtime/instances",
+		Methods:              []string{httpMethodGet, httpMethodPost},
+		LegacyUpstreamURL:    "http://legacy",
+		SuccessorUpstreamURL: "http://runtime",
+		SuccessorMode:        "always",
+		CallerAuth:           callerAuthFile{BearerToken: "${DEN_GATEWAY_RUNTIME_CALLER_TOKEN}"},
+		SuccessorAuth:        upstreamAuthFile{BearerToken: "${DEN_GATEWAY_RUNTIME_UPSTREAM_TOKEN}"},
+	}}, sharedconfig.FromMap(map[string]string{
+		"DEN_GATEWAY_RUNTIME_CALLER_TOKEN":   "runtime-caller-token",
+		"DEN_GATEWAY_RUNTIME_UPSTREAM_TOKEN": "runtime-upstream-token",
+	}))
+	if err != nil {
+		t.Fatalf("NewRouteTableWithValues() error = %v", err)
+	}
+
+	match, ok := table.Match(httpMethodPost, "/v1/runtime/instances/agent-1/heartbeat", false)
+	if !ok {
+		t.Fatal("runtime heartbeat route did not match")
+	}
+	if !match.UsesSuccessor {
+		t.Fatal("runtime route UsesSuccessor = false, want true")
+	}
+	if match.CallerAuth.bearerToken != "runtime-caller-token" {
+		t.Fatalf("caller token = %q, want runtime caller token", match.CallerAuth.bearerToken)
+	}
+	if match.Auth.bearerToken != "runtime-upstream-token" {
+		t.Fatalf("upstream token = %q, want runtime upstream token", match.Auth.bearerToken)
+	}
+}
+
 func TestRouteTableUsesSuccessorCallerAuthOnlyForCanarySelection(t *testing.T) {
 	table, err := NewRouteTableWithValuesAndDefaultAuth([]routeFile{{
 		Name:                 "conversation-read-canary",

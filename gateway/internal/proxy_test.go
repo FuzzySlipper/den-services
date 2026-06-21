@@ -350,6 +350,56 @@ func TestGatewayConversationCanaryUsesSeparateReadWriteCallerTokens(t *testing.T
 	}
 }
 
+func TestGatewayRuntimeRoutesUseSeparateCallerAndUpstreamTokens(t *testing.T) {
+	var upstreamRequests []string
+	runtimeUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer runtime-upstream-token" {
+			t.Fatalf("runtime Authorization = %q, want runtime upstream token", r.Header.Get("Authorization"))
+		}
+		upstreamRequests = append(upstreamRequests, r.Method+" "+r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer runtimeUpstream.Close()
+
+	table, err := NewRouteTable([]routeFile{
+		{
+			Name:                 "runtime-instance-writes",
+			PathPattern:          "/v1/runtime/instances",
+			Methods:              []string{http.MethodPost},
+			LegacyUpstreamURL:    "http://127.0.0.1:1",
+			SuccessorUpstreamURL: runtimeUpstream.URL,
+			SuccessorMode:        string(SuccessorModeAlways),
+			CallerAuth:           callerAuthFile{BearerToken: "runtime-caller-token"},
+			SuccessorAuth:        upstreamAuthFile{BearerToken: "runtime-upstream-token"},
+		},
+		{
+			Name:                 "runtime-instance-readback",
+			PathPattern:          "/v1/runtime/instances",
+			Methods:              []string{http.MethodGet},
+			LegacyUpstreamURL:    "http://127.0.0.1:1",
+			SuccessorUpstreamURL: runtimeUpstream.URL,
+			SuccessorMode:        string(SuccessorModeAlways),
+			CallerAuth:           callerAuthFile{BearerToken: "runtime-caller-token"},
+			SuccessorAuth:        upstreamAuthFile{BearerToken: "runtime-upstream-token"},
+		},
+		{Name: "all", PathPattern: "/", LegacyUpstreamURL: "http://127.0.0.1:1"},
+	})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	server := newTestGatewayServerWithRoutes(t, table, "gateway-default-token")
+
+	assertGatewayStatus(t, server, http.MethodPost, "/v1/runtime/instances", "runtime-caller-token", "", `{"instance_id":"goblin-overseer@den-k8plus","profile_identity":"goblin-overseer","host":"den-k8plus"}`, http.StatusOK)
+	assertGatewayStatus(t, server, http.MethodPost, "/v1/runtime/instances/goblin-overseer@den-k8plus/heartbeat", "runtime-caller-token", "", `{}`, http.StatusOK)
+	assertGatewayStatus(t, server, http.MethodGet, "/v1/runtime/instances/goblin-overseer@den-k8plus", "runtime-caller-token", "", "", http.StatusOK)
+	assertGatewayStatus(t, server, http.MethodGet, "/v1/runtime/instances", "gateway-default-token", "", "", http.StatusUnauthorized)
+
+	if got := strings.Join(upstreamRequests, ","); got != "POST /v1/runtime/instances,POST /v1/runtime/instances/goblin-overseer@den-k8plus/heartbeat,GET /v1/runtime/instances/goblin-overseer@den-k8plus" {
+		t.Fatalf("upstream requests = %s", got)
+	}
+}
+
 func TestGatewayLiveRouteFamilyMix(t *testing.T) {
 	var deliveryRequests []string
 	delivery := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
