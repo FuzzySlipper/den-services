@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Visual Contract Sample</title>
+    <style>
+      body { margin: 0; font-family: system-ui, sans-serif; }
+      .hero { display: grid; grid-template-columns: 1fr 0.8fr; gap: 64px; margin: 72px 86px; }
+      .copy { display: grid; align-content: start; gap: 32px; }
+      h1 { font-size: 48px; line-height: 1.05; margin: 0; max-width: 620px; }
+      button { width: 230px; height: 54px; font-weight: 700; }
+      .preview { height: 288px; border: 2px solid #2563eb; }
+    </style>
+  </head>
+  <body>
+    <main class="hero" data-visual-id="hero_section" data-visual-role="hero" aria-label="Hero">
+      <section class="copy">
+        <h1 data-visual-id="hero_title">Manage your city without losing your mind</h1>
+        <button data-visual-id="primary_cta" aria-label="Start planning">Start planning</button>
+      </section>
+      <aside class="preview" data-visual-id="preview_card" data-visual-role="visual_preview" aria-label="City preview"></aside>
+    </main>
+  </body>
+</html>

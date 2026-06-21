@@ -19,6 +19,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /visual-contracts/compare", h.compareContracts)
 	mux.HandleFunc("POST /visual-contracts/overlays", h.overlays)
 	mux.HandleFunc("POST /visual-contracts/from-web-evidence", h.fromWebEvidence)
+	mux.HandleFunc("POST /visual-contracts/build-authored", h.buildAuthored)
+	mux.HandleFunc("GET /visual-contracts/{run_id}", h.getRun)
+	mux.HandleFunc("GET /visual-contracts/{run_id}/artifacts/{artifact_name}", h.getArtifact)
 }
 
 func (h *Handler) validateContract(w http.ResponseWriter, r *http.Request) {
@@ -91,4 +94,38 @@ func (h *Handler) fromWebEvidence(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.WriteJSON(w, http.StatusOK, contract)
+}
+
+func (h *Handler) buildAuthored(w http.ResponseWriter, r *http.Request) {
+	var req AuthoredBuildRequest
+	if err := api.DecodeJSON(r, &req); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	response, err := h.service.BuildAuthored(r.Context(), req)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) getRun(w http.ResponseWriter, r *http.Request) {
+	run, err := h.service.GetRun(r.Context(), r.PathValue("run_id"))
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, run)
+}
+
+func (h *Handler) getArtifact(w http.ResponseWriter, r *http.Request) {
+	artifact, err := h.service.GetArtifact(r.Context(), r.PathValue("run_id"), r.PathValue("artifact_name"))
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", artifact.ContentType)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(artifact.Body)
 }

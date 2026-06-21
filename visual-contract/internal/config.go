@@ -20,6 +20,7 @@ type Config struct {
 
 type ArtifactConfig struct {
 	BaseURL string
+	Path    string
 }
 
 type HTTPConfig struct {
@@ -34,6 +35,7 @@ type configFile struct {
 
 type artifactConfigFile struct {
 	BaseURL string `yaml:"base_url"`
+	Path    string `yaml:"path"`
 }
 
 type httpConfigFile struct {
@@ -64,8 +66,11 @@ func LoadConfigFromPath(path string) (*Config, error) {
 	cfg := &Config{
 		BindAddr:     file.BindAddr,
 		ServiceToken: values.String("DEN_VISUAL_CONTRACT_SERVICE_TOKEN", ""),
-		Artifacts:    ArtifactConfig{BaseURL: file.Artifacts.BaseURL},
-		HTTP:         httpConfig,
+		Artifacts: ArtifactConfig{
+			BaseURL: file.Artifacts.BaseURL,
+			Path:    file.Artifacts.Path,
+		},
+		HTTP: httpConfig,
 	}
 	if err := cfg.validate(); err != nil {
 		return nil, err
@@ -82,6 +87,9 @@ func (c *Config) validate() error {
 	}
 	if c.Artifacts.BaseURL == "" {
 		return errors.New("artifacts.base_url is required")
+	}
+	if c.Artifacts.Path == "" {
+		return errors.New("artifacts.path is required")
 	}
 	if c.HTTP.ReadHeaderTimeout <= 0 {
 		return errors.New("http read_header_timeout must be positive")

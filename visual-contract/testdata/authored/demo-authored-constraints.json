@@ -1,0 +1,46 @@
+{
+  "vocabulary": {
+    "role_aliases": {
+      "heroTitle": "heading_1",
+      "primaryButton": "primary_action"
+    }
+  },
+  "constraints": [
+    {
+      "id": "title_exists_by_alias",
+      "type": "object_exists",
+      "role": "heroTitle",
+      "importance": "critical"
+    },
+    {
+      "id": "preview_area",
+      "type": "area_ratio",
+      "object": "preview_card",
+      "min_viewport_area_ratio": 0.08,
+      "importance": "major"
+    },
+    {
+      "id": "preview_right",
+      "type": "layout_relation",
+      "a": "preview_card",
+      "relation": "right_of",
+      "b": "hero_title",
+      "importance": "major",
+      "tolerance_norm": 0.02
+    },
+    {
+      "id": "hero_inside_viewport",
+      "type": "containment",
+      "object": "hero_section",
+      "importance": "critical"
+    },
+    {
+      "id": "left_aligned",
+      "type": "alignment",
+      "items": ["hero_title", "primary_cta"],
+      "edge": "left",
+      "importance": "major",
+      "tolerance_norm": 0.02
+    }
+  ]
+}

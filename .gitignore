@@ -22,3 +22,11 @@ config.yaml
 .golangci-cache/
 .golangci-lint-cache/
 .gocache/
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

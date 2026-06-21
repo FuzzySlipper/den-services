@@ -1,0 +1,172 @@
+{
+  "schema": "layered-visual-contract/v0.1",
+  "scene": {
+    "id": "asha_studio_candidate_fail",
+    "type": "web_ui",
+    "viewport": {
+      "width_px": 1600,
+      "height_px": 1000
+    },
+    "coordinate_mode": "normalized_with_pixel_evidence"
+  },
+  "project": {
+    "id": "asha",
+    "vocabulary": "asha_studio_v0"
+  },
+  "spaces": [
+    {
+      "id": "viewport",
+      "kind": "root",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1,
+        "h": 1
+      }
+    }
+  ],
+  "layers": [
+    {
+      "id": "base",
+      "z": 0,
+      "contains": [
+        "scene_hierarchy",
+        "central_3d_viewport",
+        "selected_target_inspector",
+        "command_timeline",
+        "runtime_deferred_label"
+      ]
+    }
+  ],
+  "objects": [
+    {
+      "id": "central_3d_viewport",
+      "kind": "canvas",
+      "role": "render_viewport",
+      "domain_role": "central_3d_viewport",
+      "parent": "viewport",
+      "layer": "base",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.30,
+        "y": 0.12,
+        "w": 0.30,
+        "h": 0.38
+      },
+      "importance": "critical",
+      "confidence": 0.86,
+      "evidence_refs": ["asha:candidate_viewport"]
+    },
+    {
+      "id": "scene_hierarchy",
+      "kind": "panel",
+      "role": "navigation",
+      "domain_role": "scene_hierarchy",
+      "parent": "viewport",
+      "layer": "base",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.04,
+        "y": 0.08,
+        "w": 0.20,
+        "h": 0.70
+      },
+      "importance": "major",
+      "confidence": 0.9,
+      "evidence_refs": ["asha:candidate_scene_hierarchy"]
+    },
+    {
+      "id": "selected_target_inspector",
+      "kind": "panel",
+      "role": "inspector",
+      "domain_role": "selected_target_inspector",
+      "parent": "viewport",
+      "layer": "base",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.66,
+        "y": 0.08,
+        "w": 0.28,
+        "h": 0.70
+      },
+      "importance": "major",
+      "confidence": 0.88,
+      "evidence_refs": ["asha:candidate_inspector"]
+    },
+    {
+      "id": "command_timeline",
+      "kind": "panel",
+      "role": "timeline",
+      "domain_role": "command_timeline",
+      "parent": "viewport",
+      "layer": "base",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.30,
+        "y": 0.54,
+        "w": 0.30,
+        "h": 0.20
+      },
+      "importance": "major",
+      "confidence": 0.82,
+      "evidence_refs": ["asha:candidate_timeline"]
+    },
+    {
+      "id": "runtime_deferred_label",
+      "kind": "text",
+      "role": "status_label",
+      "domain_role": "runtime_deferred_label",
+      "parent": "central_3d_viewport",
+      "layer": "base",
+      "text": "Runtime deferred",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.31,
+        "y": 0.13,
+        "w": 0.14,
+        "h": 0.04
+      },
+      "importance": "critical",
+      "confidence": 0.82,
+      "evidence_refs": ["asha:candidate_runtime_label"]
+    }
+  ],
+  "evidence": {
+    "source_type": "web_evidence",
+    "source_ref": "asha-candidate-fail.png",
+    "generated_by": "visual-contract-fixture",
+    "overall_confidence": 0.84,
+    "records": [
+      {
+        "id": "asha:candidate_viewport",
+        "kind": "dom_box",
+        "object_refs": ["central_3d_viewport"],
+        "confidence": 0.86
+      },
+      {
+        "id": "asha:candidate_scene_hierarchy",
+        "kind": "dom_box",
+        "object_refs": ["scene_hierarchy"],
+        "confidence": 0.9
+      },
+      {
+        "id": "asha:candidate_inspector",
+        "kind": "dom_box",
+        "object_refs": ["selected_target_inspector"],
+        "confidence": 0.88
+      },
+      {
+        "id": "asha:candidate_timeline",
+        "kind": "dom_box",
+        "object_refs": ["command_timeline"],
+        "confidence": 0.82
+      },
+      {
+        "id": "asha:candidate_runtime_label",
+        "kind": "text_region",
+        "object_refs": ["runtime_deferred_label"],
+        "confidence": 0.82
+      }
+    ]
+  }
+}

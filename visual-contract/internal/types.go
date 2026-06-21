@@ -11,6 +11,7 @@ const SchemaVersion = "layered-visual-contract/v0.1"
 var (
 	ErrInvalidContract = errors.New("invalid visual contract") //nolint:gochecknoglobals
 	ErrInvalidRequest  = errors.New("invalid request")         //nolint:gochecknoglobals
+	ErrNotFound        = errors.New("not found")               //nolint:gochecknoglobals
 )
 
 type ServiceError struct {
@@ -263,29 +264,46 @@ const (
 )
 
 type ComparisonReport struct {
-	Schema    string        `json:"schema"`
-	Score     float64       `json:"score"`
-	Verdict   Verdict       `json:"verdict"`
-	Passes    []CheckResult `json:"passes,omitempty"`
-	Failures  []CheckResult `json:"failures,omitempty"`
-	Warnings  []CheckResult `json:"warnings,omitempty"`
-	Artifacts ArtifactRefs  `json:"artifacts,omitempty"`
+	Schema    string            `json:"schema"`
+	RunID     string            `json:"run_id,omitempty"`
+	Score     float64           `json:"score"`
+	Verdict   Verdict           `json:"verdict"`
+	Passes    []CheckResult     `json:"passes,omitempty"`
+	Failures  []CheckResult     `json:"failures,omitempty"`
+	Warnings  []CheckResult     `json:"warnings,omitempty"`
+	Groups    []DiagnosticGroup `json:"groups,omitempty"`
+	Artifacts ArtifactRefs      `json:"artifacts,omitempty"`
+}
+
+type DiagnosticGroup struct {
+	Key         string     `json:"key"`
+	Severity    Importance `json:"severity"`
+	Count       int        `json:"count"`
+	Constraints []string   `json:"constraints"`
 }
 
 type CheckResult struct {
-	Status          CheckStatus       `json:"status"`
-	Severity        Importance        `json:"severity"`
-	Constraint      string            `json:"constraint"`
-	Message         string            `json:"message"`
-	Expected        string            `json:"expected,omitempty"`
-	Actual          string            `json:"actual,omitempty"`
-	MatchConfidence float64           `json:"match_confidence"`
-	MatchStrategy   string            `json:"match_strategy"`
-	Evidence        map[string]string `json:"evidence,omitempty"`
+	Status          CheckStatus        `json:"status"`
+	Severity        Importance         `json:"severity"`
+	Constraint      string             `json:"constraint"`
+	Message         string             `json:"message"`
+	Expected        string             `json:"expected,omitempty"`
+	Actual          string             `json:"actual,omitempty"`
+	MatchConfidence float64            `json:"match_confidence"`
+	MatchStrategy   string             `json:"match_strategy"`
+	Evidence        map[string]string  `json:"evidence,omitempty"`
+	InvolvedObjects []string           `json:"involved_objects,omitempty"`
+	Measured        map[string]float64 `json:"measured,omitempty"`
+	ReferenceBounds *Bounds            `json:"reference_bounds,omitempty"`
+	CandidateBounds *Bounds            `json:"candidate_bounds,omitempty"`
+	RepairHint      string             `json:"repair_hint,omitempty"`
 }
 
 type ArtifactRefs struct {
-	ReferenceOverlay string `json:"reference_overlay,omitempty"`
-	CandidateOverlay string `json:"candidate_overlay,omitempty"`
-	DiffOverlay      string `json:"diff_overlay,omitempty"`
+	ReferenceOverlay  string `json:"reference_overlay,omitempty"`
+	CandidateOverlay  string `json:"candidate_overlay,omitempty"`
+	DiffOverlay       string `json:"diff_overlay,omitempty"`
+	ReferenceContract string `json:"reference_contract,omitempty"`
+	CandidateContract string `json:"candidate_contract,omitempty"`
+	Report            string `json:"report,omitempty"`
 }

@@ -223,7 +223,7 @@
       "id": "central_viewport_is_dominant",
       "type": "area_ratio",
       "object": "central_3d_viewport",
-      "min_viewport_area_ratio": 0.4,
+      "min_viewport_area_ratio": 0.3,
       "importance": "critical"
     },
     {

@@ -53,9 +53,11 @@ func (r OverlayRequest) Validate() error {
 }
 
 type OverlayResponse struct {
-	ReferenceSVG string `json:"reference_svg"`
-	CandidateSVG string `json:"candidate_svg,omitempty"`
-	DiffSVG      string `json:"diff_svg,omitempty"`
+	RunID        string       `json:"run_id,omitempty"`
+	ReferenceSVG string       `json:"reference_svg"`
+	CandidateSVG string       `json:"candidate_svg,omitempty"`
+	DiffSVG      string       `json:"diff_svg,omitempty"`
+	Artifacts    ArtifactRefs `json:"artifacts,omitempty"`
 }
 
 type WebEvidenceRequest struct {
