@@ -177,3 +177,51 @@ type AgentOverview struct {
 	ActiveWork       []ActiveWorkItem
 	ActivityEvents   []LaneEvent
 }
+
+type AgentOverviewSummary struct {
+	AgentID          string
+	RuntimeInstances []RuntimeProjection
+	ActiveWork       []ActiveWorkItem
+	ActivityEvents   []LaneEvent
+}
+
+type AgentsOverview struct {
+	Agents []AgentOverviewSummary
+}
+
+type AssignmentMessage struct {
+	MessageID       int64
+	ChannelID       int64
+	SenderType      string
+	SenderIdentity  string
+	Body            string
+	MessageKind     string
+	SourceKind      string
+	TargetProjectID *string
+	TargetTaskID    *int64
+	AssignmentID    string
+	WorkerRunID     *string
+	WorkerRole      *string
+	ProfileIdentity *string
+	AgentInstanceID *string
+	PoolMemberID    *string
+	SessionID       *string
+	Summary         *string
+	DeepLink        *string
+	Metadata        json.RawMessage
+	CreatedAt       time.Time
+}
+
+type AssignmentTranscript struct {
+	AssignmentID string
+	Messages     []AssignmentMessage
+}
+
+type AssignmentTrace struct {
+	AssignmentID           string
+	Transcript             []AssignmentMessage
+	ActivityEvents         []LaneEvent
+	TranscriptAvailability string
+	ActivityAvailability   string
+	Summary                *string
+}

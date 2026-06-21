@@ -17,6 +17,9 @@ type ObservationStore interface {
 	ListActiveWork(ctx context.Context) ([]ActiveWorkItem, error)
 	ListRuntimeProjections(ctx context.Context, agentID string) ([]RuntimeProjection, error)
 	ListActiveWorkForAgent(ctx context.Context, agentID string) ([]ActiveWorkItem, error)
+	ListAgentIDs(ctx context.Context, limit int) ([]string, error)
+	ListAssignmentMessages(ctx context.Context, assignmentID string, limit int) ([]AssignmentMessage, error)
+	ListActivityEventsForAssignment(ctx context.Context, assignmentID string, limit int) ([]LaneEvent, error)
 }
 
 type ObservationService struct {
@@ -68,6 +71,31 @@ func (s *ObservationService) ActiveWork(ctx context.Context) ([]ActiveWorkItem, 
 	return s.store.ListActiveWork(ctx)
 }
 
+func (s *ObservationService) AgentsOverview(ctx context.Context, rawLimit string) (AgentsOverview, error) {
+	limit, err := s.parseLimit(rawLimit)
+	if err != nil {
+		return AgentsOverview{}, badRequest(err)
+	}
+	agentIDs, err := s.store.ListAgentIDs(ctx, limit)
+	if err != nil {
+		return AgentsOverview{}, err
+	}
+	agents := make([]AgentOverviewSummary, 0, len(agentIDs))
+	for _, agentID := range agentIDs {
+		overview, err := s.AgentOverview(ctx, agentID)
+		if err != nil {
+			return AgentsOverview{}, err
+		}
+		agents = append(agents, AgentOverviewSummary{
+			AgentID:          overview.AgentID,
+			RuntimeInstances: overview.RuntimeInstances,
+			ActiveWork:       overview.ActiveWork,
+			ActivityEvents:   overview.ActivityEvents,
+		})
+	}
+	return AgentsOverview{Agents: agents}, nil
+}
+
 func (s *ObservationService) AgentOverview(ctx context.Context, agentID string) (AgentOverview, error) {
 	if agentID == "" {
 		return AgentOverview{}, badRequest(ErrInvalidQuery)
@@ -93,6 +121,71 @@ func (s *ObservationService) AgentOverview(ctx context.Context, agentID string) 
 		ActiveWork:       activeWork,
 		ActivityEvents:   activityEvents,
 	}, nil
+}
+
+func (s *ObservationService) AssignmentTranscript(ctx context.Context, assignmentID string, rawLimit string) (AssignmentTranscript, error) {
+	if assignmentID == "" {
+		return AssignmentTranscript{}, badRequest(ErrInvalidQuery)
+	}
+	limit, err := s.parseLimit(rawLimit)
+	if err != nil {
+		return AssignmentTranscript{}, badRequest(err)
+	}
+	messages, err := s.store.ListAssignmentMessages(ctx, assignmentID, limit)
+	if err != nil {
+		return AssignmentTranscript{}, err
+	}
+	return AssignmentTranscript{AssignmentID: assignmentID, Messages: messages}, nil
+}
+
+func (s *ObservationService) AssignmentTrace(ctx context.Context, assignmentID string, rawLimit string) (AssignmentTrace, error) {
+	transcript, err := s.AssignmentTranscript(ctx, assignmentID, rawLimit)
+	if err != nil {
+		return AssignmentTrace{}, err
+	}
+	limit := s.defaultLimit
+	if rawLimit != "" {
+		parsed, parseErr := s.parseLimit(rawLimit)
+		if parseErr != nil {
+			return AssignmentTrace{}, badRequest(parseErr)
+		}
+		limit = parsed
+	}
+	activity, err := s.store.ListActivityEventsForAssignment(ctx, assignmentID, limit)
+	if err != nil {
+		return AssignmentTrace{}, err
+	}
+	transcriptAvailability := "available"
+	if len(transcript.Messages) == 0 {
+		transcriptAvailability = "no_assignment_messages"
+	}
+	activityAvailability := "available"
+	if len(activity) == 0 {
+		activityAvailability = "no_activity_events"
+	}
+	summary := "Observation successor trace: display-only transcript and activity evidence; executable assignment state remains Core/Delivery-owned."
+	return AssignmentTrace{
+		AssignmentID:           assignmentID,
+		Transcript:             transcript.Messages,
+		ActivityEvents:         activity,
+		TranscriptAvailability: transcriptAvailability,
+		ActivityAvailability:   activityAvailability,
+		Summary:                &summary,
+	}, nil
+}
+
+func (s *ObservationService) ActivityHistory(ctx context.Context, rawLimit string, agentID string, assignmentID string) ([]LaneEvent, error) {
+	limit, err := s.parseLimit(rawLimit)
+	if err != nil {
+		return nil, badRequest(err)
+	}
+	if assignmentID != "" {
+		return s.store.ListActivityEventsForAssignment(ctx, assignmentID, limit)
+	}
+	if agentID != "" {
+		return s.store.ListActivityEventsForAgent(ctx, agentID, limit)
+	}
+	return s.store.ListActivityEvents(ctx, limit)
 }
 
 func (s *ObservationService) collectLaneEvents(ctx context.Context, limit int) ([]LaneEvent, error) {

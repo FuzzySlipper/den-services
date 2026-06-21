@@ -61,7 +61,7 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 		}
 	}
 	wantVersions := map[string]int{
-		"den_channels":    5,
+		"den_channels":    6,
 		"den_delivery":    2,
 		"den_observation": 2,
 		"den_runtime":     2,

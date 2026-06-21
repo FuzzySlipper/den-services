@@ -394,6 +394,126 @@ func toAgentOverviewResponse(overview AgentOverview) AgentOverviewResponse {
 	}
 }
 
+type AgentsOverviewResponse struct {
+	Agents []AgentOverviewResponse `json:"agents"`
+}
+
+func toAgentsOverviewResponse(overview AgentsOverview) AgentsOverviewResponse {
+	agents := make([]AgentOverviewResponse, 0, len(overview.Agents))
+	for _, agent := range overview.Agents {
+		agents = append(agents, toAgentOverviewResponse(AgentOverview{
+			AgentID:          agent.AgentID,
+			RuntimeInstances: agent.RuntimeInstances,
+			ActiveWork:       agent.ActiveWork,
+			ActivityEvents:   agent.ActivityEvents,
+		}))
+	}
+	return AgentsOverviewResponse{Agents: agents}
+}
+
+type AssignmentMessageResponse struct {
+	MessageID       int64           `json:"message_id"`
+	ChannelID       int64           `json:"channel_id"`
+	SenderType      string          `json:"sender_type"`
+	SenderIdentity  string          `json:"sender_identity"`
+	Body            string          `json:"body"`
+	MessageKind     string          `json:"message_kind"`
+	SourceKind      string          `json:"source_kind"`
+	TargetProjectID *string         `json:"target_project_id,omitempty"`
+	TargetTaskID    *int64          `json:"target_task_id,omitempty"`
+	AssignmentID    string          `json:"assignment_id"`
+	WorkerRunID     *string         `json:"worker_run_id,omitempty"`
+	WorkerRole      *string         `json:"worker_role,omitempty"`
+	ProfileIdentity *string         `json:"profile_identity,omitempty"`
+	AgentInstanceID *string         `json:"agent_instance_id,omitempty"`
+	PoolMemberID    *string         `json:"pool_member_id,omitempty"`
+	SessionID       *string         `json:"session_id,omitempty"`
+	Summary         *string         `json:"summary,omitempty"`
+	DeepLink        *string         `json:"deep_link,omitempty"`
+	Metadata        json.RawMessage `json:"metadata"`
+	CreatedAt       time.Time       `json:"created_at"`
+}
+
+type AssignmentTranscriptResponse struct {
+	AssignmentID string                      `json:"assignment_id"`
+	Messages     []AssignmentMessageResponse `json:"messages"`
+}
+
+type AssignmentTraceResponse struct {
+	AssignmentID           string                      `json:"assignment_id"`
+	Transcript             []AssignmentMessageResponse `json:"transcript"`
+	ActivityEvents         []LaneEventResponse         `json:"activity_events"`
+	TranscriptAvailability string                      `json:"transcript_availability"`
+	ActivityAvailability   string                      `json:"activity_availability"`
+	CoreAvailability       string                      `json:"core_availability"`
+	ExecutableStateOwner   string                      `json:"executable_state_owner"`
+	ConversationOwner      string                      `json:"conversation_owner"`
+	ObservationOwner       string                      `json:"observation_owner"`
+	Summary                *string                     `json:"summary"`
+}
+
+func toAssignmentTranscriptResponse(transcript AssignmentTranscript) AssignmentTranscriptResponse {
+	return AssignmentTranscriptResponse{
+		AssignmentID: transcript.AssignmentID,
+		Messages:     assignmentMessageResponses(transcript.Messages),
+	}
+}
+
+func toAssignmentTraceResponse(trace AssignmentTrace) AssignmentTraceResponse {
+	return AssignmentTraceResponse{
+		AssignmentID:           trace.AssignmentID,
+		Transcript:             assignmentMessageResponses(trace.Transcript),
+		ActivityEvents:         toLaneResponse(trace.ActivityEvents).Events,
+		TranscriptAvailability: trace.TranscriptAvailability,
+		ActivityAvailability:   trace.ActivityAvailability,
+		CoreAvailability:       "not_observation_owned",
+		ExecutableStateOwner:   "den-core/delivery",
+		ConversationOwner:      "conversation",
+		ObservationOwner:       "observation",
+		Summary:                trace.Summary,
+	}
+}
+
+func assignmentMessageResponses(messages []AssignmentMessage) []AssignmentMessageResponse {
+	responses := make([]AssignmentMessageResponse, 0, len(messages))
+	for _, message := range messages {
+		responses = append(responses, AssignmentMessageResponse{
+			MessageID:       message.MessageID,
+			ChannelID:       message.ChannelID,
+			SenderType:      message.SenderType,
+			SenderIdentity:  message.SenderIdentity,
+			Body:            message.Body,
+			MessageKind:     message.MessageKind,
+			SourceKind:      message.SourceKind,
+			TargetProjectID: message.TargetProjectID,
+			TargetTaskID:    message.TargetTaskID,
+			AssignmentID:    message.AssignmentID,
+			WorkerRunID:     message.WorkerRunID,
+			WorkerRole:      message.WorkerRole,
+			ProfileIdentity: message.ProfileIdentity,
+			AgentInstanceID: message.AgentInstanceID,
+			PoolMemberID:    message.PoolMemberID,
+			SessionID:       message.SessionID,
+			Summary:         message.Summary,
+			DeepLink:        message.DeepLink,
+			Metadata:        append(json.RawMessage(nil), message.Metadata...),
+			CreatedAt:       message.CreatedAt,
+		})
+	}
+	return responses
+}
+
+type ActivityHistoryStatusResponse struct {
+	Writable               bool     `json:"writable"`
+	PatchSupported         bool     `json:"patch_supported"`
+	ReadRoute              string   `json:"read_route"`
+	WriteRoute             string   `json:"write_route"`
+	DroppedLegacySemantics []string `json:"dropped_legacy_semantics"`
+	ExecutableStateOwner   string   `json:"executable_state_owner"`
+	ConversationOwner      string   `json:"conversation_owner"`
+	ObservationProjection  string   `json:"observation_projection"`
+}
+
 func parseRequiredInt(value string) (int, error) {
 	if value == "" {
 		return 0, errors.New("value is required")

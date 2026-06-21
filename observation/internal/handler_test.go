@@ -125,3 +125,109 @@ func TestHandlerLaneDoesNotMutateObservation(t *testing.T) {
 		t.Fatalf("lane append count = %d, want 0", len(store.appended))
 	}
 }
+
+func TestHandlerAgentsOverview(t *testing.T) {
+	store := newFakeObservationStore()
+	store.agentIDs = []string{"den-mcp-runner"}
+	store.runtimes = []RuntimeProjection{{
+		RuntimeInstanceID: "den-mcp-runner@host-1",
+		ProfileIdentity:   "den-mcp-runner",
+		Host:              "host-1",
+		State:             "active",
+		StartedAt:         fixedTime(),
+		DisplayOnly:       true,
+	}}
+	store.activityEventsForAgent = []LaneEvent{eventAt("observation:1", SourceDomainRuntime, fixedTime())}
+	handler := NewHandler(NewObservationService(store, fixedClock, 10, 100))
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/observation/agents/overview", nil)
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	var response AgentsOverviewResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(response.Agents) != 1 || response.Agents[0].AgentID != "den-mcp-runner" {
+		t.Fatalf("agents overview = %#v", response)
+	}
+}
+
+func TestHandlerAssignmentTraceKeepsAuthorityBoundariesExplicit(t *testing.T) {
+	store := newFakeObservationStore()
+	store.assignmentMessages = []AssignmentMessage{{
+		MessageID:      10,
+		ChannelID:      42,
+		SenderType:     "agent",
+		SenderIdentity: "den-mcp-runner",
+		Body:           "checkpoint",
+		MessageKind:    "gateway_delivery",
+		SourceKind:     "gateway_delivery",
+		AssignmentID:   "123",
+		Metadata:       json.RawMessage(`{}`),
+		CreatedAt:      fixedTime(),
+	}}
+	store.activityEventsForAssignment = []LaneEvent{eventAt("observation:123", SourceDomainRuntime, fixedTime())}
+	handler := NewHandler(NewObservationService(store, fixedClock, 10, 100))
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/observation/assignments/123/trace", nil)
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	var response AssignmentTraceResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if response.AssignmentID != "123" || response.TranscriptAvailability != "available" || response.ActivityAvailability != "available" {
+		t.Fatalf("trace response = %#v", response)
+	}
+	if response.CoreAvailability != "not_observation_owned" || response.ExecutableStateOwner != "den-core/delivery" || response.ConversationOwner != "conversation" {
+		t.Fatalf("authority fields = %#v", response)
+	}
+}
+
+func TestHandlerActivityHistoryReadAndStatus(t *testing.T) {
+	store := newFakeObservationStore()
+	store.activityEventsForAssignment = []LaneEvent{eventAt("observation:assignment", SourceDomainRuntime, fixedTime())}
+	handler := NewHandler(NewObservationService(store, fixedClock, 10, 100))
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+
+	readRequest := httptest.NewRequest(http.MethodGet, "/v1/observation/activity-events?assignment_id=123", nil)
+	readRecorder := httptest.NewRecorder()
+	mux.ServeHTTP(readRecorder, readRequest)
+	if readRecorder.Code != http.StatusOK {
+		t.Fatalf("read status = %d, want %d; body=%s", readRecorder.Code, http.StatusOK, readRecorder.Body.String())
+	}
+	var lane LaneResponse
+	if err := json.Unmarshal(readRecorder.Body.Bytes(), &lane); err != nil {
+		t.Fatalf("Unmarshal lane error = %v", err)
+	}
+	if len(lane.Events) != 1 {
+		t.Fatalf("activity history events = %d, want 1", len(lane.Events))
+	}
+
+	statusRequest := httptest.NewRequest(http.MethodGet, "/v1/observation/activity-events/status", nil)
+	statusRecorder := httptest.NewRecorder()
+	mux.ServeHTTP(statusRecorder, statusRequest)
+	if statusRecorder.Code != http.StatusOK {
+		t.Fatalf("status status = %d, want %d; body=%s", statusRecorder.Code, http.StatusOK, statusRecorder.Body.String())
+	}
+	var status ActivityHistoryStatusResponse
+	if err := json.Unmarshal(statusRecorder.Body.Bytes(), &status); err != nil {
+		t.Fatalf("Unmarshal status error = %v", err)
+	}
+	if !status.Writable || status.PatchSupported || status.ObservationProjection != "display_only" {
+		t.Fatalf("status response = %#v", status)
+	}
+}

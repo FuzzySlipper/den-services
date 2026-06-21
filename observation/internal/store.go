@@ -128,6 +128,44 @@ func (s *Store) ListActiveWorkForAgent(ctx context.Context, agentID string) ([]A
 	return scanActiveWorkItems(rows)
 }
 
+func (s *Store) ListAgentIDs(ctx context.Context, limit int) ([]string, error) {
+	rows, err := s.pool.Query(ctx, listAgentIDsSQL, limit)
+	if err != nil {
+		return nil, fmt.Errorf("listing observation agent ids: %w", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading observation agent ids: %w", err)
+	}
+	return ids, nil
+}
+
+func (s *Store) ListAssignmentMessages(ctx context.Context, assignmentID string, limit int) ([]AssignmentMessage, error) {
+	rows, err := s.pool.Query(ctx, listAssignmentMessagesSQL, assignmentID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("listing assignment %s transcript messages: %w", assignmentID, err)
+	}
+	defer rows.Close()
+	return scanAssignmentMessages(rows)
+}
+
+func (s *Store) ListActivityEventsForAssignment(ctx context.Context, assignmentID string, limit int) ([]LaneEvent, error) {
+	rows, err := s.pool.Query(ctx, listActivityEventsForAssignmentSQL, assignmentID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("listing assignment %s activity events: %w", assignmentID, err)
+	}
+	defer rows.Close()
+	return scanLaneEvents(rows)
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -256,6 +294,52 @@ func scanActiveWorkItem(row rowScanner) (ActiveWorkItem, error) {
 		ChannelMessageID:  channelMessageID,
 		CreatedAt:         createdAt.UTC(),
 	}, nil
+}
+
+func scanAssignmentMessages(rows pgx.Rows) ([]AssignmentMessage, error) {
+	var messages []AssignmentMessage
+	for rows.Next() {
+		message, err := scanAssignmentMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, message)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading assignment messages: %w", err)
+	}
+	return messages, nil
+}
+
+func scanAssignmentMessage(row rowScanner) (AssignmentMessage, error) {
+	var message AssignmentMessage
+	if err := row.Scan(
+		&message.MessageID,
+		&message.ChannelID,
+		&message.SenderType,
+		&message.SenderIdentity,
+		&message.Body,
+		&message.MessageKind,
+		&message.SourceKind,
+		&message.TargetProjectID,
+		&message.TargetTaskID,
+		&message.AssignmentID,
+		&message.WorkerRunID,
+		&message.WorkerRole,
+		&message.ProfileIdentity,
+		&message.AgentInstanceID,
+		&message.PoolMemberID,
+		&message.SessionID,
+		&message.Summary,
+		&message.DeepLink,
+		&message.Metadata,
+		&message.CreatedAt,
+	); err != nil {
+		return AssignmentMessage{}, err
+	}
+	message.CreatedAt = message.CreatedAt.UTC()
+	message.Metadata = normalizePayload(message.Metadata)
+	return message, nil
 }
 
 func scanRuntimeProjection(row rowScanner) (RuntimeProjection, error) {
@@ -430,3 +514,81 @@ from den_runtime.instance_states
 where profile_identity = $1
 	or runtime_instance_id = $1
 order by started_at desc`
+
+const listAgentIDsSQL = `
+select agent_id
+from (
+	select profile_identity as agent_id, coalesce(last_heartbeat_at, started_at) as seen_at
+	from den_runtime.instance_states
+	where profile_identity is not null and profile_identity <> ''
+	union all
+	select runtime_instance_id as agent_id, coalesce(last_heartbeat_at, started_at) as seen_at
+	from den_runtime.instance_states
+	where runtime_instance_id is not null and runtime_instance_id <> ''
+	union all
+	select agent_identity ->> 'profile' as agent_id, created_at as seen_at
+	from den_observation.activity_events
+	where agent_identity ->> 'profile' is not null
+	union all
+	select agent_identity ->> 'instance_id' as agent_id, created_at as seen_at
+	from den_observation.activity_events
+	where agent_identity ->> 'instance_id' is not null
+	union all
+	select runtime_instance_id as agent_id, created_at as seen_at
+	from den_observation.activity_events
+	where runtime_instance_id is not null and runtime_instance_id <> ''
+	union all
+	select target_identity ->> 'profile' as agent_id, created_at as seen_at
+	from den_delivery.active_intents
+	where target_identity ->> 'profile' is not null
+	union all
+	select claimed_by ->> 'profile' as agent_id, created_at as seen_at
+	from den_delivery.active_intents
+	where claimed_by ->> 'profile' is not null
+) candidates
+where agent_id is not null and agent_id <> ''
+group by agent_id
+order by max(seen_at) desc
+limit $1`
+
+const listAssignmentMessagesSQL = `
+select message_id,
+	channel_id,
+	sender_type,
+	sender_identity,
+	body,
+	message_kind,
+	source_kind,
+	target_project_id,
+	target_task_id,
+	assignment_id,
+	worker_run_id,
+	worker_role,
+	profile_identity,
+	agent_instance_id,
+	pool_member_id,
+	session_id,
+	summary,
+	deep_link,
+	metadata,
+	created_at
+from den_channels.assignment_transcript
+where assignment_id = $1
+order by created_at asc, message_id asc
+limit $2`
+
+const listActivityEventsForAssignmentSQL = `
+select 'observation:' || event_id::text as event_id,
+	source_domain,
+	event_type,
+	agent_identity,
+	runtime_instance_id,
+	payload,
+	display_only,
+	created_at
+from den_observation.activity_events
+where payload #>> '{work_ref,assignment_id}' = $1
+	or payload #>> '{metadata,assignmentId}' = $1
+	or payload #>> '{metadata,assignment_id}' = $1
+order by created_at desc
+limit $2`

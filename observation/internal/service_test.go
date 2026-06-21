@@ -284,15 +284,18 @@ func TestAgentOverviewIncludesActivityEvents(t *testing.T) {
 }
 
 type fakeObservationStore struct {
-	appended               []*ActivityEvent
-	activityEvents         []LaneEvent
-	activityEventsForAgent []LaneEvent
-	deliveryEvents         []LaneEvent
-	runtimeEvents          []LaneEvent
-	chatEvents             []LaneEvent
-	activeWork             []ActiveWorkItem
-	runtimes               []RuntimeProjection
-	activeWorkCalls        int
+	appended                    []*ActivityEvent
+	activityEvents              []LaneEvent
+	activityEventsForAgent      []LaneEvent
+	activityEventsForAssignment []LaneEvent
+	deliveryEvents              []LaneEvent
+	runtimeEvents               []LaneEvent
+	chatEvents                  []LaneEvent
+	activeWork                  []ActiveWorkItem
+	runtimes                    []RuntimeProjection
+	agentIDs                    []string
+	assignmentMessages          []AssignmentMessage
+	activeWorkCalls             int
 }
 
 func newFakeObservationStore() *fakeObservationStore {
@@ -348,6 +351,18 @@ func (s *fakeObservationStore) ListRuntimeProjections(_ context.Context, _ strin
 
 func (s *fakeObservationStore) ListActiveWorkForAgent(_ context.Context, _ string) ([]ActiveWorkItem, error) {
 	return append([]ActiveWorkItem(nil), s.activeWork...), nil
+}
+
+func (s *fakeObservationStore) ListAgentIDs(_ context.Context, _ int) ([]string, error) {
+	return append([]string(nil), s.agentIDs...), nil
+}
+
+func (s *fakeObservationStore) ListAssignmentMessages(_ context.Context, _ string, _ int) ([]AssignmentMessage, error) {
+	return append([]AssignmentMessage(nil), s.assignmentMessages...), nil
+}
+
+func (s *fakeObservationStore) ListActivityEventsForAssignment(_ context.Context, _ string, _ int) ([]LaneEvent, error) {
+	return append([]LaneEvent(nil), s.activityEventsForAssignment...), nil
 }
 
 func eventAt(id string, source SourceDomain, at time.Time) LaneEvent {
