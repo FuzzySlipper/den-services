@@ -81,3 +81,43 @@ func TestAgentIdentityJSONShape(t *testing.T) {
 		t.Fatalf("Marshal() = %s, want %s", data, want)
 	}
 }
+
+func TestAgentIdentityEqualComparesSessionValue(t *testing.T) {
+	leftSession := SessionKey("sess-123")
+	rightSession := SessionKey("sess-123")
+	left := AgentIdentity{
+		Profile:    ProfileIdentity("planner"),
+		InstanceID: AgentInstanceID("planner@host-1"),
+		Session:    &leftSession,
+	}
+	right := AgentIdentity{
+		Profile:    ProfileIdentity("planner"),
+		InstanceID: AgentInstanceID("planner@host-1"),
+		Session:    &rightSession,
+	}
+
+	if !left.Equal(right) {
+		t.Fatal("Equal() = false, want true for matching session values")
+	}
+
+	otherSession := SessionKey("sess-other")
+	mismatch := AgentIdentity{
+		Profile:    ProfileIdentity("planner"),
+		InstanceID: AgentInstanceID("planner@host-1"),
+		Session:    &otherSession,
+	}
+	if left.Equal(mismatch) {
+		t.Fatal("Equal() = true, want false for different session values")
+	}
+
+	withoutSession := AgentIdentity{
+		Profile:    ProfileIdentity("planner"),
+		InstanceID: AgentInstanceID("planner@host-1"),
+	}
+	if left.Equal(withoutSession) {
+		t.Fatal("Equal() = true, want false when only one identity has a session")
+	}
+	if !withoutSession.Equal(AgentIdentity{Profile: ProfileIdentity("planner"), InstanceID: AgentInstanceID("planner@host-1")}) {
+		t.Fatal("Equal() = false, want true for matching identities without session")
+	}
+}

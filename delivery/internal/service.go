@@ -72,7 +72,7 @@ func (s *IntentService) Claim(ctx context.Context, id int64, req ClaimRequest) (
 	if err != nil {
 		return nil, err
 	}
-	if intent.TargetIdentity() != req.ClaimedBy {
+	if !intent.TargetIdentity().Equal(req.ClaimedBy) {
 		return nil, conflict(ErrIntentTargetMismatch)
 	}
 	if intent.State() == IntentStatePending && !now.Before(intent.ExpiresAt()) {

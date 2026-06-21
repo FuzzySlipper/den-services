@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
@@ -56,6 +57,69 @@ func TestDuplicateClaimRejected(t *testing.T) {
 	_, err := service.Claim(context.Background(), intent.ID(), ClaimRequest{ClaimToken: "two", ClaimedBy: testIdentity()})
 	if !errors.Is(err, ErrIntentAlreadyClaimed) {
 		t.Fatalf("second Claim() error = %v, want %v", err, ErrIntentAlreadyClaimed)
+	}
+}
+
+func TestClaimMatchesSessionIdentityByValue(t *testing.T) {
+	store := newMemoryIntentStore(t)
+	runtime := &memoryRuntimeChecker{alive: true}
+	service := NewIntentService(store, runtime, fixedClock(), 5*time.Minute, time.Hour, 5*time.Minute, 30*time.Minute)
+	targetSession := identity.SessionKey("sess-rusty-crew")
+	target := identity.AgentIdentity{
+		Profile:    identity.ProfileIdentity("planner"),
+		InstanceID: identity.AgentInstanceID("planner@den-k8plus"),
+		Session:    &targetSession,
+	}
+	intent := store.mustCreateIntentFor(t, target, IntentStatePending)
+
+	var req ClaimRequest
+	if err := json.Unmarshal([]byte(`{
+		"claim_token": "session-claim",
+		"claimed_by": {
+			"profile": "planner",
+			"instance_id": "planner@den-k8plus",
+			"session_key": "sess-rusty-crew"
+		}
+	}`), &req); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	claimed, err := service.Claim(context.Background(), intent.ID(), req)
+	if err != nil {
+		t.Fatalf("Claim() error = %v", err)
+	}
+	if claimed.State() != IntentStateClaimed {
+		t.Fatalf("state = %s, want %s", claimed.State(), IntentStateClaimed)
+	}
+}
+
+func TestClaimRejectsDifferentSessionIdentity(t *testing.T) {
+	store := newMemoryIntentStore(t)
+	runtime := &memoryRuntimeChecker{alive: true}
+	service := NewIntentService(store, runtime, fixedClock(), 5*time.Minute, time.Hour, 5*time.Minute, 30*time.Minute)
+	targetSession := identity.SessionKey("sess-target")
+	claimedSession := identity.SessionKey("sess-other")
+	target := identity.AgentIdentity{
+		Profile:    identity.ProfileIdentity("planner"),
+		InstanceID: identity.AgentInstanceID("planner@den-k8plus"),
+		Session:    &targetSession,
+	}
+	claimedBy := identity.AgentIdentity{
+		Profile:    identity.ProfileIdentity("planner"),
+		InstanceID: identity.AgentInstanceID("planner@den-k8plus"),
+		Session:    &claimedSession,
+	}
+	intent := store.mustCreateIntentFor(t, target, IntentStatePending)
+
+	_, err := service.Claim(context.Background(), intent.ID(), ClaimRequest{
+		ClaimToken: "session-claim",
+		ClaimedBy:  claimedBy,
+	})
+	if !errors.Is(err, ErrIntentTargetMismatch) {
+		t.Fatalf("Claim() error = %v, want %v", err, ErrIntentTargetMismatch)
+	}
+	if intent.State() != IntentStatePending {
+		t.Fatalf("state = %s, want %s", intent.State(), IntentStatePending)
 	}
 }
 

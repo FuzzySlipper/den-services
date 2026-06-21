@@ -59,3 +59,13 @@ func (a AgentIdentity) IsValid() bool {
 	}
 	return true
 }
+
+func (a AgentIdentity) Equal(other AgentIdentity) bool {
+	if a.Profile != other.Profile || a.InstanceID != other.InstanceID {
+		return false
+	}
+	if a.Session == nil || other.Session == nil {
+		return a.Session == nil && other.Session == nil
+	}
+	return *a.Session == *other.Session
+}
