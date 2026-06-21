@@ -1,0 +1,215 @@
+{
+  "schema": "layered-visual-contract/v0.1",
+  "scene": {
+    "id": "reference_homepage",
+    "type": "web_ui",
+    "viewport": {
+      "width_px": 1440,
+      "height_px": 900
+    },
+    "coordinate_mode": "normalized_with_pixel_evidence"
+  },
+  "project": {
+    "id": "demo",
+    "vocabulary": "demo_web_v1",
+    "roles": ["hero", "primary_action", "visual_preview"]
+  },
+  "spaces": [
+    {
+      "id": "viewport",
+      "kind": "root",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1,
+        "h": 1
+      }
+    }
+  ],
+  "layers": [
+    {
+      "id": "base",
+      "z": 0,
+      "contains": ["hero_section", "hero_title", "primary_cta", "preview_card"]
+    }
+  ],
+  "objects": [
+    {
+      "id": "hero_section",
+      "kind": "section",
+      "role": "hero",
+      "parent": "viewport",
+      "layer": "base",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.06,
+        "y": 0.08,
+        "w": 0.88,
+        "h": 0.42,
+        "px": {
+          "x": 86,
+          "y": 72,
+          "w": 1267,
+          "h": 378
+        }
+      },
+      "children": ["hero_title", "primary_cta", "preview_card"],
+      "importance": "critical",
+      "confidence": 0.96,
+      "evidence_refs": ["screenshot:hero_section"]
+    },
+    {
+      "id": "hero_title",
+      "kind": "text",
+      "role": "heading_1",
+      "parent": "hero_section",
+      "layer": "base",
+      "text": "Manage your city without losing your mind",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.08,
+        "y": 0.12,
+        "w": 0.42,
+        "h": 0.10
+      },
+      "importance": "critical",
+      "confidence": 0.96,
+      "evidence_refs": ["screenshot:hero_title"]
+    },
+    {
+      "id": "primary_cta",
+      "kind": "button",
+      "role": "primary_action",
+      "parent": "hero_section",
+      "layer": "base",
+      "text": "Start planning",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.08,
+        "y": 0.34,
+        "w": 0.16,
+        "h": 0.06
+      },
+      "importance": "critical",
+      "confidence": 0.94,
+      "evidence_refs": ["screenshot:primary_cta"],
+      "style": {
+        "visual_weight": "high"
+      }
+    },
+    {
+      "id": "preview_card",
+      "kind": "panel",
+      "role": "visual_preview",
+      "parent": "hero_section",
+      "layer": "base",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.62,
+        "y": 0.10,
+        "w": 0.28,
+        "h": 0.32
+      },
+      "semantic_description": "large preview card showing city/factory visual",
+      "importance": "major",
+      "confidence": 0.88,
+      "evidence_refs": ["screenshot:preview_card"]
+    }
+  ],
+  "relations": [
+    {
+      "type": "above",
+      "a": "hero_title",
+      "b": "primary_cta",
+      "confidence": 0.98
+    },
+    {
+      "type": "right_of",
+      "a": "preview_card",
+      "b": "hero_title",
+      "confidence": 0.94
+    },
+    {
+      "type": "aligned_left",
+      "items": ["hero_title", "primary_cta"],
+      "confidence": 0.91
+    }
+  ],
+  "constraints": [
+    {
+      "id": "hero_title_exists",
+      "type": "object_exists",
+      "object": "hero_title",
+      "importance": "critical"
+    },
+    {
+      "id": "hero_title_above_cta",
+      "type": "relative_position",
+      "a": "hero_title",
+      "relation": "above",
+      "b": "primary_cta",
+      "importance": "critical",
+      "tolerance_norm": 0.02
+    },
+    {
+      "id": "preview_card_right_of_hero_text",
+      "type": "layout_relation",
+      "a": "preview_card",
+      "relation": "right_of",
+      "b": "hero_title",
+      "importance": "major",
+      "tolerance_norm": 0.02
+    },
+    {
+      "id": "hero_cluster_left_aligned",
+      "type": "alignment",
+      "items": ["hero_title", "primary_cta"],
+      "edge": "left",
+      "importance": "major",
+      "tolerance_norm": 0.02
+    },
+    {
+      "id": "preview_card_large_enough",
+      "type": "area_ratio",
+      "object": "preview_card",
+      "min_viewport_area_ratio": 0.08,
+      "importance": "minor"
+    }
+  ],
+  "evidence": {
+    "source_type": "screenshot",
+    "source_ref": "reference.png",
+    "generated_by": "visual-contract-fixture",
+    "overall_confidence": 0.92,
+    "records": [
+      {
+        "id": "screenshot:hero_section",
+        "kind": "screenshot_region",
+        "source_ref": "reference.png#hero_section",
+        "object_refs": ["hero_section"],
+        "confidence": 0.96
+      },
+      {
+        "id": "screenshot:hero_title",
+        "kind": "screenshot_region",
+        "source_ref": "reference.png#hero_title",
+        "object_refs": ["hero_title"],
+        "confidence": 0.96
+      },
+      {
+        "id": "screenshot:primary_cta",
+        "kind": "screenshot_region",
+        "source_ref": "reference.png#primary_cta",
+        "object_refs": ["primary_cta"],
+        "confidence": 0.94
+      },
+      {
+        "id": "screenshot:preview_card",
+        "kind": "screenshot_region",
+        "source_ref": "reference.png#preview_card",
+        "object_refs": ["preview_card"],
+        "confidence": 0.88
+      }
+    ]
+  }
+}

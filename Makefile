@@ -1,4 +1,4 @@
-SERVICES := shared delivery runtime observation gateway conversation timeline migration integration
+SERVICES := shared delivery runtime observation gateway conversation timeline visual-contract migration integration
 GOCACHE ?= $(CURDIR)/.gocache
 GOLANGCI_LINT_CACHE ?= $(CURDIR)/.golangci-lint-cache
 

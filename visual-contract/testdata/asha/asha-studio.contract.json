@@ -1,0 +1,337 @@
+{
+  "schema": "layered-visual-contract/v0.1",
+  "scene": {
+    "id": "asha_studio_reference",
+    "type": "web_ui",
+    "viewport": {
+      "width_px": 1600,
+      "height_px": 1000
+    },
+    "coordinate_mode": "normalized_with_pixel_evidence"
+  },
+  "project": {
+    "id": "asha",
+    "vocabulary": "asha_studio_v0"
+  },
+  "spaces": [
+    {
+      "id": "viewport",
+      "kind": "root",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1,
+        "h": 1
+      }
+    }
+  ],
+  "layers": [
+    {
+      "id": "base",
+      "z": 0,
+      "contains": [
+        "scene_hierarchy",
+        "central_3d_viewport",
+        "selected_target_inspector",
+        "command_timeline",
+        "evidence_dock",
+        "selection_outline",
+        "axis_gizmo",
+        "runtime_deferred_label"
+      ]
+    },
+    {
+      "id": "preview",
+      "z": 10,
+      "contains": ["preview_ghost"]
+    }
+  ],
+  "objects": [
+    {
+      "id": "central_3d_viewport",
+      "kind": "canvas",
+      "role": "render_viewport",
+      "domain_role": "central_3d_viewport",
+      "parent": "viewport",
+      "layer": "base",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.22,
+        "y": 0.08,
+        "w": 0.50,
+        "h": 0.62
+      },
+      "children": ["selection_outline", "axis_gizmo", "preview_ghost"],
+      "importance": "critical",
+      "confidence": 0.9,
+      "evidence_refs": ["asha:viewport"]
+    },
+    {
+      "id": "scene_hierarchy",
+      "kind": "panel",
+      "role": "navigation",
+      "domain_role": "scene_hierarchy",
+      "parent": "viewport",
+      "layer": "base",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.02,
+        "y": 0.08,
+        "w": 0.17,
+        "h": 0.62
+      },
+      "importance": "major",
+      "confidence": 0.9,
+      "evidence_refs": ["asha:scene_hierarchy"]
+    },
+    {
+      "id": "selected_target_inspector",
+      "kind": "panel",
+      "role": "inspector",
+      "domain_role": "selected_target_inspector",
+      "parent": "viewport",
+      "layer": "base",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.75,
+        "y": 0.08,
+        "w": 0.22,
+        "h": 0.62
+      },
+      "importance": "major",
+      "confidence": 0.9,
+      "evidence_refs": ["asha:inspector"]
+    },
+    {
+      "id": "command_timeline",
+      "kind": "panel",
+      "role": "timeline",
+      "domain_role": "command_timeline",
+      "parent": "viewport",
+      "layer": "base",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.22,
+        "y": 0.74,
+        "w": 0.50,
+        "h": 0.18
+      },
+      "importance": "major",
+      "confidence": 0.86,
+      "evidence_refs": ["asha:timeline"]
+    },
+    {
+      "id": "evidence_dock",
+      "kind": "panel",
+      "role": "secondary_panel",
+      "domain_role": "evidence_dock",
+      "parent": "viewport",
+      "layer": "base",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.75,
+        "y": 0.74,
+        "w": 0.22,
+        "h": 0.18
+      },
+      "importance": "minor",
+      "confidence": 0.84,
+      "evidence_refs": ["asha:evidence_dock"]
+    },
+    {
+      "id": "selection_outline",
+      "kind": "shape",
+      "role": "selection_marker",
+      "domain_role": "selection_outline",
+      "parent": "central_3d_viewport",
+      "layer": "base",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.42,
+        "y": 0.32,
+        "w": 0.10,
+        "h": 0.12
+      },
+      "importance": "critical",
+      "confidence": 0.78,
+      "evidence_refs": ["asha:selection_outline"]
+    },
+    {
+      "id": "preview_ghost",
+      "kind": "shape",
+      "role": "preview_marker",
+      "domain_role": "preview_ghost",
+      "parent": "central_3d_viewport",
+      "layer": "preview",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.54,
+        "y": 0.36,
+        "w": 0.09,
+        "h": 0.10
+      },
+      "importance": "critical",
+      "confidence": 0.72,
+      "evidence_refs": ["asha:preview_ghost"]
+    },
+    {
+      "id": "axis_gizmo",
+      "kind": "icon",
+      "role": "orientation_control",
+      "domain_role": "axis_gizmo",
+      "parent": "central_3d_viewport",
+      "layer": "base",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.66,
+        "y": 0.60,
+        "w": 0.04,
+        "h": 0.06
+      },
+      "importance": "major",
+      "confidence": 0.78,
+      "evidence_refs": ["asha:axis_gizmo"]
+    },
+    {
+      "id": "runtime_deferred_label",
+      "kind": "text",
+      "role": "status_label",
+      "domain_role": "runtime_deferred_label",
+      "parent": "central_3d_viewport",
+      "layer": "base",
+      "text": "Runtime deferred",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.24,
+        "y": 0.10,
+        "w": 0.14,
+        "h": 0.04
+      },
+      "importance": "critical",
+      "confidence": 0.82,
+      "evidence_refs": ["asha:runtime_label"]
+    }
+  ],
+  "constraints": [
+    {
+      "id": "central_viewport_exists",
+      "type": "object_exists",
+      "object": "central_3d_viewport",
+      "importance": "critical"
+    },
+    {
+      "id": "central_viewport_is_dominant",
+      "type": "area_ratio",
+      "object": "central_3d_viewport",
+      "min_viewport_area_ratio": 0.4,
+      "importance": "critical"
+    },
+    {
+      "id": "selection_outline_visible",
+      "type": "object_exists",
+      "object": "selection_outline",
+      "importance": "critical"
+    },
+    {
+      "id": "preview_ghost_visible",
+      "type": "object_exists",
+      "object": "preview_ghost",
+      "importance": "critical"
+    },
+    {
+      "id": "runtime_label_visible",
+      "type": "object_exists",
+      "object": "runtime_deferred_label",
+      "importance": "critical"
+    },
+    {
+      "id": "scene_hierarchy_left_of_viewport",
+      "type": "layout_relation",
+      "a": "scene_hierarchy",
+      "relation": "left_of",
+      "b": "central_3d_viewport",
+      "importance": "major",
+      "tolerance_norm": 0.02
+    },
+    {
+      "id": "inspector_right_of_viewport",
+      "type": "layout_relation",
+      "a": "selected_target_inspector",
+      "relation": "right_of",
+      "b": "central_3d_viewport",
+      "importance": "major",
+      "tolerance_norm": 0.02
+    },
+    {
+      "id": "timeline_below_viewport",
+      "type": "layout_relation",
+      "a": "command_timeline",
+      "relation": "below",
+      "b": "central_3d_viewport",
+      "importance": "major",
+      "tolerance_norm": 0.04
+    }
+  ],
+  "evidence": {
+    "source_type": "authored_contract",
+    "source_ref": "asha-studio-pilot",
+    "generated_by": "visual-contract-fixture",
+    "overall_confidence": 0.82,
+    "records": [
+      {
+        "id": "asha:viewport",
+        "kind": "authored_layout_region",
+        "object_refs": ["central_3d_viewport"],
+        "confidence": 0.9
+      },
+      {
+        "id": "asha:scene_hierarchy",
+        "kind": "authored_layout_region",
+        "object_refs": ["scene_hierarchy"],
+        "confidence": 0.9
+      },
+      {
+        "id": "asha:inspector",
+        "kind": "authored_layout_region",
+        "object_refs": ["selected_target_inspector"],
+        "confidence": 0.9
+      },
+      {
+        "id": "asha:timeline",
+        "kind": "authored_layout_region",
+        "object_refs": ["command_timeline"],
+        "confidence": 0.86
+      },
+      {
+        "id": "asha:evidence_dock",
+        "kind": "authored_layout_region",
+        "object_refs": ["evidence_dock"],
+        "confidence": 0.84
+      },
+      {
+        "id": "asha:selection_outline",
+        "kind": "screenshot_region_plus_scene_readback_required",
+        "object_refs": ["selection_outline"],
+        "confidence": 0.78
+      },
+      {
+        "id": "asha:preview_ghost",
+        "kind": "screenshot_region_plus_scene_readback_required",
+        "object_refs": ["preview_ghost"],
+        "confidence": 0.72
+      },
+      {
+        "id": "asha:axis_gizmo",
+        "kind": "screenshot_region",
+        "object_refs": ["axis_gizmo"],
+        "confidence": 0.78
+      },
+      {
+        "id": "asha:runtime_label",
+        "kind": "text_region",
+        "object_refs": ["runtime_deferred_label"],
+        "confidence": 0.82
+      }
+    ]
+  }
+}

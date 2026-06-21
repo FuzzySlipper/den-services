@@ -11,4 +11,5 @@ use (
 	./runtime
 	./shared
 	./timeline
+	./visual-contract
 )

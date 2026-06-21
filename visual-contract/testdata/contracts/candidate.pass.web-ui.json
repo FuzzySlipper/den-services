@@ -1,0 +1,135 @@
+{
+  "schema": "layered-visual-contract/v0.1",
+  "scene": {
+    "id": "candidate_homepage_pass",
+    "type": "web_ui",
+    "viewport": {
+      "width_px": 1440,
+      "height_px": 900
+    },
+    "coordinate_mode": "normalized_with_pixel_evidence"
+  },
+  "spaces": [
+    {
+      "id": "viewport",
+      "kind": "root",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1,
+        "h": 1
+      }
+    }
+  ],
+  "layers": [
+    {
+      "id": "base",
+      "z": 0,
+      "contains": ["hero_section", "hero_title", "primary_cta", "preview_card"]
+    }
+  ],
+  "objects": [
+    {
+      "id": "hero_section",
+      "kind": "section",
+      "role": "hero",
+      "parent": "viewport",
+      "layer": "base",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.06,
+        "y": 0.08,
+        "w": 0.88,
+        "h": 0.42
+      },
+      "importance": "critical",
+      "confidence": 0.95,
+      "evidence_refs": ["dom:hero_section"]
+    },
+    {
+      "id": "hero_title",
+      "kind": "text",
+      "role": "heading_1",
+      "parent": "hero_section",
+      "layer": "base",
+      "text": "Manage your city without losing your mind",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.081,
+        "y": 0.12,
+        "w": 0.42,
+        "h": 0.10
+      },
+      "importance": "critical",
+      "confidence": 0.96,
+      "evidence_refs": ["dom:hero_title"]
+    },
+    {
+      "id": "primary_cta",
+      "kind": "button",
+      "role": "primary_action",
+      "parent": "hero_section",
+      "layer": "base",
+      "text": "Start planning",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.082,
+        "y": 0.34,
+        "w": 0.16,
+        "h": 0.06
+      },
+      "importance": "critical",
+      "confidence": 0.94,
+      "evidence_refs": ["dom:primary_cta"]
+    },
+    {
+      "id": "preview_card",
+      "kind": "panel",
+      "role": "visual_preview",
+      "parent": "hero_section",
+      "layer": "base",
+      "bounds": {
+        "space": "viewport",
+        "x": 0.63,
+        "y": 0.10,
+        "w": 0.28,
+        "h": 0.32
+      },
+      "importance": "major",
+      "confidence": 0.89,
+      "evidence_refs": ["dom:preview_card"]
+    }
+  ],
+  "evidence": {
+    "source_type": "web_evidence",
+    "source_ref": "candidate-pass.png",
+    "generated_by": "visual-contract-fixture",
+    "overall_confidence": 0.91,
+    "records": [
+      {
+        "id": "dom:hero_section",
+        "kind": "dom_box",
+        "object_refs": ["hero_section"],
+        "confidence": 0.95
+      },
+      {
+        "id": "dom:hero_title",
+        "kind": "dom_box",
+        "object_refs": ["hero_title"],
+        "confidence": 0.96
+      },
+      {
+        "id": "dom:primary_cta",
+        "kind": "dom_box",
+        "object_refs": ["primary_cta"],
+        "confidence": 0.94
+      },
+      {
+        "id": "dom:preview_card",
+        "kind": "dom_box",
+        "object_refs": ["preview_card"],
+        "confidence": 0.89
+      }
+    ]
+  }
+}

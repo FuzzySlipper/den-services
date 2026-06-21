@@ -1,0 +1,96 @@
+{
+  "evidence": {
+    "scene_id": "web_evidence_homepage",
+    "project": {
+      "id": "demo",
+      "vocabulary": "demo_web_v1"
+    },
+    "viewport": {
+      "width_px": 1440,
+      "height_px": 900
+    },
+    "screenshot_ref": "web-evidence.png",
+    "nodes": [
+      {
+        "id": "node-hero",
+        "test_id": "hero_section",
+        "role": "region",
+        "accessible_name": "Hero",
+        "tag": "section",
+        "bounds_px": {
+          "x": 86,
+          "y": 72,
+          "w": 1267,
+          "h": 378
+        },
+        "styles": {
+          "display": "grid",
+          "position": "relative"
+        }
+      },
+      {
+        "id": "node-title",
+        "parent_id": "node-hero",
+        "test_id": "hero_title",
+        "role": "heading",
+        "accessible_name": "Manage your city without losing your mind",
+        "tag": "h1",
+        "bounds_px": {
+          "x": 115,
+          "y": 108,
+          "w": 605,
+          "h": 90
+        },
+        "styles": {
+          "font_size_px": 48,
+          "font_weight": "700"
+        }
+      },
+      {
+        "id": "node-cta",
+        "parent_id": "node-hero",
+        "test_id": "primary_cta",
+        "role": "button",
+        "accessible_name": "Start planning",
+        "tag": "button",
+        "bounds_px": {
+          "x": 115,
+          "y": 306,
+          "w": 230,
+          "h": 54
+        },
+        "styles": {
+          "background": "accent.primary"
+        }
+      },
+      {
+        "id": "node-preview",
+        "parent_id": "node-hero",
+        "test_id": "preview_card",
+        "role": "img",
+        "accessible_name": "City preview",
+        "tag": "div",
+        "bounds_px": {
+          "x": 893,
+          "y": 90,
+          "w": 403,
+          "h": 288
+        },
+        "styles": {
+          "position": "relative"
+        }
+      }
+    ],
+    "constraints": [
+      {
+        "id": "preview_card_right_of_hero_text",
+        "type": "layout_relation",
+        "a": "preview_card",
+        "relation": "right_of",
+        "b": "hero_title",
+        "importance": "major",
+        "tolerance_norm": 0.02
+      }
+    ]
+  }
+}

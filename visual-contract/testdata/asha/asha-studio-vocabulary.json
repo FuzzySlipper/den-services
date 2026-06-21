@@ -1,0 +1,20 @@
+{
+  "project": {
+    "id": "asha",
+    "vocabulary": "asha_studio_v0",
+    "roles": [
+      "central_3d_viewport",
+      "scene_hierarchy",
+      "selected_target_inspector",
+      "command_timeline",
+      "evidence_dock",
+      "preview_ghost",
+      "applied_state",
+      "authority_hash",
+      "runtime_deferred_label",
+      "axis_gizmo",
+      "selection_outline"
+    ]
+  },
+  "boundary_note": "Visual Contract proves layout, visibility, and screenshot/crop evidence. ASHA scene semantic readback remains responsible for object identity, transforms, materials, camera pose, and selected/preview/applied state proof. Command/timeline proof remains responsible for action provenance and authority/render hashes."
+}

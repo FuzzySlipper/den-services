@@ -1,0 +1,10 @@
+# Visual Contract module configuration.
+# Copy to /data/services/visual-contract/config/config.yaml for deployment.
+
+bind_addr: "127.0.0.1:8086" # Loopback HTTP listen address.
+
+artifacts:
+  base_url: "http://127.0.0.1:8086/artifacts" # Public base URL used in overlay artifact refs.
+
+http:
+  read_header_timeout: "5s" # Maximum time to read request headers.
