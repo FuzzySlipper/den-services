@@ -1,12 +1,10 @@
 {
   "name": "den-services",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {},
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "private": true,
+  "scripts": {
+    "test:visual-contract-collector": "playwright test visual-contract/tests/browser-evidence-collector.spec.mjs --project=chromium"
+  },
   "devEngines": {
     "packageManager": {
       "name": "pnpm",

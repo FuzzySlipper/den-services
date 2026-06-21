@@ -47,10 +47,20 @@ try {
     });
     const idFor = (el, index) => el.dataset.visualId || el.dataset.testid || el.getAttribute("data-testid") || el.id || `node-${index}`;
     const idByElement = new Map(selected.map((el, index) => [el, idFor(el, index)]));
+    const domDepth = (el) => {
+      let depth = 0;
+      for (let current = el; current; current = current.parentElement) {
+        depth += 1;
+      }
+      return depth;
+    };
+    const nearestSelectedParent = (el) => selected
+      .filter((candidate) => candidate !== el && candidate.contains(el))
+      .sort((a, b) => domDepth(b) - domDepth(a))[0];
     const nodes = selected.map((el, index) => {
       const rect = el.getBoundingClientRect();
       const style = getComputedStyle(el);
-      const parent = selected.find((candidate) => candidate !== el && candidate.contains(el));
+      const parent = nearestSelectedParent(el);
       const z = Number.parseInt(style.zIndex, 10);
       const fontSize = Number.parseInt(style.fontSize, 10);
       const opacity = Number.parseFloat(style.opacity);

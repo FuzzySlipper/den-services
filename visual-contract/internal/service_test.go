@@ -147,6 +147,112 @@ func TestWebEvidenceAdapterProducesValidContract(t *testing.T) {
 	}
 }
 
+func TestWebEvidenceAdapterPreservesNearestCollectorParentAndRelations(t *testing.T) {
+	service := newTestService(t)
+	evidence := WebEvidence{
+		SceneID: "sample_page",
+		Viewport: Viewport{
+			WidthPX:  1440,
+			HeightPX: 900,
+		},
+		ScreenshotRef: "sample-page.png",
+		Nodes: []WebNode{
+			{
+				ID:   "hero_section",
+				Role: "hero",
+				Tag:  "main",
+				BoundsPX: PixelBounds{
+					X: 86,
+					Y: 72,
+					W: 1268,
+					H: 288,
+				},
+				Attributes: map[string]string{
+					"data-visual-id":   "hero_section",
+					"data-visual-role": "hero",
+				},
+			},
+			{
+				ID:       "node-1",
+				ParentID: "hero_section",
+				Tag:      "section",
+				BoundsPX: PixelBounds{
+					X: 86,
+					Y: 72,
+					W: 602,
+					H: 288,
+				},
+			},
+			{
+				ID:       "hero_title",
+				ParentID: "node-1",
+				Tag:      "h1",
+				BoundsPX: PixelBounds{
+					X: 86,
+					Y: 72,
+					W: 602,
+					H: 101,
+				},
+				Attributes: map[string]string{
+					"data-visual-id": "hero_title",
+				},
+			},
+			{
+				ID:       "primary_cta",
+				ParentID: "node-1",
+				Tag:      "button",
+				BoundsPX: PixelBounds{
+					X: 86,
+					Y: 205,
+					W: 230,
+					H: 54,
+				},
+				Attributes: map[string]string{
+					"data-visual-id": "primary_cta",
+				},
+			},
+			{
+				ID:       "preview_card",
+				ParentID: "hero_section",
+				Role:     "visual_preview",
+				Tag:      "aside",
+				BoundsPX: PixelBounds{
+					X: 752,
+					Y: 72,
+					W: 602,
+					H: 288,
+				},
+				Attributes: map[string]string{
+					"data-visual-id":   "preview_card",
+					"data-visual-role": "visual_preview",
+				},
+			},
+		},
+	}
+
+	contract, err := service.FromWebEvidence(context.Background(), &evidence)
+	if err != nil {
+		t.Fatalf("FromWebEvidence() error = %v", err)
+	}
+	if err := ValidateContract(contract); err != nil {
+		t.Fatalf("ValidateContract(adapter output) error = %v", err)
+	}
+	heroTitle := objectByID(t, contract, "hero_title")
+	if heroTitle.Parent != "node_1" {
+		t.Fatalf("hero_title parent = %s, want node_1", heroTitle.Parent)
+	}
+	primaryCTA := objectByID(t, contract, "primary_cta")
+	if primaryCTA.Parent != "node_1" {
+		t.Fatalf("primary_cta parent = %s, want node_1", primaryCTA.Parent)
+	}
+	if !hasRelation(contract.Relations, RelationRightOf, "preview_card", "hero_title") {
+		t.Fatal("web adapter should infer preview_card right_of hero_title after collector conversion")
+	}
+	if !hasRelation(contract.Relations, RelationLeftOf, "hero_title", "preview_card") {
+		t.Fatal("web adapter should infer complementary hero_title left_of preview_card after collector conversion")
+	}
+}
+
 func TestCompareReportsMatchConfidence(t *testing.T) {
 	service := newTestService(t)
 	reference := loadContractFixture(t, "../testdata/contracts/reference.web-ui.json")
