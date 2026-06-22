@@ -113,6 +113,20 @@ routes:
 #      bearer_token: "${DEN_GATEWAY_TIMELINE_READ_TOKEN}"
 #    successor_auth:
 #      bearer_token: "${DEN_GATEWAY_TIMELINE_UPSTREAM_TOKEN}"
+
+# Doc Publish route example. This route performs external repo writes, so keep
+# caller auth distinct from the upstream doc-publish service token.
+#
+#  - name: "doc-publish-publications"
+#    path_pattern: "/v1/blog/publications"
+#    methods: ["GET", "POST"]
+#    legacy_upstream_url: "http://127.0.0.1:5080"
+#    successor_upstream_url: "http://127.0.0.1:8087"
+#    successor_mode: "always"
+#    caller_auth:
+#      bearer_token: "${DEN_GATEWAY_DOC_PUBLISH_CALLER_TOKEN}"
+#    successor_auth:
+#      bearer_token: "${DEN_GATEWAY_DOC_PUBLISH_UPSTREAM_TOKEN}"
 #
 #  - name: "conversation-reads-canary"
 #    path_pattern: "/v1/conversation"

@@ -4,6 +4,7 @@ use (
 	.
 	./conversation
 	./delivery
+	./doc-publish
 	./gateway
 	./integration
 	./migration

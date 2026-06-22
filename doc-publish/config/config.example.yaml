@@ -1,0 +1,27 @@
+# Doc Publish module configuration.
+# Copy to /data/services/doc-publish/config/config.yaml for deployment.
+
+bind_addr: "127.0.0.1:8087" # Loopback HTTP listen address.
+
+blog:
+  repo_path: "/data/services/doc-publish/repos/blog" # Local checkout of the GitHub Pages repo.
+  expected_remote_url: "git@github.com:example/blog.git" # Refuse to publish if origin differs.
+  branch: "main" # Branch that receives generated posts.
+  post_dir: "_posts" # Jekyll/GitHub Pages posts directory within repo_path.
+  public_base_url: "https://example.github.io/blog" # Base URL used to return public post links.
+  author_name: "Den Publisher" # Git commit author name.
+  author_email: "den-publisher@example.invalid" # Git commit author email.
+  push: true # Push commits after a successful publish.
+
+records:
+  path: "/data/services/doc-publish/data/publications" # File-backed publication audit records.
+
+source:
+  documents_base_url: "http://127.0.0.1:5080" # Core/Gateway document fetch base URL.
+  request_timeout: "5s" # Timeout for source document fetches.
+
+git:
+  command_timeout: "15s" # Timeout for individual git commands.
+
+http:
+  read_header_timeout: "5s" # Maximum time to read request headers.
