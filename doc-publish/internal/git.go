@@ -141,12 +141,14 @@ func (p *GitPublisher) git(ctx context.Context, args ...string) (string, error) 
 	defer cancel()
 	cmd := exec.CommandContext(commandContext, "git", args...)
 	cmd.Dir = p.cfg.RepoPath
-	output, err := cmd.CombinedOutput()
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	output, err := cmd.Output()
 	if commandContext.Err() != nil {
 		return "", fmt.Errorf("git %s timed out: %w", strings.Join(args, " "), commandContext.Err())
 	}
 	if err != nil {
-		return "", fmt.Errorf("git %s failed: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+		return "", fmt.Errorf("git %s failed: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return string(output), nil
 }

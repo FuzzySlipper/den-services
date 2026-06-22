@@ -149,6 +149,31 @@ func TestGitPublisherSafetyChecks(t *testing.T) {
 		_, err := publisher.Publish(context.Background(), RenderedPost{Slug: "x", Path: "_posts/2026-06-22-x.md", Markdown: "x"}, false, false)
 		assertErrorContains(t, err, "repo has uncommitted changes")
 	})
+	t.Run("git status stderr warning is not treated as dirty", func(t *testing.T) {
+		repo, remote := initBlogRepo(t)
+		realGit, err := exec.LookPath("git")
+		if err != nil {
+			t.Fatal(err)
+		}
+		binDir := t.TempDir()
+		fakeGit := filepath.Join(binDir, "git")
+		script := "#!/usr/bin/env bash\n" +
+			"if [[ \"$1\" == \"status\" && \"$2\" == \"--porcelain\" ]]; then\n" +
+			"  echo 'warning: unable to access optional git config' >&2\n" +
+			"  exit 0\n" +
+			"fi\n" +
+			"exec " + realGit + " \"$@\"\n"
+		if err := os.WriteFile(fakeGit, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+		publisher := NewGitPublisher(testBlogConfig(repo, remote, false), 5*time.Second)
+		post := RenderedPost{Slug: "warning", Path: "_posts/2026-06-22-warning.md", Markdown: "warning"}
+		if _, err := publisher.Publish(context.Background(), post, false, true); err != nil {
+			t.Fatalf("Publish(dryRun) error = %v", err)
+		}
+	})
 	t.Run("wrong branch", func(t *testing.T) {
 		repo, remote := initBlogRepo(t)
 		cfg := testBlogConfig(repo, remote, false)
