@@ -64,7 +64,7 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 		"den_channels":    7,
 		"den_delivery":    2,
 		"den_observation": 3,
-		"den_runtime":     2,
+		"den_runtime":     3,
 	}
 	for schema, want := range wantVersions {
 		if versionsBySchema[schema] != want {
@@ -91,11 +91,48 @@ func TestObservationRustyChannelReferenceReconciliationMigration(t *testing.T) {
 	for _, want := range []string{
 		"update den_observation.activity_events",
 		"jsonb_set(payload, '{work_ref,channel_id}', to_jsonb(7593), false)",
-		"payload #>> '{work_ref,project_id}' = 'rusty-crew'",
 		"payload #>> '{work_ref,channel_id}' = '43'",
+		"create or replace view den_observation.rusty_channel_activity_split_refs",
+		"grant select on den_observation.rusty_channel_activity_split_refs to den_observation_app",
 	} {
 		if !strings.Contains(reconcile.SQL, want) {
 			t.Fatalf("observation rusty reconciliation SQL missing %q", want)
+		}
+	}
+	if strings.Contains(reconcile.SQL, "payload #>> '{work_ref,project_id}' = 'rusty-crew'") {
+		t.Fatal("observation rusty reconciliation should include channel-only activity refs")
+	}
+}
+
+func TestRuntimeRustyChannelSubscriptionReconciliationMigration(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("Discover(DefaultFS()) error = %v", err)
+	}
+	var reconcile Migration
+	for _, migration := range migrations {
+		if migration.Schema == "den_runtime" && migration.Version == 3 {
+			reconcile = migration
+			break
+		}
+	}
+	if reconcile.Path == "" {
+		t.Fatal("den_runtime version 3 migration was not discovered")
+	}
+	for _, want := range []string{
+		"superseded_channel_id constant bigint := 43",
+		"canonical_channel_id constant bigint := 7593",
+		"update den_runtime.channel_subscriptions target",
+		"update den_runtime.channel_subscription_cursors target_cursor",
+		"delete from den_runtime.channel_subscription_cursors source_cursor",
+		"update den_runtime.channel_subscription_cursors cursor_row",
+		"delete from den_runtime.channel_subscriptions source_subscription",
+		"update den_runtime.channel_subscriptions",
+		"create or replace view den_runtime.rusty_channel_subscription_split_refs",
+		"grant select on den_runtime.rusty_channel_subscription_split_refs to den_runtime_app",
+	} {
+		if !strings.Contains(reconcile.SQL, want) {
+			t.Fatalf("runtime rusty reconciliation SQL missing %q", want)
 		}
 	}
 }
