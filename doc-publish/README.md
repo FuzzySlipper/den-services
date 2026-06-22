@@ -66,6 +66,12 @@ curl -fsS \
 canonical source document server-side from the configured Core/Gateway document
 surface before writing the blog repo.
 
+On den-srv, set `source.documents_base_url` in
+`/data/services/doc-publish/config/config.yaml` to `http://127.0.0.1:5299` so
+publish can read canonical documents from Den Core. Preview may still work with
+an inline `document` payload when this URL is wrong, but publish will fail while
+fetching the source document.
+
 ## Safety Model
 
 Publishing is fail-closed:
