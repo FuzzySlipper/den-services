@@ -61,14 +61,80 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 		}
 	}
 	wantVersions := map[string]int{
-		"den_channels":    6,
+		"den_channels":    7,
 		"den_delivery":    2,
-		"den_observation": 2,
+		"den_observation": 3,
 		"den_runtime":     2,
 	}
 	for schema, want := range wantVersions {
 		if versionsBySchema[schema] != want {
 			t.Fatalf("%s current version = %d, want %d", schema, versionsBySchema[schema], want)
+		}
+	}
+}
+
+func TestObservationRustyChannelReferenceReconciliationMigration(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("Discover(DefaultFS()) error = %v", err)
+	}
+	var reconcile Migration
+	for _, migration := range migrations {
+		if migration.Schema == "den_observation" && migration.Version == 3 {
+			reconcile = migration
+			break
+		}
+	}
+	if reconcile.Path == "" {
+		t.Fatal("den_observation version 3 migration was not discovered")
+	}
+	for _, want := range []string{
+		"update den_observation.activity_events",
+		"jsonb_set(payload, '{work_ref,channel_id}', to_jsonb(7593), false)",
+		"payload #>> '{work_ref,project_id}' = 'rusty-crew'",
+		"payload #>> '{work_ref,channel_id}' = '43'",
+	} {
+		if !strings.Contains(reconcile.SQL, want) {
+			t.Fatalf("observation rusty reconciliation SQL missing %q", want)
+		}
+	}
+}
+
+func TestConversationRustyProjectDefaultReconciliationMigration(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("Discover(DefaultFS()) error = %v", err)
+	}
+	var reconcile Migration
+	for _, migration := range migrations {
+		if migration.Schema == "den_channels" && migration.Version == 7 {
+			reconcile = migration
+			break
+		}
+	}
+	if reconcile.Path == "" {
+		t.Fatal("den_channels version 7 migration was not discovered")
+	}
+	for _, want := range []string{
+		"legacy_channel_id constant bigint := 7593",
+		"rusty_project_id constant text := 'rusty-crew'",
+		"update den_channels.channel_messages",
+		"update den_channels.channel_memberships",
+		"update den_channels.channel_reactions",
+		"update den_channels.legacy_import_memberships lim",
+		"delete from den_channels.channel_memberships source",
+		"update den_channels.channel_read_cursors",
+		"delete from den_channels.channel_read_cursors source",
+		"update den_channels.channel_project_links",
+		"update den_channels.legacy_import_project_links lipl",
+		"delete from den_channels.channel_project_links source",
+		"update den_channels.legacy_import_messages lim",
+		"update den_channels.legacy_import_read_cursors lirc",
+		"create or replace view den_channels.project_default_channel_id_splits",
+		"grant select on den_channels.project_default_channel_id_splits to den_channels_app",
+	} {
+		if !strings.Contains(reconcile.SQL, want) {
+			t.Fatalf("rusty reconciliation SQL missing %q", want)
 		}
 	}
 }
