@@ -52,7 +52,7 @@ func (f *HTTPDocumentFetcher) Fetch(ctx context.Context, source DocumentSource) 
 		Title:     firstNonEmpty(coreDoc.Title, coreDoc.Slug, source.DocumentSlug),
 		Slug:      coreDoc.Slug,
 		Markdown:  coreDoc.Content,
-		UpdatedAt: coreDoc.UpdatedAt,
+		UpdatedAt: coreDoc.UpdatedAt.Time,
 	}
 	if doc.Title == "" || doc.Markdown == "" {
 		return nil, invalidRequest("source document response requires title and content")
@@ -61,8 +61,43 @@ func (f *HTTPDocumentFetcher) Fetch(ctx context.Context, source DocumentSource) 
 }
 
 type coreDocumentResponse struct {
-	Title     string    `json:"title"`
-	Slug      string    `json:"slug"`
-	Content   string    `json:"content"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Title     string        `json:"title"`
+	Slug      string        `json:"slug"`
+	Content   string        `json:"content"`
+	UpdatedAt coreTimestamp `json:"updated_at"`
+}
+
+type coreTimestamp struct {
+	time.Time
+}
+
+func (t *coreTimestamp) UnmarshalJSON(data []byte) error {
+	var raw *string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil || strings.TrimSpace(*raw) == "" {
+		t.Time = time.Time{}
+		return nil
+	}
+	parsed, err := parseCoreTimestamp(*raw)
+	if err != nil {
+		return err
+	}
+	t.Time = parsed
+	return nil
+}
+
+func parseCoreTimestamp(raw string) (time.Time, error) {
+	value := strings.TrimSpace(raw)
+	if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		return parsed, nil
+	}
+	if parsed, err := time.ParseInLocation("2006-01-02T15:04:05", value, time.UTC); err == nil {
+		return parsed.UTC(), nil
+	}
+	if parsed, err := time.ParseInLocation("2006-01-02T15:04:05.999999999", value, time.UTC); err == nil {
+		return parsed.UTC(), nil
+	}
+	return time.Time{}, fmt.Errorf("parsing Core document timestamp %q as RFC3339 or UTC local timestamp", raw)
 }

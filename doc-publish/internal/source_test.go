@@ -43,3 +43,28 @@ func TestHTTPDocumentFetcherUsesCoreDocumentRouteAndShape(t *testing.T) {
 		t.Fatal("updated_at should be decoded")
 	}
 }
+
+func TestHTTPDocumentFetcherAcceptsCoreTimestampWithoutTimezone(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"title": "Core Title",
+			"slug": "core-doc",
+			"content": "# Core body",
+			"updated_at": "2026-06-22T05:05:49"
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	fetcher := NewHTTPDocumentFetcher(server.URL, "", time.Second)
+	document, err := fetcher.Fetch(context.Background(), DocumentSource{
+		DocumentProjectID: "research",
+		DocumentSlug:      "core-doc",
+	})
+	if err != nil {
+		t.Fatalf("Fetch() error = %v", err)
+	}
+	if got := document.UpdatedAt.Format(time.RFC3339); got != "2026-06-22T05:05:49Z" {
+		t.Fatalf("updated_at = %s, want UTC-normalized Core timestamp", got)
+	}
+}
