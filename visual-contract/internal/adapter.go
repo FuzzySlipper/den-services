@@ -7,12 +7,16 @@ import (
 )
 
 type WebEvidence struct {
-	SceneID       string       `json:"scene_id"`
-	Project       *Project     `json:"project,omitempty"`
-	Viewport      Viewport     `json:"viewport"`
-	ScreenshotRef string       `json:"screenshot_ref,omitempty"`
-	Nodes         []WebNode    `json:"nodes"`
-	Constraints   []Constraint `json:"constraints,omitempty"`
+	SceneID         string             `json:"scene_id"`
+	Project         *Project           `json:"project,omitempty"`
+	CoordinateSpace WebCoordinateSpace `json:"coordinate_space,omitempty"`
+	CaptureMode     WebCaptureMode     `json:"capture_mode,omitempty"`
+	Viewport        Viewport           `json:"viewport"`
+	PageSize        *Viewport          `json:"page_size,omitempty"`
+	ScrollOffset    *WebScrollOffset   `json:"scroll_offset,omitempty"`
+	ScreenshotRef   string             `json:"screenshot_ref,omitempty"`
+	Nodes           []WebNode          `json:"nodes"`
+	Constraints     []Constraint       `json:"constraints,omitempty"`
 }
 
 type WebNode struct {
@@ -24,8 +28,37 @@ type WebNode struct {
 	Text           string            `json:"text,omitempty"`
 	Tag            string            `json:"tag,omitempty"`
 	BoundsPX       PixelBounds       `json:"bounds_px"`
+	OriginalBounds *PixelBounds      `json:"original_bounds_px,omitempty"`
+	BoundsClipped  bool              `json:"bounds_clipped,omitempty"`
 	Styles         WebStyleSummary   `json:"styles,omitempty"`
 	Attributes     map[string]string `json:"attributes,omitempty"`
+}
+
+type WebCoordinateSpace string
+
+const (
+	WebCoordinateSpaceViewport WebCoordinateSpace = "viewport"
+	WebCoordinateSpacePage     WebCoordinateSpace = "page"
+)
+
+func (s WebCoordinateSpace) normalized() WebCoordinateSpace {
+	if s == "" {
+		return WebCoordinateSpaceViewport
+	}
+	return s
+}
+
+type WebCaptureMode string
+
+const (
+	WebCaptureModeViewport        WebCaptureMode = "viewport"
+	WebCaptureModeViewportClipped WebCaptureMode = "viewport-clipped"
+	WebCaptureModePage            WebCaptureMode = "page"
+)
+
+type WebScrollOffset struct {
+	XPX int `json:"x_px"`
+	YPX int `json:"y_px"`
 }
 
 type WebStyleSummary struct {
@@ -40,17 +73,8 @@ type WebStyleSummary struct {
 }
 
 func BuildContractFromWebEvidence(evidence *WebEvidence) (*Contract, error) {
-	if evidence == nil {
-		return nil, invalidRequest("web evidence is required")
-	}
-	if evidence.SceneID == "" {
-		return nil, invalidRequest("scene_id is required")
-	}
-	if evidence.Viewport.WidthPX <= 0 || evidence.Viewport.HeightPX <= 0 {
-		return nil, invalidRequest("viewport dimensions must be positive")
-	}
-	if len(evidence.Nodes) == 0 {
-		return nil, invalidRequest("at least one web node is required")
+	if err := validateWebEvidence(evidence); err != nil {
+		return nil, err
 	}
 
 	layers := buildWebLayers(evidence.Nodes)
@@ -117,6 +141,46 @@ func BuildContractFromWebEvidence(evidence *WebEvidence) (*Contract, error) {
 			Records:           records,
 		},
 	}, nil
+}
+
+func validateWebEvidence(evidence *WebEvidence) error {
+	if evidence == nil {
+		return invalidRequest("web evidence is required")
+	}
+	if evidence.SceneID == "" {
+		return invalidRequest("scene_id is required")
+	}
+	if evidence.Viewport.WidthPX <= 0 || evidence.Viewport.HeightPX <= 0 {
+		return invalidRequest("viewport dimensions must be positive")
+	}
+	if len(evidence.Nodes) == 0 {
+		return invalidRequest("at least one web node is required")
+	}
+	switch evidence.CoordinateSpace.normalized() {
+	case WebCoordinateSpaceViewport:
+		for _, node := range evidence.Nodes {
+			if err := validateViewportWebNode(evidence.Viewport, node); err != nil {
+				return err
+			}
+		}
+	case WebCoordinateSpacePage:
+		return invalidRequest("web evidence coordinate_space page is not accepted by from-web-evidence; collect viewport-clipped evidence or convert page-space evidence through an explicit page adapter")
+	default:
+		return invalidRequest(fmt.Sprintf("unsupported web evidence coordinate_space %s", evidence.CoordinateSpace))
+	}
+	return nil
+}
+
+func validateViewportWebNode(viewport Viewport, node WebNode) error {
+	label := webNodeLabel(node)
+	bounds := node.BoundsPX
+	if bounds.W <= 0 || bounds.H <= 0 {
+		return invalidRequest(fmt.Sprintf("web node %s bounds_px width and height must be positive", label))
+	}
+	if bounds.X < 0 || bounds.Y < 0 || bounds.X+bounds.W > viewport.WidthPX || bounds.Y+bounds.H > viewport.HeightPX {
+		return invalidRequest(fmt.Sprintf("web node %s viewport bounds exceed viewport; use collector capture_mode viewport-clipped or exclude off-viewport nodes", label))
+	}
+	return nil
 }
 
 func buildWebLayers(nodes []WebNode) []Layer {
@@ -321,6 +385,19 @@ func cleanID(value string) string {
 	value = strings.ReplaceAll(value, "-", "_")
 	value = strings.ReplaceAll(value, ":", "_")
 	return value
+}
+
+func webNodeLabel(node WebNode) string {
+	if node.ID != "" {
+		return node.ID
+	}
+	if node.TestID != "" {
+		return node.TestID
+	}
+	if value := node.Attributes["data-visual-id"]; value != "" {
+		return value
+	}
+	return "<missing-id>"
 }
 
 func firstNonEmpty(values ...string) string {

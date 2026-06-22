@@ -150,6 +150,10 @@ func (s *Service) BuildAuthored(_ context.Context, req AuthoredBuildRequest) (*A
 	return &AuthoredBuildResponse{Contract: *contract}, nil
 }
 
+func (s *Service) PromoteContract(_ context.Context, req ContractPromotionRequest) (*ContractPromotionResponse, error) {
+	return PromoteContract(req)
+}
+
 func compareContracts(reference *Contract, candidate *Contract) *ComparisonReport {
 	candidateIndex, _ := buildContractIndex(candidate)
 	results := make([]CheckResult, 0, len(reference.Constraints))

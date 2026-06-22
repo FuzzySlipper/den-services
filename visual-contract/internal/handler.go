@@ -20,6 +20,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /visual-contracts/overlays", h.overlays)
 	mux.HandleFunc("POST /visual-contracts/from-web-evidence", h.fromWebEvidence)
 	mux.HandleFunc("POST /visual-contracts/build-authored", h.buildAuthored)
+	mux.HandleFunc("POST /visual-contracts/promote-contract", h.promoteContract)
 	mux.HandleFunc("GET /visual-contracts/{run_id}", h.getRun)
 	mux.HandleFunc("GET /visual-contracts/{run_id}/artifacts/{artifact_name}", h.getArtifact)
 }
@@ -103,6 +104,20 @@ func (h *Handler) buildAuthored(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response, err := h.service.BuildAuthored(r.Context(), req)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) promoteContract(w http.ResponseWriter, r *http.Request) {
+	var req ContractPromotionRequest
+	if err := api.DecodeJSON(r, &req); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	response, err := h.service.PromoteContract(r.Context(), req)
 	if err != nil {
 		api.WriteServiceError(w, err)
 		return

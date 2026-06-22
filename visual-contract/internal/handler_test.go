@@ -109,6 +109,29 @@ func TestCompareRoutePersistsAndRetrievesArtifacts(t *testing.T) {
 	assertContains(t, fetch.Body.String(), `"verdict": "fail"`)
 }
 
+func TestPromoteContractRoute(t *testing.T) {
+	server := newTestServer(t)
+	generic := genericASHALikeContract()
+	req := ContractPromotionRequest{
+		Contract: &generic,
+		Objects: []ObjectPromotionRule{
+			{SourceID: "node_2", TargetID: "central_3d_viewport", DomainRole: "central_3d_viewport"},
+		},
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	request := authedRequest(http.MethodPost, "/visual-contracts/promote-contract", body)
+	recorder := httptest.NewRecorder()
+	server.Handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("promote-contract status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	assertContains(t, recorder.Body.String(), `"id":"central_3d_viewport"`)
+	assertContains(t, recorder.Body.String(), `"diagnostics"`)
+}
+
 func loadJSONFixture(t *testing.T, path string, target any) {
 	t.Helper()
 	data, err := os.ReadFile(path)

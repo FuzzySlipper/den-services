@@ -253,6 +253,141 @@ func TestWebEvidenceAdapterPreservesNearestCollectorParentAndRelations(t *testin
 	}
 }
 
+func TestWebEvidenceAdapterAcceptsClippedTallViewportEvidence(t *testing.T) {
+	service := newTestService(t)
+	evidence := WebEvidence{
+		SceneID:         "tall_page",
+		CoordinateSpace: WebCoordinateSpaceViewport,
+		CaptureMode:     WebCaptureModeViewportClipped,
+		Viewport: Viewport{
+			WidthPX:  1920,
+			HeightPX: 1080,
+		},
+		PageSize: &Viewport{WidthPX: 1920, HeightPX: 1800},
+		Nodes: []WebNode{
+			{
+				ID:   "asha_shell",
+				Role: "app_shell",
+				Tag:  "main",
+				BoundsPX: PixelBounds{
+					X: 0,
+					Y: 0,
+					W: 1920,
+					H: 1080,
+				},
+				OriginalBounds: &PixelBounds{
+					X: 0,
+					Y: 0,
+					W: 1920,
+					H: 1800,
+				},
+				BoundsClipped: true,
+				Attributes: map[string]string{
+					"data-visual-id":   "asha_shell",
+					"data-visual-role": "app_shell",
+				},
+			},
+			{
+				ID:       "central_viewport",
+				ParentID: "asha_shell",
+				Role:     "central_3d_viewport",
+				Tag:      "section",
+				BoundsPX: PixelBounds{
+					X: 384,
+					Y: 24,
+					W: 1040,
+					H: 760,
+				},
+				Attributes: map[string]string{
+					"data-visual-id":   "central_viewport",
+					"data-visual-role": "central_3d_viewport",
+				},
+			},
+			{
+				ID:       "evidence_dock",
+				ParentID: "asha_shell",
+				Role:     "evidence_dock",
+				Tag:      "aside",
+				BoundsPX: PixelBounds{
+					X: 1456,
+					Y: 1000,
+					W: 400,
+					H: 80,
+				},
+				OriginalBounds: &PixelBounds{
+					X: 1456,
+					Y: 1000,
+					W: 400,
+					H: 260,
+				},
+				BoundsClipped: true,
+				Attributes: map[string]string{
+					"data-visual-id":   "evidence_dock",
+					"data-visual-role": "evidence_dock",
+				},
+			},
+		},
+	}
+
+	contract, err := service.FromWebEvidence(context.Background(), &evidence)
+	if err != nil {
+		t.Fatalf("FromWebEvidence(clipped tall evidence) error = %v", err)
+	}
+	if err := ValidateContract(contract); err != nil {
+		t.Fatalf("ValidateContract(clipped tall output) error = %v", err)
+	}
+	dock := objectByID(t, contract, "evidence_dock")
+	if dock.Bounds.Y+dock.Bounds.H > 1 {
+		t.Fatalf("evidence_dock normalized bounds exceed viewport: %+v", dock.Bounds)
+	}
+}
+
+func TestWebEvidenceAdapterRejectsDishonestPageAndViewportEvidence(t *testing.T) {
+	service := newTestService(t)
+	tests := []struct {
+		name     string
+		evidence WebEvidence
+		want     string
+	}{
+		{
+			name: "page space",
+			evidence: WebEvidence{
+				SceneID:         "page_space",
+				CoordinateSpace: WebCoordinateSpacePage,
+				CaptureMode:     WebCaptureModePage,
+				Viewport:        Viewport{WidthPX: 1920, HeightPX: 1080},
+				Nodes: []WebNode{
+					{ID: "offscreen_log", Tag: "section", Role: "diagnostic_log", BoundsPX: PixelBounds{X: 384, Y: 1360, W: 1040, H: 280}},
+				},
+			},
+			want: "coordinate_space page is not accepted",
+		},
+		{
+			name: "viewport overflow",
+			evidence: WebEvidence{
+				SceneID:         "viewport_overflow",
+				CoordinateSpace: WebCoordinateSpaceViewport,
+				CaptureMode:     WebCaptureModeViewport,
+				Viewport:        Viewport{WidthPX: 1920, HeightPX: 1080},
+				Nodes: []WebNode{
+					{ID: "evidence_dock", Tag: "aside", Role: "evidence_dock", BoundsPX: PixelBounds{X: 1456, Y: 1000, W: 400, H: 260}},
+				},
+			},
+			want: "web node evidence_dock viewport bounds exceed viewport",
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := service.FromWebEvidence(context.Background(), &tt.evidence)
+			if err == nil {
+				t.Fatal("FromWebEvidence() error = nil, want error")
+			}
+			assertContains(t, err.Error(), tt.want)
+		})
+	}
+}
+
 func TestCompareReportsMatchConfidence(t *testing.T) {
 	service := newTestService(t)
 	reference := loadContractFixture(t, "../testdata/contracts/reference.web-ui.json")
@@ -364,6 +499,102 @@ func TestBuildAuthoredContractDiagnostics(t *testing.T) {
 			assertContains(t, err.Error(), tt.want)
 		})
 	}
+}
+
+func TestPromoteContractFromGenericASHAFixture(t *testing.T) {
+	var req ContractPromotionRequest
+	loadJSONFixture(t, "../testdata/authored/asha-promotion.json", &req)
+	generic := genericASHALikeContract()
+	req.Contract = &generic
+
+	response, err := PromoteContract(req)
+	if err != nil {
+		t.Fatalf("PromoteContract() error = %v", err)
+	}
+	contract := response.Contract
+	if err := ValidateContract(&contract); err != nil {
+		t.Fatalf("ValidateContract(promoted output) error = %v", err)
+	}
+	if len(response.Diagnostics) != 0 {
+		t.Fatalf("diagnostics = %+v, want none", response.Diagnostics)
+	}
+	if contract.Project == nil || contract.Project.ID != "asha" {
+		t.Fatalf("project = %+v, want asha", contract.Project)
+	}
+	central := objectByID(t, &contract, "central_3d_viewport")
+	if central.DomainRole == nil || *central.DomainRole != "central_3d_viewport" {
+		t.Fatalf("central domain_role = %v, want central_3d_viewport", central.DomainRole)
+	}
+	if central.SemanticDescription == "" {
+		t.Fatal("central viewport should carry promotion semantic description")
+	}
+	if _, found := findObject(&contract, "node_noise"); found {
+		t.Fatal("ignored noisy node should not be present")
+	}
+	if !hasRelation(contract.Relations, RelationRightOf, "selected_target_inspector", "central_3d_viewport") {
+		t.Fatal("promoted contract should infer inspector right_of central viewport")
+	}
+	report := compareContracts(&contract, &contract)
+	if report.Verdict != VerdictPass {
+		t.Fatalf("promoted contract should compare against itself; verdict=%s failures=%+v", report.Verdict, report.Failures)
+	}
+	assertPassed(t, report, "central_viewport_exists")
+	assertPassed(t, report, "central_viewport_dominant")
+	assertPassed(t, report, "inspector_right_of_viewport")
+	assertPassed(t, report, "timeline_below_viewport")
+}
+
+func TestPromoteContractDiagnostics(t *testing.T) {
+	generic := genericASHALikeContract()
+	t.Run("unmapped important", func(t *testing.T) {
+		response, err := PromoteContract(ContractPromotionRequest{Contract: &generic})
+		if err != nil {
+			t.Fatalf("PromoteContract() error = %v", err)
+		}
+		if !hasDraftDiagnostic(response.Diagnostics, "unmapped_important_node") {
+			t.Fatalf("diagnostics = %+v, want unmapped_important_node", response.Diagnostics)
+		}
+	})
+	t.Run("duplicate target", func(t *testing.T) {
+		_, err := PromoteContract(ContractPromotionRequest{
+			Contract: &generic,
+			Objects: []ObjectPromotionRule{
+				{SourceID: "node_1", TargetID: "duplicate"},
+				{SourceID: "node_2", TargetID: "duplicate"},
+			},
+		})
+		if err == nil {
+			t.Fatal("PromoteContract() error = nil, want duplicate target error")
+		}
+		assertContains(t, err.Error(), "duplicate target_id duplicate")
+	})
+	t.Run("unknown domain role diagnostic", func(t *testing.T) {
+		response, err := PromoteContract(ContractPromotionRequest{
+			Contract: &generic,
+			Project:  &Project{ID: "asha", Roles: []string{"known_role"}},
+			Objects: []ObjectPromotionRule{
+				{SourceID: "node_1", TargetID: "scene_hierarchy", DomainRole: "unknown_role"},
+			},
+		})
+		if err != nil {
+			t.Fatalf("PromoteContract() error = %v", err)
+		}
+		if !hasDraftDiagnostic(response.Diagnostics, "unknown_domain_role") {
+			t.Fatalf("diagnostics = %+v, want unknown_domain_role", response.Diagnostics)
+		}
+	})
+	t.Run("unknown constraint object", func(t *testing.T) {
+		_, err := PromoteContract(ContractPromotionRequest{
+			Contract: &generic,
+			Constraints: []AuthoredConstraint{
+				{ID: "missing", Type: ConstraintObjectExists, Object: "missing_object", Importance: ImportanceCritical},
+			},
+		})
+		if err == nil {
+			t.Fatal("PromoteContract() error = nil, want unknown object error")
+		}
+		assertContains(t, err.Error(), "unknown object missing_object")
+	})
 }
 
 func TestContainmentConstraintSupportsSpaceAndObjectParents(t *testing.T) {
@@ -484,4 +715,84 @@ func assertDiagnostic(t *testing.T, report *ComparisonReport, constraintID strin
 		return
 	}
 	t.Fatalf("diagnostic %s not found", constraintID)
+}
+
+func hasDraftDiagnostic(diagnostics []ContractDraftDiagnostic, code string) bool {
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+func genericASHALikeContract() Contract {
+	return Contract{
+		Schema: SchemaVersion,
+		Scene: Scene{
+			ID:             "asha_generic",
+			Type:           "web_ui",
+			Viewport:       Viewport{WidthPX: 1920, HeightPX: 1080},
+			CoordinateMode: "normalized_with_pixel_evidence",
+		},
+		Spaces: []Space{
+			{
+				ID:   "viewport",
+				Kind: "root",
+				Bounds: Bounds{
+					X: 0,
+					Y: 0,
+					W: 1,
+					H: 1,
+				},
+			},
+		},
+		Layers: []Layer{
+			{ID: "z_0", Z: 0, Contains: []string{"node_1", "node_2", "node_3", "node_4", "node_5", "node_noise"}},
+		},
+		Objects: []Object{
+			genericObject("node_1", "viewport", 0.02, 0.02, 0.16, 0.72),
+			genericObject("node_2", "viewport", 0.20, 0.02, 0.54, 0.72),
+			genericObject("node_3", "viewport", 0.76, 0.02, 0.21, 0.72),
+			genericObject("node_4", "viewport", 0.20, 0.78, 0.54, 0.16),
+			genericObject("node_5", "viewport", 0.76, 0.78, 0.21, 0.16),
+			genericObject("node_noise", "viewport", 0.01, 0.95, 0.08, 0.03),
+		},
+		Evidence: EvidenceSet{
+			SourceType:        "fixture",
+			GeneratedBy:       "visual-contract-test",
+			OverallConfidence: 0.9,
+			Records: []EvidenceRecord{
+				genericEvidence("node_1"),
+				genericEvidence("node_2"),
+				genericEvidence("node_3"),
+				genericEvidence("node_4"),
+				genericEvidence("node_5"),
+				genericEvidence("node_noise"),
+			},
+		},
+	}
+}
+
+func genericObject(id string, parent string, x float64, y float64, w float64, h float64) Object {
+	return Object{
+		ID:           id,
+		Kind:         "panel",
+		Role:         "generic",
+		Parent:       parent,
+		Layer:        "z_0",
+		Bounds:       Bounds{Space: "viewport", X: x, Y: y, W: w, H: h},
+		Importance:   ImportanceMajor,
+		Confidence:   0.9,
+		EvidenceRefs: []string{"fixture:" + id},
+	}
+}
+
+func genericEvidence(id string) EvidenceRecord {
+	return EvidenceRecord{
+		ID:         "fixture:" + id,
+		Kind:       "fixture",
+		ObjectRefs: []string{id},
+		Confidence: 0.9,
+	}
 }

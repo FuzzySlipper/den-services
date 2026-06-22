@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Visual Contract Tall Fixture</title>
+    <style>
+      body { margin: 0; font-family: system-ui, sans-serif; background: #10131a; color: #f8fafc; }
+      .app {
+        position: relative;
+        width: 1920px;
+        height: 1800px;
+        overflow: hidden;
+      }
+      .rail { position: absolute; left: 32px; top: 24px; width: 320px; height: 1010px; background: #1f2937; }
+      .viewport { position: absolute; left: 384px; top: 24px; width: 1040px; height: 760px; background: #172554; }
+      .inspector { position: absolute; left: 1456px; top: 24px; width: 400px; height: 760px; background: #312e81; }
+      .timeline { position: absolute; left: 384px; top: 840px; width: 1040px; height: 280px; background: #064e3b; }
+      .partially-visible { position: absolute; left: 1456px; top: 1000px; width: 400px; height: 260px; background: #713f12; }
+      .offscreen { position: absolute; left: 384px; top: 1360px; width: 1040px; height: 280px; background: #7f1d1d; }
+    </style>
+  </head>
+  <body>
+    <main class="app" data-visual-id="asha_shell" data-visual-role="app_shell" aria-label="ASHA shell">
+      <section class="rail" data-visual-id="scene_hierarchy" data-visual-role="scene_hierarchy" aria-label="Scene hierarchy"></section>
+      <section class="viewport" data-visual-id="central_viewport" data-visual-role="central_3d_viewport" aria-label="Central 3D viewport"></section>
+      <aside class="inspector" data-visual-id="target_inspector" data-visual-role="selected_target_inspector" aria-label="Selected target inspector"></aside>
+      <section class="timeline" data-visual-id="command_timeline" data-visual-role="command_timeline" aria-label="Command timeline"></section>
+      <aside class="partially-visible" data-visual-id="evidence_dock" data-visual-role="evidence_dock" aria-label="Evidence dock"></aside>
+      <section class="offscreen" data-visual-id="offscreen_log" data-visual-role="diagnostic_log" aria-label="Offscreen diagnostic log"></section>
+    </main>
+  </body>
+</html>

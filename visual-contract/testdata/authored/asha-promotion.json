@@ -1,0 +1,86 @@
+{
+  "project": {
+    "id": "asha",
+    "vocabulary": "asha_studio_v0",
+    "roles": [
+      "scene_hierarchy",
+      "central_3d_viewport",
+      "selected_target_inspector",
+      "command_timeline",
+      "evidence_dock"
+    ]
+  },
+  "vocabulary": {
+    "role_aliases": {
+      "centralViewport": "central_3d_viewport"
+    }
+  },
+  "objects": [
+    {
+      "source_id": "node_1",
+      "target_id": "scene_hierarchy",
+      "domain_role": "scene_hierarchy",
+      "semantic_description": "Left scene tree for selecting ASHA renderables"
+    },
+    {
+      "source_id": "node_2",
+      "target_id": "central_3d_viewport",
+      "domain_role": "centralViewport",
+      "semantic_description": "Primary 3D canvas viewport"
+    },
+    {
+      "source_id": "node_3",
+      "target_id": "selected_target_inspector",
+      "domain_role": "selected_target_inspector",
+      "semantic_description": "Inspector for selected target metadata"
+    },
+    {
+      "source_id": "node_4",
+      "target_id": "command_timeline",
+      "domain_role": "command_timeline",
+      "semantic_description": "Command provenance and timeline strip"
+    },
+    {
+      "source_id": "node_5",
+      "target_id": "evidence_dock",
+      "domain_role": "evidence_dock",
+      "semantic_description": "Evidence and proof dock"
+    }
+  ],
+  "ignore_objects": [
+    "node_noise"
+  ],
+  "constraints": [
+    {
+      "id": "central_viewport_exists",
+      "type": "object_exists",
+      "object": "central_3d_viewport",
+      "importance": "critical"
+    },
+    {
+      "id": "central_viewport_dominant",
+      "type": "area_ratio",
+      "object": "central_3d_viewport",
+      "importance": "critical",
+      "min_viewport_area_ratio": 0.2
+    },
+    {
+      "id": "inspector_right_of_viewport",
+      "type": "layout_relation",
+      "a": "selected_target_inspector",
+      "relation": "right_of",
+      "b": "central_3d_viewport",
+      "importance": "major",
+      "tolerance_norm": 0.02
+    },
+    {
+      "id": "timeline_below_viewport",
+      "type": "layout_relation",
+      "a": "command_timeline",
+      "relation": "below",
+      "b": "central_3d_viewport",
+      "importance": "major",
+      "tolerance_norm": 0.02
+    }
+  ]
+}
