@@ -15,11 +15,18 @@ not one of the rootless Docker PostgreSQL containers. Docker already owns port
 - Database: `denservices`
 - Listener: `127.0.0.1:5433`
 - Secret env file: `/etc/den-services/postgresql.env`
+- Local agent env copy: `/home/dev/den-services/postgresql.env`
 
 From development hosts such as `den-k8`, connect to the database host over the
 LAN address `192.168.1.10:5433` when remote access is needed. Deployed services
 on `den-srv` should use `127.0.0.1:5433`, because they run on the same machine
 as the database.
+
+The repo root on the agent workstation keeps local copies of the operational
+`.env` files (`postgresql.env`, `conversation.env`, `runtime.env`,
+`observation.env`, `delivery.env`, `gateway.env`, `timeline.env`). Agents may
+source those local files when they need live smoke/readback access. Do not copy
+secret values into docs, task comments, commit messages, or command output.
 
 ## Migration connection
 
@@ -33,6 +40,7 @@ The actual URL/password are stored only in:
 
 ```text
 /etc/den-services/postgresql.env
+/home/dev/den-services/postgresql.env
 ```
 
 Current env variable name:
