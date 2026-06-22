@@ -3,7 +3,7 @@ declare
 	rusty_project_id constant text := 'rusty-crew';
 	rusty_slug constant text := 'project-rusty-crew';
 	legacy_source constant text := 'legacy_den_channels_sqlite';
-	legacy_channel_id constant bigint := 7593;
+	canonical_channel_id constant bigint := 7593;
 	source_channel_id bigint;
 	source_slug text;
 	source_display_name text;
@@ -47,11 +47,11 @@ begin
 	join den_channels.legacy_import_channels lic
 		on lic.channel_id = c.id
 		and lic.source = legacy_source
-		and lic.legacy_id = legacy_channel_id
+		and lic.legacy_id = canonical_channel_id
 	where c.project_id = rusty_project_id
 		and c.kind = 'project_default'
 		and c.archived_at is null
-		and c.id <> legacy_channel_id
+		and c.id <> canonical_channel_id
 	order by c.id
 	limit 1;
 
@@ -59,7 +59,7 @@ begin
 		if exists (
 			select 1
 			from den_channels.channels existing
-			where existing.id = legacy_channel_id
+			where existing.id = canonical_channel_id
 				and existing.id <> source_channel_id
 				and (
 					existing.kind <> 'project_default'
@@ -67,7 +67,7 @@ begin
 					and existing.project_id <> rusty_project_id
 				)
 		) then
-			raise exception 'cannot reconcile rusty-crew project default channel: channel id % exists but is not the Rusty Crew project default', legacy_channel_id;
+			raise exception 'cannot reconcile rusty-crew project default channel: channel id % exists but is not the Rusty Crew project default', canonical_channel_id;
 		end if;
 
 		update den_channels.channels
@@ -91,7 +91,7 @@ begin
 			updated_at,
 			archived_at
 		) values (
-			legacy_channel_id,
+			canonical_channel_id,
 			source_slug,
 			source_display_name,
 			source_kind,
@@ -117,11 +117,11 @@ begin
 			archived_at = null;
 
 		update den_channels.channel_messages
-		set channel_id = legacy_channel_id
+		set channel_id = canonical_channel_id
 		where channel_id = source_channel_id;
 
 		update den_channels.channel_reactions
-		set channel_id = legacy_channel_id
+		set channel_id = canonical_channel_id
 		where channel_id = source_channel_id;
 
 		update den_channels.channel_memberships target
@@ -144,7 +144,7 @@ begin
 			end
 		from den_channels.channel_memberships source
 		where source.channel_id = source_channel_id
-			and target.channel_id = legacy_channel_id
+			and target.channel_id = canonical_channel_id
 			and target.member_identity = source.member_identity
 			and target.membership_purpose = source.membership_purpose;
 
@@ -154,7 +154,7 @@ begin
 			imported_at = now()
 		from den_channels.channel_memberships source
 		join den_channels.channel_memberships target
-			on target.channel_id = legacy_channel_id
+			on target.channel_id = canonical_channel_id
 			and target.member_identity = source.member_identity
 			and target.membership_purpose = source.membership_purpose
 		where source.channel_id = source_channel_id
@@ -168,7 +168,7 @@ begin
 		delete from den_channels.legacy_import_memberships lim
 		using den_channels.channel_memberships source
 		join den_channels.channel_memberships target
-			on target.channel_id = legacy_channel_id
+			on target.channel_id = canonical_channel_id
 			and target.member_identity = source.member_identity
 			and target.membership_purpose = source.membership_purpose
 		where source.channel_id = source_channel_id
@@ -177,12 +177,12 @@ begin
 		delete from den_channels.channel_memberships source
 		using den_channels.channel_memberships target
 		where source.channel_id = source_channel_id
-			and target.channel_id = legacy_channel_id
+			and target.channel_id = canonical_channel_id
 			and target.member_identity = source.member_identity
 			and target.membership_purpose = source.membership_purpose;
 
 		update den_channels.channel_memberships
-		set channel_id = legacy_channel_id,
+		set channel_id = canonical_channel_id,
 			updated_at = now()
 		where channel_id = source_channel_id;
 
@@ -195,19 +195,19 @@ begin
 			last_read_at = greatest(source.last_read_at, target.last_read_at)
 		from den_channels.channel_read_cursors source
 		where source.channel_id = source_channel_id
-			and target.channel_id = legacy_channel_id
+			and target.channel_id = canonical_channel_id
 			and target.reader_type = source.reader_type
 			and target.reader_identity = source.reader_identity;
 
 		delete from den_channels.channel_read_cursors source
 		using den_channels.channel_read_cursors target
 		where source.channel_id = source_channel_id
-			and target.channel_id = legacy_channel_id
+			and target.channel_id = canonical_channel_id
 			and target.reader_type = source.reader_type
 			and target.reader_identity = source.reader_identity;
 
 		update den_channels.channel_read_cursors
-		set channel_id = legacy_channel_id
+		set channel_id = canonical_channel_id
 		where channel_id = source_channel_id;
 
 		update den_channels.channel_project_links target
@@ -219,7 +219,7 @@ begin
 			end
 		from den_channels.channel_project_links source
 		where source.channel_id = source_channel_id
-			and target.channel_id = legacy_channel_id
+			and target.channel_id = canonical_channel_id
 			and target.project_id = source.project_id
 			and target.link_kind = source.link_kind;
 
@@ -229,7 +229,7 @@ begin
 			imported_at = now()
 		from den_channels.channel_project_links source
 		join den_channels.channel_project_links target
-			on target.channel_id = legacy_channel_id
+			on target.channel_id = canonical_channel_id
 			and target.project_id = source.project_id
 			and target.link_kind = source.link_kind
 		where source.channel_id = source_channel_id
@@ -243,7 +243,7 @@ begin
 		delete from den_channels.legacy_import_project_links lipl
 		using den_channels.channel_project_links source
 		join den_channels.channel_project_links target
-			on target.channel_id = legacy_channel_id
+			on target.channel_id = canonical_channel_id
 			and target.project_id = source.project_id
 			and target.link_kind = source.link_kind
 		where source.channel_id = source_channel_id
@@ -252,12 +252,12 @@ begin
 		delete from den_channels.channel_project_links source
 		using den_channels.channel_project_links target
 		where source.channel_id = source_channel_id
-			and target.channel_id = legacy_channel_id
+			and target.channel_id = canonical_channel_id
 			and target.project_id = source.project_id
 			and target.link_kind = source.link_kind;
 
 		update den_channels.channel_project_links
-		set channel_id = legacy_channel_id
+		set channel_id = canonical_channel_id
 		where channel_id = source_channel_id;
 
 		update den_channels.legacy_import_messages lim
@@ -267,21 +267,21 @@ begin
 			and source = legacy_source;
 
 		update den_channels.legacy_import_read_cursors lirc
-		set channel_id = legacy_channel_id,
+		set channel_id = canonical_channel_id,
 			imported_at = now()
 		where channel_id = source_channel_id
 			and source = legacy_source;
 
 		update den_channels.legacy_import_channels
-		set channel_id = legacy_channel_id,
+		set channel_id = canonical_channel_id,
 			imported_at = now()
 		where channel_id = source_channel_id
 			and source = legacy_source
-			and legacy_id = legacy_channel_id;
+			and legacy_id = canonical_channel_id;
 
 		perform setval(
 			pg_get_serial_sequence('den_channels.channels', 'id'),
-			(select greatest(coalesce(max(id), 1), legacy_channel_id) from den_channels.channels),
+			(select greatest(coalesce(max(id), 1), canonical_channel_id) from den_channels.channels),
 			true
 		);
 	end if;

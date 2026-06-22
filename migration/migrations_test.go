@@ -153,7 +153,7 @@ func TestConversationRustyProjectDefaultReconciliationMigration(t *testing.T) {
 		t.Fatal("den_channels version 7 migration was not discovered")
 	}
 	for _, want := range []string{
-		"legacy_channel_id constant bigint := 7593",
+		"canonical_channel_id constant bigint := 7593",
 		"rusty_project_id constant text := 'rusty-crew'",
 		"update den_channels.channel_messages",
 		"update den_channels.channel_memberships",
