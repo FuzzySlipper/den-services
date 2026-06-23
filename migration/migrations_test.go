@@ -61,7 +61,7 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 		}
 	}
 	wantVersions := map[string]int{
-		"den_channels":    7,
+		"den_channels":    8,
 		"den_delivery":    2,
 		"den_observation": 3,
 		"den_runtime":     3,
@@ -172,6 +172,36 @@ func TestConversationRustyProjectDefaultReconciliationMigration(t *testing.T) {
 	} {
 		if !strings.Contains(reconcile.SQL, want) {
 			t.Fatalf("rusty reconciliation SQL missing %q", want)
+		}
+	}
+}
+
+func TestConversationProjectDefaultSplitClassificationMigration(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("Discover(DefaultFS()) error = %v", err)
+	}
+	var classify Migration
+	for _, migration := range migrations {
+		if migration.Schema == "den_channels" && migration.Version == 8 {
+			classify = migration
+			break
+		}
+	}
+	if classify.Path == "" {
+		t.Fatal("den_channels version 8 migration was not discovered")
+	}
+	for _, want := range []string{
+		"create or replace view den_channels.project_default_channel_id_split_audit",
+		"legacy_id_unoccupied_reconciliation_candidate",
+		"legacy_id_reused_by_other_channel_expected_divergence",
+		"needs_reconciliation_decision",
+		"create or replace view den_channels.project_default_channel_id_reconciliation_candidates",
+		"grant select on den_channels.project_default_channel_id_split_audit to den_channels_app",
+		"grant select on den_channels.project_default_channel_id_reconciliation_candidates to den_channels_app",
+	} {
+		if !strings.Contains(classify.SQL, want) {
+			t.Fatalf("project default split classification SQL missing %q", want)
 		}
 	}
 }
