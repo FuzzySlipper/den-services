@@ -62,7 +62,7 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 	}
 	wantVersions := map[string]int{
 		"den_channels":    6,
-		"den_core":        1,
+		"den_core":        2,
 		"den_delivery":    2,
 		"den_observation": 2,
 		"den_runtime":     2,
@@ -70,6 +70,39 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 	for schema, want := range wantVersions {
 		if versionsBySchema[schema] != want {
 			t.Fatalf("%s current version = %d, want %d", schema, versionsBySchema[schema], want)
+		}
+	}
+}
+
+func TestDenCorePhase0AlignmentMigrationTracksCurrentCoreTables(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("Discover(DefaultFS()) error = %v", err)
+	}
+	var alignment Migration
+	for _, migration := range migrations {
+		if migration.Schema == "den_core" && migration.Version == 2 {
+			alignment = migration
+			break
+		}
+	}
+	if alignment.Path == "" {
+		t.Fatal("den_core version 2 migration was not discovered")
+	}
+	for _, want := range []string{
+		"create table den_core.capability_invocations",
+		"invocation_id text not null unique",
+		"create table den_core.collaboration_turns",
+		"turn_order integer not null",
+		"create table den_core.worker_checkpoints",
+		"checkpoint_type text not null",
+		"create table den_core.orchestrator_leases",
+		"lease_kind text not null default 'project_orchestrator'",
+		"create table den_core.pricing_snapshots",
+		"snapshot_label text not null",
+	} {
+		if !strings.Contains(alignment.SQL, want) {
+			t.Fatalf("den_core alignment SQL missing %q", want)
 		}
 	}
 }
