@@ -62,6 +62,7 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 	}
 	wantVersions := map[string]int{
 		"den_channels":    6,
+		"den_core":        1,
 		"den_delivery":    2,
 		"den_observation": 2,
 		"den_runtime":     2,
@@ -69,6 +70,50 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 	for schema, want := range wantVersions {
 		if versionsBySchema[schema] != want {
 			t.Fatalf("%s current version = %d, want %d", schema, versionsBySchema[schema], want)
+		}
+	}
+}
+
+func TestDenCorePhase0MigrationDocumentsTemporaryCoreOwnedSchema(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("Discover(DefaultFS()) error = %v", err)
+	}
+	var phase0 Migration
+	for _, migration := range migrations {
+		if migration.Schema == "den_core" && migration.Version == 1 {
+			phase0 = migration
+			break
+		}
+	}
+	if phase0.Path == "" {
+		t.Fatal("den_core version 1 migration was not discovered")
+	}
+	for _, want := range []string{
+		"Temporary Phase 0 Core-owned schema",
+		"create table den_core.projects",
+		"create table den_core.tasks",
+		"create table den_core.messages",
+		"create table den_core.documents",
+		"search_vector tsvector generated always as",
+		"create table den_core.knowledge_entries",
+		"create table den_core.worker_pool_members",
+		"create table den_core.capability_definitions",
+		"create or replace function den_core.reset_identity_sequences_after_import()",
+		"grant select, insert, update, delete on all tables in schema den_core to den_core_app",
+	} {
+		if !strings.Contains(phase0.SQL, want) {
+			t.Fatalf("den_core phase 0 SQL missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"CREATE VIRTUAL TABLE",
+		"USING fts5",
+		"AUTOINCREMENT",
+		"datetime('now')",
+	} {
+		if strings.Contains(phase0.SQL, forbidden) {
+			t.Fatalf("den_core phase 0 SQL should not contain SQLite-only construct %q", forbidden)
 		}
 	}
 }
