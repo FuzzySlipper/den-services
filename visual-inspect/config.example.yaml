@@ -1,0 +1,35 @@
+# visual-inspect example configuration.
+# Copy to config.yaml or point VISUAL_INSPECT_CONFIG_PATH at this file for local smoke tests.
+
+server:
+  listen_addr: "127.0.0.1:18140" # HTTP listen address.
+  read_header_timeout: "5s"      # Maximum time allowed to read request headers.
+
+security:
+  service_token_env: "DEN_VISUAL_INSPECT_TOKEN" # Bearer token env var for future protected API routes.
+
+artifacts:
+  max_images: 4                         # Maximum screenshots accepted in one evaluation request.
+  max_bytes_per_image: 8000000          # Maximum encoded image size in bytes.
+  max_pixels_per_image: 6000000         # Maximum decoded image pixels.
+  allowed_schemes: ["file", "http", "https", "den-artifact"] # Accepted screenshot ref schemes.
+  allowed_file_roots: ["/var/lib/den/artifacts", "/tmp/den-visual-inspect"] # Allowed file:// roots.
+
+llm:
+  provider: "openai_compatible"                         # Initial provider contract.
+  base_url_env: "DEN_VISUAL_INSPECT_LLM_BASE_URL"       # Env var containing the provider base URL.
+  api_key_env: "DEN_VISUAL_INSPECT_LLM_API_KEY"         # Env var containing the provider API key.
+  model: "qwen-vl-or-other"                             # Vision model name.
+  temperature: 0                                        # Sampling temperature for deterministic judging.
+  timeout: "45s"                                        # Per-call provider timeout.
+  max_output_tokens: 2000                               # Maximum provider response tokens.
+
+prompts:
+  default_profile: "visual-inspect-v0" # Prompt profile used when a request does not specify one.
+  profiles:
+    visual-inspect-v0:
+      system_prompt_file: "prompts/visual-inspect.system.md"
+      developer_prompt_file: "prompts/visual-inspect.developer.md"
+      response_schema_file: "schemas/evaluate-response.schema.json"
+      min_confidence_for_pass: 0.70
+      min_confidence_for_fail: 0.60
