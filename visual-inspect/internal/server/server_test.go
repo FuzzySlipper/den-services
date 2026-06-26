@@ -17,6 +17,9 @@ func TestNewHTTPServerRegistersHealth(t *testing.T) {
 			ListenAddr:        "127.0.0.1:0",
 			ReadHeaderTimeout: 5 * time.Second,
 		},
+		Security: config.SecurityConfig{
+			ServiceToken: "test-token",
+		},
 	}
 	info, err := health.NewBuildInfo("visual-inspect", "dev", "test", time.Unix(0, 0))
 	if err != nil {
@@ -42,6 +45,9 @@ func TestNewHTTPServerAcceptsFutureRouteRegistrars(t *testing.T) {
 			ListenAddr:        "127.0.0.1:0",
 			ReadHeaderTimeout: 5 * time.Second,
 		},
+		Security: config.SecurityConfig{
+			ServiceToken: "test-token",
+		},
 	}
 	info, err := health.NewBuildInfo("visual-inspect", "dev", "test", time.Unix(0, 0))
 	if err != nil {
@@ -53,6 +59,7 @@ func TestNewHTTPServerAcceptsFutureRouteRegistrars(t *testing.T) {
 	}
 
 	request := httptest.NewRequest(http.MethodGet, "/v1/visual-inspect/future", nil)
+	request.Header.Set("Authorization", "Bearer test-token")
 	response := httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, request)
 

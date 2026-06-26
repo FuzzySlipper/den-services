@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 
+	"den-services/shared/api"
 	"den-services/shared/health"
 
 	"den-services/visual-inspect/internal/config"
@@ -25,7 +26,11 @@ func NewHTTPServer(cfg *config.Config, buildInfo health.BuildInfo, registrars ..
 	root := http.NewServeMux()
 	root.Handle("GET /health", healthHandler)
 	root.Handle("GET /version", versionHandler)
-	root.Handle("/", apiMux(registrars))
+	apiHandler, err := protectedAPIHandler(cfg, registrars)
+	if err != nil {
+		return nil, err
+	}
+	root.Handle("/", apiHandler)
 
 	return &http.Server{
 		Addr:              cfg.Server.ListenAddr,
@@ -40,4 +45,16 @@ func apiMux(registrars []RouteRegistrar) http.Handler {
 		registrar.RegisterRoutes(mux)
 	}
 	return mux
+}
+
+func protectedAPIHandler(cfg *config.Config, registrars []RouteRegistrar) (http.Handler, error) {
+	mux := apiMux(registrars)
+	if len(registrars) == 0 {
+		return mux, nil
+	}
+	auth, err := api.NewServiceTokenAuth(cfg.Security.ServiceToken)
+	if err != nil {
+		return nil, err
+	}
+	return auth.Middleware(mux), nil
 }

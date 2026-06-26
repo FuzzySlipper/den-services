@@ -8,8 +8,12 @@ import (
 
 	"den-services/shared/health"
 
+	"den-services/visual-inspect/internal/artifacts"
 	"den-services/visual-inspect/internal/config"
+	"den-services/visual-inspect/internal/evaluator"
+	"den-services/visual-inspect/internal/handler"
 	"den-services/visual-inspect/internal/server"
+	"den-services/visual-inspect/internal/service"
 )
 
 var (
@@ -34,7 +38,15 @@ func main() {
 		slog.Error("building version info", "error", err)
 		os.Exit(1)
 	}
-	httpServer, err := server.NewHTTPServer(cfg, info)
+	fetcher := artifacts.NewFetcher(cfg.Artifacts, nil)
+	eval := evaluator.NewPreflightEvaluator(evaluator.Config{
+		Provider:       cfg.LLM.Provider,
+		Model:          cfg.LLM.Model,
+		DefaultProfile: cfg.Prompts.DefaultProfile,
+	})
+	evaluateService := service.NewService(cfg, fetcher, eval, slog.Default())
+	routeHandler := handler.New(evaluateService)
+	httpServer, err := server.NewHTTPServer(cfg, info, routeHandler)
 	if err != nil {
 		slog.Error("building server", "error", err)
 		os.Exit(1)
