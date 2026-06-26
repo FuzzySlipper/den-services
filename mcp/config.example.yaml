@@ -1,0 +1,22 @@
+# Local development configuration for the den-services MCP facade shell.
+# This intentionally binds a non-production loopback port. The eventual live
+# promotion to 192.168.1.10:5199 is a separate cutover task.
+
+server:
+  listen_addr: "127.0.0.1:8090"
+  mcp_endpoint_path: "/mcp"
+  read_header_timeout: "5s"
+
+security:
+  service_token_env: "DEN_MCP_SERVICE_TOKEN"
+  allow_unauthenticated_local_dev: true
+
+routes:
+  table_path: "routes.example.yaml"
+
+backends:
+  - name: "den-core"
+    base_url: "http://127.0.0.1:5299"
+    health_path: "/health"
+    timeout: "3s"
+    service_token_env: "DEN_CORE_SERVICE_TOKEN"
