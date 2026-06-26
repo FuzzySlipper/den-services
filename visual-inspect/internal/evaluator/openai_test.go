@@ -40,6 +40,7 @@ func TestOpenAIClientPostsStatelessVisionRequest(t *testing.T) {
 		Model:           "vision-test",
 		Temperature:     0,
 		MaxOutputTokens: 100,
+		JSONMode:        true,
 		Messages: []ChatMessage{{
 			Role: "user",
 			Content: []ContentPart{
@@ -63,5 +64,45 @@ func TestOpenAIClientPostsStatelessVisionRequest(t *testing.T) {
 	lower := strings.ToLower(body)
 	if strings.Contains(lower, "session") || strings.Contains(lower, "thread") {
 		t.Fatalf("request contains persistent conversation handle: %s", body)
+	}
+}
+
+func TestOpenAIClientOmitsJSONModeForDescriptionRequests(t *testing.T) {
+	var body string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var decoded openAIRequest
+		if err := json.NewDecoder(r.Body).Decode(&decoded); err != nil {
+			t.Fatalf("decoding request: %v", err)
+		}
+		data, err := json.Marshal(decoded)
+		if err != nil {
+			t.Fatalf("marshalling request: %v", err)
+		}
+		body = string(data)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"A concise image description."}}]}`))
+	}))
+	defer server.Close()
+
+	client := NewOpenAIClient(OpenAIClientConfig{BaseURL: server.URL + "/v1"}, server.Client())
+
+	response, err := client.Complete(t.Context(), ChatRequest{
+		Model:           "vision-test",
+		Temperature:     0,
+		MaxOutputTokens: 100,
+		JSONMode:        false,
+		Messages: []ChatMessage{{
+			Role:    "user",
+			Content: []ContentPart{{Type: "text", Text: "describe this"}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if response.Content != "A concise image description." {
+		t.Fatalf("Content = %q", response.Content)
+	}
+	if strings.Contains(body, "response_format") {
+		t.Fatalf("description request should not force response_format: %s", body)
 	}
 }

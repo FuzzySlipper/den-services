@@ -38,14 +38,9 @@ func (s *Service) Evaluate(ctx context.Context, req schema.EvaluateRequest) (sch
 	if err := s.validateRequest(req); err != nil {
 		return schema.EvaluateResponse{}, err
 	}
-	images := make([]artifacts.Image, 0, len(req.Screenshots))
-	for _, screenshot := range req.Screenshots {
-		image, err := s.fetcher.Fetch(ctx, screenshot)
-		if err != nil {
-			return schema.EvaluateResponse{}, err
-		}
-		s.logImagePreflight(req.RequestID, image)
-		images = append(images, image)
+	images, err := s.fetchImages(ctx, req.RequestID, req.Screenshots)
+	if err != nil {
+		return schema.EvaluateResponse{}, err
 	}
 	response, err := s.evaluator.Evaluate(ctx, req, toEvaluatorImages(images))
 	if err != nil {
@@ -58,6 +53,27 @@ func (s *Service) Evaluate(ctx context.Context, req schema.EvaluateRequest) (sch
 		"model", response.ModelInfo.Model,
 		"prompt_profile", response.ModelInfo.PromptProfile,
 		"schema_version", response.ModelInfo.SchemaVersion,
+	)
+	return response, nil
+}
+
+func (s *Service) Describe(ctx context.Context, req schema.DescribeRequest) (schema.DescribeResponse, error) {
+	if err := s.validateDescribeRequest(req); err != nil {
+		return schema.DescribeResponse{}, err
+	}
+	images, err := s.fetchImages(ctx, req.RequestID, req.Screenshots)
+	if err != nil {
+		return schema.DescribeResponse{}, err
+	}
+	response, err := s.evaluator.Describe(ctx, req, toEvaluatorImages(images))
+	if err != nil {
+		return schema.DescribeResponse{}, err
+	}
+	s.logger.Info("visual_inspect_description",
+		"request_id", req.RequestID,
+		"screenshot_count", len(response.ScreenshotIDs),
+		"model", response.ModelInfo.Model,
+		"prompt_profile", response.ModelInfo.PromptProfile,
 	)
 	return response, nil
 }
@@ -80,19 +96,8 @@ func (s *Service) validateRequest(req schema.EvaluateRequest) error {
 	if len(req.Screenshots) == 0 {
 		return schema.BadRequest("screenshots is required")
 	}
-	if len(req.Screenshots) > s.cfg.Artifacts.MaxImages {
-		return schema.PayloadTooLarge("screenshots exceeds artifacts.max_images")
-	}
-	for index, screenshot := range req.Screenshots {
-		if !schema.IsValidIdentifier(screenshot.ID) {
-			return schema.BadRequest("screenshots.%d.id is required and must be an identifier", index)
-		}
-		if strings.TrimSpace(screenshot.Ref) == "" {
-			return schema.BadRequest("screenshots.%d.ref is required", index)
-		}
-		if !supportedMimeType(screenshot.MimeType) {
-			return schema.BadRequest("screenshots.%d.mime_type is unsupported: %s", index, screenshot.MimeType)
-		}
+	if err := s.validateScreenshots(req.Screenshots); err != nil {
+		return err
 	}
 	if req.Options != nil {
 		if req.Options.MinConfidenceForPass != nil && invalidConfidence(*req.Options.MinConfidenceForPass) {
@@ -108,6 +113,59 @@ func (s *Service) validateRequest(req schema.EvaluateRequest) error {
 		}
 	}
 	return nil
+}
+
+func (s *Service) validateDescribeRequest(req schema.DescribeRequest) error {
+	if len(req.Screenshots) == 0 {
+		return schema.BadRequest("screenshots is required")
+	}
+	if err := s.validateScreenshots(req.Screenshots); err != nil {
+		return err
+	}
+	if req.Options != nil {
+		if req.Options.Profile != "" {
+			if _, ok := s.cfg.Prompts.Profiles[strings.TrimSpace(req.Options.Profile)]; !ok {
+				return schema.BadRequest("options.profile is not configured: %s", req.Options.Profile)
+			}
+		}
+		switch strings.TrimSpace(req.Options.Detail) {
+		case "", "brief", "concise", "detailed":
+		default:
+			return schema.BadRequest("options.detail must be brief, concise, or detailed")
+		}
+	}
+	return nil
+}
+
+func (s *Service) validateScreenshots(screenshots []schema.ScreenshotRef) error {
+	if len(screenshots) > s.cfg.Artifacts.MaxImages {
+		return schema.PayloadTooLarge("screenshots exceeds artifacts.max_images")
+	}
+	for index, screenshot := range screenshots {
+		if !schema.IsValidIdentifier(screenshot.ID) {
+			return schema.BadRequest("screenshots.%d.id is required and must be an identifier", index)
+		}
+		if strings.TrimSpace(screenshot.Ref) == "" {
+			return schema.BadRequest("screenshots.%d.ref is required", index)
+		}
+		if !supportedMimeType(screenshot.MimeType) {
+			return schema.BadRequest("screenshots.%d.mime_type is unsupported: %s", index, screenshot.MimeType)
+		}
+	}
+	return nil
+}
+
+func (s *Service) fetchImages(ctx context.Context, requestID string, screenshots []schema.ScreenshotRef) ([]artifacts.Image, error) {
+	images := make([]artifacts.Image, 0, len(screenshots))
+	for _, screenshot := range screenshots {
+		image, err := s.fetcher.Fetch(ctx, screenshot)
+		if err != nil {
+			return nil, err
+		}
+		s.logImagePreflight(requestID, image)
+		images = append(images, image)
+	}
+	return images, nil
 }
 
 func (s *Service) logImagePreflight(requestID string, image artifacts.Image) {

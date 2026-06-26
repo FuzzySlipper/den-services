@@ -42,6 +42,7 @@ func (e *VisionEvaluator) Evaluate(ctx context.Context, req schema.EvaluateReque
 		Model:           e.cfg.Model,
 		Temperature:     e.cfg.Temperature,
 		MaxOutputTokens: e.cfg.MaxOutputTokens,
+		JSONMode:        true,
 		Messages:        rendered.messages,
 	}
 	chatResp, err := e.client.Complete(ctx, chatReq)
@@ -52,6 +53,46 @@ func (e *VisionEvaluator) Evaluate(ctx context.Context, req schema.EvaluateReque
 	return response, nil
 }
 
+func (e *VisionEvaluator) Describe(ctx context.Context, req schema.DescribeRequest, images []Image) (schema.DescribeResponse, error) {
+	profile, err := e.describeProfileFor(req)
+	if err != nil {
+		return schema.DescribeResponse{}, err
+	}
+	rendered, err := renderDescribePrompt(profile, req, images)
+	if err != nil {
+		return schema.DescribeResponse{}, err
+	}
+	chatReq := ChatRequest{
+		Provider:        e.cfg.Provider,
+		Model:           e.cfg.Model,
+		Temperature:     e.cfg.Temperature,
+		MaxOutputTokens: e.cfg.MaxOutputTokens,
+		JSONMode:        false,
+		Messages:        rendered.messages,
+	}
+	chatResp, err := e.client.Complete(ctx, chatReq)
+	if err != nil {
+		return schema.DescribeResponse{}, fmt.Errorf("%w: visual LLM provider unavailable: %w", api.ErrUnavailable, err)
+	}
+	description := strings.TrimSpace(chatResp.Content)
+	warnings := []string{}
+	if description == "" {
+		description = "No description was returned by the model."
+		warnings = append(warnings, "empty_model_description")
+	}
+	return schema.DescribeResponse{
+		RequestID:     req.RequestID,
+		Description:   description,
+		ScreenshotIDs: screenshotIDs(images),
+		ModelInfo: schema.ModelInfo{
+			Provider:      e.cfg.Provider,
+			Model:         e.cfg.Model,
+			PromptProfile: profile.Name + "/describe",
+		},
+		Warnings: warnings,
+	}, nil
+}
+
 func (e *VisionEvaluator) profileFor(req schema.EvaluateRequest) (PromptProfile, error) {
 	name := req.ProfileOrDefault(e.cfg.DefaultProfile)
 	profile, ok := e.cfg.Profiles[name]
@@ -60,6 +101,24 @@ func (e *VisionEvaluator) profileFor(req schema.EvaluateRequest) (PromptProfile,
 	}
 	profile.Name = name
 	return profile, nil
+}
+
+func (e *VisionEvaluator) describeProfileFor(req schema.DescribeRequest) (PromptProfile, error) {
+	name := req.ProfileOrDefault(e.cfg.DefaultProfile)
+	profile, ok := e.cfg.Profiles[name]
+	if !ok {
+		return PromptProfile{}, schema.BadRequest("options.profile is not configured: %s", name)
+	}
+	profile.Name = name
+	return profile, nil
+}
+
+func screenshotIDs(images []Image) []string {
+	ids := make([]string, 0, len(images))
+	for _, image := range images {
+		ids = append(ids, image.ScreenshotID)
+	}
+	return ids
 }
 
 func normalizeModelResponse(raw string, req schema.EvaluateRequest, profile PromptProfile, metadata schemaMetadata) (schema.EvaluateResponse, []string) {

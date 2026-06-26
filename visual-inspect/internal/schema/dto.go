@@ -31,6 +31,16 @@ type EvaluateRequest struct {
 	Options     *EvaluateOptions   `json:"options,omitempty"`
 }
 
+type DescribeRequest struct {
+	RequestID   string           `json:"request_id,omitempty"`
+	TaskRef     *TaskRef         `json:"task_ref,omitempty"`
+	ReviewRef   *ReviewRef       `json:"review_ref,omitempty"`
+	Screenshots []ScreenshotRef  `json:"screenshots"`
+	Context     *EvaluateContext `json:"context,omitempty"`
+	Prompt      string           `json:"prompt,omitempty"`
+	Options     *DescribeOptions `json:"options,omitempty"`
+}
+
 type TaskRef struct {
 	ProjectID string `json:"project_id"`
 	TaskID    int64  `json:"task_id"`
@@ -69,6 +79,11 @@ type EvaluateOptions struct {
 	ReturnRegions        bool     `json:"return_regions,omitempty"`
 }
 
+type DescribeOptions struct {
+	Profile string `json:"profile,omitempty"`
+	Detail  string `json:"detail,omitempty"`
+}
+
 type EvaluateResponse struct {
 	RequestID       string            `json:"request_id,omitempty"`
 	Verdict         Verdict           `json:"verdict"`
@@ -77,6 +92,14 @@ type EvaluateResponse struct {
 	FollowUpHints   []string          `json:"follow_up_hints"`
 	ModelInfo       ModelInfo         `json:"model_info"`
 	Warnings        []string          `json:"warnings"`
+}
+
+type DescribeResponse struct {
+	RequestID     string    `json:"request_id,omitempty"`
+	Description   string    `json:"description"`
+	ScreenshotIDs []string  `json:"screenshot_ids"`
+	ModelInfo     ModelInfo `json:"model_info"`
+	Warnings      []string  `json:"warnings"`
 }
 
 type CriterionResult struct {
@@ -110,6 +133,13 @@ type ModelInfo struct {
 }
 
 func (r EvaluateRequest) ProfileOrDefault(defaultProfile string) string {
+	if r.Options == nil || strings.TrimSpace(r.Options.Profile) == "" {
+		return defaultProfile
+	}
+	return strings.TrimSpace(r.Options.Profile)
+}
+
+func (r DescribeRequest) ProfileOrDefault(defaultProfile string) string {
 	if r.Options == nil || strings.TrimSpace(r.Options.Profile) == "" {
 		return defaultProfile
 	}

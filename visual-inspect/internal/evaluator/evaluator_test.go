@@ -109,6 +109,35 @@ func TestVisionEvaluatorDoesNotReusePriorRequestContent(t *testing.T) {
 	}
 }
 
+func TestVisionEvaluatorDescribeReturnsPlainText(t *testing.T) {
+	client := &fakeClient{responses: []string{"The screenshot shows a terminal card and a browser card."}}
+	eval := NewVisionEvaluator(testEvaluatorConfig(t), client)
+
+	response, err := eval.Describe(context.Background(), testDescribeRequest("describe-title"), testImages())
+	if err != nil {
+		t.Fatalf("Describe() error = %v", err)
+	}
+	if !strings.Contains(response.Description, "terminal card") {
+		t.Fatalf("Description = %q", response.Description)
+	}
+	if len(response.ScreenshotIDs) != 1 || response.ScreenshotIDs[0] != "overview" {
+		t.Fatalf("ScreenshotIDs = %v", response.ScreenshotIDs)
+	}
+	if response.ModelInfo.PromptProfile != "visual-inspect-v0/describe" {
+		t.Fatalf("PromptProfile = %q", response.ModelInfo.PromptProfile)
+	}
+	if len(client.requests) != 1 {
+		t.Fatalf("provider calls = %d", len(client.requests))
+	}
+	req := client.requests[0]
+	if req.JSONMode {
+		t.Fatal("Describe request used JSONMode")
+	}
+	if len(req.Messages) != 2 || req.Messages[0].Role != "system" || req.Messages[1].Role != "user" {
+		t.Fatalf("messages = %+v", req.Messages)
+	}
+}
+
 type fakeClient struct {
 	requests  []ChatRequest
 	responses []string
@@ -172,6 +201,24 @@ func testRequest(title string) schema.EvaluateRequest {
 		Options: &schema.EvaluateOptions{
 			Profile:       "visual-inspect-v0",
 			ReturnRegions: true,
+		},
+	}
+}
+
+func testDescribeRequest(title string) schema.DescribeRequest {
+	return schema.DescribeRequest{
+		RequestID: "describe-test",
+		Screenshots: []schema.ScreenshotRef{{
+			ID:          "overview",
+			Ref:         "file:///tmp/overview.png",
+			MimeType:    "image/png",
+			Description: "overview",
+		}},
+		Context: &schema.EvaluateContext{TaskTitle: title},
+		Prompt:  "Describe the visible cards.",
+		Options: &schema.DescribeOptions{
+			Profile: "visual-inspect-v0",
+			Detail:  "concise",
 		},
 	}
 }

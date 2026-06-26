@@ -1,0 +1,26 @@
+{
+  "request_id": "task-3317-describe-overview",
+  "task_ref": {
+    "project_id": "den-services",
+    "task_id": 3317
+  },
+  "prompt": "Describe the visible work-surface cards, selected or focused states, and any obvious UI warnings.",
+  "screenshots": [
+    {
+      "id": "agora-overview",
+      "ref": "file:///data/services/visual-inspect/data/artifacts/agora-overview.png",
+      "mime_type": "image/png",
+      "description": "Agora overview screenshot",
+      "sensitive": false
+    }
+  ],
+  "context": {
+    "task_title": "Agora overview visual description",
+    "acceptance_summary": "Agent needs a plain-language visual summary before deciding which deterministic or review checks to run.",
+    "ui_surface": "Agora overview"
+  },
+  "options": {
+    "profile": "visual-inspect-v0",
+    "detail": "concise"
+  }
+}

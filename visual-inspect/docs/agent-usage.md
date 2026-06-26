@@ -22,6 +22,15 @@ curl -sS http://127.0.0.1:18140/v1/visual-inspect/evaluate \
   --data @visual-inspect/examples/agora-terminal-selected.request.json
 ```
 
+For plain image descriptions without pass/fail scoring:
+
+```bash
+curl -sS http://127.0.0.1:18140/v1/visual-inspect/describe \
+  -H 'Authorization: Bearer local-review-token' \
+  -H 'Content-Type: application/json' \
+  --data @visual-inspect/examples/agora-describe.request.json
+```
+
 Minimal Go client:
 
 ```go
@@ -145,6 +154,26 @@ Treat the response body as the visual-inspect review result. It includes the top
 }
 ```
 
+## Description Packet
+
+Use `POST /v1/visual-inspect/describe` when the caller needs a visual summary rather than a review verdict. The response is intentionally non-scoring:
+
+```json
+{
+  "request_id": "task-3317-describe-overview",
+  "description": "The screenshot shows an overview with browser, terminal, and notes cards. The terminal card appears selected.",
+  "screenshot_ids": ["agora-overview"],
+  "model_info": {
+    "provider": "openai_compatible",
+    "model": "Gemma-4-26B-A4B-it-GGUF",
+    "prompt_profile": "visual-inspect-v0/describe"
+  },
+  "warnings": []
+}
+```
+
+Description packets are useful context for agents or models that cannot inspect images directly. They should not be used as pass/fail review evidence unless converted into explicit criteria and checked through `/evaluate`.
+
 ## Den Review Message
 
 When posting to Den, attach a review packet that references screenshots and embeds only the result JSON. Do not include raw PNG/JPEG bytes, data URLs, or base64 image fields in the message body or metadata.
@@ -193,3 +222,5 @@ Visual inspection: pass at 0.86 confidence. Evidence packet attached as metadata
 `visual-inspect/examples/agora-terminal-selected.request.json` checks that the terminal card is visibly selected or focused.
 
 `visual-inspect/examples/agora-three-overview-cards.request.json` checks that the overview shows exactly three cards: browser, terminal, and notes.
+
+`visual-inspect/examples/agora-describe.request.json` asks for a plain-language overview description without scoring.

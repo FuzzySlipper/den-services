@@ -96,7 +96,7 @@ type openAIRequest struct {
 	Messages        []openAIMessage `json:"messages"`
 	Temperature     float64         `json:"temperature"`
 	MaxOutputTokens int             `json:"max_tokens"`
-	ResponseFormat  responseFormat  `json:"response_format"`
+	ResponseFormat  *responseFormat `json:"response_format,omitempty"`
 }
 
 type responseFormat struct {
@@ -149,11 +149,14 @@ func toOpenAIRequest(req ChatRequest) openAIRequest {
 		}
 		messages = append(messages, openAIMessage{Role: message.Role, Content: parts})
 	}
-	return openAIRequest{
+	result := openAIRequest{
 		Model:           req.Model,
 		Messages:        messages,
 		Temperature:     req.Temperature,
 		MaxOutputTokens: req.MaxOutputTokens,
-		ResponseFormat:  responseFormat{Type: "json_object"},
 	}
+	if req.JSONMode {
+		result.ResponseFormat = &responseFormat{Type: "json_object"}
+	}
+	return result
 }

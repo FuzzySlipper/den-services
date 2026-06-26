@@ -184,10 +184,58 @@ func TestEvaluateReturnsPassFailAndUncertainPackets(t *testing.T) {
 	}
 }
 
+func TestDescribeValidRequestFetchesImageAndReturnsDescription(t *testing.T) {
+	fixture := writePNGFixture(t, 4, 3)
+	cfg := testConfig(filepath.Dir(fixture), int64(len(readFile(t, fixture)))+10, 100)
+	eval := &recordingEvaluator{}
+	handler := newTestHandler(cfg, eval, nil)
+
+	response := postDescribe(t, handler, validDescribeBody(fixture))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
+	}
+	if eval.describeCalls != 1 {
+		t.Fatalf("describe calls = %d", eval.describeCalls)
+	}
+	if len(eval.images) != 1 || eval.images[0].Width != 4 || eval.images[0].Height != 3 {
+		t.Fatalf("images = %+v", eval.images)
+	}
+	var packet schema.DescribeResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &packet); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if !strings.Contains(packet.Description, "terminal card") {
+		t.Fatalf("description = %q", packet.Description)
+	}
+	if len(packet.ScreenshotIDs) != 1 || packet.ScreenshotIDs[0] != "overview" {
+		t.Fatalf("screenshot_ids = %v", packet.ScreenshotIDs)
+	}
+	assertFixtureOnly(t, filepath.Dir(fixture), fixture)
+}
+
+func TestDescribeRejectsInvalidRefsBeforeEvaluator(t *testing.T) {
+	fixture := writePNGFixture(t, 2, 2)
+	cfg := testConfig(t.TempDir(), int64(len(readFile(t, fixture)))+10, 100)
+	eval := &recordingEvaluator{}
+	handler := newTestHandler(cfg, eval, nil)
+
+	response := postDescribe(t, handler, validDescribeBody(fixture))
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
+	}
+	if eval.describeCalls != 0 {
+		t.Fatalf("describe calls = %d", eval.describeCalls)
+	}
+	assertErrorCode(t, response, "invalid_visual_inspect_request")
+}
+
 type recordingEvaluator struct {
-	calls   int
-	images  []evaluator.Image
-	verdict schema.Verdict
+	calls         int
+	describeCalls int
+	images        []evaluator.Image
+	verdict       schema.Verdict
 }
 
 func (e *recordingEvaluator) Evaluate(_ context.Context, req schema.EvaluateRequest, images []evaluator.Image) (schema.EvaluateResponse, error) {
@@ -230,6 +278,22 @@ func (e *recordingEvaluator) Evaluate(_ context.Context, req schema.EvaluateRequ
 	}, nil
 }
 
+func (e *recordingEvaluator) Describe(_ context.Context, req schema.DescribeRequest, images []evaluator.Image) (schema.DescribeResponse, error) {
+	e.describeCalls++
+	e.images = images
+	return schema.DescribeResponse{
+		RequestID:     req.RequestID,
+		Description:   "The image shows an overview with a terminal card.",
+		ScreenshotIDs: []string{"overview"},
+		ModelInfo: schema.ModelInfo{
+			Provider:      "fake",
+			Model:         "fake-vision",
+			PromptProfile: req.ProfileOrDefault("visual-inspect-v0") + "/describe",
+		},
+		Warnings: []string{},
+	}, nil
+}
+
 func newTestHandler(cfg *config.Config, eval evaluator.Evaluator, logger *slog.Logger) http.Handler {
 	fetcher := artifacts.NewFetcher(cfg.Artifacts, nil)
 	evaluateService := service.NewService(cfg, fetcher, eval, logger)
@@ -248,9 +312,41 @@ func postEvaluate(t *testing.T, handler http.Handler, body string) *httptest.Res
 	return response
 }
 
+func postDescribe(t *testing.T, handler http.Handler, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodPost, "/v1/visual-inspect/describe", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
+}
+
 func validRequestBody(t *testing.T, fixture string) string {
 	t.Helper()
 	return validRequest(fileURL(fixture))
+}
+
+func validDescribeBody(fixture string) string {
+	return `{
+		"request_id": "describe-1",
+		"prompt": "Describe the visible cards and selected state.",
+		"screenshots": [
+			{
+				"id": "overview",
+				"ref": "` + fileURL(fixture) + `",
+				"mime_type": "image/png",
+				"description": "overview after selecting terminal"
+			}
+		],
+		"context": {
+			"task_title": "Visual description",
+			"ui_surface": "Agora overview"
+		},
+		"options": {
+			"profile": "visual-inspect-v0",
+			"detail": "concise"
+		}
+	}`
 }
 
 func validRequest(ref string) string {

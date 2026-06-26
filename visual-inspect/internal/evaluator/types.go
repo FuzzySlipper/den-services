@@ -19,6 +19,7 @@ type Image struct {
 
 type Evaluator interface {
 	Evaluate(ctx context.Context, req schema.EvaluateRequest, images []Image) (schema.EvaluateResponse, error)
+	Describe(ctx context.Context, req schema.DescribeRequest, images []Image) (schema.DescribeResponse, error)
 }
 
 type Config struct {
@@ -52,6 +53,7 @@ type ChatRequest struct {
 	Model           string
 	Temperature     float64
 	MaxOutputTokens int
+	JSONMode        bool
 	Messages        []ChatMessage
 }
 

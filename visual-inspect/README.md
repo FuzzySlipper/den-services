@@ -15,6 +15,8 @@ Use this service for semantic visual evidence. Use `visual-contract` when the ch
 
 Valid evaluations return `200` even when the verdict is `uncertain`.
 
+`POST /v1/visual-inspect/describe` uses the same artifact fetch and model path, but returns a plain-language description instead of a scored review packet. Use it when an agent or downstream model needs a visual summary but does not need pass/fail criteria.
+
 ```bash
 cd visual-inspect
 export VISUAL_INSPECT_CONFIG_PATH=config.example.yaml
@@ -29,6 +31,13 @@ curl -sS http://127.0.0.1:18140/v1/visual-inspect/evaluate \
   -H 'Authorization: Bearer local-review-token' \
   -H 'Content-Type: application/json' \
   --data @examples/agora-terminal-selected.request.json
+```
+
+```bash
+curl -sS http://127.0.0.1:18140/v1/visual-inspect/describe \
+  -H 'Authorization: Bearer local-review-token' \
+  -H 'Content-Type: application/json' \
+  --data @examples/agora-describe.request.json
 ```
 
 From the repo root, use `--data @visual-inspect/examples/agora-terminal-selected.request.json`.
@@ -181,6 +190,8 @@ Agent-facing packet examples live in `docs/agent-usage.md`. The short version:
 5. never embed raw screenshot bytes, data URLs, or base64 image payloads in the Den message.
 
 For current local development, `file://` refs under `/tmp/den-visual-inspect` are supported. `den-artifact://` is accepted by request validation only as a future scheme; fetching it currently returns `unsupported_artifact_ref` until Core artifact registry integration lands.
+
+Use `POST /v1/visual-inspect/describe` before review-gate evaluation when the next agent only needs a plain-language summary of the screenshot. Description packets are supporting context, not review verdicts.
 
 Future Core artifact registry handoff:
 
