@@ -242,6 +242,11 @@ install -m 0755 "${stage_dir}/bin/${binary_name}" "${service_root}/bin/${binary_
 if [[ -f "${config_example}" && ! -f "${service_root}/config/config.yaml" ]]; then
   install -m 0644 "${config_example}" "${service_root}/config/config.yaml"
 fi
+if [[ "${service}" == "visual-inspect" ]]; then
+  install -d -m 0755 "${service_root}/prompts" "${service_root}/schemas"
+  install -m 0644 visual-inspect/prompts/*.md "${service_root}/prompts/"
+  install -m 0644 visual-inspect/schemas/*.json "${service_root}/schemas/"
+fi
 if [[ "${service}" == "gateway" && -f gateway/config/routes.example.yaml && ! -f "${service_root}/config/routes.yaml" ]]; then
   install -m 0644 gateway/config/routes.example.yaml "${service_root}/config/routes.yaml"
 fi

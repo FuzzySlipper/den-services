@@ -83,3 +83,13 @@ services:
     health_url: "http://127.0.0.1:8087/health"
     version_url: "http://127.0.0.1:8087/version"
     systemd_unit: "den-go@doc-publish.service"
+
+  - name: "visual-inspect"
+    module: "visual-inspect"
+    binary_name: "visual-inspect"
+    binary_path: "./visual-inspect/cmd/visual-inspect"
+    config_example: "visual-inspect/config/config.example.yaml"
+    env_example: "visual-inspect/config/visual-inspect.env.example"
+    health_url: "http://127.0.0.1:8088/health"
+    version_url: "http://127.0.0.1:8088/version"
+    systemd_unit: "den-go@visual-inspect.service"
