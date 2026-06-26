@@ -14,7 +14,7 @@ artifacts:
   max_bytes_per_image: 8000000          # Maximum encoded image size in bytes.
   max_pixels_per_image: 6000000         # Maximum decoded image pixels.
   allowed_schemes: ["file", "http", "https", "den-artifact"] # Accepted screenshot ref schemes.
-  allowed_file_roots: ["/var/lib/den/artifacts", "/tmp/den-visual-inspect"] # Allowed file:// roots.
+  allowed_file_roots: ["/var/lib/den/artifacts", "/data/services/visual-inspect/data/artifacts"] # Allowed file:// roots.
 
 llm:
   provider: "openai_compatible"                         # Initial provider contract.
