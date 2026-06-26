@@ -2,5 +2,166 @@
   "$id": "visual-inspect-evaluate-response/v0",
   "version": "visual-inspect-evaluate-response/v0",
   "title": "Visual Inspect Evaluate Response",
-  "type": "object"
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "verdict",
+    "confidence",
+    "criteria_results",
+    "follow_up_hints",
+    "model_info",
+    "warnings"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["pass", "fail", "uncertain"]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "criteria_results": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/criterion_result"
+      }
+    },
+    "follow_up_hints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "model_info": {
+      "$ref": "#/$defs/model_info"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "criterion_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "criterion_id",
+        "verdict",
+        "confidence",
+        "explanation",
+        "observations"
+      ],
+      "properties": {
+        "criterion_id": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string",
+          "enum": ["pass", "fail", "uncertain"]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "observations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/observation"
+          }
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "screenshot_id",
+        "label",
+        "confidence"
+      ],
+      "properties": {
+        "screenshot_id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "region": {
+          "$ref": "#/$defs/image_region"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "image_region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height",
+        "coordinate_space"
+      ],
+      "properties": {
+        "x": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "coordinate_space": {
+          "type": "string",
+          "enum": ["image_pixels"]
+        }
+      }
+    },
+    "model_info": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model",
+        "prompt_profile"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "prompt_profile": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        }
+      }
+    }
+  }
 }
