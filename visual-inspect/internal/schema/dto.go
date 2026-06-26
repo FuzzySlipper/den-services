@@ -106,6 +106,7 @@ type ModelInfo struct {
 	Provider      string `json:"provider"`
 	Model         string `json:"model"`
 	PromptProfile string `json:"prompt_profile"`
+	SchemaVersion string `json:"schema_version,omitempty"`
 }
 
 func (r EvaluateRequest) ProfileOrDefault(defaultProfile string) string {

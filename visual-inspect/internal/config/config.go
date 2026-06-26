@@ -51,6 +51,7 @@ type LLMConfig struct {
 	Temperature     float64
 	Timeout         time.Duration
 	MaxOutputTokens int
+	MaxRetries      int
 }
 
 type PromptConfig struct {
@@ -99,6 +100,7 @@ type llmConfigFile struct {
 	Temperature     float64 `yaml:"temperature"`
 	Timeout         string  `yaml:"timeout"`
 	MaxOutputTokens int     `yaml:"max_output_tokens"`
+	MaxRetries      int     `yaml:"max_retries"`
 }
 
 type promptConfigFile struct {
@@ -204,6 +206,7 @@ func (c llmConfigFile) toConfig(values sharedconfig.Values) (LLMConfig, error) {
 		Temperature:     c.Temperature,
 		Timeout:         timeout,
 		MaxOutputTokens: c.MaxOutputTokens,
+		MaxRetries:      c.MaxRetries,
 	}, nil
 }
 
@@ -294,6 +297,9 @@ func (c LLMConfig) validate() error {
 	}
 	if c.MaxOutputTokens <= 0 {
 		return errors.New("llm.max_output_tokens must be positive")
+	}
+	if c.MaxRetries < 0 {
+		return errors.New("llm.max_retries must be non-negative")
 	}
 	return nil
 }

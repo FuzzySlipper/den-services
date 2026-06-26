@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"time"
 
@@ -39,11 +40,22 @@ func main() {
 		os.Exit(1)
 	}
 	fetcher := artifacts.NewFetcher(cfg.Artifacts, nil)
-	eval := evaluator.NewPreflightEvaluator(evaluator.Config{
-		Provider:       cfg.LLM.Provider,
-		Model:          cfg.LLM.Model,
-		DefaultProfile: cfg.Prompts.DefaultProfile,
-	})
+	eval := evaluator.NewVisionEvaluator(evaluator.Config{
+		Provider:        cfg.LLM.Provider,
+		BaseURL:         cfg.LLM.BaseURL,
+		APIKey:          cfg.LLM.APIKey,
+		Model:           cfg.LLM.Model,
+		Temperature:     cfg.LLM.Temperature,
+		Timeout:         cfg.LLM.Timeout,
+		MaxOutputTokens: cfg.LLM.MaxOutputTokens,
+		MaxRetries:      cfg.LLM.MaxRetries,
+		DefaultProfile:  cfg.Prompts.DefaultProfile,
+		Profiles:        evaluatorProfiles(cfg.Prompts.Profiles),
+	}, evaluator.NewOpenAIClient(evaluator.OpenAIClientConfig{
+		BaseURL:    cfg.LLM.BaseURL,
+		APIKey:     cfg.LLM.APIKey,
+		MaxRetries: cfg.LLM.MaxRetries,
+	}, &http.Client{Timeout: cfg.LLM.Timeout}))
 	evaluateService := service.NewService(cfg, fetcher, eval, slog.Default())
 	routeHandler := handler.New(evaluateService)
 	httpServer, err := server.NewHTTPServer(cfg, info, routeHandler)
@@ -64,4 +76,19 @@ func buildInfo() (health.BuildInfo, error) {
 		return health.BuildInfo{}, fmt.Errorf("parsing builtAt: %w", err)
 	}
 	return health.NewBuildInfo("visual-inspect", version, commit, parsedBuiltAt)
+}
+
+func evaluatorProfiles(profiles map[string]config.PromptProfile) map[string]evaluator.PromptProfile {
+	result := make(map[string]evaluator.PromptProfile, len(profiles))
+	for name, profile := range profiles {
+		result[name] = evaluator.PromptProfile{
+			Name:                 name,
+			SystemPromptFile:     profile.SystemPromptFile,
+			DeveloperPromptFile:  profile.DeveloperPromptFile,
+			ResponseSchemaFile:   profile.ResponseSchemaFile,
+			MinConfidenceForPass: profile.MinConfidenceForPass,
+			MinConfidenceForFail: profile.MinConfidenceForFail,
+		}
+	}
+	return result
 }

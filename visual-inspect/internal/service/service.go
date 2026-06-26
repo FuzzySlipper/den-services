@@ -47,7 +47,19 @@ func (s *Service) Evaluate(ctx context.Context, req schema.EvaluateRequest) (sch
 		s.logImagePreflight(req.RequestID, image)
 		images = append(images, image)
 	}
-	return s.evaluator.Evaluate(ctx, req, toEvaluatorImages(images))
+	response, err := s.evaluator.Evaluate(ctx, req, toEvaluatorImages(images))
+	if err != nil {
+		return schema.EvaluateResponse{}, err
+	}
+	s.logger.Info("visual_inspect_result",
+		"request_id", req.RequestID,
+		"verdict", response.Verdict,
+		"confidence", response.Confidence,
+		"model", response.ModelInfo.Model,
+		"prompt_profile", response.ModelInfo.PromptProfile,
+		"schema_version", response.ModelInfo.SchemaVersion,
+	)
+	return response, nil
 }
 
 func (s *Service) validateRequest(req schema.EvaluateRequest) error {

@@ -23,6 +23,7 @@ llm:
   temperature: 0                                        # Sampling temperature for deterministic judging.
   timeout: "45s"                                        # Per-call provider timeout.
   max_output_tokens: 2000                               # Maximum provider response tokens.
+  max_retries: 1                                        # Provider retries after an initial failed call.
 
 prompts:
   default_profile: "visual-inspect-v0" # Prompt profile used when a request does not specify one.
