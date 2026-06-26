@@ -52,6 +52,9 @@ func protectedAPIHandler(cfg *config.Config, registrars []RouteRegistrar) (http.
 	if len(registrars) == 0 {
 		return mux, nil
 	}
+	if cfg.Security.AllowUnauthenticatedLocalDev {
+		return mux, nil
+	}
 	auth, err := api.NewServiceTokenAuth(cfg.Security.ServiceToken)
 	if err != nil {
 		return nil, err

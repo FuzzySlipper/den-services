@@ -142,24 +142,89 @@ func TestEvaluateLogsImageMetadataWithoutRawBytes(t *testing.T) {
 	assertFixtureOnly(t, filepath.Dir(fixture), fixture)
 }
 
+func TestEvaluateReturnsPassFailAndUncertainPackets(t *testing.T) {
+	tests := []struct {
+		name    string
+		verdict schema.Verdict
+	}{
+		{"pass", schema.VerdictPass},
+		{"fail", schema.VerdictFail},
+		{"uncertain", schema.VerdictUncertain},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := writePNGFixture(t, 3, 3)
+			cfg := testConfig(filepath.Dir(fixture), int64(len(readFile(t, fixture)))+10, 100)
+			handler := newTestHandler(cfg, &recordingEvaluator{verdict: tt.verdict}, nil)
+
+			response := postEvaluate(t, handler, validRequestBody(t, fixture))
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
+			}
+			var packet schema.EvaluateResponse
+			if err := json.Unmarshal(response.Body.Bytes(), &packet); err != nil {
+				t.Fatalf("decoding response: %v", err)
+			}
+			if packet.Verdict != tt.verdict {
+				t.Fatalf("verdict = %s, want %s", packet.Verdict, tt.verdict)
+			}
+			if len(packet.CriteriaResults) != 1 || packet.CriteriaResults[0].CriterionID != "terminal-focused" {
+				t.Fatalf("criteria_results = %+v", packet.CriteriaResults)
+			}
+			observations := packet.CriteriaResults[0].Observations
+			if len(observations) != 1 || observations[0].Region == nil {
+				t.Fatalf("observations = %+v, want one region", observations)
+			}
+			if packet.ModelInfo.Provider == "" || packet.ModelInfo.Model == "" || packet.ModelInfo.PromptProfile == "" {
+				t.Fatalf("model_info = %+v", packet.ModelInfo)
+			}
+			assertFixtureOnly(t, filepath.Dir(fixture), fixture)
+		})
+	}
+}
+
 type recordingEvaluator struct {
-	calls  int
-	images []evaluator.Image
+	calls   int
+	images  []evaluator.Image
+	verdict schema.Verdict
 }
 
 func (e *recordingEvaluator) Evaluate(_ context.Context, req schema.EvaluateRequest, images []evaluator.Image) (schema.EvaluateResponse, error) {
 	e.calls++
 	e.images = images
+	verdict := e.verdict
+	if verdict == "" {
+		verdict = schema.VerdictUncertain
+	}
 	return schema.EvaluateResponse{
-		RequestID:       req.RequestID,
-		Verdict:         schema.VerdictUncertain,
-		Confidence:      0,
-		CriteriaResults: []schema.CriterionResult{},
-		FollowUpHints:   []string{},
+		RequestID:  req.RequestID,
+		Verdict:    verdict,
+		Confidence: 0.83,
+		CriteriaResults: []schema.CriterionResult{{
+			CriterionID: "terminal-focused",
+			Verdict:     verdict,
+			Confidence:  0.83,
+			Explanation: "The screenshot visibly supports the requested result.",
+			Observations: []schema.Observation{{
+				ScreenshotID: "overview",
+				Label:        "terminal selected state",
+				Region: &schema.ImageRegion{
+					X:               0,
+					Y:               0,
+					Width:           3,
+					Height:          3,
+					CoordinateSpace: "image_pixels",
+				},
+				Confidence: 0.80,
+			}},
+		}},
+		FollowUpHints: []string{},
 		ModelInfo: schema.ModelInfo{
-			Provider:      "openai_compatible",
-			Model:         "test-model",
+			Provider:      "fake",
+			Model:         "fake-vision",
 			PromptProfile: req.ProfileOrDefault("visual-inspect-v0"),
+			SchemaVersion: "visual-inspect-evaluate-response/v0",
 		},
 		Warnings: []string{"test_evaluator"},
 	}, nil

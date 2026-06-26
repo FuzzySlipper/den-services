@@ -1,0 +1,34 @@
+{
+  "request_id": "task-3317-terminal-selected",
+  "task_ref": {
+    "project_id": "den-services",
+    "task_id": 3317
+  },
+  "criteria": [
+    {
+      "id": "terminal-selected",
+      "statement": "The terminal card is visibly selected or focused.",
+      "required": true,
+      "weight": 1
+    }
+  ],
+  "screenshots": [
+    {
+      "id": "agora-overview",
+      "ref": "file:///tmp/den-visual-inspect/agora-overview.png",
+      "mime_type": "image/png",
+      "description": "Agora overview after selecting the terminal card",
+      "sensitive": false
+    }
+  ],
+  "context": {
+    "task_title": "Agora terminal focus visual check",
+    "acceptance_summary": "Terminal should be selected or focused in the overview.",
+    "ui_surface": "Agora overview"
+  },
+  "options": {
+    "profile": "visual-inspect-v0",
+    "min_confidence_for_pass": 0.7,
+    "return_regions": true
+  }
+}

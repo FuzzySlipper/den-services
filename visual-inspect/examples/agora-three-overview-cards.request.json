@@ -1,0 +1,34 @@
+{
+  "request_id": "task-3317-three-overview-cards",
+  "task_ref": {
+    "project_id": "den-services",
+    "task_id": 3317
+  },
+  "criteria": [
+    {
+      "id": "three-overview-cards",
+      "statement": "The overview screenshot shows exactly three work-surface cards: browser, terminal, and notes.",
+      "required": true,
+      "weight": 1
+    }
+  ],
+  "screenshots": [
+    {
+      "id": "agora-overview",
+      "ref": "file:///tmp/den-visual-inspect/agora-overview.png",
+      "mime_type": "image/png",
+      "description": "Agora overview showing the browser, terminal, and notes cards",
+      "sensitive": false
+    }
+  ],
+  "context": {
+    "task_title": "Agora overview card count visual check",
+    "acceptance_summary": "The overview should show browser, terminal, and notes cards with no extra card.",
+    "ui_surface": "Agora overview"
+  },
+  "options": {
+    "profile": "visual-inspect-v0",
+    "min_confidence_for_pass": 0.7,
+    "return_regions": true
+  }
+}

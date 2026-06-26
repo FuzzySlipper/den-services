@@ -29,8 +29,9 @@ type ServerConfig struct {
 }
 
 type SecurityConfig struct {
-	ServiceTokenEnv string
-	ServiceToken    string
+	ServiceTokenEnv              string
+	ServiceToken                 string
+	AllowUnauthenticatedLocalDev bool
 }
 
 type ArtifactConfig struct {
@@ -81,7 +82,8 @@ type serverConfigFile struct {
 }
 
 type securityConfigFile struct {
-	ServiceTokenEnv string `yaml:"service_token_env"`
+	ServiceTokenEnv              string `yaml:"service_token_env"`
+	AllowUnauthenticatedLocalDev bool   `yaml:"allow_unauthenticated_local_dev"`
 }
 
 type artifactConfigFile struct {
@@ -159,8 +161,9 @@ func (c configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 	return &Config{
 		Server: serverConfig,
 		Security: SecurityConfig{
-			ServiceTokenEnv: strings.TrimSpace(c.Security.ServiceTokenEnv),
-			ServiceToken:    values.String(strings.TrimSpace(c.Security.ServiceTokenEnv), ""),
+			ServiceTokenEnv:              strings.TrimSpace(c.Security.ServiceTokenEnv),
+			ServiceToken:                 values.String(strings.TrimSpace(c.Security.ServiceTokenEnv), ""),
+			AllowUnauthenticatedLocalDev: c.Security.AllowUnauthenticatedLocalDev,
 		},
 		Artifacts: c.Artifacts.toConfig(),
 		LLM:       llmConfig,

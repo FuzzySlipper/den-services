@@ -68,6 +68,80 @@ func TestNewHTTPServerAcceptsFutureRouteRegistrars(t *testing.T) {
 	}
 }
 
+func TestNewHTTPServerRejectsMissingTokenWhenRoutesRegistered(t *testing.T) {
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			ListenAddr:        "127.0.0.1:0",
+			ReadHeaderTimeout: 5 * time.Second,
+		},
+		Security: config.SecurityConfig{
+			ServiceToken: "test-token",
+		},
+	}
+	info, err := health.NewBuildInfo("visual-inspect", "dev", "test", time.Unix(0, 0))
+	if err != nil {
+		t.Fatalf("NewBuildInfo() error = %v", err)
+	}
+	server, err := NewHTTPServer(cfg, info, testRegistrar{})
+	if err != nil {
+		t.Fatalf("NewHTTPServer() error = %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/visual-inspect/future", nil)
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("future route status = %d", response.Code)
+	}
+}
+
+func TestNewHTTPServerAllowsExplicitUnauthenticatedLocalDev(t *testing.T) {
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			ListenAddr:        "127.0.0.1:0",
+			ReadHeaderTimeout: 5 * time.Second,
+		},
+		Security: config.SecurityConfig{
+			AllowUnauthenticatedLocalDev: true,
+		},
+	}
+	info, err := health.NewBuildInfo("visual-inspect", "dev", "test", time.Unix(0, 0))
+	if err != nil {
+		t.Fatalf("NewBuildInfo() error = %v", err)
+	}
+	server, err := NewHTTPServer(cfg, info, testRegistrar{})
+	if err != nil {
+		t.Fatalf("NewHTTPServer() error = %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/visual-inspect/future", nil)
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("future route status = %d", response.Code)
+	}
+}
+
+func TestNewHTTPServerFailsClosedWithoutToken(t *testing.T) {
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			ListenAddr:        "127.0.0.1:0",
+			ReadHeaderTimeout: 5 * time.Second,
+		},
+	}
+	info, err := health.NewBuildInfo("visual-inspect", "dev", "test", time.Unix(0, 0))
+	if err != nil {
+		t.Fatalf("NewBuildInfo() error = %v", err)
+	}
+
+	_, err = NewHTTPServer(cfg, info, testRegistrar{})
+	if err == nil {
+		t.Fatal("NewHTTPServer() error = nil")
+	}
+}
+
 type testRegistrar struct{}
 
 func (testRegistrar) RegisterRoutes(mux *http.ServeMux) {
