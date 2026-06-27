@@ -7,7 +7,7 @@ import (
 	"den-services/shared/health"
 )
 
-func NewHTTPServer(cfg *Config, buildInfo health.BuildInfo) (*http.Server, error) {
+func NewHTTPServer(cfg *Config, buildInfo health.BuildInfo, service ArtifactUseCases) (*http.Server, error) {
 	healthHandler, err := health.HealthHandler(buildInfo)
 	if err != nil {
 		return nil, err
@@ -18,7 +18,7 @@ func NewHTTPServer(cfg *Config, buildInfo health.BuildInfo) (*http.Server, error
 	}
 
 	apiMux := http.NewServeMux()
-	NewHandler().RegisterRoutes(apiMux)
+	NewHandler(service, cfg).RegisterRoutes(apiMux)
 	auth, err := api.NewServiceTokenAuth(cfg.ServiceToken)
 	if err != nil {
 		return nil, err
