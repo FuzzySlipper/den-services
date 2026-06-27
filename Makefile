@@ -2,7 +2,7 @@ SERVICES := shared delivery runtime observation gateway conversation timeline mc
 GOCACHE ?= $(CURDIR)/.gocache
 GOLANGCI_LINT_CACHE ?= $(CURDIR)/.golangci-lint-cache
 
-.PHONY: test build build-all lint mcp-smoke
+.PHONY: test build build-all lint mcp-smoke mcp-smoke-live
 
 test:
 	GOCACHE=$(GOCACHE) go test ./...
@@ -28,3 +28,9 @@ lint:
 
 mcp-smoke:
 	python3 mcp/scripts/hermes_smoke.py --mode local
+
+mcp-smoke-live:
+ifndef DEN_MCP_SMOKE_DEN_CORE_URL
+	$(error DEN_MCP_SMOKE_DEN_CORE_URL is required, for example http://192.168.1.10:5199)
+endif
+	python3 mcp/scripts/hermes_smoke.py --mode live
