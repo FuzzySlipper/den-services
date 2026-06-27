@@ -19,6 +19,7 @@ import (
 type ArtifactStore interface {
 	CreateArtifact(ctx context.Context, artifact *Artifact) (*Artifact, error)
 	GetArtifact(ctx context.Context, artifactID string) (*Artifact, error)
+	GetArtifactByScope(ctx context.Context, projectID string, taskID int64, logicalName string) (*Artifact, error)
 	TombstoneArtifact(ctx context.Context, artifactID string, reason string, at time.Time) (*Artifact, error)
 }
 
@@ -116,6 +117,24 @@ func (s *ArtifactService) GetMetadata(ctx context.Context, artifactID string) (*
 	}
 	if artifact.DeletedAt() != nil {
 		return nil, deleted(artifactID)
+	}
+	return artifact, nil
+}
+
+func (s *ArtifactService) ResolveRef(ctx context.Context, rawRef string) (*Artifact, error) {
+	scope, err := ParseArtifactRef(rawRef)
+	if err != nil {
+		return nil, badRequest(err)
+	}
+	if scope.ArtifactID != "" {
+		return s.GetMetadata(ctx, scope.ArtifactID)
+	}
+	artifact, err := s.store.GetArtifactByScope(ctx, scope.ProjectID, scope.TaskID, scope.LogicalName)
+	if err != nil {
+		return nil, err
+	}
+	if artifact.DeletedAt() != nil {
+		return nil, deleted(artifact.ArtifactID())
 	}
 	return artifact, nil
 }

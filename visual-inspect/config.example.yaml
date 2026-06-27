@@ -15,6 +15,10 @@ artifacts:
   max_pixels_per_image: 6000000         # Maximum decoded image pixels.
   allowed_schemes: ["file", "http", "https", "den-artifact"] # Accepted screenshot ref schemes.
   allowed_file_roots: ["/var/lib/den/artifacts", "/tmp/den-visual-inspect"] # Allowed file:// roots.
+  artifact_service:
+    base_url_env: "DEN_ARTIFACTS_BASE_URL"              # Env var containing the artifacts service base URL.
+    service_token_env: "DEN_ARTIFACTS_SERVICE_TOKEN"    # Env var containing the artifacts service bearer token.
+    timeout: "10s"                                      # Per-request timeout for metadata/content fetches.
 
 llm:
   provider: "openai_compatible"                         # Initial provider contract.

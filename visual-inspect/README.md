@@ -128,6 +128,9 @@ curl -sS http://127.0.0.1:18140/v1/visual-inspect/evaluate \
 - `artifacts.max_pixels_per_image`: max decoded image pixels.
 - `artifacts.allowed_schemes`: accepted ref schemes.
 - `artifacts.allowed_file_roots`: allowlist for `file://` refs.
+- `artifacts.artifact_service.base_url_env`: env var containing the artifacts service base URL for `den-artifact://` refs.
+- `artifacts.artifact_service.service_token_env`: env var containing the artifacts service bearer token.
+- `artifacts.artifact_service.timeout`: timeout for artifacts metadata/content fetches.
 - `llm.provider`: currently `openai_compatible`.
 - `llm.base_url_env` and `llm.api_key_env`: env var names for provider URL and secret.
 - `llm.model`: model identifier sent to the provider.
@@ -189,17 +192,17 @@ Agent-facing packet examples live in `docs/agent-usage.md`. The short version:
 4. include screenshot artifact refs in metadata;
 5. never embed raw screenshot bytes, data URLs, or base64 image payloads in the Den message.
 
-For current local development, `file://` refs under `/tmp/den-visual-inspect` are supported. `den-artifact://` is accepted by request validation only as a future scheme; fetching it currently returns `unsupported_artifact_ref` until Core artifact registry integration lands.
+For local development, `file://` refs under the configured `allowed_file_roots` are supported. Durable review evidence should use `den-artifact://` refs from the artifacts service when available. `visual-inspect` resolves the ref through the artifacts metadata/content API, then still enforces its own max-byte and max-pixel limits after fetch.
 
 Use `POST /v1/visual-inspect/describe` before review-gate evaluation when the next agent only needs a plain-language summary of the screenshot. Description packets are supporting context, not review verdicts.
 
-Future Core artifact registry handoff:
+Artifacts integration rules:
 
-- implement a resolver for `den-artifact://<project>/tasks/<id>/...`;
-- preserve `sensitive` metadata from the artifact registry;
-- keep review packets ref-only;
-- document the retention owner and deletion semantics in the artifact service docs;
-- add integration tests for resolver errors, missing artifacts, and access checks.
+- canonical refs use `den-artifact://<artifact_id>`;
+- scoped refs use `den-artifact://<project>/tasks/<task_id>/artifacts/<logical_name>`;
+- sensitive metadata from the artifact registry is preserved during preflight logging and evaluator input;
+- review packets stay ref-only;
+- artifact retention and deletion semantics belong to the artifacts service.
 
 ## Relationship To visual-contract
 

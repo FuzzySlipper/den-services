@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -42,6 +43,12 @@ type Fetcher struct {
 	httpClient *http.Client
 }
 
+type artifactMetadata struct {
+	ArtifactID string `json:"artifact_id"`
+	MimeType   string `json:"mime_type"`
+	Sensitive  bool   `json:"sensitive"`
+}
+
 func NewFetcher(cfg config.ArtifactConfig, httpClient *http.Client) *Fetcher {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
@@ -61,12 +68,16 @@ func (f *Fetcher) Fetch(ctx context.Context, ref schema.ScreenshotRef) (Image, e
 	if !f.schemeAllowed(scheme) {
 		return Image{}, schema.BadRequest("screenshots.%s.ref scheme is not allowed: %s", ref.ID, scheme)
 	}
-	if scheme == "den-artifact" {
-		return Image{}, schema.UnsupportedArtifact("den-artifact refs are not supported yet")
-	}
-	data, err := f.readBytes(ctx, parsed, scheme)
+	metadata := artifactMetadata{}
+	data, err := f.readBytes(ctx, parsed, scheme, ref.Ref)
 	if err != nil {
 		return Image{}, err
+	}
+	if scheme == "den-artifact" {
+		metadata, data, err = f.readDenArtifact(ctx, parsed, ref.Ref)
+		if err != nil {
+			return Image{}, err
+		}
 	}
 	if int64(len(data)) > f.cfg.MaxBytesPerImage {
 		return Image{}, schema.PayloadTooLarge("screenshots.%s exceeds max_bytes_per_image", ref.ID)
@@ -88,18 +99,20 @@ func (f *Fetcher) Fetch(ctx context.Context, ref schema.ScreenshotRef) (Image, e
 		Width:        width,
 		Height:       height,
 		SHA256:       hex.EncodeToString(hash[:]),
-		Sensitive:    ref.Sensitive,
+		Sensitive:    ref.Sensitive || metadata.Sensitive,
 	}, nil
 }
 
-func (f *Fetcher) readBytes(ctx context.Context, parsed *url.URL, scheme string) ([]byte, error) {
+func (f *Fetcher) readBytes(ctx context.Context, parsed *url.URL, scheme string, rawRef string) ([]byte, error) {
 	switch scheme {
 	case "file":
 		return f.readFile(parsed)
 	case "http", "https":
 		return f.readHTTP(ctx, parsed)
+	case "den-artifact":
+		return nil, nil
 	default:
-		return nil, schema.BadRequest("unsupported ref scheme: %s", scheme)
+		return nil, schema.UnsupportedArtifact("unsupported ref scheme: %s", rawRef)
 	}
 }
 
@@ -136,6 +149,105 @@ func (f *Fetcher) readHTTP(ctx context.Context, parsed *url.URL) ([]byte, error)
 		return nil, schema.PayloadTooLarge("http screenshot ref exceeds max_bytes_per_image")
 	}
 	return readLimited(resp.Body, f.cfg.MaxBytesPerImage)
+}
+
+func (f *Fetcher) readDenArtifact(ctx context.Context, parsed *url.URL, rawRef string) (artifactMetadata, []byte, error) {
+	metadata, err := f.fetchArtifactMetadata(ctx, parsed, rawRef)
+	if err != nil {
+		return artifactMetadata{}, nil, err
+	}
+	data, err := f.fetchArtifactContent(ctx, metadata.ArtifactID)
+	if err != nil {
+		return artifactMetadata{}, nil, err
+	}
+	return metadata, data, nil
+}
+
+func (f *Fetcher) fetchArtifactMetadata(ctx context.Context, parsed *url.URL, rawRef string) (artifactMetadata, error) {
+	endpoint, err := f.artifactMetadataURL(parsed, rawRef)
+	if err != nil {
+		return artifactMetadata{}, err
+	}
+	var metadata artifactMetadata
+	if err := f.getArtifactJSON(ctx, endpoint, &metadata); err != nil {
+		return artifactMetadata{}, err
+	}
+	if metadata.ArtifactID == "" {
+		return artifactMetadata{}, schema.ArtifactUnavailable("artifact metadata response missing artifact_id")
+	}
+	return metadata, nil
+}
+
+func (f *Fetcher) artifactMetadataURL(parsed *url.URL, rawRef string) (string, error) {
+	if f.cfg.ServiceBaseURL == "" {
+		return "", schema.UnsupportedArtifact("artifact service base url is not configured")
+	}
+	if strings.HasPrefix(parsed.Host, "art_") && parsed.Path == "" {
+		return f.cfg.ServiceBaseURL + "/v1/artifacts/" + url.PathEscape(parsed.Host) + "/metadata", nil
+	}
+	values := url.Values{}
+	values.Set("ref", rawRef)
+	return f.cfg.ServiceBaseURL + "/v1/artifacts/resolve?" + values.Encode(), nil
+}
+
+func (f *Fetcher) fetchArtifactContent(ctx context.Context, artifactID string) ([]byte, error) {
+	endpoint := f.cfg.ServiceBaseURL + "/v1/artifacts/" + url.PathEscape(artifactID) + "/content"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, schema.UnsupportedArtifact("artifact content url is invalid: %v", err)
+	}
+	f.authorizeArtifactRequest(req)
+	resp, err := f.httpClient.Do(req)
+	if err != nil {
+		return nil, schema.ArtifactUnavailable("fetching artifact content: %v", err)
+	}
+	defer resp.Body.Close()
+	if err := artifactStatusError(resp.StatusCode, "artifact content"); err != nil {
+		return nil, err
+	}
+	if resp.ContentLength > f.cfg.MaxBytesPerImage {
+		return nil, schema.PayloadTooLarge("artifact content exceeds max_bytes_per_image")
+	}
+	return readLimited(resp.Body, f.cfg.MaxBytesPerImage)
+}
+
+func (f *Fetcher) getArtifactJSON(ctx context.Context, endpoint string, target any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return schema.UnsupportedArtifact("artifact metadata url is invalid: %v", err)
+	}
+	f.authorizeArtifactRequest(req)
+	resp, err := f.httpClient.Do(req)
+	if err != nil {
+		return schema.ArtifactUnavailable("fetching artifact metadata: %v", err)
+	}
+	defer resp.Body.Close()
+	if err := artifactStatusError(resp.StatusCode, "artifact metadata"); err != nil {
+		return err
+	}
+	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+		return schema.ArtifactUnavailable("decoding artifact metadata: %v", err)
+	}
+	return nil
+}
+
+func (f *Fetcher) authorizeArtifactRequest(req *http.Request) {
+	if f.cfg.ServiceToken != "" {
+		req.Header.Set("Authorization", "Bearer "+f.cfg.ServiceToken)
+	}
+}
+
+func artifactStatusError(status int, label string) error {
+	switch {
+	case status >= 200 && status <= 299:
+		return nil
+	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		return schema.ArtifactUnauthorized("%s request was not authorized", label)
+	case status == http.StatusNotFound:
+		return schema.ArtifactNotFound("%s was not found", label)
+	default:
+		return schema.ArtifactUnavailable("%s request returned status %d", label, status)
+	}
 }
 
 func readLimited(reader io.Reader, maxBytes int64) ([]byte, error) {

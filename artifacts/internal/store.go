@@ -58,6 +58,17 @@ func (s *Store) GetArtifact(ctx context.Context, artifactID string) (*Artifact, 
 	return artifact, nil
 }
 
+func (s *Store) GetArtifactByScope(ctx context.Context, projectID string, taskID int64, logicalName string) (*Artifact, error) {
+	artifact, err := scanArtifact(s.pool.QueryRow(ctx, getArtifactByScopeSQL, projectID, taskID, logicalName))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, notFound(fmt.Sprintf("%s/tasks/%d/artifacts/%s", projectID, taskID, logicalName))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting scoped artifact %s task %d %s: %w", projectID, taskID, logicalName, err)
+	}
+	return artifact, nil
+}
+
 func (s *Store) TombstoneArtifact(ctx context.Context, artifactID string, reason string, at time.Time) (*Artifact, error) {
 	artifact, err := scanArtifact(s.pool.QueryRow(ctx, tombstoneArtifactSQL, at, reason, artifactID))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -177,6 +188,16 @@ const getArtifactSQL = `
 select ` + artifactColumns + `
 from den_artifacts.artifacts
 where artifact_id = $1`
+
+const getArtifactByScopeSQL = `
+select ` + artifactColumns + `
+from den_artifacts.artifacts
+where project_id = $1
+  and task_id = $2
+  and logical_name = $3
+  and deleted_at is null
+order by created_at desc, artifact_id desc
+limit 1`
 
 const tombstoneArtifactSQL = `
 update den_artifacts.artifacts

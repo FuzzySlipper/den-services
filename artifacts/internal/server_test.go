@@ -79,6 +79,10 @@ func (s *notFoundService) GetMetadata(context.Context, string) (*Artifact, error
 	return nil, notFound("missing")
 }
 
+func (s *notFoundService) ResolveRef(context.Context, string) (*Artifact, error) {
+	return nil, notFound("missing")
+}
+
 func (s *notFoundService) OpenContent(context.Context, string) (*ArtifactContent, error) {
 	return nil, notFound("missing")
 }

@@ -42,6 +42,9 @@ POST /v1/artifacts
 GET /v1/artifacts/{artifact_id}/metadata
   Return metadata only.
 
+GET /v1/artifacts/resolve?ref=den-artifact://...
+  Resolve canonical or scoped refs to metadata.
+
 GET /v1/artifacts/{artifact_id}/content
   Return bytes with content-type after auth checks.
 
@@ -58,10 +61,10 @@ den-artifact://<artifact_id>
 Responses include a human-readable scoped ref when project/task metadata is present:
 
 ```text
-den-artifact://den-services/tasks/3424/screenshots/agora-overview.png
+den-artifact://den-services/tasks/3424/artifacts/agora-overview.png
 ```
 
-Future resolver work can normalize either form to one artifact metadata row.
+The resolver normalizes either form to one artifact metadata row. Scoped refs resolve by project ID, task ID, and logical name.
 
 ## Storage Model
 

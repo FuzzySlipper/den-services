@@ -15,6 +15,7 @@ const multipartMemoryLimit = int64(1 << 20)
 type ArtifactUseCases interface {
 	Create(ctx context.Context, req CreateArtifactRequest, content UploadContent) (*Artifact, error)
 	GetMetadata(ctx context.Context, artifactID string) (*Artifact, error)
+	ResolveRef(ctx context.Context, rawRef string) (*Artifact, error)
 	OpenContent(ctx context.Context, artifactID string) (*ArtifactContent, error)
 	Delete(ctx context.Context, artifactID string) (*Artifact, error)
 }
@@ -30,6 +31,7 @@ func NewHandler(service ArtifactUseCases, cfg *Config) *Handler {
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/artifacts", h.create)
+	mux.HandleFunc("GET /v1/artifacts/resolve", h.resolve)
 	mux.HandleFunc("GET /v1/artifacts/{artifact_id}/metadata", h.metadata)
 	mux.HandleFunc("GET /v1/artifacts/{artifact_id}/content", h.content)
 	mux.HandleFunc("DELETE /v1/artifacts/{artifact_id}", h.delete)
@@ -52,6 +54,15 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) metadata(w http.ResponseWriter, r *http.Request) {
 	artifact, err := h.service.GetMetadata(r.Context(), r.PathValue("artifact_id"))
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, toArtifactMetadataResponse(artifact))
+}
+
+func (h *Handler) resolve(w http.ResponseWriter, r *http.Request) {
+	artifact, err := h.service.ResolveRef(r.Context(), r.URL.Query().Get("ref"))
 	if err != nil {
 		api.WriteServiceError(w, err)
 		return

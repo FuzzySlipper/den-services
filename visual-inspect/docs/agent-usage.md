@@ -74,7 +74,7 @@ func main() {
 
 ## Request Shape
 
-Use stable criterion and screenshot IDs. `screenshots[].ref` should be a `file://`, `http://`, `https://`, or future `den-artifact://` reference allowed by service config. Keep `screenshots[].sensitive` accurate so logs and downstream packets can preserve handling intent.
+Use stable criterion and screenshot IDs. `screenshots[].ref` should be a `den-artifact://`, `file://`, `http://`, or `https://` reference allowed by service config. Prefer `den-artifact://` for durable review evidence. Keep `screenshots[].sensitive` accurate so logs and downstream packets can preserve handling intent.
 
 ```json
 {
@@ -94,7 +94,7 @@ Use stable criterion and screenshot IDs. `screenshots[].ref` should be a `file:/
   "screenshots": [
     {
       "id": "agora-overview",
-      "ref": "file:///tmp/den-visual-inspect/agora-overview.png",
+      "ref": "den-artifact://art_01jexample",
       "mime_type": "image/png",
       "description": "Agora overview after selecting the terminal card"
     }
@@ -189,7 +189,7 @@ When posting to Den, attach a review packet that references screenshots and embe
   "artifact_refs": [
     {
       "screenshot_id": "agora-overview",
-      "ref": "file:///tmp/den-visual-inspect/agora-overview.png",
+      "ref": "den-artifact://art_01jexample",
       "mime_type": "image/png",
       "sensitive": false
     }
