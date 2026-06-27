@@ -65,6 +65,31 @@ func TestLoadFromPathWithValuesRejectsDuplicateBackendNames(t *testing.T) {
 	}
 }
 
+func TestLoadFromPathWithValuesRequiresRouteTablePath(t *testing.T) {
+	path := writeConfig(t, `server:
+  listen_addr: "127.0.0.1:18090"
+  mcp_endpoint_path: "mcp"
+  read_header_timeout: "5s"
+security:
+  service_token_env: "DEN_MCP_SERVICE_TOKEN"
+  allow_unauthenticated_local_dev: true
+routes:
+  table_path: ""
+backends:
+  - name: "den-core"
+    base_url: "http://127.0.0.1:5299/"
+    health_path: "health"
+    timeout: "3s"
+`)
+
+	_, err := LoadFromPathWithValues(path, sharedconfig.FromMap(map[string]string{
+		"DEN_MCP_SERVICE_TOKEN": "mcp-token",
+	}))
+	if err == nil {
+		t.Fatal("LoadFromPathWithValues() error = nil")
+	}
+}
+
 func writeConfig(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.yaml")

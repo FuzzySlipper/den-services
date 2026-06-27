@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"den-services/shared/api"
 	"den-services/shared/health"
 
+	"den-services/mcp/internal/backend"
 	"den-services/mcp/internal/registry"
 )
 
@@ -31,6 +33,7 @@ const (
 type Handler struct {
 	registry  *registry.Registry
 	buildInfo health.BuildInfo
+	locator   *backend.Locator
 }
 
 type rpcRequest struct {
@@ -82,12 +85,14 @@ type toolsListResult struct {
 }
 
 type toolsCallParams struct {
-	Name string `json:"name"`
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
 
 type toolsCallResult struct {
-	Content []textContent `json:"content"`
-	IsError bool          `json:"isError"`
+	Content           []textContent   `json:"content"`
+	IsError           bool            `json:"isError"`
+	StructuredContent json.RawMessage `json:"structuredContent,omitempty"`
 }
 
 type textContent struct {
@@ -95,10 +100,11 @@ type textContent struct {
 	Text string `json:"text"`
 }
 
-func NewMCPHandler(registry *registry.Registry, buildInfo health.BuildInfo) *Handler {
+func NewMCPHandler(registry *registry.Registry, buildInfo health.BuildInfo, locator *backend.Locator) *Handler {
 	return &Handler{
 		registry:  registry,
 		buildInfo: buildInfo,
+		locator:   locator,
 	}
 }
 
@@ -112,7 +118,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeRPCResponse(w, rpcErrorResponse(nil, errorInternal, "reading request body"))
 		return
 	}
-	response, ok := h.handlePayload(body)
+	response, ok := h.handlePayload(r.Context(), body)
 	if !ok {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -120,13 +126,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writeRPCPayload(w, response)
 }
 
-func (h *Handler) handlePayload(body []byte) (any, bool) {
+func (h *Handler) handlePayload(ctx context.Context, body []byte) (any, bool) {
 	body = bytes.TrimSpace(body)
 	if len(body) == 0 {
 		return rpcErrorResponse(nil, errorParse, "parse error"), true
 	}
 	if body[0] != '[' {
-		return h.handleBody(body)
+		return h.handleBody(ctx, body)
 	}
 	var rawRequests []json.RawMessage
 	if err := json.Unmarshal(body, &rawRequests); err != nil {
@@ -137,7 +143,7 @@ func (h *Handler) handlePayload(body []byte) (any, bool) {
 	}
 	responses := make([]rpcResponse, 0, len(rawRequests))
 	for _, rawRequest := range rawRequests {
-		response, ok := h.handleBody(rawRequest)
+		response, ok := h.handleBody(ctx, rawRequest)
 		if ok {
 			responses = append(responses, response)
 		}
@@ -148,7 +154,7 @@ func (h *Handler) handlePayload(body []byte) (any, bool) {
 	return responses, true
 }
 
-func (h *Handler) handleBody(body []byte) (rpcResponse, bool) {
+func (h *Handler) handleBody(ctx context.Context, body []byte) (rpcResponse, bool) {
 	var request rpcRequest
 	if err := json.Unmarshal(body, &request); err != nil {
 		return rpcErrorResponse(nil, errorParse, "parse error"), true
@@ -160,7 +166,7 @@ func (h *Handler) handleBody(body []byte) (rpcResponse, bool) {
 	if request.JSONRPC != jsonRPCVersion || request.Method == "" {
 		return rpcErrorResponse(request.ID, errorInvalidRequest, "invalid JSON-RPC request"), true
 	}
-	return h.handleRequest(request), true
+	return h.handleRequest(ctx, request), true
 }
 
 func (h *Handler) handleNotification(request rpcRequest) {
@@ -169,14 +175,14 @@ func (h *Handler) handleNotification(request rpcRequest) {
 	}
 }
 
-func (h *Handler) handleRequest(request rpcRequest) rpcResponse {
+func (h *Handler) handleRequest(ctx context.Context, request rpcRequest) rpcResponse {
 	switch request.Method {
 	case methodInitialize:
 		return rpcResultResponse(request.ID, h.initialize(request.Params))
 	case methodToolsList:
 		return rpcResultResponse(request.ID, toolsListResult{Tools: h.registry.Tools()})
 	case methodToolsCall:
-		return h.toolsCall(request)
+		return h.toolsCall(ctx, request)
 	default:
 		return rpcErrorResponse(request.ID, errorMethodNotFound, fmt.Sprintf("method not found: %s", request.Method))
 	}
@@ -201,7 +207,7 @@ func (h *Handler) initialize(rawParams json.RawMessage) initializeResult {
 	}
 }
 
-func (h *Handler) toolsCall(request rpcRequest) rpcResponse {
+func (h *Handler) toolsCall(ctx context.Context, request rpcRequest) rpcResponse {
 	params := toolsCallParams{}
 	if err := json.Unmarshal(request.Params, &params); err != nil {
 		return rpcErrorResponse(request.ID, errorInvalidParams, "invalid tools/call params")
@@ -213,15 +219,36 @@ func (h *Handler) toolsCall(request rpcRequest) rpcResponse {
 		}
 		return rpcErrorResponse(request.ID, errorInternal, err.Error())
 	}
-	return rpcResultResponse(request.ID, toolsCallResult{
+	if h.locator == nil {
+		return rpcResultResponse(request.ID, errorToolResult(fmt.Sprintf("Tool %s is registered for backend %s, but backend proxy execution is not implemented yet.", tool.Name, tool.Backend), nil))
+	}
+	result, failure, err := h.locator.Call(ctx, backend.ToolCall{
+		ToolName:  tool.Name,
+		Operation: tool.Operation,
+		Arguments: params.Arguments,
+		RequestID: request.ID,
+	})
+	if err != nil {
+		return rpcErrorResponse(request.ID, errorInternal, err.Error())
+	}
+	if failure != nil {
+		failureJSON := json.RawMessage(failure.Text())
+		return rpcResultResponse(request.ID, errorToolResult(failure.Text(), failureJSON))
+	}
+	return rpcResultResponse(request.ID, json.RawMessage(result.Value))
+}
+
+func errorToolResult(message string, structured json.RawMessage) toolsCallResult {
+	return toolsCallResult{
 		Content: []textContent{
 			{
 				Type: "text",
-				Text: fmt.Sprintf("Tool %s is registered for backend %s, but backend proxy execution is not implemented yet.", tool.Name, tool.Backend),
+				Text: message,
 			},
 		},
-		IsError: true,
-	})
+		IsError:           true,
+		StructuredContent: structured,
+	}
 }
 
 func negotiatedProtocol(requested string) string {
