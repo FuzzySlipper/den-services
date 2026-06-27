@@ -179,6 +179,12 @@ func TestLocatorClassifiesValidationAndDomainStatusAsNonRetryable(t *testing.T) 
 			if failure.Message != "backend says no" {
 				t.Fatalf("Message = %q", failure.Message)
 			}
+			if failure.CircuitState != "" {
+				t.Fatalf("CircuitState = %q, want empty", failure.CircuitState)
+			}
+			if state, ok := locator.BackendState("den-core"); !ok || state != StateReady {
+				t.Fatalf("BackendState = %s/%t, want %s/true", state, ok, StateReady)
+			}
 		})
 	}
 }
@@ -209,6 +215,12 @@ func TestLocatorClassifiesAuthStatusAsNonRetryableConfigFailure(t *testing.T) {
 			}
 			if !strings.Contains(failure.Message, "service_token_env") {
 				t.Fatalf("Message missing config hint: %q", failure.Message)
+			}
+			if failure.CircuitState != "" {
+				t.Fatalf("CircuitState = %q, want empty", failure.CircuitState)
+			}
+			if state, ok := locator.BackendState("den-core"); !ok || state != StateReady {
+				t.Fatalf("BackendState = %s/%t, want %s/true", state, ok, StateReady)
 			}
 		})
 	}
