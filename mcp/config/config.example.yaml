@@ -1,0 +1,22 @@
+# Deployment configuration for the den-services MCP facade.
+# The live service preserves the legacy den-mcp LAN endpoint while proxying
+# tool execution to the local den-core MCP backend.
+
+server:
+  listen_addr: "0.0.0.0:5199"
+  mcp_endpoint_path: "/mcp"
+  read_header_timeout: "5s"
+
+security:
+  service_token_env: "DEN_MCP_SERVICE_TOKEN"
+  allow_unauthenticated_local_dev: true
+
+routes:
+  table_path: "config/routes.yaml"
+
+backends:
+  - name: "den-core"
+    base_url: "http://127.0.0.1:5299"
+    health_path: "/health"
+    timeout: "3s"
+    service_token_env: "DEN_CORE_SERVICE_TOKEN"

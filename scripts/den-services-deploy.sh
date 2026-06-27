@@ -250,6 +250,9 @@ fi
 if [[ "${service}" == "gateway" && -f gateway/config/routes.example.yaml && ! -f "${service_root}/config/routes.yaml" ]]; then
   install -m 0644 gateway/config/routes.example.yaml "${service_root}/config/routes.yaml"
 fi
+if [[ "${service}" == "mcp" && -f mcp/routes.example.yaml && ! -f "${service_root}/config/routes.yaml" ]]; then
+  install -m 0644 mcp/routes.example.yaml "${service_root}/config/routes.yaml"
+fi
 
 if [[ ! -f "/etc/den-services/${service}.env" ]]; then
   echo "warning: /etc/den-services/${service}.env is missing; create it from ${env_example}" >&2
