@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -149,7 +151,7 @@ func TestMCPRejectsNonPost(t *testing.T) {
 	}
 }
 
-func TestToolsCallReturnsRegisteredNotImplementedResult(t *testing.T) {
+func TestToolsCallReturnsBackendFailureResult(t *testing.T) {
 	server := newTestServer(t, true, nil)
 
 	response := postJSON(t, server, map[string]any{
@@ -171,6 +173,10 @@ func TestToolsCallReturnsRegisteredNotImplementedResult(t *testing.T) {
 	if result["isError"] != true {
 		t.Fatalf("isError = %v, want true", result["isError"])
 	}
+	structured := result["structuredContent"].(map[string]any)
+	if structured["error"] != "den_backend_unavailable" {
+		t.Fatalf("structured error = %v", structured["error"])
+	}
 }
 
 func newTestServer(t *testing.T, allowUnauthenticatedLocalDev bool, handler MCPHandler) *http.Server {
@@ -185,6 +191,17 @@ func newTestServer(t *testing.T, allowUnauthenticatedLocalDev bool, handler MCPH
 			MCPEndpointPath:   "/mcp",
 			ReadHeaderTimeout: 5 * time.Second,
 		},
+		Routes: config.RouteConfig{
+			TablePath: testRouteTable(t),
+		},
+		Backends: []config.BackendConfig{
+			{
+				Name:       "den-core",
+				BaseURL:    "http://127.0.0.1:1",
+				HealthPath: "/health",
+				Timeout:    20 * time.Millisecond,
+			},
+		},
 		Security: config.SecurityConfig{
 			ServiceToken:                 "test-token",
 			AllowUnauthenticatedLocalDev: allowUnauthenticatedLocalDev,
@@ -194,6 +211,23 @@ func newTestServer(t *testing.T, allowUnauthenticatedLocalDev bool, handler MCPH
 		t.Fatalf("NewHTTPServer() error = %v", err)
 	}
 	return server
+}
+
+func testRouteTable(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "routes.yaml")
+	content := `routes:
+  - operation: "get_task"
+    backend: "den-core"
+    method: "POST"
+    path: "/mcp"
+    request_adapter: "mcp_tools_call"
+    response_adapter: "mcp_jsonrpc_result"
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("writing route table: %v", err)
+	}
+	return path
 }
 
 func postJSON(t *testing.T, server *http.Server, payload map[string]any, token string) *httptest.ResponseRecorder {

@@ -6,6 +6,7 @@ import (
 	"den-services/shared/api"
 	"den-services/shared/health"
 
+	"den-services/mcp/internal/backend"
 	"den-services/mcp/internal/config"
 	"den-services/mcp/internal/registry"
 )
@@ -46,7 +47,11 @@ func protectedMCPHandler(cfg *config.Config, buildInfo health.BuildInfo, handler
 		if err != nil {
 			return nil, err
 		}
-		handler = NewMCPHandler(defaultRegistry, buildInfo)
+		locator, err := backend.NewLocatorFromPath(cfg.Backends, cfg.Routes.TablePath, nil)
+		if err != nil {
+			return nil, err
+		}
+		handler = NewMCPHandler(defaultRegistry, buildInfo, locator)
 	}
 	if cfg.Security.AllowUnauthenticatedLocalDev {
 		return handler, nil
