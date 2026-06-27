@@ -2,7 +2,7 @@ SERVICES := shared delivery runtime observation gateway conversation timeline mc
 GOCACHE ?= $(CURDIR)/.gocache
 GOLANGCI_LINT_CACHE ?= $(CURDIR)/.golangci-lint-cache
 
-.PHONY: test build build-all lint
+.PHONY: test build build-all lint mcp-smoke
 
 test:
 	GOCACHE=$(GOCACHE) go test ./...
@@ -25,3 +25,6 @@ build-all:
 
 lint:
 	GOCACHE=$(GOCACHE) GOLANGCI_LINT_CACHE=$(GOLANGCI_LINT_CACHE) golangci-lint run ./...
+
+mcp-smoke:
+	python3 mcp/scripts/hermes_smoke.py --mode local
