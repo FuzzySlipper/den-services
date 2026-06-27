@@ -66,7 +66,10 @@ func (l *Locator) Call(ctx context.Context, call ToolCall) (Result, *Failure, er
 	}
 	result, failure, err := l.client.Call(ctx, backend, route, call)
 	if failure != nil {
-		l.markState(backend.Name, StateUnavailable)
+		if failure.Retryable {
+			l.markState(backend.Name, StateUnavailable)
+			failure.CircuitState = string(StateUnavailable)
+		}
 		return result, failure, err
 	}
 	if err != nil {

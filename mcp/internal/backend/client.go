@@ -68,7 +68,7 @@ func (c *Client) Call(ctx context.Context, backend config.BackendConfig, route R
 	}
 	response, err := c.httpClient.Do(request)
 	if err != nil {
-		return Result{}, backendFailure(backend.Name, call.Operation, err, nil), nil
+		return Result{}, backendFailure(backend.Name, call.Operation, call.ToolName, err, nil), nil
 	}
 	defer response.Body.Close()
 
@@ -77,7 +77,7 @@ func (c *Client) Call(ctx context.Context, backend config.BackendConfig, route R
 		return Result{}, nil, fmt.Errorf("reading backend response: %w", err)
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return Result{}, statusFailure(backend.Name, call.Operation, response.StatusCode, responseBody), nil
+		return Result{}, statusFailure(backend.Name, call.Operation, call.ToolName, response.StatusCode, responseBody), nil
 	}
 	var backendResponse backendRPCResponse
 	if err := json.Unmarshal(responseBody, &backendResponse); err != nil {
@@ -109,11 +109,11 @@ func (c *Client) CheckReady(ctx context.Context, backend config.BackendConfig) *
 	}
 	response, err := c.httpClient.Do(request)
 	if err != nil {
-		return backendFailure(backend.Name, "readiness", err, nil)
+		return backendFailure(backend.Name, "readiness", "", err, nil)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return statusFailure(backend.Name, "readiness", response.StatusCode, nil)
+		return statusFailure(backend.Name, "readiness", "", response.StatusCode, nil)
 	}
 	return nil
 }
@@ -139,35 +139,51 @@ func buildMCPToolCall(call ToolCall) ([]byte, error) {
 	return data, nil
 }
 
-func backendFailure(backendName string, operation string, err error, statusCode *int) *Failure {
+func backendFailure(backendName string, operation string, toolName string, err error, statusCode *int) *Failure {
 	return &Failure{
 		Error:      "den_backend_unavailable",
 		Retryable:  true,
 		Backend:    backendName,
 		Operation:  operation,
+		Tool:       toolName,
 		Message:    classifyBackendError(err),
 		StatusCode: statusCode,
 	}
 }
 
-func statusFailure(backendName string, operation string, statusCode int, body []byte) *Failure {
-	message := http.StatusText(statusCode)
-	if len(body) > 0 {
-		message = string(body)
-	}
+func statusFailure(backendName string, operation string, toolName string, statusCode int, body []byte) *Failure {
+	message := statusFailureMessage(statusCode, body)
 	return &Failure{
 		Error:      statusFailureCode(statusCode),
 		Retryable:  retryableStatus(statusCode),
 		Backend:    backendName,
 		Operation:  operation,
+		Tool:       toolName,
 		Message:    message,
 		StatusCode: &statusCode,
 	}
 }
 
+func statusFailureMessage(statusCode int, body []byte) string {
+	bodyText := string(body)
+	if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
+		if bodyText == "" {
+			return "Den backend rejected MCP service credentials; check backend service_token_env and token configuration."
+		}
+		return bodyText + " Check backend service_token_env and token configuration."
+	}
+	if bodyText != "" {
+		return bodyText
+	}
+	return http.StatusText(statusCode)
+}
+
 func statusFailureCode(statusCode int) string {
 	if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
 		return "den_backend_auth_failed"
+	}
+	if statusCode == http.StatusBadRequest || statusCode == http.StatusNotFound {
+		return "den_backend_request_failed"
 	}
 	if retryableStatus(statusCode) {
 		return "den_backend_unavailable"

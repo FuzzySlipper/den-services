@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,9 +111,192 @@ func TestLocatorClassifiesTimeoutAndMarksBackendUnavailable(t *testing.T) {
 	if !failure.Retryable || failure.Error != "den_backend_unavailable" {
 		t.Fatalf("failure = %#v", failure)
 	}
+	if failure.Tool != "get_task" {
+		t.Fatalf("failure.Tool = %q, want get_task", failure.Tool)
+	}
+	if failure.CircuitState != string(StateUnavailable) {
+		t.Fatalf("CircuitState = %q, want %q", failure.CircuitState, StateUnavailable)
+	}
 	state, ok := locator.BackendState("den-core")
 	if !ok || state != StateUnavailable {
 		t.Fatalf("BackendState = %s/%t, want %s/true", state, ok, StateUnavailable)
+	}
+}
+
+func TestLocatorClassifiesClosedPortAsRetryableUnavailable(t *testing.T) {
+	baseURL := closedPortURL(t)
+	table, err := NewRouteTable([]Route{testRoute("get_task", "den-core")})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	backendConfig := testBackend("den-core", baseURL)
+	backendConfig.Timeout = 100 * time.Millisecond
+	locator, err := NewLocator([]config.BackendConfig{backendConfig}, table, nil)
+	if err != nil {
+		t.Fatalf("NewLocator() error = %v", err)
+	}
+
+	_, failure, err := locator.Call(context.Background(), ToolCall{
+		ToolName:  "get_task",
+		Operation: "get_task",
+		RequestID: json.RawMessage(`1`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure == nil || !failure.Retryable || failure.Error != "den_backend_unavailable" {
+		t.Fatalf("failure = %#v", failure)
+	}
+}
+
+func TestLocatorClassifiesValidationAndDomainStatusAsNonRetryable(t *testing.T) {
+	for _, statusCode := range []int{http.StatusBadRequest, http.StatusNotFound} {
+		statusCode := statusCode
+		t.Run(http.StatusText(statusCode), func(t *testing.T) {
+			locator, closeServer := locatorWithStatusBackend(t, statusCode, "backend says no")
+			defer closeServer()
+
+			_, failure, err := locator.Call(context.Background(), ToolCall{
+				ToolName:  "get_task",
+				Operation: "get_task",
+				RequestID: json.RawMessage(`1`),
+			})
+			if err != nil {
+				t.Fatalf("Call() error = %v", err)
+			}
+			if failure == nil {
+				t.Fatal("failure = nil")
+			}
+			if failure.Retryable {
+				t.Fatalf("Retryable = true, want false")
+			}
+			if failure.Error != "den_backend_request_failed" {
+				t.Fatalf("Error = %q, want den_backend_request_failed", failure.Error)
+			}
+			if failure.StatusCode == nil || *failure.StatusCode != statusCode {
+				t.Fatalf("StatusCode = %v, want %d", failure.StatusCode, statusCode)
+			}
+			if failure.Message != "backend says no" {
+				t.Fatalf("Message = %q", failure.Message)
+			}
+			if failure.CircuitState != "" {
+				t.Fatalf("CircuitState = %q, want empty", failure.CircuitState)
+			}
+			if state, ok := locator.BackendState("den-core"); !ok || state != StateReady {
+				t.Fatalf("BackendState = %s/%t, want %s/true", state, ok, StateReady)
+			}
+		})
+	}
+}
+
+func TestLocatorClassifiesAuthStatusAsNonRetryableConfigFailure(t *testing.T) {
+	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		statusCode := statusCode
+		t.Run(http.StatusText(statusCode), func(t *testing.T) {
+			locator, closeServer := locatorWithStatusBackend(t, statusCode, "bad token")
+			defer closeServer()
+
+			_, failure, err := locator.Call(context.Background(), ToolCall{
+				ToolName:  "get_task",
+				Operation: "get_task",
+				RequestID: json.RawMessage(`1`),
+			})
+			if err != nil {
+				t.Fatalf("Call() error = %v", err)
+			}
+			if failure == nil {
+				t.Fatal("failure = nil")
+			}
+			if failure.Retryable {
+				t.Fatalf("Retryable = true, want false")
+			}
+			if failure.Error != "den_backend_auth_failed" {
+				t.Fatalf("Error = %q, want den_backend_auth_failed", failure.Error)
+			}
+			if !strings.Contains(failure.Message, "service_token_env") {
+				t.Fatalf("Message missing config hint: %q", failure.Message)
+			}
+			if failure.CircuitState != "" {
+				t.Fatalf("CircuitState = %q, want empty", failure.CircuitState)
+			}
+			if state, ok := locator.BackendState("den-core"); !ok || state != StateReady {
+				t.Fatalf("BackendState = %s/%t, want %s/true", state, ok, StateReady)
+			}
+		})
+	}
+}
+
+func TestLocatorClassifiesGatewayStatusesAsRetryable(t *testing.T) {
+	for _, statusCode := range []int{http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout} {
+		statusCode := statusCode
+		t.Run(http.StatusText(statusCode), func(t *testing.T) {
+			locator, closeServer := locatorWithStatusBackend(t, statusCode, "")
+			defer closeServer()
+
+			_, failure, err := locator.Call(context.Background(), ToolCall{
+				ToolName:  "get_task",
+				Operation: "get_task",
+				RequestID: json.RawMessage(`1`),
+			})
+			if err != nil {
+				t.Fatalf("Call() error = %v", err)
+			}
+			if failure == nil || !failure.Retryable || failure.Error != "den_backend_unavailable" {
+				t.Fatalf("failure = %#v", failure)
+			}
+		})
+	}
+}
+
+func TestLocatorTracksCircuitStatePerBackend(t *testing.T) {
+	table, err := NewRouteTable([]Route{
+		testRoute("get_task", "down-core"),
+		testRoute("create_task", "up-core"),
+	})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	upServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"ok"}],"isError":false}}`))
+	}))
+	defer upServer.Close()
+	downBackend := testBackend("down-core", closedPortURL(t))
+	downBackend.Timeout = 100 * time.Millisecond
+	locator, err := NewLocator([]config.BackendConfig{
+		downBackend,
+		testBackend("up-core", upServer.URL),
+	}, table, nil)
+	if err != nil {
+		t.Fatalf("NewLocator() error = %v", err)
+	}
+
+	_, failure, err := locator.Call(context.Background(), ToolCall{
+		ToolName:  "get_task",
+		Operation: "get_task",
+		RequestID: json.RawMessage(`1`),
+	})
+	if err != nil {
+		t.Fatalf("Call(down) error = %v", err)
+	}
+	if failure == nil {
+		t.Fatal("failure = nil")
+	}
+	if state, _ := locator.BackendState("down-core"); state != StateUnavailable {
+		t.Fatalf("down-core state = %s, want unavailable", state)
+	}
+	if state, _ := locator.BackendState("up-core"); state != StateReady {
+		t.Fatalf("up-core state = %s, want ready", state)
+	}
+	_, failure, err = locator.Call(context.Background(), ToolCall{
+		ToolName:  "create_task",
+		Operation: "create_task",
+		RequestID: json.RawMessage(`1`),
+	})
+	if err != nil {
+		t.Fatalf("Call(up) error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("up failure = %#v", failure)
 	}
 }
 
@@ -177,4 +362,34 @@ func testBackend(name string, baseURL string) config.BackendConfig {
 		HealthPath: "/health",
 		Timeout:    time.Second,
 	}
+}
+
+func locatorWithStatusBackend(t *testing.T, statusCode int, body string) (*Locator, func()) {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(statusCode)
+		_, _ = w.Write([]byte(body))
+	}))
+	table, err := NewRouteTable([]Route{testRoute("get_task", "den-core")})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	locator, err := NewLocator([]config.BackendConfig{testBackend("den-core", server.URL)}, table, server.Client())
+	if err != nil {
+		t.Fatalf("NewLocator() error = %v", err)
+	}
+	return locator, server.Close
+}
+
+func closedPortURL(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	addr := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	return "http://" + addr
 }

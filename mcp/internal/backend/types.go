@@ -36,12 +36,14 @@ type Result struct {
 }
 
 type Failure struct {
-	Error      string `json:"error"`
-	Retryable  bool   `json:"retryable"`
-	Backend    string `json:"backend"`
-	Operation  string `json:"operation"`
-	Message    string `json:"message"`
-	StatusCode *int   `json:"status_code"`
+	Error        string `json:"error"`
+	Retryable    bool   `json:"retryable"`
+	Backend      string `json:"backend"`
+	Operation    string `json:"operation"`
+	Tool         string `json:"tool,omitempty"`
+	Message      string `json:"message"`
+	StatusCode   *int   `json:"status_code"`
+	CircuitState string `json:"circuit_state,omitempty"`
 }
 
 var (

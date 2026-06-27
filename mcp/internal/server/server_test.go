@@ -177,6 +177,15 @@ func TestToolsCallReturnsBackendFailureResult(t *testing.T) {
 	if structured["error"] != "den_backend_unavailable" {
 		t.Fatalf("structured error = %v", structured["error"])
 	}
+	if structured["tool"] != "get_task" {
+		t.Fatalf("structured tool = %v", structured["tool"])
+	}
+	if structured["operation"] != "get_task" {
+		t.Fatalf("structured operation = %v", structured["operation"])
+	}
+	if structured["circuit_state"] != "unavailable" {
+		t.Fatalf("structured circuit_state = %v", structured["circuit_state"])
+	}
 }
 
 func newTestServer(t *testing.T, allowUnauthenticatedLocalDev bool, handler MCPHandler) *http.Server {
