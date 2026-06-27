@@ -8,6 +8,7 @@ use (
 	./gateway
 	./integration
 	./migration
+	./mcp
 	./observation
 	./runtime
 	./shared
