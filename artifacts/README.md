@@ -9,24 +9,35 @@ The service boundary follows the `den-services/den-artifact-centralized-image-st
 - agents and review packets use stable `den-artifact://...` refs;
 - raw image bytes and base64 payloads do not belong in Den workflow tables.
 
-## Current Scaffold
+## Current Implementation
 
-This task adds the deployable service shell, DDL, configuration, and API contract routes. The upload/read/delete routes intentionally return `501 not_implemented` until the blob backend and store implementation land.
+The service has a deployable HTTP shell, Postgres metadata store, and initial filesystem blob backend.
 
 Implemented now:
 
 - `GET /health`
 - `GET /version`
 - authenticated API mux
-- route prototypes for metadata create/read, content read, optional thumbnail read, and delete/tombstone
+- multipart upload
+- metadata read
+- content read
+- delete/tombstone
 - filesystem backend configuration surface
 - `den_artifacts` schema DDL
 
-## Planned API
+## API
 
 ```text
 POST /v1/artifacts
-  Upload raw bytes or multipart content plus metadata.
+  Multipart upload. File part name: file.
+  Metadata form fields:
+    project_id, task_id, review_round_id, finding_id
+    owner_kind, owner_id
+    logical_name
+    mime_type
+    sensitive=true|false
+    created_by
+    temporary=true|false
 
 GET /v1/artifacts/{artifact_id}/metadata
   Return metadata only.
@@ -34,11 +45,8 @@ GET /v1/artifacts/{artifact_id}/metadata
 GET /v1/artifacts/{artifact_id}/content
   Return bytes with content-type after auth checks.
 
-GET /v1/artifacts/{artifact_id}/thumbnail
-  Optional derived preview for Den Web.
-
 DELETE /v1/artifacts/{artifact_id}
-  Tombstone metadata and schedule blob deletion according to retention policy.
+  Tombstone metadata. Content and metadata reads hide tombstoned artifacts.
 ```
 
 The canonical ref form is:
@@ -47,13 +55,13 @@ The canonical ref form is:
 den-artifact://<artifact_id>
 ```
 
-Human-readable scoped refs may also be supported:
+Responses include a human-readable scoped ref when project/task metadata is present:
 
 ```text
 den-artifact://den-services/tasks/3424/screenshots/agora-overview.png
 ```
 
-The resolver must normalize either form to one artifact metadata row.
+Future resolver work can normalize either form to one artifact metadata row.
 
 ## Storage Model
 
@@ -78,7 +86,29 @@ Initial blob backend:
 /var/lib/den/artifacts/sha256/ab/cd/<sha256>
 ```
 
-The backend interface should stay small enough to add MinIO/S3 later without changing API clients.
+The filesystem backend stores blobs by SHA-256. Duplicate uploads with different owners create separate metadata rows pointing at the same content-addressed blob key.
+
+## Upload Example
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer $DEN_ARTIFACTS_SERVICE_TOKEN" \
+  -F "file=@screenshot.png;type=image/png" \
+  -F "project_id=den-services" \
+  -F "task_id=3476" \
+  -F "logical_name=screenshot.png" \
+  -F "created_by=agent-name" \
+  http://127.0.0.1:8090/v1/artifacts
+```
+
+Content read:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer $DEN_ARTIFACTS_SERVICE_TOKEN" \
+  http://127.0.0.1:8090/v1/artifacts/<artifact_id>/content \
+  -o artifact.png
+```
 
 ## Visual Inspect Contract
 
