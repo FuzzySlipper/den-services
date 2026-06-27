@@ -1,0 +1,22 @@
+# Artifacts service configuration.
+# Copy to /data/services/artifacts/config/config.yaml for deployment.
+
+bind_addr: "127.0.0.1:8090" # Loopback HTTP listen address.
+database_url_env: "DEN_ARTIFACTS_DATABASE_URL" # Env var containing the Postgres URL.
+service_token_env: "DEN_ARTIFACTS_SERVICE_TOKEN" # Env var containing the bearer token.
+
+storage:
+  backend: "filesystem" # Initial blob backend.
+  root_path: "/var/lib/den/artifacts" # Root for content-addressed blobs.
+  key_prefix: "sha256" # Backend key namespace.
+
+limits:
+  max_bytes_per_artifact: 25000000 # Maximum upload size in bytes.
+  max_pixels_per_image: 24000000 # Maximum decoded image pixels.
+
+retention:
+  default_ttl: "0s" # 0 means retain with owning task/review history until explicit deletion.
+  temporary_ttl: "168h" # Suggested TTL for temporary artifacts.
+
+http:
+  read_header_timeout: "5s" # Maximum time to read request headers.
