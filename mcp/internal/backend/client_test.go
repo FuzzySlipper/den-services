@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -51,6 +52,76 @@ func TestClientAuthFailureWithoutBodyHasConfigHint(t *testing.T) {
 	}
 	if failure.Message == http.StatusText(http.StatusUnauthorized) {
 		t.Fatalf("Message = %q, want config hint", failure.Message)
+	}
+}
+
+func TestClientNegotiatesStreamableMCPSessionOnDemand(t *testing.T) {
+	var sawInitialAccept bool
+	var sawSessionHeader bool
+	var sawTool string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+			sawInitialAccept = true
+		}
+		var request struct {
+			Method string `json:"method"`
+			Params struct {
+				Name string `json:"name"`
+			} `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		if request.Method == "initialize" {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Mcp-Session-Id", "session-1")
+			_, _ = w.Write([]byte("event: message\n"))
+			_, _ = w.Write([]byte(`data: {"jsonrpc":"2.0","id":"den-services-mcp-backend-init","result":{"protocolVersion":"2025-11-25"}}` + "\n\n"))
+			return
+		}
+		if request.Method != "tools/call" {
+			t.Fatalf("method = %q, want tools/call", request.Method)
+		}
+		if r.Header.Get("Mcp-Session-Id") == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"code":-32000,"message":"Bad Request: A new session can only be created by an initialize request. Include a valid Mcp-Session-Id header for non-initialize requests."},"id":"","jsonrpc":"2.0"}`))
+			return
+		}
+		if r.Header.Get("Mcp-Session-Id") == "session-1" {
+			sawSessionHeader = true
+		}
+		sawTool = request.Params.Name
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: message\n"))
+		_, _ = w.Write([]byte(`data: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"ok"}],"isError":false}}` + "\n\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	route := testRoute("get_task", "den-core")
+	route.Path = "/mcp"
+	result, failure, err := client.Call(context.Background(), testBackend("den-core", server.URL), route, ToolCall{
+		ToolName:  "get_task",
+		Operation: "get_task",
+		RequestID: json.RawMessage(`1`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if !sawInitialAccept {
+		t.Fatal("initial request did not include streamable MCP Accept header")
+	}
+	if !sawSessionHeader {
+		t.Fatal("retried tools/call did not include negotiated Mcp-Session-Id")
+	}
+	if sawTool != "get_task" {
+		t.Fatalf("tool = %q, want get_task", sawTool)
+	}
+	if !strings.Contains(string(result.Value), `"text":"ok"`) {
+		t.Fatalf("result = %s", result.Value)
 	}
 }
 
