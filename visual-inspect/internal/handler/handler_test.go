@@ -99,12 +99,12 @@ func TestEvaluateRejectsUnsupportedSchemeBeforeEvaluator(t *testing.T) {
 	assertErrorCode(t, response, "invalid_visual_inspect_request")
 }
 
-func TestEvaluateRejectsDenArtifactUntilResolverExists(t *testing.T) {
+func TestEvaluateRejectsDenArtifactWhenArtifactServiceIsNotConfigured(t *testing.T) {
 	cfg := testConfig(t.TempDir(), 1000, 1000)
 	eval := &recordingEvaluator{}
 	handler := newTestHandler(cfg, eval, nil)
 
-	request := validRequest("den-artifact://den-services/tasks/3421/screenshots/overview.png")
+	request := validRequest("den-artifact://den-services/tasks/3421/artifacts/overview.png")
 	response := postEvaluate(t, handler, request)
 
 	if response.Code != http.StatusBadRequest {

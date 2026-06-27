@@ -35,6 +35,30 @@ func UnsupportedArtifact(format string, args ...any) *RequestError {
 	}
 }
 
+func ArtifactNotFound(format string, args ...any) *RequestError {
+	return &RequestError{
+		status:  http.StatusNotFound,
+		code:    "artifact_not_found",
+		message: fmt.Sprintf(format, args...),
+	}
+}
+
+func ArtifactUnauthorized(format string, args ...any) *RequestError {
+	return &RequestError{
+		status:  http.StatusUnauthorized,
+		code:    "artifact_unauthorized",
+		message: fmt.Sprintf(format, args...),
+	}
+}
+
+func ArtifactUnavailable(format string, args ...any) *RequestError {
+	return &RequestError{
+		status:  http.StatusBadGateway,
+		code:    "artifact_service_error",
+		message: fmt.Sprintf(format, args...),
+	}
+}
+
 func (e *RequestError) Error() string {
 	return e.message
 }

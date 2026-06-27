@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -114,6 +116,49 @@ type NewArtifactParams struct {
 	CreatedBy      string
 	CreatedAt      time.Time
 	ExpiresAt      *time.Time
+}
+
+type ArtifactRefScope struct {
+	ArtifactID  string
+	ProjectID   string
+	TaskID      int64
+	LogicalName string
+}
+
+func ParseArtifactRef(rawRef string) (ArtifactRefScope, error) {
+	parsed, err := url.Parse(strings.TrimSpace(rawRef))
+	if err != nil {
+		return ArtifactRefScope{}, fmt.Errorf("%w: parsing artifact ref: %v", ErrInvalidArtifact, err)
+	}
+	if parsed.Scheme != "den-artifact" {
+		return ArtifactRefScope{}, fmt.Errorf("%w: artifact ref scheme must be den-artifact", ErrInvalidArtifact)
+	}
+	if parsed.Host == "" {
+		return ArtifactRefScope{}, fmt.Errorf("%w: artifact ref host is required", ErrInvalidArtifact)
+	}
+	if strings.HasPrefix(parsed.Host, "art_") && parsed.Path == "" {
+		return ArtifactRefScope{ArtifactID: parsed.Host}, nil
+	}
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(segments) < 4 || segments[0] != "tasks" || segments[2] != "artifacts" {
+		return ArtifactRefScope{}, fmt.Errorf("%w: scoped artifact ref must be den-artifact://<project>/tasks/<task_id>/artifacts/<logical_name>", ErrInvalidArtifact)
+	}
+	taskID, err := strconv.ParseInt(segments[1], 10, 64)
+	if err != nil {
+		return ArtifactRefScope{}, fmt.Errorf("%w: task id must be an integer", ErrInvalidArtifact)
+	}
+	logicalName, err := url.PathUnescape(strings.Join(segments[3:], "/"))
+	if err != nil {
+		return ArtifactRefScope{}, fmt.Errorf("%w: logical name is invalid", ErrInvalidArtifact)
+	}
+	if strings.TrimSpace(logicalName) == "" {
+		return ArtifactRefScope{}, fmt.Errorf("%w: logical name is required", ErrInvalidArtifact)
+	}
+	return ArtifactRefScope{
+		ProjectID:   parsed.Host,
+		TaskID:      taskID,
+		LogicalName: path.Base(logicalName),
+	}, nil
 }
 
 func NewArtifact(params NewArtifactParams) (*Artifact, error) {

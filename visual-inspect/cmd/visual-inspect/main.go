@@ -39,7 +39,7 @@ func main() {
 		slog.Error("building version info", "error", err)
 		os.Exit(1)
 	}
-	fetcher := artifacts.NewFetcher(cfg.Artifacts, nil)
+	fetcher := artifacts.NewFetcher(cfg.Artifacts, &http.Client{Timeout: cfg.Artifacts.ServiceTimeout})
 	eval := evaluator.NewVisionEvaluator(evaluator.Config{
 		Provider:        cfg.LLM.Provider,
 		BaseURL:         cfg.LLM.BaseURL,

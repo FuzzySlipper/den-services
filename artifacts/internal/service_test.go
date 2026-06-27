@@ -100,6 +100,28 @@ func TestArtifactServiceDuplicateHashReusesBlobKey(t *testing.T) {
 	}
 }
 
+func TestArtifactServiceResolveScopedRef(t *testing.T) {
+	store := newMemoryArtifactStore()
+	service := NewArtifactService(store, newMemoryBlobStore(), testServiceConfig(), fixedClock)
+	taskID := int64(3477)
+	created, err := service.Create(context.Background(), CreateArtifactRequest{
+		ProjectID:   "den-services",
+		TaskID:      &taskID,
+		LogicalName: "overview.png",
+	}, UploadContent{Reader: bytes.NewReader(tinyPNG(t))})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	resolved, err := service.ResolveRef(context.Background(), "den-artifact://den-services/tasks/3477/artifacts/overview.png")
+	if err != nil {
+		t.Fatalf("ResolveRef() error = %v", err)
+	}
+	if resolved.ArtifactID() != created.ArtifactID() {
+		t.Fatalf("resolved id = %s, want %s", resolved.ArtifactID(), created.ArtifactID())
+	}
+}
+
 func TestArtifactServiceRejectsNonImageContent(t *testing.T) {
 	service := NewArtifactService(newMemoryArtifactStore(), newMemoryBlobStore(), testServiceConfig(), fixedClock)
 
@@ -158,6 +180,15 @@ func (s *memoryArtifactStore) GetArtifact(_ context.Context, artifactID string) 
 		return nil, notFound(artifactID)
 	}
 	return artifact, nil
+}
+
+func (s *memoryArtifactStore) GetArtifactByScope(_ context.Context, projectID string, taskID int64, logicalName string) (*Artifact, error) {
+	for _, artifact := range s.artifacts {
+		if artifact.ProjectID() == projectID && artifact.TaskID() != nil && *artifact.TaskID() == taskID && artifact.LogicalName() == logicalName {
+			return artifact, nil
+		}
+	}
+	return nil, notFound(logicalName)
 }
 
 func (s *memoryArtifactStore) TombstoneArtifact(_ context.Context, artifactID string, reason string, at time.Time) (*Artifact, error) {

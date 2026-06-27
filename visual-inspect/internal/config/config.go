@@ -40,6 +40,11 @@ type ArtifactConfig struct {
 	MaxPixelsPerImage int64
 	AllowedSchemes    []string
 	AllowedFileRoots  []string
+	ServiceBaseURLEnv string
+	ServiceBaseURL    string
+	ServiceTokenEnv   string
+	ServiceToken      string
+	ServiceTimeout    time.Duration
 }
 
 type LLMConfig struct {
@@ -87,11 +92,18 @@ type securityConfigFile struct {
 }
 
 type artifactConfigFile struct {
-	MaxImages         int      `yaml:"max_images"`
-	MaxBytesPerImage  int64    `yaml:"max_bytes_per_image"`
-	MaxPixelsPerImage int64    `yaml:"max_pixels_per_image"`
-	AllowedSchemes    []string `yaml:"allowed_schemes"`
-	AllowedFileRoots  []string `yaml:"allowed_file_roots"`
+	MaxImages         int                       `yaml:"max_images"`
+	MaxBytesPerImage  int64                     `yaml:"max_bytes_per_image"`
+	MaxPixelsPerImage int64                     `yaml:"max_pixels_per_image"`
+	AllowedSchemes    []string                  `yaml:"allowed_schemes"`
+	AllowedFileRoots  []string                  `yaml:"allowed_file_roots"`
+	ArtifactService   artifactServiceConfigFile `yaml:"artifact_service"`
+}
+
+type artifactServiceConfigFile struct {
+	BaseURLEnv      string `yaml:"base_url_env"`
+	ServiceTokenEnv string `yaml:"service_token_env"`
+	Timeout         string `yaml:"timeout"`
 }
 
 type llmConfigFile struct {
@@ -165,7 +177,7 @@ func (c configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 			ServiceToken:                 values.String(strings.TrimSpace(c.Security.ServiceTokenEnv), ""),
 			AllowUnauthenticatedLocalDev: c.Security.AllowUnauthenticatedLocalDev,
 		},
-		Artifacts: c.Artifacts.toConfig(),
+		Artifacts: c.Artifacts.toConfig(values),
 		LLM:       llmConfig,
 		Prompts:   c.Prompts.toConfig(),
 	}, nil
@@ -182,13 +194,21 @@ func (c serverConfigFile) toConfig() (ServerConfig, error) {
 	}, nil
 }
 
-func (c artifactConfigFile) toConfig() ArtifactConfig {
+func (c artifactConfigFile) toConfig(values sharedconfig.Values) ArtifactConfig {
+	serviceTimeout, _ := time.ParseDuration(strings.TrimSpace(c.ArtifactService.Timeout))
+	baseURLEnv := strings.TrimSpace(c.ArtifactService.BaseURLEnv)
+	tokenEnv := strings.TrimSpace(c.ArtifactService.ServiceTokenEnv)
 	return ArtifactConfig{
 		MaxImages:         c.MaxImages,
 		MaxBytesPerImage:  c.MaxBytesPerImage,
 		MaxPixelsPerImage: c.MaxPixelsPerImage,
 		AllowedSchemes:    trimmedStrings(c.AllowedSchemes),
 		AllowedFileRoots:  cleanedRoots(c.AllowedFileRoots),
+		ServiceBaseURLEnv: baseURLEnv,
+		ServiceBaseURL:    strings.TrimRight(values.String(baseURLEnv, ""), "/"),
+		ServiceTokenEnv:   tokenEnv,
+		ServiceToken:      values.String(tokenEnv, ""),
+		ServiceTimeout:    serviceTimeout,
 	}
 }
 
@@ -276,7 +296,33 @@ func (c ArtifactConfig) validate() error {
 			return fmt.Errorf("artifacts.allowed_file_roots must be absolute: %s", root)
 		}
 	}
+	if c.schemeAllowed("den-artifact") {
+		if c.ServiceBaseURLEnv == "" {
+			return errors.New("artifacts.artifact_service.base_url_env is required when den-artifact refs are allowed")
+		}
+		if c.ServiceBaseURL == "" {
+			return errors.New("artifacts artifact service base url is required when den-artifact refs are allowed")
+		}
+		if c.ServiceTokenEnv == "" {
+			return errors.New("artifacts.artifact_service.service_token_env is required when den-artifact refs are allowed")
+		}
+		if c.ServiceToken == "" {
+			return errors.New("artifacts artifact service token is required when den-artifact refs are allowed")
+		}
+		if c.ServiceTimeout <= 0 {
+			return errors.New("artifacts.artifact_service.timeout must be positive when den-artifact refs are allowed")
+		}
+	}
 	return nil
+}
+
+func (c ArtifactConfig) schemeAllowed(scheme string) bool {
+	for _, allowed := range c.AllowedSchemes {
+		if strings.EqualFold(allowed, scheme) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c LLMConfig) validate() error {

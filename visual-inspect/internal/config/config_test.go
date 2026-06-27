@@ -15,6 +15,8 @@ func TestLoadFromPathWithValues(t *testing.T) {
 		"DEN_VISUAL_INSPECT_TOKEN":        "local-token",
 		"DEN_VISUAL_INSPECT_LLM_BASE_URL": "http://127.0.0.1:11434/v1",
 		"DEN_VISUAL_INSPECT_LLM_API_KEY":  "local-key",
+		"DEN_ARTIFACTS_BASE_URL":          "http://127.0.0.1:8090",
+		"DEN_ARTIFACTS_SERVICE_TOKEN":     "artifact-token",
 	})
 
 	cfg, err := LoadFromPathWithValues(path, values)
@@ -32,6 +34,12 @@ func TestLoadFromPathWithValues(t *testing.T) {
 	}
 	if cfg.LLM.BaseURL != "http://127.0.0.1:11434/v1" {
 		t.Fatalf("LLM.BaseURL = %q", cfg.LLM.BaseURL)
+	}
+	if cfg.Artifacts.ServiceBaseURL != "http://127.0.0.1:8090" {
+		t.Fatalf("Artifacts.ServiceBaseURL = %q", cfg.Artifacts.ServiceBaseURL)
+	}
+	if cfg.Artifacts.ServiceToken != "artifact-token" {
+		t.Fatalf("Artifacts.ServiceToken = %q", cfg.Artifacts.ServiceToken)
 	}
 }
 
@@ -69,6 +77,10 @@ artifacts:
   max_pixels_per_image: 6000000
   allowed_schemes: ["file", "http", "https", "den-artifact"]
   allowed_file_roots: ["/var/lib/den/artifacts", "/tmp/den-visual-inspect"]
+  artifact_service:
+    base_url_env: "DEN_ARTIFACTS_BASE_URL"
+    service_token_env: "DEN_ARTIFACTS_SERVICE_TOKEN"
+    timeout: "10s"
 llm:
   provider: "openai_compatible"
   base_url_env: "DEN_VISUAL_INSPECT_LLM_BASE_URL"
