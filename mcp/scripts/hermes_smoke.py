@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 
-EXPECTED_TOOL_COUNT = 9
+EXPECTED_TOOL_COUNT = 136
 MCP_PATH = "/mcp"
 DEN_CORE_TOKEN_ENV = "DEN_CORE_SERVICE_TOKEN"
 
@@ -195,6 +195,10 @@ def run_local_smoke(repo_root: Path, startup_timeout: float) -> None:
         assert_tool_success(read, "local read tool")
         print("ok: local read tool proxied through backend")
 
+        search = tools_call(mcp_url, "search_documents", {"project_id": "den-services", "query": "mcp", "verbose": False})
+        assert_tool_success(search, "local search_documents tool")
+        print("ok: local non-representative tool proxied through backend")
+
         original = tools_call(
             mcp_url,
             "get_document",
@@ -258,6 +262,10 @@ def run_live_smoke(repo_root: Path, args: argparse.Namespace) -> None:
         read = tools_call(mcp_url, "get_task", {"task_id": args.read_task_id, "verbose": False})
         assert_tool_success(read, "live read tool")
         print("ok: live read tool proxied to den-core")
+
+        search = tools_call(mcp_url, "search_documents", {"project_id": "den-services", "query": "mcp", "verbose": False})
+        assert_tool_success(search, "live search_documents tool")
+        print("ok: live non-representative tool proxied to den-core")
 
         if args.write_project and args.write_slug:
             run_live_write_restore(mcp_url, args.write_project, args.write_slug)

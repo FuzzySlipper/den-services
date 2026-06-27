@@ -1,11 +1,12 @@
 package registry
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 )
 
-func TestDefaultRegistryListsRepresentativeCoreSubset(t *testing.T) {
+func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 	registry, err := DefaultRegistry()
 	if err != nil {
 		t.Fatalf("DefaultRegistry() error = %v", err)
@@ -16,23 +17,18 @@ func TestDefaultRegistryListsRepresentativeCoreSubset(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	want := []string{
-		"get_project",
-		"list_tasks",
+	if len(names) != 136 {
+		t.Fatalf("tool count = %d, want 136", len(names))
+	}
+	for _, name := range []string{
+		"search_documents",
+		"den_knowledge_search",
+		"comment_on_document",
 		"get_task",
-		"create_task",
-		"update_task",
-		"send_message",
-		"get_messages",
-		"get_document",
 		"store_document",
-	}
-	if len(names) != len(want) {
-		t.Fatalf("tool count = %d, want %d: %v", len(names), len(want), names)
-	}
-	for index, name := range want {
-		if names[index] != name {
-			t.Fatalf("tool[%d] = %q, want %q", index, names[index], name)
+	} {
+		if _, err := registry.Resolve(name); err != nil {
+			t.Fatalf("Resolve(%s) error = %v", name, err)
 		}
 	}
 }
@@ -48,6 +44,35 @@ func TestDefaultRegistryResolvesToolsWithoutBackendLiveness(t *testing.T) {
 	}
 	if tool.Backend != denCoreBackend {
 		t.Fatalf("Backend = %q, want %q", tool.Backend, denCoreBackend)
+	}
+}
+
+func TestDefaultRegistryMatchesCapturedLiveSnapshot(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry() error = %v", err)
+	}
+	var snapshot liveToolSnapshot
+	if err := json.Unmarshal(liveToolsSnapshot, &snapshot); err != nil {
+		t.Fatalf("Unmarshal(snapshot) error = %v", err)
+	}
+	listed := registry.Tools()
+	if len(listed) != len(snapshot.Tools) {
+		t.Fatalf("listed count = %d, want %d", len(listed), len(snapshot.Tools))
+	}
+	for index := range listed {
+		if listed[index].Name != snapshot.Tools[index].Name {
+			t.Fatalf("tool[%d].Name = %q, want %q", index, listed[index].Name, snapshot.Tools[index].Name)
+		}
+		if listed[index].Description != snapshot.Tools[index].Description {
+			t.Fatalf("tool[%d].Description differs for %s", index, listed[index].Name)
+		}
+		if string(listed[index].InputSchema) != string(snapshot.Tools[index].InputSchema) {
+			t.Fatalf("tool[%d].InputSchema differs for %s", index, listed[index].Name)
+		}
+		if string(listed[index].Execution) != string(snapshot.Tools[index].Execution) {
+			t.Fatalf("tool[%d].Execution differs for %s", index, listed[index].Name)
+		}
 	}
 }
 

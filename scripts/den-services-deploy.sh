@@ -250,7 +250,10 @@ fi
 if [[ "${service}" == "gateway" && -f gateway/config/routes.example.yaml && ! -f "${service_root}/config/routes.yaml" ]]; then
   install -m 0644 gateway/config/routes.example.yaml "${service_root}/config/routes.yaml"
 fi
-if [[ "${service}" == "mcp" && -f mcp/routes.example.yaml && ! -f "${service_root}/config/routes.yaml" ]]; then
+if [[ "${service}" == "mcp" && -f mcp/routes.example.yaml ]]; then
+  if [[ -f "${service_root}/config/routes.yaml" ]] && ! cmp -s mcp/routes.example.yaml "${service_root}/config/routes.yaml"; then
+    install -m 0644 "${service_root}/config/routes.yaml" "${service_root}/backups/routes.yaml.${built_at//[:-]/}"
+  fi
   install -m 0644 mcp/routes.example.yaml "${service_root}/config/routes.yaml"
 fi
 
