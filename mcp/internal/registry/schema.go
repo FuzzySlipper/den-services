@@ -2,87 +2,83 @@ package registry
 
 import "encoding/json"
 
-type SchemaType []string
+type Schema json.RawMessage
 
-func (t SchemaType) MarshalJSON() ([]byte, error) {
-	if len(t) == 1 {
-		return json.Marshal(t[0])
+func (s Schema) MarshalJSON() ([]byte, error) {
+	if len(s) == 0 {
+		return []byte("null"), nil
 	}
-	return json.Marshal([]string(t))
+	return []byte(s), nil
 }
 
-type Schema struct {
-	Type                 SchemaType        `json:"type,omitempty"`
-	Description          string            `json:"description,omitempty"`
-	Properties           map[string]Schema `json:"properties,omitempty"`
-	Required             []string          `json:"required,omitempty"`
-	Items                *Schema           `json:"items,omitempty"`
-	AdditionalProperties *bool             `json:"additionalProperties,omitempty"`
-	Minimum              *int              `json:"minimum,omitempty"`
-	Maximum              *int              `json:"maximum,omitempty"`
+func (s *Schema) UnmarshalJSON(data []byte) error {
+	*s = append((*s)[:0], data...)
+	return nil
 }
 
 func ObjectSchema(properties map[string]Schema, required ...string) Schema {
-	additionalProperties := false
-	return Schema{
-		Type:                 SchemaType{"object"},
-		Properties:           properties,
-		Required:             required,
-		AdditionalProperties: &additionalProperties,
+	schema := map[string]any{
+		"type":                 "object",
+		"properties":           properties,
+		"additionalProperties": false,
 	}
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+	return mustSchema(schema)
 }
 
 func AnySchema(description string) Schema {
-	return Schema{Description: description}
+	if description == "" {
+		return mustSchema(map[string]any{})
+	}
+	return mustSchema(map[string]any{"description": description})
 }
 
 func StringSchema(description string) Schema {
-	return Schema{
-		Type:        SchemaType{"string"},
-		Description: description,
-	}
+	return typedSchema("string", description)
 }
 
 func NullableStringSchema(description string) Schema {
-	return Schema{
-		Type:        SchemaType{"string", "null"},
-		Description: description,
-	}
+	return typedSchema([]string{"string", "null"}, description)
 }
 
 func IntegerSchema(description string) Schema {
-	return Schema{
-		Type:        SchemaType{"integer"},
-		Description: description,
-	}
+	return typedSchema("integer", description)
 }
 
 func NullableIntegerSchema(description string) Schema {
-	return Schema{
-		Type:        SchemaType{"integer", "null"},
-		Description: description,
-	}
+	return typedSchema([]string{"integer", "null"}, description)
 }
 
 func BoundedIntegerSchema(description string, minimum int, maximum int) Schema {
-	return Schema{
-		Type:        SchemaType{"integer"},
-		Description: description,
-		Minimum:     &minimum,
-		Maximum:     &maximum,
-	}
+	return mustSchema(map[string]any{
+		"type":        "integer",
+		"description": description,
+		"minimum":     minimum,
+		"maximum":     maximum,
+	})
 }
 
 func NullableBooleanSchema(description string) Schema {
-	return Schema{
-		Type:        SchemaType{"boolean", "null"},
-		Description: description,
-	}
+	return typedSchema([]string{"boolean", "null"}, description)
 }
 
 func BooleanSchema(description string) Schema {
-	return Schema{
-		Type:        SchemaType{"boolean"},
-		Description: description,
+	return typedSchema("boolean", description)
+}
+
+func typedSchema(schemaType any, description string) Schema {
+	return mustSchema(map[string]any{
+		"type":        schemaType,
+		"description": description,
+	})
+}
+
+func mustSchema(value any) Schema {
+	data, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
 	}
+	return Schema(data)
 }

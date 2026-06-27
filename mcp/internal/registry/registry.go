@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -17,6 +18,7 @@ type ToolDefinition struct {
 	InputSchema        Schema
 	Backend            string
 	Operation          string
+	Execution          json.RawMessage
 	Deprecated         bool
 	DeprecationMessage string
 	Aliases            []ToolAlias
@@ -35,10 +37,11 @@ type registeredTool struct {
 }
 
 type ListedTool struct {
-	Name        string       `json:"name"`
-	Description string       `json:"description"`
-	InputSchema Schema       `json:"inputSchema"`
-	Annotations *Annotations `json:"annotations,omitempty"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	InputSchema Schema          `json:"inputSchema"`
+	Execution   json.RawMessage `json:"execution,omitempty"`
+	Annotations *Annotations    `json:"annotations,omitempty"`
 }
 
 type Annotations struct {
@@ -145,6 +148,7 @@ func listedTool(tool ToolDefinition, alias *ToolAlias) ListedTool {
 			Name:        tool.Name,
 			Description: tool.Description,
 			InputSchema: tool.InputSchema,
+			Execution:   tool.Execution,
 			Annotations: annotations(tool.Deprecated, tool.DeprecationMessage, ""),
 		}
 	}
@@ -156,6 +160,7 @@ func listedTool(tool ToolDefinition, alias *ToolAlias) ListedTool {
 		Name:        alias.Name,
 		Description: description,
 		InputSchema: tool.InputSchema,
+		Execution:   tool.Execution,
 		Annotations: annotations(alias.Deprecated, alias.DeprecationMessage, tool.Name),
 	}
 }
