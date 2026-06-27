@@ -22,6 +22,7 @@ Implemented now:
 - metadata read
 - content read
 - delete/tombstone
+- `artifact-upload` CLI helper
 - filesystem backend configuration surface
 - `den_artifacts` schema DDL
 
@@ -93,6 +94,24 @@ The filesystem backend stores blobs by SHA-256. Duplicate uploads with different
 
 ## Upload Example
 
+Agent-friendly helper:
+
+```bash
+export DEN_ARTIFACTS_BASE_URL=http://127.0.0.1:8090
+export DEN_ARTIFACTS_SERVICE_TOKEN=<service-token>
+
+go run ./artifacts/cmd/artifact-upload \
+  -file /tmp/den-visual-inspect/agora-overview.png \
+  -project-id den-services \
+  -task-id 3478 \
+  -logical-name agora-overview.png \
+  -created-by agent-name
+```
+
+The helper prints the artifact metadata JSON returned by the service, including `artifact_id`, `artifact_ref`, MIME type, dimensions, SHA-256, and byte count. It does not print raw image bytes.
+
+Raw multipart equivalent:
+
 ```bash
 curl -sS \
   -H "Authorization: Bearer $DEN_ARTIFACTS_SERVICE_TOKEN" \
@@ -102,6 +121,28 @@ curl -sS \
   -F "logical_name=screenshot.png" \
   -F "created_by=agent-name" \
   http://127.0.0.1:8090/v1/artifacts
+```
+
+## Visual Inspect Flow
+
+1. Capture a screenshot to a local PNG/JPEG path.
+2. Upload it with `go run ./artifacts/cmd/artifact-upload ...`.
+3. Copy `artifact_ref` from the JSON output into `visual-inspect` as `screenshots[].ref`.
+4. Post only the visual-inspect result JSON plus artifact refs to Den review messages.
+
+Example request fragment:
+
+```json
+{
+  "screenshots": [
+    {
+      "id": "overview",
+      "ref": "den-artifact://art_01jexample",
+      "mime_type": "image/png",
+      "description": "Overview after selecting the terminal card"
+    }
+  ]
+}
 ```
 
 Content read:

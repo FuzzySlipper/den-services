@@ -76,6 +76,22 @@ func main() {
 
 Use stable criterion and screenshot IDs. `screenshots[].ref` should be a `den-artifact://`, `file://`, `http://`, or `https://` reference allowed by service config. Prefer `den-artifact://` for durable review evidence. Keep `screenshots[].sensitive` accurate so logs and downstream packets can preserve handling intent.
 
+To turn a local screenshot into a durable ref:
+
+```bash
+export DEN_ARTIFACTS_BASE_URL=http://127.0.0.1:8090
+export DEN_ARTIFACTS_SERVICE_TOKEN=<service-token>
+
+go run ./artifacts/cmd/artifact-upload \
+  -file /tmp/den-visual-inspect/agora-overview.png \
+  -project-id den-services \
+  -task-id 3478 \
+  -logical-name agora-overview.png \
+  -created-by agent-name
+```
+
+Use the returned `artifact_ref` as `screenshots[].ref`.
+
 ```json
 {
   "request_id": "task-3317-terminal-selected",
