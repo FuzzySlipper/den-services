@@ -1,14 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
 	"time"
 
-	"den-services/shared/health"
-
 	artifacts "den-services/artifacts/internal"
+	"den-services/shared/health"
+	"den-services/shared/postgres"
 )
 
 var (
@@ -33,7 +34,20 @@ func main() {
 		slog.Error("building version info", "error", err)
 		os.Exit(1)
 	}
-	server, err := artifacts.NewHTTPServer(cfg, info)
+	ctx := context.Background()
+	pool, err := postgres.Connect(ctx, postgres.PoolConfig{DatabaseURL: cfg.DatabaseURL})
+	if err != nil {
+		slog.Error("connecting postgres", "error", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+	blobStore, err := artifacts.NewFilesystemBlobStore(cfg.Storage.RootPath)
+	if err != nil {
+		slog.Error("building blob store", "error", err)
+		os.Exit(1)
+	}
+	service := artifacts.NewArtifactService(artifacts.NewStore(pool), blobStore, cfg, time.Now)
+	server, err := artifacts.NewHTTPServer(cfg, info, service)
 	if err != nil {
 		slog.Error("building server", "error", err)
 		os.Exit(1)

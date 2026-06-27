@@ -1,6 +1,7 @@
 package artifacts
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,7 +11,7 @@ import (
 )
 
 func TestNewHTTPServerRegistersHealthAndProtectsAPI(t *testing.T) {
-	server, err := NewHTTPServer(testServerConfig(), testBuildInfo(t))
+	server, err := NewHTTPServer(testServerConfig(), testBuildInfo(t), &notFoundService{})
 	if err != nil {
 		t.Fatalf("NewHTTPServer() error = %v", err)
 	}
@@ -33,7 +34,7 @@ func TestNewHTTPServerRegistersHealthAndProtectsAPI(t *testing.T) {
 	authRequest.Header.Set("Authorization", "Bearer test-token")
 	authResponse := httptest.NewRecorder()
 	server.Handler.ServeHTTP(authResponse, authRequest)
-	if authResponse.Code != http.StatusNotImplemented {
+	if authResponse.Code != http.StatusNotFound {
 		t.Fatalf("api status with token = %d", authResponse.Code)
 	}
 }
@@ -49,7 +50,7 @@ func testServerConfig() *Config {
 			KeyPrefix: "sha256",
 		},
 		Limits: LimitConfig{
-			MaxBytesPerArtifact: 1,
+			MaxBytesPerArtifact: 1024,
 			MaxPixelsPerImage:   1,
 		},
 		Retention: RetentionConfig{
@@ -66,4 +67,22 @@ func testBuildInfo(t *testing.T) health.BuildInfo {
 		t.Fatalf("NewBuildInfo() error = %v", err)
 	}
 	return info
+}
+
+type notFoundService struct{}
+
+func (s *notFoundService) Create(context.Context, CreateArtifactRequest, UploadContent) (*Artifact, error) {
+	return nil, notFound("missing")
+}
+
+func (s *notFoundService) GetMetadata(context.Context, string) (*Artifact, error) {
+	return nil, notFound("missing")
+}
+
+func (s *notFoundService) OpenContent(context.Context, string) (*ArtifactContent, error) {
+	return nil, notFound("missing")
+}
+
+func (s *notFoundService) Delete(context.Context, string) (*Artifact, error) {
+	return nil, notFound("missing")
 }
