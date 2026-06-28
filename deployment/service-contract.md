@@ -18,3 +18,9 @@ The root deployment contract test builds every registered primary binary and
 runs `--version`. The den-srv deploy script should additionally smoke
 `/health` and `/version` after restart and compare the reported commit to the
 binary it built.
+
+For new Den Core lifeboat services, use
+[`docs/lifeboat-service-substrate.md`](../docs/lifeboat-service-substrate.md)
+as the service substrate guide. It documents the existing den-srv
+`den-go@<service>.service` template, module/config/migration conventions, and
+the acceptance baseline for the next batch of services.
