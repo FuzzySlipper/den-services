@@ -1,0 +1,9 @@
+# Projects service configuration.
+# Copy to /data/services/projects/config/config.yaml for deployment.
+
+bind_addr: "127.0.0.1:8091" # Loopback HTTP listen address.
+database_url_env: "DEN_PROJECTS_DATABASE_URL" # Env var containing the Postgres URL.
+service_token_env: "DEN_PROJECTS_SERVICE_TOKEN" # Env var containing the bearer token.
+
+http:
+  read_header_timeout: "5s" # Maximum time to read request headers.
