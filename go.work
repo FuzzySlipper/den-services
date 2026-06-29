@@ -11,6 +11,7 @@ use (
 	./migration
 	./mcp
 	./observation
+	./projects
 	./runtime
 	./shared
 	./timeline
