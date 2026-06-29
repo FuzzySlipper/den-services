@@ -6,7 +6,9 @@ not introduce a new fake service template. The template is the existing
 repo deployment contract.
 
 Use this document when starting lifeboat service tasks such as projects/scope,
-tasks, messages, documents, review, knowledge, guidance, and librarian.
+tasks, messages, documents, review, knowledge, guidance, and librarian. The
+projects/scope boundary has its first service-specific contract in
+[`docs/projects-scope-lifeboat-contract.md`](./projects-scope-lifeboat-contract.md).
 
 ## Decision
 
