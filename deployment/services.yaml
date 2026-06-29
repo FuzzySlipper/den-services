@@ -124,6 +124,16 @@ services:
     version_url: "http://127.0.0.1:8092/version"
     systemd_unit: "den-go@tasks.service"
 
+  - name: "messages"
+    module: "messages"
+    binary_name: "messages"
+    binary_path: "./messages/cmd/messages"
+    config_example: "messages/config/config.example.yaml"
+    env_example: "messages/config/messages.env.example"
+    health_url: "http://127.0.0.1:8093/health"
+    version_url: "http://127.0.0.1:8093/version"
+    systemd_unit: "den-go@messages.service"
+
   - name: "mcp"
     module: "mcp"
     binary_name: "mcp"
