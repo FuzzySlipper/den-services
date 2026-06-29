@@ -8,6 +8,7 @@ use (
 	./doc-publish
 	./gateway
 	./integration
+	./messages
 	./migration
 	./mcp
 	./observation

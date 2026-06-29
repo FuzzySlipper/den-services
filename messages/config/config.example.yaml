@@ -1,0 +1,9 @@
+bind_addr: "127.0.0.1:8093"
+database_url_env: "DEN_MESSAGES_DATABASE_URL"
+service_token_env: "DEN_MESSAGES_SERVICE_TOKEN"
+projects_base_url_env: "DEN_PROJECTS_BASE_URL"
+projects_token_env: "DEN_PROJECTS_SERVICE_TOKEN"
+tasks_base_url_env: "DEN_TASKS_BASE_URL"
+tasks_token_env: "DEN_TASKS_SERVICE_TOKEN"
+http:
+  read_header_timeout: "5s"
