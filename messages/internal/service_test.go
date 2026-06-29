@@ -2,6 +2,7 @@ package messages
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -98,6 +99,36 @@ func TestServiceNotificationsAndPackets(t *testing.T) {
 	if len(items) != 1 || items[0].IsRead == nil || !*items[0].IsRead {
 		t.Fatalf("read notification items = %#v", items)
 	}
+	scopedNotification, err := service.SendNotification(ctx, "den-services", SendNotificationRequest{
+		TaskID:  &taskID,
+		Sender:  "pi",
+		Content: "Scoped heads up",
+	})
+	if err != nil {
+		t.Fatalf("SendNotification(default urgency) error = %v", err)
+	}
+	if scopedNotification.Metadata()["urgency"] != DefaultUrgency {
+		t.Fatalf("default urgency metadata = %#v", scopedNotification.Metadata())
+	}
+	if err := service.MarkNotificationsRead(ctx, MarkNotificationsReadRequest{Agent: "agent-2", MarkAll: true, ScopeProjectID: "den-services", ScopeTaskID: &taskID}); err != nil {
+		t.Fatalf("MarkNotificationsRead(mark all) error = %v", err)
+	}
+	items, err = service.ListNotifications(ctx, NotificationQuery{ProjectID: "den-services", ReadForAgent: "agent-2", HasReadFilter: true, IsRead: true})
+	if err != nil {
+		t.Fatalf("ListNotifications(mark all read) error = %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("mark-all read items len = %d, want 2: %#v", len(items), items)
+	}
+	if _, err := service.SendNotification(ctx, "den-services", SendNotificationRequest{Sender: "pi", Content: "bad", Urgency: "urgent"}); !errors.Is(err, ErrInvalidUrgency) {
+		t.Fatalf("invalid urgency error = %v, want ErrInvalidUrgency", err)
+	}
+	if err := service.MarkNotificationsRead(ctx, MarkNotificationsReadRequest{Agent: "agent", MarkAll: true, ScopeProjectID: "den-services", NotificationIDs: []int64{notification.ID()}}); !errors.Is(err, ErrInvalidReadMode) {
+		t.Fatalf("both read modes error = %v, want ErrInvalidReadMode", err)
+	}
+	if err := service.MarkNotificationsRead(ctx, MarkNotificationsReadRequest{Agent: "agent"}); !errors.Is(err, ErrInvalidReadMode) {
+		t.Fatalf("no read mode error = %v, want ErrInvalidReadMode", err)
+	}
 
 	packet, err := service.CreateContextPacket(ctx, "den-services", taskID, CreateContextPacketRequest{PacketType: "coder_context_packet", Sender: "pi"})
 	if err != nil {
@@ -123,6 +154,13 @@ func TestServiceNotificationsAndPackets(t *testing.T) {
 	}
 	if !hasText(prompt.Prompt, "Do not infer executable state transitions") {
 		t.Fatalf("prompt = %#v", prompt)
+	}
+	normalMessage, err := service.SendMessage(ctx, "den-services", SendMessageRequest{TaskID: &taskID, Sender: "pi", Content: "normal note"})
+	if err != nil {
+		t.Fatalf("SendMessage(normal) error = %v", err)
+	}
+	if _, err := service.RenderWorkerPrompt(ctx, "den-services", normalMessage.ID(), ""); !errors.Is(err, ErrInvalidPacket) {
+		t.Fatalf("RenderWorkerPrompt(normal) error = %v, want ErrInvalidPacket", err)
 	}
 
 	completion, err := service.AppendCompletionPacket(ctx, "den-services", taskID, AppendCompletionPacketRequest{Sender: "coder", Content: "done", Role: "coder", RunID: "run-1"})

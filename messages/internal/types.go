@@ -29,19 +29,22 @@ const (
 )
 
 var (
-	ErrMessageNotFound    = errors.New("message not found")                       //nolint:gochecknoglobals
-	ErrMissingProjectID   = errors.New("project_id is required")                  //nolint:gochecknoglobals
-	ErrMissingSender      = errors.New("sender is required")                      //nolint:gochecknoglobals
-	ErrMissingContent     = errors.New("content is required")                     //nolint:gochecknoglobals
-	ErrInvalidIntent      = errors.New("invalid message intent")                  //nolint:gochecknoglobals
-	ErrInvalidThread      = errors.New("thread must belong to the same project")  //nolint:gochecknoglobals
-	ErrMissingAgent       = errors.New("agent is required")                       //nolint:gochecknoglobals
-	ErrMissingTaskID      = errors.New("task_id is required")                     //nolint:gochecknoglobals
-	ErrMissingPacketType  = errors.New("packet type is required")                 //nolint:gochecknoglobals
-	ErrInvalidPacketType  = errors.New("invalid packet type")                     //nolint:gochecknoglobals
-	ErrMissingUnreadFor   = errors.New("unread_for is required")                  //nolint:gochecknoglobals
-	ErrProjectClientUnset = errors.New("projects scope client is not configured") //nolint:gochecknoglobals
-	ErrTaskClientUnset    = errors.New("tasks scope client is not configured")    //nolint:gochecknoglobals
+	ErrMessageNotFound    = errors.New("message not found")                                   //nolint:gochecknoglobals
+	ErrMissingProjectID   = errors.New("project_id is required")                              //nolint:gochecknoglobals
+	ErrMissingSender      = errors.New("sender is required")                                  //nolint:gochecknoglobals
+	ErrMissingContent     = errors.New("content is required")                                 //nolint:gochecknoglobals
+	ErrInvalidIntent      = errors.New("invalid message intent")                              //nolint:gochecknoglobals
+	ErrInvalidThread      = errors.New("thread must belong to the same project")              //nolint:gochecknoglobals
+	ErrMissingAgent       = errors.New("agent is required")                                   //nolint:gochecknoglobals
+	ErrMissingTaskID      = errors.New("task_id is required")                                 //nolint:gochecknoglobals
+	ErrMissingPacketType  = errors.New("packet type is required")                             //nolint:gochecknoglobals
+	ErrInvalidPacketType  = errors.New("invalid packet type")                                 //nolint:gochecknoglobals
+	ErrInvalidPacket      = errors.New("message is not a worker context packet")              //nolint:gochecknoglobals
+	ErrInvalidUrgency     = errors.New("urgency must be low, normal, or high")                //nolint:gochecknoglobals
+	ErrInvalidReadMode    = errors.New("notification read request must use exactly one mode") //nolint:gochecknoglobals
+	ErrMissingUnreadFor   = errors.New("unread_for is required")                              //nolint:gochecknoglobals
+	ErrProjectClientUnset = errors.New("projects scope client is not configured")             //nolint:gochecknoglobals
+	ErrTaskClientUnset    = errors.New("tasks scope client is not configured")                //nolint:gochecknoglobals
 )
 
 type ServiceError struct {
@@ -257,6 +260,21 @@ func validPacketType(packetType string) bool {
 	default:
 		return false
 	}
+}
+
+func validUrgency(urgency string) bool {
+	switch urgency {
+	case "low", "normal", "high":
+		return true
+	default:
+		return false
+	}
+}
+
+func isWorkerPacket(message *Message) bool {
+	metadata := message.Metadata()
+	schema, _ := metadata["schema"].(string)
+	return schema == PacketSchema
 }
 
 func clampLimit(limit int, fallback int) int {

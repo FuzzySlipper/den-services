@@ -141,6 +141,9 @@ func (s *Service) SendNotification(ctx context.Context, projectID string, req Se
 	if urgency == "" {
 		urgency = DefaultUrgency
 	}
+	if !validUrgency(urgency) {
+		return nil, validationFailed(ErrInvalidUrgency)
+	}
 	metadata["urgency"] = urgency
 	return s.SendMessage(ctx, projectID, SendMessageRequest{
 		TaskID:   req.TaskID,
@@ -167,12 +170,19 @@ func (s *Service) MarkNotificationsRead(ctx context.Context, req MarkNotificatio
 	if agent == "" {
 		return validationFailed(ErrMissingAgent)
 	}
+	hasIDs := len(req.NotificationIDs) > 0
+	if req.MarkAll && hasIDs {
+		return validationFailed(ErrInvalidReadMode)
+	}
 	if req.MarkAll {
 		projectID := strings.TrimSpace(req.ScopeProjectID)
 		if projectID == "" {
 			return validationFailed(ErrMissingProjectID)
 		}
 		return s.store.MarkAllNotificationsRead(ctx, agent, projectID, req.ScopeTaskID)
+	}
+	if !hasIDs {
+		return validationFailed(ErrInvalidReadMode)
 	}
 	return s.store.MarkNotificationsRead(ctx, agent, req.NotificationIDs)
 }
@@ -248,6 +258,9 @@ func (s *Service) RenderWorkerPrompt(ctx context.Context, projectID string, mess
 	}
 	if strings.TrimSpace(projectID) != "" && message.ProjectID() != projectID {
 		return WorkerPromptResponse{}, notFound(messageID)
+	}
+	if !isWorkerPacket(message) {
+		return WorkerPromptResponse{}, validationFailed(ErrInvalidPacket)
 	}
 	if mode == "" {
 		mode = DefaultCompletionMode
