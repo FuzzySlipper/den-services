@@ -15,6 +15,7 @@ use (
 	./mcp
 	./observation
 	./projects
+	./review
 	./runtime
 	./shared
 	./tasks

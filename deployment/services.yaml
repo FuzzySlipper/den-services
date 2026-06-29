@@ -154,6 +154,16 @@ services:
     version_url: "http://127.0.0.1:8095/version"
     systemd_unit: "den-go@knowledge.service"
 
+  - name: "review"
+    module: "review"
+    binary_name: "review"
+    binary_path: "./review/cmd/review"
+    config_example: "review/config/config.example.yaml"
+    env_example: "review/config/review.env.example"
+    health_url: "http://127.0.0.1:8096/health"
+    version_url: "http://127.0.0.1:8096/version"
+    systemd_unit: "den-go@review.service"
+
   - name: "mcp"
     module: "mcp"
     binary_name: "mcp"
