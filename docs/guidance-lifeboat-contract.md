@@ -386,8 +386,9 @@ of prose-only errors. Example diagnostic:
 
 ```json
 {
-  "error_code": "invalid_review_verdict",
-  "message": "review_findings.verdict must be one of approve, request_changes, needs_discussion",
+  "code": "invalid_verdict",
+  "field": "verdict",
+  "message": "review_findings.verdict must be one of changes_requested, looks_good, follow_up_needed, blocked_by_dependency",
   "docs_ref": {
     "kind": "tool_docs",
     "tool_name": "post_review_packet_markdown",
