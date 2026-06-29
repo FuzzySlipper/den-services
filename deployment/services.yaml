@@ -134,6 +134,16 @@ services:
     version_url: "http://127.0.0.1:8093/version"
     systemd_unit: "den-go@messages.service"
 
+  - name: "documents"
+    module: "documents"
+    binary_name: "documents"
+    binary_path: "./documents/cmd/documents"
+    config_example: "documents/config/config.example.yaml"
+    env_example: "documents/config/documents.env.example"
+    health_url: "http://127.0.0.1:8094/health"
+    version_url: "http://127.0.0.1:8094/version"
+    systemd_unit: "den-go@documents.service"
+
   - name: "mcp"
     module: "mcp"
     binary_name: "mcp"

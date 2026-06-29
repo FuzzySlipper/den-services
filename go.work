@@ -6,6 +6,7 @@ use (
 	./conversation
 	./delivery
 	./doc-publish
+	./documents
 	./gateway
 	./integration
 	./messages
