@@ -1,0 +1,5 @@
+bind_addr: "127.0.0.1:8095"
+database_url_env: "DEN_KNOWLEDGE_DATABASE_URL"
+service_token_env: "DEN_KNOWLEDGE_SERVICE_TOKEN"
+http:
+  read_header_timeout: "5s"
