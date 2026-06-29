@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	sharedconfig "den-services/shared/config"
@@ -84,14 +85,20 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 }
 
 func (c *Config) validate() error {
-	if c.BindAddr == "" {
+	if strings.TrimSpace(c.BindAddr) == "" {
 		return errors.New("bind_addr is required")
 	}
-	if c.DatabaseURL == "" {
+	if strings.TrimSpace(c.DatabaseURL) == "" {
 		return errors.New("database url is required")
 	}
-	if c.ServiceToken == "" {
+	if strings.TrimSpace(c.ServiceToken) == "" {
 		return errors.New("service token is required")
+	}
+	if strings.TrimSpace(c.ProjectsBaseURL) == "" {
+		return errors.New("projects base url is required")
+	}
+	if strings.TrimSpace(c.ProjectsToken) == "" {
+		return errors.New("projects token is required")
 	}
 	if c.HTTP.ReadHeaderTimeout <= 0 {
 		return errors.New("http.read_header_timeout must be positive")

@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
+
+var ErrProjectScopeClientUnconfigured = errors.New("projects scope client is not configured") //nolint:gochecknoglobals
 
 type NoopScopeValidator struct{}
 
@@ -32,10 +36,11 @@ func NewProjectScopeClient(baseURL string, token string) *ProjectScopeClient {
 
 func (c *ProjectScopeClient) AssertWritable(ctx context.Context, projectID string) error {
 	if c.baseURL == "" {
-		return nil
+		return NewServiceError(ErrProjectScopeClientUnconfigured, "project_scope_client_unconfigured", http.StatusInternalServerError)
 	}
 	body := bytes.NewBufferString(`{}`)
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/scopes/"+projectID+"/assert-writable", body)
+	escapedProjectID := url.PathEscape(projectID)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/scopes/"+escapedProjectID+"/assert-writable", body)
 	if err != nil {
 		return fmt.Errorf("building project assert-writable request: %w", err)
 	}
