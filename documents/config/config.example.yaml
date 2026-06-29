@@ -1,0 +1,9 @@
+bind_addr: "127.0.0.1:8094"
+database_url_env: "DEN_DOCUMENTS_DATABASE_URL"
+service_token_env: "DEN_DOCUMENTS_SERVICE_TOKEN"
+projects_base_url_env: "DEN_PROJECTS_BASE_URL"
+projects_token_env: "DEN_PROJECTS_SERVICE_TOKEN"
+agent_guidance_base_url_env: "DEN_AGENT_GUIDANCE_BASE_URL"
+agent_guidance_token_env: "DEN_AGENT_GUIDANCE_SERVICE_TOKEN"
+http:
+  read_header_timeout: "5s"

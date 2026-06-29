@@ -1,0 +1,167 @@
+package documents
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+)
+
+func TestServiceDocumentVisibilitySearchArchiveAndDelete(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	service := NewService(store, NoopProjectValidator{}, StaticGuidanceReader{Ready: true}, fixedClock())
+
+	doc, err := service.StoreDocument(ctx, "den-services", StoreDocumentRequest{
+		Slug:    "documents-contract",
+		Title:   "Documents Contract",
+		Content: "Postgres search archive comments",
+		DocType: DocTypeSpec,
+		Tags:    []string{"documents", "fts"},
+		Summary: "Searchable doc",
+	})
+	if err != nil {
+		t.Fatalf("StoreDocument() error = %v", err)
+	}
+	if doc.Visibility() != VisibilityNormal {
+		t.Fatalf("Visibility = %q", doc.Visibility())
+	}
+	archived, err := service.UpdateVisibility(ctx, "den-services", "documents-contract", VisibilityArchived)
+	if err != nil {
+		t.Fatalf("UpdateVisibility() error = %v", err)
+	}
+	if archived.Visibility() != VisibilityArchived {
+		t.Fatalf("archived visibility = %q", archived.Visibility())
+	}
+	updated, err := service.StoreDocument(ctx, "den-services", StoreDocumentRequest{
+		Slug:    "documents-contract",
+		Title:   "Updated Contract",
+		Content: "Updated content",
+		DocType: DocTypeSpec,
+		Summary: "Updated summary",
+	})
+	if err != nil {
+		t.Fatalf("StoreDocument(upsert) error = %v", err)
+	}
+	if updated.Visibility() != VisibilityArchived {
+		t.Fatalf("upsert changed visibility to %q", updated.Visibility())
+	}
+	normal, err := service.ListDocuments(ctx, ListDocumentsQuery{ProjectID: "den-services"})
+	if err != nil {
+		t.Fatalf("ListDocuments(normal) error = %v", err)
+	}
+	if len(normal) != 0 {
+		t.Fatalf("normal list included archived doc: %#v", normal)
+	}
+	archivedDocs, _, err := service.QueryArchivedDocuments(ctx, "", "den-services", "", nil)
+	if err != nil {
+		t.Fatalf("QueryArchivedDocuments(list) error = %v", err)
+	}
+	if len(archivedDocs) != 1 || archivedDocs[0].Slug != "documents-contract" {
+		t.Fatalf("archived docs = %#v", archivedDocs)
+	}
+	results, err := service.SearchDocuments(ctx, "Updated", "den-services")
+	if err != nil {
+		t.Fatalf("SearchDocuments() error = %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("normal search included archived doc: %#v", results)
+	}
+	_, archivedResults, err := service.QueryArchivedDocuments(ctx, "Updated", "den-services", "", nil)
+	if err != nil {
+		t.Fatalf("QueryArchivedDocuments(search) error = %v", err)
+	}
+	if len(archivedResults) != 1 {
+		t.Fatalf("archived search results = %#v", archivedResults)
+	}
+	preflight, err := service.ArchivePreflight(ctx, "den-services", "documents-contract")
+	if err != nil {
+		t.Fatalf("ArchivePreflight() error = %v", err)
+	}
+	if !preflight.CanArchive || !preflight.GuidanceReferenceCheckReady {
+		t.Fatalf("preflight = %#v", preflight)
+	}
+	deleted, err := service.DeleteDocument(ctx, "den-services", "documents-contract")
+	if err != nil {
+		t.Fatalf("DeleteDocument() error = %v", err)
+	}
+	if !deleted {
+		t.Fatal("DeleteDocument() = false")
+	}
+	if _, err := service.GetDocument(ctx, "den-services", "documents-contract"); !errors.Is(err, ErrDocumentNotFound) {
+		t.Fatalf("GetDocument(deleted) error = %v", err)
+	}
+}
+
+func TestServiceDiscussionGreenPathReplyAndResolve(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	service := NewService(store, NoopProjectValidator{}, StaticGuidanceReader{Ready: true}, fixedClock())
+	if _, err := service.StoreDocument(ctx, "den-services", StoreDocumentRequest{Slug: "doc", Title: "Doc", Content: "Body"}); err != nil {
+		t.Fatalf("StoreDocument() error = %v", err)
+	}
+	detail, err := service.GetDocumentDiscussion(ctx, "den-services", "doc", false, false, "")
+	if err != nil {
+		t.Fatalf("GetDocumentDiscussion(no create) error = %v", err)
+	}
+	if detail.DefaultThread != nil || len(detail.Comments) != 0 {
+		t.Fatalf("no-create detail = %#v", detail)
+	}
+	root, thread, err := service.CommentOnDocument(ctx, "den-services", "doc", CommentOnDocumentRequest{
+		AuthorIdentity: "pi",
+		BodyMarkdown:   "Looks good",
+	})
+	if err != nil {
+		t.Fatalf("CommentOnDocument(root) error = %v", err)
+	}
+	if thread.ThreadKey != DefaultThreadKey || root.ParentCommentID != nil {
+		t.Fatalf("root=%#v thread=%#v", root, thread)
+	}
+	reply, _, err := service.CommentOnDocument(ctx, "den-services", "doc", CommentOnDocumentRequest{
+		AuthorIdentity:  "coder",
+		BodyMarkdown:    "Reply",
+		ParentCommentID: &root.ID,
+	})
+	if err != nil {
+		t.Fatalf("CommentOnDocument(reply) error = %v", err)
+	}
+	if reply.ParentCommentID == nil || *reply.ParentCommentID != root.ID {
+		t.Fatalf("reply parent = %#v", reply.ParentCommentID)
+	}
+	anchorComment, anchorThread, err := service.CommentOnDocument(ctx, "den-services", "doc", CommentOnDocumentRequest{
+		AuthorIdentity: "reviewer",
+		BodyMarkdown:   "Anchor",
+		Anchor:         "section-1",
+	})
+	if err != nil {
+		t.Fatalf("CommentOnDocument(anchor) error = %v", err)
+	}
+	if anchorThread.ThreadKey != "section:section-1" || anchorComment.ThreadID == thread.ID {
+		t.Fatalf("anchor thread/comment = %#v %#v", anchorThread, anchorComment)
+	}
+	if _, err := service.CreateDiscussionComment(ctx, anchorThread.ID, CreateCommentRequest{AuthorIdentity: "bad", BodyMarkdown: "bad", ParentCommentID: &root.ID}); !errors.Is(err, ErrParentThreadMismatch) {
+		t.Fatalf("cross-thread parent error = %v", err)
+	}
+	status := ThreadStatusResolved
+	resolution := "Done"
+	updated, err := service.UpdateDiscussionThread(ctx, thread.ID, UpdateThreadRequest{Status: &status, ResolutionSummary: &resolution})
+	if err != nil {
+		t.Fatalf("UpdateDiscussionThread() error = %v", err)
+	}
+	if updated.Status != ThreadStatusResolved || updated.ResolutionSummary != "Done" {
+		t.Fatalf("updated thread = %#v", updated)
+	}
+	readThread, comments, err := service.GetDiscussionThread(ctx, thread.ID, true)
+	if err != nil {
+		t.Fatalf("GetDiscussionThread() error = %v", err)
+	}
+	if readThread.ID != thread.ID || len(comments) != 2 {
+		t.Fatalf("thread/comments = %#v %#v", readThread, comments)
+	}
+}
+
+func fixedClock() func() time.Time {
+	return func() time.Time {
+		return time.Date(2026, 6, 29, 12, 0, 0, 0, time.UTC)
+	}
+}
