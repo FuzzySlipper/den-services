@@ -45,3 +45,8 @@ backends:
     health_path: "/health"
     timeout: "3s"
     service_token_env: "DEN_REVIEW_SERVICE_TOKEN"
+  - name: "knowledge"
+    base_url: "http://127.0.0.1:8095"
+    health_path: "/health"
+    timeout: "3s"
+    service_token_env: "DEN_KNOWLEDGE_SERVICE_TOKEN"

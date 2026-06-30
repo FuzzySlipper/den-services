@@ -700,6 +700,127 @@ func TestClientCallsReviewRESTSplitFindingsLists(t *testing.T) {
 	}
 }
 
+func TestClientCallsKnowledgeRESTStoreEntry(t *testing.T) {
+	var sawPath string
+	var sawBody knowledgeStoreBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.Path
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":12,"slug":"mcp-routing","title":"MCP Routing","body_markdown":"body","kind":"reference","status":"reviewed","curation_state":"human_curated"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("knowledge", server.URL), knowledgeRouteForTest("den_knowledge_store", http.MethodPost, "/v1/knowledge/entries"), ToolCall{
+		ToolName:  "den_knowledge_store",
+		Operation: "den_knowledge_store",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"slug":"mcp-routing","title":"MCP Routing","body_markdown":"body","status":"reviewed","tags":["mcp","routing"],"audience":["agents"],"changed_by":"codex"}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawPath != "/v1/knowledge/entries" {
+		t.Fatalf("path = %q, want knowledge entries", sawPath)
+	}
+	if sawBody.Slug != "mcp-routing" || len(sawBody.Tags) != 2 || sawBody.Audience[0] != "agents" {
+		t.Fatalf("body = %#v", sawBody)
+	}
+}
+
+func TestClientCallsKnowledgeRESTSearchAndGuide(t *testing.T) {
+	var sawSearchBody knowledgeSearchBody
+	var sawGuideBody knowledgeGuideBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/knowledge/search":
+			if err := json.NewDecoder(r.Body).Decode(&sawSearchBody); err != nil {
+				t.Fatalf("Decode() search error = %v", err)
+			}
+			_, _ = w.Write([]byte(`{"results":[],"count":0}`))
+		case "/v1/knowledge/guide":
+			if err := json.NewDecoder(r.Body).Decode(&sawGuideBody); err != nil {
+				t.Fatalf("Decode() guide error = %v", err)
+			}
+			_, _ = w.Write([]byte(`{"answer":"none","citations":[],"follow_ups":[],"uncertainty":["missing"]}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("knowledge", server.URL), knowledgeRouteForTest("den_knowledge_search", http.MethodPost, "/v1/knowledge/search"), ToolCall{
+		ToolName:  "den_knowledge_search",
+		Operation: "den_knowledge_search",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"query":"routing","required_tags":["mcp"],"any_tags":["go"],"include_unreviewed":true,"limit":5}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() search error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() search failure = %#v", failure)
+	}
+	includeFollowUps := false
+	_, failure, err = client.Call(context.Background(), testBackend("knowledge", server.URL), knowledgeRouteForTest("den_knowledge_guide", http.MethodPost, "/v1/knowledge/guide"), ToolCall{
+		ToolName:  "den_knowledge_guide",
+		Operation: "den_knowledge_guide",
+		RequestID: json.RawMessage(`2`),
+		Arguments: json.RawMessage(`{"question":"How route?","required_tags":"mcp","context_budget":500,"include_follow_ups":false}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() guide error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() guide failure = %#v", failure)
+	}
+	if sawSearchBody.Query != "routing" || !sawSearchBody.IncludeUnreviewed || sawSearchBody.Limit != 5 || sawSearchBody.RequiredTags[0] != "mcp" {
+		t.Fatalf("search body = %#v", sawSearchBody)
+	}
+	if sawGuideBody.Question != "How route?" || sawGuideBody.ContextBudget != 500 || sawGuideBody.IncludeFollowUps == nil || *sawGuideBody.IncludeFollowUps != includeFollowUps {
+		t.Fatalf("guide body = %#v", sawGuideBody)
+	}
+}
+
+func TestClientCallsKnowledgeRESTGetEscapesSlug(t *testing.T) {
+	var sawPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.EscapedPath()
+		if r.URL.Query().Get("include_archived") != "true" {
+			t.Fatalf("query = %s, want include_archived=true", r.URL.RawQuery)
+		}
+		_, _ = w.Write([]byte(`{"id":12,"slug":"topic/a","title":"Topic","body_markdown":"body","kind":"reference","status":"reviewed","curation_state":"human_curated"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("knowledge", server.URL), knowledgeRouteForTest("den_knowledge_get", http.MethodGet, "/v1/knowledge/entries/{slug}"), ToolCall{
+		ToolName:  "den_knowledge_get",
+		Operation: "den_knowledge_get",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"slug":"topic/a","include_archived":true}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawPath != "/v1/knowledge/entries/topic%2Fa" {
+		t.Fatalf("path = %q, want escaped slug", sawPath)
+	}
+}
+
 func TestFailureTextIncludesToolCircuitAndStatus(t *testing.T) {
 	statusCode := http.StatusBadGateway
 	failure := Failure{
@@ -772,6 +893,17 @@ func reviewRouteForTest(operation string, method string, path string) Route {
 		Method:          method,
 		Path:            path,
 		RequestAdapter:  RequestAdapterMCPReviewREST,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}
+}
+
+func knowledgeRouteForTest(operation string, method string, path string) Route {
+	return Route{
+		Operation:       operation,
+		Backend:         "knowledge",
+		Method:          method,
+		Path:            path,
+		RequestAdapter:  RequestAdapterMCPKnowledgeREST,
 		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
 	}
 }

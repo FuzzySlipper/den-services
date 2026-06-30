@@ -81,6 +81,9 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 		if reviewRoute(tool.Name) {
 			wantBackend = "review"
 		}
+		if knowledgeRoute(tool.Name) {
+			wantBackend = "knowledge"
+		}
 		if route.Backend != wantBackend {
 			t.Fatalf("route %s backend = %q, want %s", tool.Name, route.Backend, wantBackend)
 		}
@@ -202,6 +205,29 @@ func TestRouteTableAllowsReviewRESTAdapter(t *testing.T) {
 	}
 }
 
+func TestRouteTableAllowsKnowledgeRESTAdapter(t *testing.T) {
+	route := Route{
+		Operation:       "den_knowledge_search",
+		Backend:         "knowledge",
+		Method:          "POST",
+		Path:            "/v1/knowledge/search",
+		RequestAdapter:  RequestAdapterMCPKnowledgeREST,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}
+
+	table, err := NewRouteTable([]Route{route})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	resolved, err := table.Resolve("den_knowledge_search")
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Method != "POST" {
+		t.Fatalf("Method = %q, want POST", resolved.Method)
+	}
+}
+
 func projectsSafeSubsetRoute(operation string) bool {
 	switch operation {
 	case "create_project",
@@ -284,6 +310,18 @@ func reviewRoute(operation string) bool {
 		"set_review_verdict",
 		"respond_to_review_finding",
 		"set_review_finding_status":
+		return true
+	default:
+		return false
+	}
+}
+
+func knowledgeRoute(operation string) bool {
+	switch operation {
+	case "den_knowledge_search",
+		"den_knowledge_get",
+		"den_knowledge_guide",
+		"den_knowledge_store":
 		return true
 	default:
 		return false
