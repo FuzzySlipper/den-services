@@ -25,3 +25,8 @@ backends:
     health_path: "/health"
     timeout: "3s"
     service_token_env: "DEN_PROJECTS_SERVICE_TOKEN"
+  - name: "tasks"
+    base_url: "http://127.0.0.1:8092"
+    health_path: "/health"
+    timeout: "3s"
+    service_token_env: "DEN_TASKS_SERVICE_TOKEN"

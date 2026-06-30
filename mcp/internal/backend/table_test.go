@@ -69,9 +69,35 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 		if projectsSafeSubsetRoute(tool.Name) {
 			wantBackend = "projects"
 		}
+		if tasksRoute(tool.Name) {
+			wantBackend = "tasks"
+		}
 		if route.Backend != wantBackend {
 			t.Fatalf("route %s backend = %q, want %s", tool.Name, route.Backend, wantBackend)
 		}
+	}
+}
+
+func TestRouteTableAllowsTasksRESTAdapter(t *testing.T) {
+	route := Route{
+		Operation:       "remove_dependency",
+		Backend:         "tasks",
+		Method:          "DELETE",
+		Path:            "/v1/tasks/{task_id}/dependencies/{depends_on}",
+		RequestAdapter:  RequestAdapterMCPTasksREST,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}
+
+	table, err := NewRouteTable([]Route{route})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	resolved, err := table.Resolve("remove_dependency")
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Method != "DELETE" {
+		t.Fatalf("Method = %q, want DELETE", resolved.Method)
 	}
 }
 
@@ -107,6 +133,21 @@ func projectsSafeSubsetRoute(operation string) bool {
 		"list_spaces",
 		"update_space_visibility",
 		"archive_space":
+		return true
+	default:
+		return false
+	}
+}
+
+func tasksRoute(operation string) bool {
+	switch operation {
+	case "create_task",
+		"list_tasks",
+		"get_task",
+		"update_task",
+		"next_task",
+		"add_dependency",
+		"remove_dependency":
 		return true
 	default:
 		return false
