@@ -73,7 +73,7 @@ Current REST behavior:
   - `task_id`
   - `include_global`, default `true`
 - returns `400` when the LLM endpoint is not configured;
-- returns `404` when `task_id` is missing;
+- returns `404` when a supplied `task_id` is not found;
 - returns `400` when `task_id` belongs to a different project;
 - returns a JSON librarian response on success.
 
@@ -85,6 +85,8 @@ Current Core gathering behavior:
 
 - Task context has highest priority and is gathered first when `task_id` is
   supplied.
+- `task_id` is optional. When omitted, librarian still queries project-level
+  document, message, and knowledge context without task enrichment.
 - Task enrichment includes task detail, parent task, subtasks, dependencies, and
   recent task messages.
 - Document search uses a sanitized FTS query built from the natural-language
