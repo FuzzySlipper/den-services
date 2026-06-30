@@ -339,6 +339,164 @@ func TestClientCallsTasksRESTRemoveDependencyPath(t *testing.T) {
 	}
 }
 
+func TestClientCallsMessagesRESTSendMessage(t *testing.T) {
+	var sawToken string
+	var sawPath string
+	var sawBody sendMessageBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawToken = r.Header.Get("Authorization")
+		sawPath = r.URL.EscapedPath()
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":501,"project_id":"project/a","sender":"codex","content":"hello"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	backendConfig := testBackend("messages", server.URL)
+	backendConfig.ServiceToken = "messages-token"
+	result, failure, err := client.Call(context.Background(), backendConfig, messagesRouteForTest("send_message", http.MethodPost, "/v1/projects/{project_id}/messages"), ToolCall{
+		ToolName:  "send_message",
+		Operation: "send_message",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"project_id":"project/a","task_id":7,"sender":"codex","content":"hello","metadata":"{\"kind\":\"smoke\"}"}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawToken != "Bearer messages-token" {
+		t.Fatalf("Authorization = %q, want Bearer messages-token", sawToken)
+	}
+	if sawPath != "/v1/projects/project%2Fa/messages" {
+		t.Fatalf("path = %q, want escaped project id", sawPath)
+	}
+	if sawBody.TaskID == nil || *sawBody.TaskID != 7 || sawBody.Metadata["kind"] != "smoke" {
+		t.Fatalf("body = %#v", sawBody)
+	}
+	if !strings.Contains(string(result.Value), `"structuredContent":{"id":501`) {
+		t.Fatalf("result = %s", result.Value)
+	}
+}
+
+func TestClientCallsMessagesRESTMarkReadCSV(t *testing.T) {
+	var sawBody markReadBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/messages/read" {
+			t.Fatalf("request = %s %s, want POST /v1/messages/read", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		_, _ = w.Write([]byte(`{"marked":2}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("messages", server.URL), messagesRouteForTest("mark_read", http.MethodPost, "/v1/messages/read"), ToolCall{
+		ToolName:  "mark_read",
+		Operation: "mark_read",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"agent":"reviewer","message_ids":"1, 2"}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawBody.Agent != "reviewer" || len(sawBody.MessageIDs) != 2 || sawBody.MessageIDs[1] != 2 {
+		t.Fatalf("body = %#v", sawBody)
+	}
+}
+
+func TestClientCallsMessagesRESTGetUserNotificationsQuery(t *testing.T) {
+	var sawRawQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/user-notifications" {
+			t.Fatalf("request = %s %s, want GET /v1/user-notifications", r.Method, r.URL.Path)
+		}
+		sawRawQuery = r.URL.RawQuery
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	isRead := false
+	arguments, err := json.Marshal(map[string]any{
+		"project_id":     "den-services",
+		"task_id":        3726,
+		"sender":         "codex",
+		"metadata_type":  "review",
+		"urgency":        "normal",
+		"read_for_agent": "planner",
+		"is_read":        isRead,
+		"limit":          10,
+		"offset":         5,
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("messages", server.URL), messagesRouteForTest("get_user_notifications", http.MethodGet, "/v1/user-notifications"), ToolCall{
+		ToolName:  "get_user_notifications",
+		Operation: "get_user_notifications",
+		RequestID: json.RawMessage(`1`),
+		Arguments: arguments,
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	for _, want := range []string{"project_id=den-services", "task_id=3726", "sender=codex", "metadata_type=review", "urgency=normal", "read_for_agent=planner", "is_read=false", "limit=10", "offset=5"} {
+		if !strings.Contains(sawRawQuery, want) {
+			t.Fatalf("RawQuery = %q, missing %s", sawRawQuery, want)
+		}
+	}
+}
+
+func TestClientCallsMessagesRESTRenderWorkerPromptPath(t *testing.T) {
+	var sawPath string
+	var sawRawQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.EscapedPath()
+		sawRawQuery = r.URL.RawQuery
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		_, _ = w.Write([]byte(`{"prompt":"work carefully"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("messages", server.URL), messagesRouteForTest("render_worker_prompt", http.MethodGet, "/v1/projects/{project_id}/packets/{message_id}/worker-prompt"), ToolCall{
+		ToolName:  "render_worker_prompt",
+		Operation: "render_worker_prompt",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"project_id":"project/a","packet_message_id":501,"completion_reporting_mode":"artifact_reconciled"}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawPath != "/v1/projects/project%2Fa/packets/501/worker-prompt" {
+		t.Fatalf("path = %q, want worker prompt path", sawPath)
+	}
+	if sawRawQuery != "completion_reporting_mode=artifact_reconciled" {
+		t.Fatalf("RawQuery = %q, want completion_reporting_mode=artifact_reconciled", sawRawQuery)
+	}
+}
+
 func TestFailureTextIncludesToolCircuitAndStatus(t *testing.T) {
 	statusCode := http.StatusBadGateway
 	failure := Failure{
@@ -378,6 +536,17 @@ func tasksRouteForTest(operation string, method string, path string) Route {
 		Method:          method,
 		Path:            path,
 		RequestAdapter:  RequestAdapterMCPTasksREST,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}
+}
+
+func messagesRouteForTest(operation string, method string, path string) Route {
+	return Route{
+		Operation:       operation,
+		Backend:         "messages",
+		Method:          method,
+		Path:            path,
+		RequestAdapter:  RequestAdapterMCPMessagesREST,
 		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
 	}
 }

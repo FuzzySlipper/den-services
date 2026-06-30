@@ -72,6 +72,9 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 		if tasksRoute(tool.Name) {
 			wantBackend = "tasks"
 		}
+		if messagesRoute(tool.Name) {
+			wantBackend = "messages"
+		}
 		if route.Backend != wantBackend {
 			t.Fatalf("route %s backend = %q, want %s", tool.Name, route.Backend, wantBackend)
 		}
@@ -124,6 +127,29 @@ func TestRouteTableAllowsProjectsRESTAdapter(t *testing.T) {
 	}
 }
 
+func TestRouteTableAllowsMessagesRESTAdapter(t *testing.T) {
+	route := Route{
+		Operation:       "send_message",
+		Backend:         "messages",
+		Method:          "POST",
+		Path:            "/v1/projects/{project_id}/messages",
+		RequestAdapter:  RequestAdapterMCPMessagesREST,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}
+
+	table, err := NewRouteTable([]Route{route})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	resolved, err := table.Resolve("send_message")
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Method != "POST" {
+		t.Fatalf("Method = %q, want POST", resolved.Method)
+	}
+}
+
 func projectsSafeSubsetRoute(operation string) bool {
 	switch operation {
 	case "create_project",
@@ -148,6 +174,24 @@ func tasksRoute(operation string) bool {
 		"next_task",
 		"add_dependency",
 		"remove_dependency":
+		return true
+	default:
+		return false
+	}
+}
+
+func messagesRoute(operation string) bool {
+	switch operation {
+	case "send_message",
+		"get_messages",
+		"wait_for_messages",
+		"get_thread",
+		"mark_read",
+		"send_user_notification",
+		"get_user_notifications",
+		"mark_notifications_read",
+		"get_latest_task_packet",
+		"render_worker_prompt":
 		return true
 	default:
 		return false

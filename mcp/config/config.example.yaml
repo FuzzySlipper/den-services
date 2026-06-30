@@ -30,3 +30,8 @@ backends:
     health_path: "/health"
     timeout: "3s"
     service_token_env: "DEN_TASKS_SERVICE_TOKEN"
+  - name: "messages"
+    base_url: "http://127.0.0.1:8093"
+    health_path: "/health"
+    timeout: "3s"
+    service_token_env: "DEN_MESSAGES_SERVICE_TOKEN"
