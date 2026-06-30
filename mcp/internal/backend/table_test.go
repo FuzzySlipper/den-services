@@ -75,6 +75,9 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 		if messagesRoute(tool.Name) {
 			wantBackend = "messages"
 		}
+		if documentsRoute(tool.Name) {
+			wantBackend = "documents"
+		}
 		if route.Backend != wantBackend {
 			t.Fatalf("route %s backend = %q, want %s", tool.Name, route.Backend, wantBackend)
 		}
@@ -150,6 +153,29 @@ func TestRouteTableAllowsMessagesRESTAdapter(t *testing.T) {
 	}
 }
 
+func TestRouteTableAllowsDocumentsRESTAdapter(t *testing.T) {
+	route := Route{
+		Operation:       "store_document",
+		Backend:         "documents",
+		Method:          "POST",
+		Path:            "/v1/projects/{project_id}/documents",
+		RequestAdapter:  RequestAdapterMCPDocumentsREST,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}
+
+	table, err := NewRouteTable([]Route{route})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	resolved, err := table.Resolve("store_document")
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Method != "POST" {
+		t.Fatalf("Method = %q, want POST", resolved.Method)
+	}
+}
+
 func projectsSafeSubsetRoute(operation string) bool {
 	switch operation {
 	case "create_project",
@@ -192,6 +218,28 @@ func messagesRoute(operation string) bool {
 		"mark_notifications_read",
 		"get_latest_task_packet",
 		"render_worker_prompt":
+		return true
+	default:
+		return false
+	}
+}
+
+func documentsRoute(operation string) bool {
+	switch operation {
+	case "store_document",
+		"get_document",
+		"list_documents",
+		"search_documents",
+		"delete_document",
+		"update_document_visibility",
+		"archive_document_preflight",
+		"query_archived_documents",
+		"get_document_discussion",
+		"comment_on_document",
+		"list_discussion_threads",
+		"get_discussion_thread",
+		"create_discussion_comment",
+		"update_discussion_thread":
 		return true
 	default:
 		return false
