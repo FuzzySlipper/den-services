@@ -540,8 +540,8 @@ func TestClientCallsDocumentsRESTStoreDocument(t *testing.T) {
 func TestClientCallsDocumentsRESTSearchDocumentsQuery(t *testing.T) {
 	var sawRawQuery string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/v1/documents/search" {
-			t.Fatalf("request = %s %s, want GET /v1/documents/search", r.Method, r.URL.Path)
+		if r.Method != http.MethodGet || r.URL.EscapedPath() != "/v1/projects/den-services/documents/search" {
+			t.Fatalf("request = %s %s, want GET /v1/projects/den-services/documents/search", r.Method, r.URL.EscapedPath())
 		}
 		sawRawQuery = r.URL.RawQuery
 		_, _ = w.Write([]byte(`[]`))
@@ -561,7 +561,7 @@ func TestClientCallsDocumentsRESTSearchDocumentsQuery(t *testing.T) {
 	if failure != nil {
 		t.Fatalf("Call() failure = %#v", failure)
 	}
-	for _, want := range []string{"project_id=den-services", "query=route+flip"} {
+	for _, want := range []string{"query=route+flip"} {
 		if !strings.Contains(sawRawQuery, want) {
 			t.Fatalf("RawQuery = %q, missing %s", sawRawQuery, want)
 		}
