@@ -193,7 +193,24 @@ func documentsRESTRequestBody(operation string, arguments documentsToolArguments
 }
 
 func documentsRESTURL(baseURL string, route Route, arguments documentsToolArguments) (string, error) {
-	routePath, err := expandDocumentsPath(route.Path, arguments)
+	path := route.Path
+	if strings.TrimSpace(arguments.ProjectID) != "" {
+		switch route.Operation {
+		case "list_documents":
+			path = "/v1/projects/{project_id}/documents"
+		case "search_documents":
+			path = "/v1/projects/{project_id}/documents/search"
+		case "query_archived_documents":
+			if strings.TrimSpace(arguments.Query) != "" {
+				path = "/v1/projects/{project_id}/documents/archived/search"
+			} else {
+				path = "/v1/projects/{project_id}/documents/archived"
+			}
+		}
+	} else if route.Operation == "query_archived_documents" && strings.TrimSpace(arguments.Query) != "" {
+		path = "/v1/documents/archived/search"
+	}
+	routePath, err := expandDocumentsPath(path, arguments)
 	if err != nil {
 		return "", err
 	}
