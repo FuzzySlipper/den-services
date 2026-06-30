@@ -114,7 +114,7 @@ func validateRoute(route Route) error {
 
 func supportedMethod(method string) bool {
 	switch method {
-	case http.MethodDelete, http.MethodGet, http.MethodPatch, http.MethodPost:
+	case http.MethodGet, http.MethodPatch, http.MethodPost:
 		return true
 	default:
 		return false
@@ -126,8 +126,6 @@ func supportedAdapterPair(requestAdapter string, responseAdapter string) bool {
 	case requestAdapter == RequestAdapterMCPToolsCall && responseAdapter == ResponseAdapterMCPJSONRPC:
 		return true
 	case requestAdapter == RequestAdapterMCPProjectsREST && responseAdapter == ResponseAdapterMCPToolResultJSON:
-		return true
-	case requestAdapter == RequestAdapterMCPTasksREST && responseAdapter == ResponseAdapterMCPToolResultJSON:
 		return true
 	default:
 		return false

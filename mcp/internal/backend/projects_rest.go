@@ -88,7 +88,7 @@ func (c *Client) callProjectsREST(ctx context.Context, backend config.BackendCon
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return Result{}, statusFailure(backend.Name, call.Operation, call.ToolName, response.StatusCode, responseBody), nil
 	}
-	result, err := buildRESTToolResult(responseBody)
+	result, err := buildProjectsToolResult(responseBody)
 	if err != nil {
 		return Result{}, nil, err
 	}
@@ -216,7 +216,7 @@ func errorsForMissingPathValue(name string) error {
 	return fmt.Errorf("projects route requires %s", name)
 }
 
-func buildRESTToolResult(responseBody []byte) (json.RawMessage, error) {
+func buildProjectsToolResult(responseBody []byte) (json.RawMessage, error) {
 	trimmed := bytes.TrimSpace(responseBody)
 	if len(trimmed) == 0 {
 		trimmed = json.RawMessage(`null`)

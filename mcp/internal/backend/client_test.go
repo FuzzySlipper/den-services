@@ -239,106 +239,6 @@ func TestClientCallsProjectsRESTUpdateProjectPathParameter(t *testing.T) {
 	}
 }
 
-func TestClientCallsTasksRESTCreateTask(t *testing.T) {
-	var sawPath string
-	var sawBody createTaskBody
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sawPath = r.URL.EscapedPath()
-		if r.Method != http.MethodPost {
-			t.Fatalf("method = %s, want POST", r.Method)
-		}
-		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
-			t.Fatalf("Decode() error = %v", err)
-		}
-		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"id":101,"project_id":"project/a","title":"Task","status":"planned","priority":3,"created_at":"2026-06-30T00:00:00Z","updated_at":"2026-06-30T00:00:00Z"}`))
-	}))
-	defer server.Close()
-
-	client := NewClient(server.Client())
-	result, failure, err := client.Call(context.Background(), testBackend("tasks", server.URL), tasksRouteForTest("create_task", http.MethodPost, "/v1/projects/{project_id}/tasks"), ToolCall{
-		ToolName:  "create_task",
-		Operation: "create_task",
-		RequestID: json.RawMessage(`1`),
-		Arguments: json.RawMessage(`{"project_id":"project/a","title":"Task","priority":3,"depends_on":"1, 2","tags":"[\"mcp\",\"smoke\"]"}`),
-	})
-	if err != nil {
-		t.Fatalf("Call() error = %v", err)
-	}
-	if failure != nil {
-		t.Fatalf("Call() failure = %#v", failure)
-	}
-	if sawPath != "/v1/projects/project%2Fa/tasks" {
-		t.Fatalf("path = %q, want escaped project id", sawPath)
-	}
-	if sawBody.Title != "Task" || len(sawBody.DependsOn) != 2 || sawBody.DependsOn[0] != 1 || len(sawBody.Tags) != 2 {
-		t.Fatalf("body = %#v", sawBody)
-	}
-	if !strings.Contains(string(result.Value), `"structuredContent":{"id":101`) {
-		t.Fatalf("result = %s", result.Value)
-	}
-}
-
-func TestClientCallsTasksRESTListTasksWithFilters(t *testing.T) {
-	var sawRawQuery string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.EscapedPath() != "/v1/projects/den-services/tasks" {
-			t.Fatalf("request = %s %s, want GET /v1/projects/den-services/tasks", r.Method, r.URL.EscapedPath())
-		}
-		sawRawQuery = r.URL.RawQuery
-		_, _ = w.Write([]byte(`[]`))
-	}))
-	defer server.Close()
-
-	client := NewClient(server.Client())
-	_, failure, err := client.Call(context.Background(), testBackend("tasks", server.URL), tasksRouteForTest("list_tasks", http.MethodGet, "/v1/projects/{project_id}/tasks"), ToolCall{
-		ToolName:  "list_tasks",
-		Operation: "list_tasks",
-		RequestID: json.RawMessage(`1`),
-		Arguments: json.RawMessage(`{"project_id":"den-services","assigned_to":"codex","status":"planned,review","priority":2,"tags":"mcp,cutover"}`),
-	})
-	if err != nil {
-		t.Fatalf("Call() error = %v", err)
-	}
-	if failure != nil {
-		t.Fatalf("Call() failure = %#v", failure)
-	}
-	for _, want := range []string{"assigned_to=codex", "status=planned%2Creview", "priority=2", "tags=mcp%2Ccutover"} {
-		if !strings.Contains(sawRawQuery, want) {
-			t.Fatalf("RawQuery = %q, missing %s", sawRawQuery, want)
-		}
-	}
-}
-
-func TestClientCallsTasksRESTRemoveDependencyPath(t *testing.T) {
-	var sawPath string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sawPath = r.URL.Path
-		if r.Method != http.MethodDelete {
-			t.Fatalf("method = %s, want DELETE", r.Method)
-		}
-		_, _ = w.Write([]byte(`{"message":"Task dependency removed."}`))
-	}))
-	defer server.Close()
-
-	client := NewClient(server.Client())
-	_, failure, err := client.Call(context.Background(), testBackend("tasks", server.URL), tasksRouteForTest("remove_dependency", http.MethodDelete, "/v1/tasks/{task_id}/dependencies/{depends_on}"), ToolCall{
-		ToolName:  "remove_dependency",
-		Operation: "remove_dependency",
-		RequestID: json.RawMessage(`1`),
-		Arguments: json.RawMessage(`{"task_id":42,"depends_on":41}`),
-	})
-	if err != nil {
-		t.Fatalf("Call() error = %v", err)
-	}
-	if failure != nil {
-		t.Fatalf("Call() failure = %#v", failure)
-	}
-	if sawPath != "/v1/tasks/42/dependencies/41" {
-		t.Fatalf("path = %q, want /v1/tasks/42/dependencies/41", sawPath)
-	}
-}
-
 func TestFailureTextIncludesToolCircuitAndStatus(t *testing.T) {
 	statusCode := http.StatusBadGateway
 	failure := Failure{
@@ -367,17 +267,6 @@ func projectsRoute(operation string, method string, path string) Route {
 		Method:          method,
 		Path:            path,
 		RequestAdapter:  RequestAdapterMCPProjectsREST,
-		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
-	}
-}
-
-func tasksRouteForTest(operation string, method string, path string) Route {
-	return Route{
-		Operation:       operation,
-		Backend:         "tasks",
-		Method:          method,
-		Path:            path,
-		RequestAdapter:  RequestAdapterMCPTasksREST,
 		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
 	}
 }
