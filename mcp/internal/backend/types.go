@@ -11,7 +11,6 @@ const (
 	RequestAdapterMCPProjectsREST          = "mcp_projects_rest"
 	RequestAdapterMCPTasksREST             = "mcp_tasks_rest"
 	RequestAdapterMCPMessagesREST          = "mcp_messages_rest"
-	RequestAdapterMCPDocumentsREST         = "mcp_documents_rest"
 	ResponseAdapterMCPJSONRPC              = "mcp_jsonrpc_result"
 	ResponseAdapterMCPToolResultJSON       = "mcp_tool_result_json"
 	StateReady                       State = "ready"

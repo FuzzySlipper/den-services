@@ -497,77 +497,6 @@ func TestClientCallsMessagesRESTRenderWorkerPromptPath(t *testing.T) {
 	}
 }
 
-func TestClientCallsDocumentsRESTStoreDocument(t *testing.T) {
-	var sawPath string
-	var sawBody storeDocumentBody
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sawPath = r.URL.EscapedPath()
-		if r.Method != http.MethodPost {
-			t.Fatalf("method = %s, want POST", r.Method)
-		}
-		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
-			t.Fatalf("Decode() error = %v", err)
-		}
-		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"id":801,"project_id":"project/a","slug":"doc","title":"Doc","content":"body","doc_type":"spec","visibility":"normal"}`))
-	}))
-	defer server.Close()
-
-	client := NewClient(server.Client())
-	result, failure, err := client.Call(context.Background(), testBackend("documents", server.URL), documentsRouteForTest("store_document", http.MethodPost, "/v1/projects/{project_id}/documents"), ToolCall{
-		ToolName:  "store_document",
-		Operation: "store_document",
-		RequestID: json.RawMessage(`1`),
-		Arguments: json.RawMessage(`{"project_id":"project/a","slug":"doc","title":"Doc","content":"body","doc_type":"spec","tags":"[\"mcp\",\"smoke\"]"}`),
-	})
-	if err != nil {
-		t.Fatalf("Call() error = %v", err)
-	}
-	if failure != nil {
-		t.Fatalf("Call() failure = %#v", failure)
-	}
-	if sawPath != "/v1/projects/project%2Fa/documents" {
-		t.Fatalf("path = %q, want escaped project id", sawPath)
-	}
-	if sawBody.Slug != "doc" || len(sawBody.Tags) != 2 || sawBody.Tags[1] != "smoke" {
-		t.Fatalf("body = %#v", sawBody)
-	}
-	if !strings.Contains(string(result.Value), `"structuredContent":{"id":801`) {
-		t.Fatalf("result = %s", result.Value)
-	}
-}
-
-func TestClientCallsDocumentsRESTSearchDocumentsQuery(t *testing.T) {
-	var sawRawQuery string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/v1/documents/search" {
-			t.Fatalf("request = %s %s, want GET /v1/documents/search", r.Method, r.URL.Path)
-		}
-		sawRawQuery = r.URL.RawQuery
-		_, _ = w.Write([]byte(`[]`))
-	}))
-	defer server.Close()
-
-	client := NewClient(server.Client())
-	_, failure, err := client.Call(context.Background(), testBackend("documents", server.URL), documentsRouteForTest("search_documents", http.MethodGet, "/v1/documents/search"), ToolCall{
-		ToolName:  "search_documents",
-		Operation: "search_documents",
-		RequestID: json.RawMessage(`1`),
-		Arguments: json.RawMessage(`{"project_id":"den-services","query":"route flip"}`),
-	})
-	if err != nil {
-		t.Fatalf("Call() error = %v", err)
-	}
-	if failure != nil {
-		t.Fatalf("Call() failure = %#v", failure)
-	}
-	for _, want := range []string{"project_id=den-services", "query=route+flip"} {
-		if !strings.Contains(sawRawQuery, want) {
-			t.Fatalf("RawQuery = %q, missing %s", sawRawQuery, want)
-		}
-	}
-}
-
 func TestFailureTextIncludesToolCircuitAndStatus(t *testing.T) {
 	statusCode := http.StatusBadGateway
 	failure := Failure{
@@ -618,17 +547,6 @@ func messagesRouteForTest(operation string, method string, path string) Route {
 		Method:          method,
 		Path:            path,
 		RequestAdapter:  RequestAdapterMCPMessagesREST,
-		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
-	}
-}
-
-func documentsRouteForTest(operation string, method string, path string) Route {
-	return Route{
-		Operation:       operation,
-		Backend:         "documents",
-		Method:          method,
-		Path:            path,
-		RequestAdapter:  RequestAdapterMCPDocumentsREST,
 		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
 	}
 }
