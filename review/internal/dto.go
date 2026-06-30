@@ -77,6 +77,15 @@ type SplitFindingsRequest struct {
 	IdempotencyKey       string   `json:"idempotency_key,omitempty"`
 }
 
+type PostReviewFindingsRequest struct {
+	ReviewRoundID int64  `json:"review_round_id"`
+	Sender        string `json:"sender"`
+	ThreadID      *int64 `json:"thread_id,omitempty"`
+	Notes         string `json:"notes,omitempty"`
+	RunID         string `json:"run_id,omitempty"`
+	SubagentRole  string `json:"subagent_role,omitempty"`
+}
+
 type PostPacketMarkdownRequest struct {
 	Markdown       string `json:"markdown"`
 	IdempotencyKey string `json:"idempotency_key,omitempty"`

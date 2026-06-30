@@ -12,6 +12,7 @@ type ProjectValidator interface {
 }
 
 type TaskClient interface {
+	GetTask(ctx context.Context, taskID int64) (TaskContext, error)
 	GetTaskContext(ctx context.Context, projectID string, taskID int64) (TaskContext, error)
 	CreateFollowUpTask(ctx context.Context, projectID string, req CreateFollowUpTaskRequest) (CreatedTask, error)
 }
@@ -145,6 +146,14 @@ func (s *Service) CreateRound(ctx context.Context, projectID string, taskID int6
 	return s.store.CreateRound(ctx, round)
 }
 
+func (s *Service) CreateRoundForTask(ctx context.Context, taskID int64, req CreateReviewRoundRequest) (*ReviewRound, error) {
+	task, err := s.resolveTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return s.CreateRound(ctx, task.ProjectID, taskID, req)
+}
+
 func (s *Service) RequestReview(ctx context.Context, projectID string, taskID int64, req CreateReviewRoundRequest) (*ReviewPacket, error) {
 	round, err := s.CreateRound(ctx, projectID, taskID, req)
 	if err != nil {
@@ -163,6 +172,14 @@ func (s *Service) ListRounds(ctx context.Context, projectID string, taskID int64
 		return nil, err
 	}
 	return s.store.ListRounds(ctx, strings.TrimSpace(projectID), taskID)
+}
+
+func (s *Service) ListRoundsForTask(ctx context.Context, taskID int64) ([]*ReviewRound, error) {
+	task, err := s.resolveTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return s.ListRounds(ctx, task.ProjectID, taskID)
 }
 
 func (s *Service) CreateFinding(ctx context.Context, roundID int64, req CreateReviewFindingRequest) (*ReviewFinding, error) {
@@ -205,6 +222,14 @@ func (s *Service) ListFindings(ctx context.Context, projectID string, taskID int
 	query.ProjectID = strings.TrimSpace(projectID)
 	query.TaskID = taskID
 	return s.store.ListFindings(ctx, query)
+}
+
+func (s *Service) ListFindingsForTask(ctx context.Context, taskID int64, query ListFindingsQuery) ([]*ReviewFinding, error) {
+	task, err := s.resolveTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return s.ListFindings(ctx, task.ProjectID, taskID, query)
 }
 
 func (s *Service) SetVerdict(ctx context.Context, roundID int64, req SetReviewVerdictRequest) (*ReviewRound, error) {
@@ -329,6 +354,34 @@ func (s *Service) SplitFindingsToFollowUp(ctx context.Context, projectID string,
 	return SplitFindingsResponse{FollowUpTaskID: followUp.ID, SplitFindings: toFindingResponses(updated), SkippedFindings: toFindingResponses(skipped)}, nil
 }
 
+func (s *Service) PostReviewFindings(ctx context.Context, projectID string, taskID int64, req PostReviewFindingsRequest) (*ReviewPacket, error) {
+	task, err := s.validateTask(ctx, projectID, taskID, TaskStatusReview)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(req.Sender) == "" {
+		return nil, validationError(ErrMissingActor, "missing_sender", "sender", "review_findings.sender")
+	}
+	round, err := s.store.GetRound(ctx, req.ReviewRoundID)
+	if err != nil {
+		return nil, err
+	}
+	if round.ProjectID != task.ProjectID || round.TaskID != taskID {
+		return nil, notFound(fmt.Errorf("%w: %d", ErrMissingRound, req.ReviewRoundID), "round_not_found")
+	}
+	findings, err := s.store.ListFindings(ctx, ListFindingsQuery{ProjectID: task.ProjectID, TaskID: taskID, ReviewRoundID: &round.ID})
+	if err != nil {
+		return nil, err
+	}
+	allFindings, err := s.store.ListFindings(ctx, ListFindingsQuery{ProjectID: task.ProjectID, TaskID: taskID})
+	if err != nil {
+		return nil, err
+	}
+	packet := reviewFindingsPacket(round, findings, unresolvedFindingSummaries(allFindings), req)
+	packet.IdempotencyKey = fmt.Sprintf("review-findings:%d:%s:%s", round.ID, strings.TrimSpace(req.Sender), strings.TrimSpace(req.RunID))
+	return s.acceptPacket(ctx, packet, req.ThreadID)
+}
+
 func (s *Service) ValidatePacketMarkdown(ctx context.Context, projectID string, taskID int64, markdown string) (*ReviewPacket, error) {
 	packet, err := ParseReviewPacketMarkdown(markdown)
 	if err != nil {
@@ -355,6 +408,14 @@ func (s *Service) WorkflowSummary(ctx context.Context, projectID string, taskID 
 		return WorkflowSummary{}, err
 	}
 	return s.store.WorkflowSummary(ctx, strings.TrimSpace(projectID), taskID)
+}
+
+func (s *Service) WorkflowSummaryForTask(ctx context.Context, taskID int64) (WorkflowSummary, error) {
+	task, err := s.resolveTask(ctx, taskID)
+	if err != nil {
+		return WorkflowSummary{}, err
+	}
+	return s.WorkflowSummary(ctx, task.ProjectID, taskID)
 }
 
 func (s *Service) acceptPacket(ctx context.Context, packet *ReviewPacket, threadID *int64) (*ReviewPacket, error) {
@@ -444,6 +505,13 @@ func (s *Service) validateTask(ctx context.Context, projectID string, taskID int
 		return TaskContext{}, validationError(fmt.Errorf("%w: %s", ErrInvalidTaskState, task.Status), "task_not_reviewable", "task_id", "common.task_id")
 	}
 	return task, nil
+}
+
+func (s *Service) resolveTask(ctx context.Context, taskID int64) (TaskContext, error) {
+	if taskID == 0 {
+		return TaskContext{}, validationError(ErrMissingTaskID, "missing_task_id", "task_id", "common.task_id")
+	}
+	return s.tasks.GetTask(ctx, taskID)
 }
 
 func roundFromRequest(projectID string, taskID int64, req CreateReviewRoundRequest, now time.Time) (*ReviewRound, error) {

@@ -13,17 +13,22 @@ import (
 
 type ReviewUseCases interface {
 	CreateRound(ctx context.Context, projectID string, taskID int64, req CreateReviewRoundRequest) (*ReviewRound, error)
+	CreateRoundForTask(ctx context.Context, taskID int64, req CreateReviewRoundRequest) (*ReviewRound, error)
 	RequestReview(ctx context.Context, projectID string, taskID int64, req CreateReviewRoundRequest) (*ReviewPacket, error)
 	ListRounds(ctx context.Context, projectID string, taskID int64) ([]*ReviewRound, error)
+	ListRoundsForTask(ctx context.Context, taskID int64) ([]*ReviewRound, error)
 	CreateFinding(ctx context.Context, roundID int64, req CreateReviewFindingRequest) (*ReviewFinding, error)
 	ListFindings(ctx context.Context, projectID string, taskID int64, query ListFindingsQuery) ([]*ReviewFinding, error)
+	ListFindingsForTask(ctx context.Context, taskID int64, query ListFindingsQuery) ([]*ReviewFinding, error)
 	SetVerdict(ctx context.Context, roundID int64, req SetReviewVerdictRequest) (*ReviewRound, error)
 	RespondToFinding(ctx context.Context, findingID int64, req RespondToFindingRequest) (*ReviewFinding, error)
 	SetFindingStatus(ctx context.Context, findingID int64, req SetFindingStatusRequest) (*ReviewFinding, error)
 	SplitFindingsToFollowUp(ctx context.Context, projectID string, taskID int64, req SplitFindingsRequest) (SplitFindingsResponse, error)
+	PostReviewFindings(ctx context.Context, projectID string, taskID int64, req PostReviewFindingsRequest) (*ReviewPacket, error)
 	ValidatePacketMarkdown(ctx context.Context, projectID string, taskID int64, markdown string) (*ReviewPacket, error)
 	PostPacketMarkdown(ctx context.Context, projectID string, taskID int64, req PostPacketMarkdownRequest) (*ReviewPacket, error)
 	WorkflowSummary(ctx context.Context, projectID string, taskID int64) (WorkflowSummary, error)
+	WorkflowSummaryForTask(ctx context.Context, taskID int64) (WorkflowSummary, error)
 }
 
 type Handler struct {
@@ -40,9 +45,14 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}/review/rounds", h.listRounds)
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}/review/findings", h.listFindings)
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/findings/split-follow-up", h.splitFindings)
+	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/findings/post", h.postReviewFindings)
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}/review/workflow-summary", h.workflowSummary)
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/packets/validate", h.validatePacket)
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/packets", h.postPacket)
+	mux.HandleFunc("POST /v1/tasks/{task_id}/review/rounds", h.createRoundForTask)
+	mux.HandleFunc("GET /v1/tasks/{task_id}/review/rounds", h.listRoundsForTask)
+	mux.HandleFunc("GET /v1/tasks/{task_id}/review/findings", h.listFindingsForTask)
+	mux.HandleFunc("GET /v1/tasks/{task_id}/review/workflow-summary", h.workflowSummaryForTask)
 	mux.HandleFunc("POST /v1/review/rounds/{review_round_id}/findings", h.createFinding)
 	mux.HandleFunc("POST /v1/review/rounds/{review_round_id}/verdict", h.setVerdict)
 	mux.HandleFunc("POST /v1/review/findings/{finding_id}/response", h.respondToFinding)
@@ -59,6 +69,23 @@ func (h *Handler) createRound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	round, err := h.service.CreateRound(r.Context(), r.PathValue("project_id"), taskID, req)
+	if err != nil {
+		writeReviewError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusCreated, toRoundResponse(round))
+}
+
+func (h *Handler) createRoundForTask(w http.ResponseWriter, r *http.Request) {
+	taskID, ok := h.taskID(w, r)
+	if !ok {
+		return
+	}
+	var req CreateReviewRoundRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	round, err := h.service.CreateRoundForTask(r.Context(), taskID, req)
 	if err != nil {
 		writeReviewError(w, err)
 		return
@@ -96,6 +123,19 @@ func (h *Handler) listRounds(w http.ResponseWriter, r *http.Request) {
 	api.WriteJSON(w, http.StatusOK, toRoundResponses(rounds))
 }
 
+func (h *Handler) listRoundsForTask(w http.ResponseWriter, r *http.Request) {
+	taskID, ok := h.taskID(w, r)
+	if !ok {
+		return
+	}
+	rounds, err := h.service.ListRoundsForTask(r.Context(), taskID)
+	if err != nil {
+		writeReviewError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, toRoundResponses(rounds))
+}
+
 func (h *Handler) createFinding(w http.ResponseWriter, r *http.Request) {
 	roundID, ok := pathInt64(w, r, "review_round_id")
 	if !ok {
@@ -124,6 +164,24 @@ func (h *Handler) listFindings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	findings, err := h.service.ListFindings(r.Context(), r.PathValue("project_id"), taskID, query)
+	if err != nil {
+		writeReviewError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, toFindingResponses(findings))
+}
+
+func (h *Handler) listFindingsForTask(w http.ResponseWriter, r *http.Request) {
+	taskID, ok := h.taskID(w, r)
+	if !ok {
+		return
+	}
+	query, err := findingsQuery(r)
+	if err != nil {
+		writeReviewError(w, err)
+		return
+	}
+	findings, err := h.service.ListFindingsForTask(r.Context(), taskID, query)
 	if err != nil {
 		writeReviewError(w, err)
 		return
@@ -199,6 +257,23 @@ func (h *Handler) splitFindings(w http.ResponseWriter, r *http.Request) {
 	api.WriteJSON(w, http.StatusOK, result)
 }
 
+func (h *Handler) postReviewFindings(w http.ResponseWriter, r *http.Request) {
+	taskID, ok := h.taskID(w, r)
+	if !ok {
+		return
+	}
+	var req PostReviewFindingsRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	packet, err := h.service.PostReviewFindings(r.Context(), r.PathValue("project_id"), taskID, req)
+	if err != nil {
+		writeReviewError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusCreated, toPacketResponse(packet))
+}
+
 func (h *Handler) validatePacket(w http.ResponseWriter, r *http.Request) {
 	taskID, ok := h.taskID(w, r)
 	if !ok {
@@ -239,6 +314,19 @@ func (h *Handler) workflowSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	summary, err := h.service.WorkflowSummary(r.Context(), r.PathValue("project_id"), taskID)
+	if err != nil {
+		writeReviewError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, toWorkflowSummaryResponse(summary))
+}
+
+func (h *Handler) workflowSummaryForTask(w http.ResponseWriter, r *http.Request) {
+	taskID, ok := h.taskID(w, r)
+	if !ok {
+		return
+	}
+	summary, err := h.service.WorkflowSummaryForTask(r.Context(), taskID)
 	if err != nil {
 		writeReviewError(w, err)
 		return

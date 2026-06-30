@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -83,6 +84,90 @@ func TestRequestReviewMetadataUsesCanonicalPacketKind(t *testing.T) {
 	}
 	if messages.appended[0].Metadata["type"] != "review_request_packet" || messages.appended[0].Metadata["packet_kind"] != PacketKindReviewRequest {
 		t.Fatalf("message metadata did not separate type/packet_kind: %#v", messages.appended[0].Metadata)
+	}
+}
+
+func TestPostReviewFindingsAppendsCompatiblePacket(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	service := newTestService(store, messages, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusReview, Priority: 1},
+	}})
+	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
+		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateFinding(ctx, round.ID, CreateReviewFindingRequest{
+		CreatedBy: "pi-reviewer", Category: CategoryBlockingBug, Summary: "Needs fix", TestCommands: []string{"go test ./..."},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SetVerdict(ctx, round.ID, SetReviewVerdictRequest{Verdict: VerdictChangesRequested, DecidedBy: "pi-reviewer"}); err != nil {
+		t.Fatal(err)
+	}
+	messages.appended = nil
+
+	packet, err := service.PostReviewFindings(ctx, "den-services", 42, PostReviewFindingsRequest{
+		ReviewRoundID: round.ID, Sender: "pi-reviewer", Notes: "Review complete", RunID: "run-1",
+	})
+	if err != nil {
+		t.Fatalf("PostReviewFindings() error = %v", err)
+	}
+	if packet.ID == 0 || packet.MessageID == nil || packet.PacketKind != PacketKindReviewFindings {
+		t.Fatalf("packet not accepted: %+v", packet)
+	}
+	if packet.TypedEnvelope["type"] != "review_findings_packet" || packet.TypedEnvelope["run_id"] != "run-1" {
+		t.Fatalf("unexpected packet metadata: %#v", packet.TypedEnvelope)
+	}
+	if !strings.Contains(packet.SourceMarkdown, "Review findings") || !strings.Contains(packet.SourceMarkdown, "Needs fix") {
+		t.Fatalf("packet markdown missing findings: %s", packet.SourceMarkdown)
+	}
+	if len(messages.appended) != 1 || messages.appended[0].Intent != "review_feedback" {
+		t.Fatalf("message not appended as review feedback: %+v", messages.appended)
+	}
+}
+
+func TestServiceTaskOnlyReviewMethodsResolveProjectFromTask(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusReview, Priority: 1},
+	}}
+	service := newTestService(store, &fakeMessages{}, tasks)
+
+	round, err := service.CreateRoundForTask(ctx, 42, CreateReviewRoundRequest{
+		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+	})
+	if err != nil {
+		t.Fatalf("CreateRoundForTask() error = %v", err)
+	}
+	if round.ProjectID != "den-services" {
+		t.Fatalf("round project = %q, want den-services", round.ProjectID)
+	}
+
+	rounds, err := service.ListRoundsForTask(ctx, 42)
+	if err != nil {
+		t.Fatalf("ListRoundsForTask() error = %v", err)
+	}
+	if len(rounds) != 1 || rounds[0].ID != round.ID {
+		t.Fatalf("rounds = %+v, want round %d", rounds, round.ID)
+	}
+
+	finding, err := service.CreateFinding(ctx, round.ID, CreateReviewFindingRequest{
+		CreatedBy: "pi-reviewer", Category: CategoryAcceptanceGap, Summary: "Needs evidence",
+	})
+	if err != nil {
+		t.Fatalf("CreateFinding() error = %v", err)
+	}
+	findings, err := service.ListFindingsForTask(ctx, 42, ListFindingsQuery{})
+	if err != nil {
+		t.Fatalf("ListFindingsForTask() error = %v", err)
+	}
+	if len(findings) != 1 || findings[0].ID != finding.ID {
+		t.Fatalf("findings = %+v, want finding %d", findings, finding.ID)
 	}
 }
 
@@ -278,6 +363,13 @@ func newTestService(store ReviewStore, messages MessageClient, tasks TaskClient)
 type fakeTasks struct {
 	tasks   map[int64]TaskContext
 	created []CreateFollowUpTaskRequest
+}
+
+func (f fakeTasks) GetTask(_ context.Context, taskID int64) (TaskContext, error) {
+	if task, ok := f.tasks[taskID]; ok {
+		return task, nil
+	}
+	return TaskContext{}, validationError(errors.New("task not found"), "task_not_found", "task_id", "common.task_id")
 }
 
 func (f fakeTasks) GetTaskContext(_ context.Context, projectID string, taskID int64) (TaskContext, error) {

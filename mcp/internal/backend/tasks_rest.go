@@ -298,6 +298,12 @@ func parseInt64List(raw json.RawMessage) ([]int64, error) {
 	if strings.TrimSpace(encoded) == "" {
 		return nil, nil
 	}
+	if strings.HasPrefix(strings.TrimSpace(encoded), "[") {
+		if err := json.Unmarshal([]byte(encoded), &direct); err != nil {
+			return nil, fmt.Errorf("decoding JSON-encoded int64 list: %w", err)
+		}
+		return direct, nil
+	}
 	parts := splitCSV(encoded)
 	values := make([]int64, 0, len(parts))
 	for _, part := range parts {

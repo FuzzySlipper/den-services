@@ -78,6 +78,9 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 		if documentsRoute(tool.Name) {
 			wantBackend = "documents"
 		}
+		if reviewRoute(tool.Name) {
+			wantBackend = "review"
+		}
 		if route.Backend != wantBackend {
 			t.Fatalf("route %s backend = %q, want %s", tool.Name, route.Backend, wantBackend)
 		}
@@ -176,6 +179,29 @@ func TestRouteTableAllowsDocumentsRESTAdapter(t *testing.T) {
 	}
 }
 
+func TestRouteTableAllowsReviewRESTAdapter(t *testing.T) {
+	route := Route{
+		Operation:       "create_review_round",
+		Backend:         "review",
+		Method:          "POST",
+		Path:            "/v1/tasks/{task_id}/review/rounds",
+		RequestAdapter:  RequestAdapterMCPReviewREST,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}
+
+	table, err := NewRouteTable([]Route{route})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	resolved, err := table.Resolve("create_review_round")
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Method != "POST" {
+		t.Fatalf("Method = %q, want POST", resolved.Method)
+	}
+}
+
 func projectsSafeSubsetRoute(operation string) bool {
 	switch operation {
 	case "create_project",
@@ -240,6 +266,24 @@ func documentsRoute(operation string) bool {
 		"get_discussion_thread",
 		"create_discussion_comment",
 		"update_discussion_thread":
+		return true
+	default:
+		return false
+	}
+}
+
+func reviewRoute(operation string) bool {
+	switch operation {
+	case "create_review_round",
+		"list_review_rounds",
+		"list_review_findings",
+		"request_review",
+		"post_review_findings",
+		"split_review_findings_to_follow_up",
+		"create_review_finding",
+		"set_review_verdict",
+		"respond_to_review_finding",
+		"set_review_finding_status":
 		return true
 	default:
 		return false

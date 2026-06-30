@@ -568,6 +568,138 @@ func TestClientCallsDocumentsRESTSearchDocumentsQuery(t *testing.T) {
 	}
 }
 
+func TestClientCallsReviewRESTCreateRoundTaskScoped(t *testing.T) {
+	var sawPath string
+	var sawBody reviewRoundBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.Path
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":7,"project_id":"den-services","task_id":3726,"round_number":1}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("review", server.URL), reviewRouteForTest("create_review_round", http.MethodPost, "/v1/tasks/{task_id}/review/rounds"), ToolCall{
+		ToolName:  "create_review_round",
+		Operation: "create_review_round",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"task_id":3726,"requested_by":"codex","branch":"task/3726","base_branch":"main","base_commit":"base","head_commit":"head","tests_run":"[\"go test ./...\"]"}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawPath != "/v1/tasks/3726/review/rounds" {
+		t.Fatalf("path = %q, want task-scoped route", sawPath)
+	}
+	if sawBody.RequestedBy != "codex" || len(sawBody.TestsRun) != 1 || sawBody.TestsRun[0] != "go test ./..." {
+		t.Fatalf("body = %#v", sawBody)
+	}
+}
+
+func TestClientCallsReviewRESTListFindingsWithFilters(t *testing.T) {
+	var sawRawQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/tasks/3726/review/findings" {
+			t.Fatalf("request = %s %s, want GET /v1/tasks/3726/review/findings", r.Method, r.URL.Path)
+		}
+		sawRawQuery = r.URL.RawQuery
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("review", server.URL), reviewRouteForTest("list_review_findings", http.MethodGet, "/v1/tasks/{task_id}/review/findings"), ToolCall{
+		ToolName:  "list_review_findings",
+		Operation: "list_review_findings",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"task_id":3726,"review_round_id":7,"status":"open,claimed_fixed","resolved":false}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	for _, want := range []string{"review_round_id=7", "status=open%2Cclaimed_fixed", "resolved=false"} {
+		if !strings.Contains(sawRawQuery, want) {
+			t.Fatalf("RawQuery = %q, missing %s", sawRawQuery, want)
+		}
+	}
+}
+
+func TestClientCallsReviewRESTFindingPathAndPayload(t *testing.T) {
+	var sawPath string
+	var sawBody respondReviewFindingBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		_, _ = w.Write([]byte(`{"id":33,"status":"claimed_fixed"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("review", server.URL), reviewRouteForTest("respond_to_review_finding", http.MethodPost, "/v1/review/findings/{finding_id}/response"), ToolCall{
+		ToolName:  "respond_to_review_finding",
+		Operation: "respond_to_review_finding",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"review_finding_id":33,"responded_by":"codex","response_notes":"fixed","status":"claimed_fixed"}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawPath != "/v1/review/findings/33/response" {
+		t.Fatalf("path = %q, want finding id path", sawPath)
+	}
+	if sawBody.RespondedBy != "codex" || sawBody.Status != "claimed_fixed" {
+		t.Fatalf("body = %#v", sawBody)
+	}
+}
+
+func TestClientCallsReviewRESTSplitFindingsLists(t *testing.T) {
+	var sawBody splitReviewFindingsBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/projects/den-services/tasks/3726/review/findings/split-follow-up" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		_, _ = w.Write([]byte(`{"follow_up_task_id":3900}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("review", server.URL), reviewRouteForTest("split_review_findings_to_follow_up", http.MethodPost, "/v1/projects/{project_id}/tasks/{task_id}/review/findings/split-follow-up"), ToolCall{
+		ToolName:  "split_review_findings_to_follow_up",
+		Operation: "split_review_findings_to_follow_up",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"project_id":"den-services","task_id":3726,"finding_ids":"[33,34]","split_by":"codex","follow_up_tags":"review,followup"}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if len(sawBody.FindingIDs) != 2 || sawBody.FindingIDs[1] != 34 || len(sawBody.FollowUpTags) != 2 {
+		t.Fatalf("body = %#v", sawBody)
+	}
+}
+
 func TestFailureTextIncludesToolCircuitAndStatus(t *testing.T) {
 	statusCode := http.StatusBadGateway
 	failure := Failure{
@@ -629,6 +761,17 @@ func documentsRouteForTest(operation string, method string, path string) Route {
 		Method:          method,
 		Path:            path,
 		RequestAdapter:  RequestAdapterMCPDocumentsREST,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}
+}
+
+func reviewRouteForTest(operation string, method string, path string) Route {
+	return Route{
+		Operation:       operation,
+		Backend:         "review",
+		Method:          method,
+		Path:            path,
+		RequestAdapter:  RequestAdapterMCPReviewREST,
 		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
 	}
 }

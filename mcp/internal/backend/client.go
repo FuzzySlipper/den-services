@@ -79,6 +79,8 @@ func (c *Client) Call(ctx context.Context, backend config.BackendConfig, route R
 		return c.callMessagesREST(ctx, backend, route, call)
 	case route.RequestAdapter == RequestAdapterMCPDocumentsREST && route.ResponseAdapter == ResponseAdapterMCPToolResultJSON:
 		return c.callDocumentsREST(ctx, backend, route, call)
+	case route.RequestAdapter == RequestAdapterMCPReviewREST && route.ResponseAdapter == ResponseAdapterMCPToolResultJSON:
+		return c.callReviewREST(ctx, backend, route, call)
 	default:
 		return Result{}, nil, fmt.Errorf("%w: %s/%s", ErrUnsupportedAdapter, route.RequestAdapter, route.ResponseAdapter)
 	}

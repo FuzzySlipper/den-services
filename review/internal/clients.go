@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -86,19 +87,41 @@ func (c *HTTPTaskClient) GetTaskContext(ctx context.Context, projectID string, t
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return TaskContext{}, fmt.Errorf("task context lookup failed: %s", errorMessage(resp))
 	}
-	var envelope struct {
-		Task TaskContext `json:"task"`
-		TaskContext
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
-		return TaskContext{}, fmt.Errorf("decoding task context: %w", err)
-	}
-	task := envelope.Task
-	if task.ID == 0 {
-		task = envelope.TaskContext
+	task, err := decodeTaskContext(resp.Body)
+	if err != nil {
+		return TaskContext{}, err
 	}
 	if task.ProjectID != projectID {
 		return TaskContext{}, validationError(fmt.Errorf("task %d is not in project %s", taskID, projectID), "project_mismatch", "task_id", "common.task_id")
+	}
+	return task, nil
+}
+
+func (c *HTTPTaskClient) GetTask(ctx context.Context, taskID int64) (TaskContext, error) {
+	if c.baseURL == "" {
+		return TaskContext{}, NewServiceError(ErrTaskClientUnset, "task_client_unconfigured", http.StatusInternalServerError)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/v1/tasks/%d", c.baseURL, taskID), nil)
+	if err != nil {
+		return TaskContext{}, fmt.Errorf("building task lookup request: %w", err)
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return TaskContext{}, fmt.Errorf("getting task: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return TaskContext{}, validationError(fmt.Errorf("task not found: %d", taskID), "task_not_found", "task_id", "common.task_id")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return TaskContext{}, fmt.Errorf("task lookup failed: %s", errorMessage(resp))
+	}
+	task, err := decodeTaskContext(resp.Body)
+	if err != nil {
+		return TaskContext{}, err
 	}
 	return task, nil
 }
@@ -131,6 +154,21 @@ func (c *HTTPTaskClient) CreateFollowUpTask(ctx context.Context, projectID strin
 	var task CreatedTask
 	if err := json.NewDecoder(resp.Body).Decode(&task); err != nil {
 		return CreatedTask{}, fmt.Errorf("decoding follow-up task: %w", err)
+	}
+	return task, nil
+}
+
+func decodeTaskContext(body io.Reader) (TaskContext, error) {
+	var envelope struct {
+		Task TaskContext `json:"task"`
+		TaskContext
+	}
+	if err := json.NewDecoder(body).Decode(&envelope); err != nil {
+		return TaskContext{}, fmt.Errorf("decoding task context: %w", err)
+	}
+	task := envelope.Task
+	if task.ID == 0 {
+		task = envelope.TaskContext
 	}
 	return task, nil
 }
