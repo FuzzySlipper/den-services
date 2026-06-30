@@ -2,6 +2,7 @@ package documents
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -285,9 +286,11 @@ type scanner interface {
 func scanDocument(row scanner) (*Document, error) {
 	var params NewDocumentParams
 	var tags []byte
-	if err := row.Scan(&params.ID, &params.ProjectID, &params.Slug, &params.Title, &params.Content, &params.DocType, &params.Visibility, &tags, &params.Summary, &params.CreatedAt, &params.UpdatedAt); err != nil {
+	var summary sql.NullString
+	if err := row.Scan(&params.ID, &params.ProjectID, &params.Slug, &params.Title, &params.Content, &params.DocType, &params.Visibility, &tags, &summary, &params.CreatedAt, &params.UpdatedAt); err != nil {
 		return nil, err
 	}
+	params.Summary = nullableString(summary)
 	if len(tags) > 0 {
 		if err := json.Unmarshal(tags, &params.Tags); err != nil {
 			return nil, fmt.Errorf("decoding document tags: %w", err)
@@ -299,9 +302,11 @@ func scanDocument(row scanner) (*Document, error) {
 func scanDocumentSummary(row scanner) (DocumentSummary, error) {
 	var summary DocumentSummary
 	var tags []byte
-	if err := row.Scan(&summary.ID, &summary.ProjectID, &summary.Slug, &summary.Title, &summary.DocType, &summary.Visibility, &tags, &summary.Summary, &summary.UpdatedAt); err != nil {
+	var summaryText sql.NullString
+	if err := row.Scan(&summary.ID, &summary.ProjectID, &summary.Slug, &summary.Title, &summary.DocType, &summary.Visibility, &tags, &summaryText, &summary.UpdatedAt); err != nil {
 		return DocumentSummary{}, fmt.Errorf("scanning document summary: %w", err)
 	}
+	summary.Summary = nullableString(summaryText)
 	if len(tags) > 0 {
 		if err := json.Unmarshal(tags, &summary.Tags); err != nil {
 			return DocumentSummary{}, fmt.Errorf("decoding document summary tags: %w", err)
@@ -313,11 +318,45 @@ func scanDocumentSummary(row scanner) (DocumentSummary, error) {
 func scanThread(row scanner) (*DiscussionThread, error) {
 	var thread DiscussionThread
 	var metadata []byte
-	if err := row.Scan(&thread.ID, &thread.TargetType, &thread.TargetProjectID, &thread.TargetID, &thread.TargetSlug, &thread.TargetAnchor, &thread.ThreadKey, &thread.Title, &thread.Status, &thread.CreatedBy, &thread.Summary, &thread.ResolutionSummary, &metadata, &thread.LastCommentAt, &thread.CreatedAt, &thread.UpdatedAt); err != nil {
+	var targetProjectID sql.NullString
+	var targetSlug sql.NullString
+	var targetAnchor sql.NullString
+	var summary sql.NullString
+	var resolutionSummary sql.NullString
+	if err := row.Scan(
+		&thread.ID,
+		&thread.TargetType,
+		&targetProjectID,
+		&thread.TargetID,
+		&targetSlug,
+		&targetAnchor,
+		&thread.ThreadKey,
+		&thread.Title,
+		&thread.Status,
+		&thread.CreatedBy,
+		&summary,
+		&resolutionSummary,
+		&metadata,
+		&thread.LastCommentAt,
+		&thread.CreatedAt,
+		&thread.UpdatedAt,
+	); err != nil {
 		return nil, err
 	}
+	thread.TargetProjectID = nullableString(targetProjectID)
+	thread.TargetSlug = nullableString(targetSlug)
+	thread.TargetAnchor = nullableString(targetAnchor)
+	thread.Summary = nullableString(summary)
+	thread.ResolutionSummary = nullableString(resolutionSummary)
 	thread.MetadataJSON = cloneBytes(metadata)
 	return &thread, nil
+}
+
+func nullableString(value sql.NullString) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.String
 }
 
 func scanComment(row scanner) (*DiscussionComment, error) {
@@ -359,9 +398,11 @@ func emptyToNil(value string) any {
 	return value
 }
 
-const documentColumns = `id, project_id, slug, title, content, doc_type, visibility, tags, summary, created_at, updated_at`
-const threadColumns = `id, target_type, target_project_id, target_id, target_slug, target_anchor, thread_key, title, status, created_by, summary, resolution_summary, metadata_json, last_comment_at, created_at, updated_at`
-const commentColumns = `id, thread_id, parent_comment_id, author_identity, body_markdown, comment_kind, status, mentions_json, source_refs_json, metadata_json, created_at, edited_at, updated_at`
+const (
+	documentColumns = `id, project_id, slug, title, content, doc_type, visibility, tags, summary, created_at, updated_at`
+	threadColumns   = `id, target_type, target_project_id, target_id, target_slug, target_anchor, thread_key, title, status, created_by, summary, resolution_summary, metadata_json, last_comment_at, created_at, updated_at`
+	commentColumns  = `id, thread_id, parent_comment_id, author_identity, body_markdown, comment_kind, status, mentions_json, source_refs_json, metadata_json, created_at, edited_at, updated_at`
+)
 
 const headlineOptions = `StartSel=<b>, StopSel=</b>, MaxWords=32, MinWords=8, ShortWord=3, HighlightAll=false, MaxFragments=2, FragmentDelimiter=...`
 
