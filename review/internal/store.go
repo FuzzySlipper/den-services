@@ -396,22 +396,76 @@ func emptyToNil(value string) any {
 	return value
 }
 
-const roundColumns = `id, project_id, task_id, round_number, requested_by, branch, base_branch, base_commit, head_commit, coalesce(last_reviewed_head_commit, ''), commits_since_last_review, coalesce(tests_run, '[]'::jsonb), coalesce(notes, ''), coalesce(preferred_diff_base_ref, ''), coalesce(preferred_diff_base_commit, ''), coalesce(preferred_diff_head_ref, ''), coalesce(preferred_diff_head_commit, ''), coalesce(alternate_diff_base_ref, ''), coalesce(alternate_diff_base_commit, ''), coalesce(alternate_diff_head_ref, ''), coalesce(alternate_diff_head_commit, ''), coalesce(delta_base_commit, ''), inherited_commit_count, task_local_commit_count, coalesce(verdict, ''), coalesce(verdict_by, ''), coalesce(verdict_notes, ''), requested_at, verdict_at, created_at, updated_at`
-const findingColumns = `f.id, f.project_id, f.finding_key, f.task_id, f.review_round_id, r.round_number, f.finding_number, f.created_by, f.category, f.summary, coalesce(f.notes, ''), coalesce(f.file_references, '[]'::jsonb), coalesce(f.test_commands, '[]'::jsonb), f.status, coalesce(f.status_updated_by, ''), coalesce(f.status_notes, ''), f.status_updated_at, coalesce(f.response_by, ''), coalesce(f.response_notes, ''), f.response_at, f.follow_up_task_id, coalesce(f.run_id, ''), coalesce(f.subagent_role, ''), f.created_at, f.updated_at`
-const packetColumns = `id, project_id, task_id, review_round_id, packet_kind, sender, message_id, front_matter, typed_envelope, markdown_body, source_markdown, validation_status, coalesce(validation_errors, '[]'::jsonb), coalesce(idempotency_key, ''), created_at, accepted_at`
+const (
+	roundColumns   = `id, project_id, task_id, round_number, requested_by, branch, base_branch, base_commit, head_commit, coalesce(last_reviewed_head_commit, ''), commits_since_last_review, coalesce(tests_run, '[]'::jsonb), coalesce(notes, ''), coalesce(preferred_diff_base_ref, ''), coalesce(preferred_diff_base_commit, ''), coalesce(preferred_diff_head_ref, ''), coalesce(preferred_diff_head_commit, ''), coalesce(alternate_diff_base_ref, ''), coalesce(alternate_diff_base_commit, ''), coalesce(alternate_diff_head_ref, ''), coalesce(alternate_diff_head_commit, ''), coalesce(delta_base_commit, ''), inherited_commit_count, task_local_commit_count, coalesce(verdict, ''), coalesce(verdict_by, ''), coalesce(verdict_notes, ''), requested_at, verdict_at, created_at, updated_at`
+	findingColumns = `f.id, f.project_id, f.finding_key, f.task_id, f.review_round_id, r.round_number, f.finding_number, f.created_by, f.category, f.summary, coalesce(f.notes, ''), coalesce(f.file_references, '[]'::jsonb), coalesce(f.test_commands, '[]'::jsonb), f.status, coalesce(f.status_updated_by, ''), coalesce(f.status_notes, ''), f.status_updated_at, coalesce(f.response_by, ''), coalesce(f.response_notes, ''), f.response_at, f.follow_up_task_id, coalesce(f.run_id, ''), coalesce(f.subagent_role, ''), f.created_at, f.updated_at`
+	packetColumns  = `id, project_id, task_id, review_round_id, packet_kind, sender, message_id, front_matter, typed_envelope, markdown_body, source_markdown, validation_status, coalesce(validation_errors, '[]'::jsonb), coalesce(idempotency_key, ''), created_at, accepted_at`
+)
 
-const latestRoundSQL = `select round_number, head_commit from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number desc limit 1`
-const createRoundSQL = `insert into den_review.review_rounds(project_id, task_id, round_number, requested_by, branch, base_branch, base_commit, head_commit, last_reviewed_head_commit, commits_since_last_review, tests_run, notes, preferred_diff_base_ref, preferred_diff_base_commit, preferred_diff_head_ref, preferred_diff_head_commit, alternate_diff_base_ref, alternate_diff_base_commit, alternate_diff_head_ref, alternate_diff_head_commit, delta_base_commit, inherited_commit_count, task_local_commit_count, requested_at, created_at, updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) returning ` + roundColumns
-const listRoundsSQL = `select ` + roundColumns + ` from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number asc`
-const getRoundSQL = `select ` + roundColumns + ` from den_review.review_rounds where id = $1`
-const setVerdictSQL = `update den_review.review_rounds set verdict = $2, verdict_by = $3, verdict_notes = $4, verdict_at = $5, updated_at = $6 where id = $1 returning ` + roundColumns
-const nextFindingNumberSQL = `select coalesce(max(finding_number), 0) + 1 from den_review.review_findings where project_id = $1 and task_id = $2`
-const createFindingSQL = `insert into den_review.review_findings(project_id, finding_key, task_id, review_round_id, finding_number, created_by, category, summary, notes, file_references, test_commands, status, run_id, subagent_role, created_at, updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) returning ` + findingColumns
-const listFindingsSQL = `select ` + findingColumns + ` from den_review.review_findings f join den_review.review_rounds r on r.id = f.review_round_id where f.project_id = $1 and f.task_id = $2 and ($3::bigint is null or f.review_round_id = $3) and (coalesce(cardinality($4::text[]), 0) = 0 or f.status = any($4)) and ($5::bool is null or ($5 = true and f.status in ('verified_fixed','superseded','split_to_follow_up')) or ($5 = false and f.status not in ('verified_fixed','superseded','split_to_follow_up'))) order by f.finding_number asc`
-const getFindingSQL = `select ` + findingColumns + ` from den_review.review_findings f join den_review.review_rounds r on r.id = f.review_round_id where f.id = $1`
-const respondFindingSQL = `update den_review.review_findings set response_by = $2, response_notes = $3, response_at = $9, status = coalesce($4, status), status_updated_by = case when $4::text is null then status_updated_by else $2 end, status_notes = case when $4::text is null then status_notes else $5 end, status_updated_at = case when $4::text is null then status_updated_at else $9 end, follow_up_task_id = case when $4 = 'split_to_follow_up' then $6 when $4::text is null then follow_up_task_id else null end, run_id = coalesce($7, run_id), subagent_role = coalesce($8, subagent_role), updated_at = $9 where id = $1 returning ` + findingColumns
-const setFindingStatusSQL = `update den_review.review_findings set status = $2, status_updated_by = $3, status_notes = $4, status_updated_at = $8, follow_up_task_id = case when $2 = 'split_to_follow_up' then $5 else null end, run_id = coalesce($6, run_id), subagent_role = coalesce($7, subagent_role), updated_at = $8 where id = $1 returning ` + findingColumns
-const insertFindingEventSQL = `insert into den_review.review_finding_events(project_id, task_id, review_round_id, review_finding_id, event_kind, actor, old_status, new_status, notes, response_notes, follow_up_task_id, run_id, subagent_role, created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`
-const storePacketSQL = `insert into den_review.review_packets(project_id, task_id, review_round_id, packet_kind, sender, message_id, front_matter, typed_envelope, markdown_body, source_markdown, validation_status, validation_errors, idempotency_key, created_at, accepted_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) on conflict(project_id, idempotency_key) do update set message_id = excluded.message_id, front_matter = excluded.front_matter, typed_envelope = excluded.typed_envelope, markdown_body = excluded.markdown_body, source_markdown = excluded.source_markdown, validation_status = excluded.validation_status, validation_errors = excluded.validation_errors, accepted_at = excluded.accepted_at returning ` + packetColumns
-const getPacketSQL = `select ` + packetColumns + ` from den_review.review_packets where id = $1`
-const getPacketByIdempotencySQL = `select ` + packetColumns + ` from den_review.review_packets where project_id = $1 and idempotency_key = $2`
+const (
+	latestRoundSQL       = `select round_number, head_commit from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number desc limit 1`
+	createRoundSQL       = `insert into den_review.review_rounds(project_id, task_id, round_number, requested_by, branch, base_branch, base_commit, head_commit, last_reviewed_head_commit, commits_since_last_review, tests_run, notes, preferred_diff_base_ref, preferred_diff_base_commit, preferred_diff_head_ref, preferred_diff_head_commit, alternate_diff_base_ref, alternate_diff_base_commit, alternate_diff_head_ref, alternate_diff_head_commit, delta_base_commit, inherited_commit_count, task_local_commit_count, requested_at, created_at, updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) returning ` + roundColumns
+	listRoundsSQL        = `select ` + roundColumns + ` from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number asc`
+	getRoundSQL          = `select ` + roundColumns + ` from den_review.review_rounds where id = $1`
+	setVerdictSQL        = `update den_review.review_rounds set verdict = $2, verdict_by = $3, verdict_notes = $4, verdict_at = $5, updated_at = $6 where id = $1 returning ` + roundColumns
+	nextFindingNumberSQL = `select coalesce(max(finding_number), 0) + 1 from den_review.review_findings where project_id = $1 and task_id = $2`
+	createFindingSQL     = `
+with inserted as (
+	insert into den_review.review_findings(project_id, finding_key, task_id, review_round_id, finding_number, created_by, category, summary, notes, file_references, test_commands, status, run_id, subagent_role, created_at, updated_at)
+	values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+	returning *
+)
+select ` + findingColumns + `
+from inserted f
+join den_review.review_rounds r on r.id = f.review_round_id`
+)
+
+const (
+	listFindingsSQL   = `select ` + findingColumns + ` from den_review.review_findings f join den_review.review_rounds r on r.id = f.review_round_id where f.project_id = $1 and f.task_id = $2 and ($3::bigint is null or f.review_round_id = $3) and (coalesce(cardinality($4::text[]), 0) = 0 or f.status = any($4)) and ($5::bool is null or ($5 = true and f.status in ('verified_fixed','superseded','split_to_follow_up')) or ($5 = false and f.status not in ('verified_fixed','superseded','split_to_follow_up'))) order by f.finding_number asc`
+	getFindingSQL     = `select ` + findingColumns + ` from den_review.review_findings f join den_review.review_rounds r on r.id = f.review_round_id where f.id = $1`
+	respondFindingSQL = `
+with updated as (
+	update den_review.review_findings
+	set response_by = $2,
+	    response_notes = $3,
+	    response_at = $9,
+	    status = coalesce($4, status),
+	    status_updated_by = case when $4::text is null then status_updated_by else $2 end,
+	    status_notes = case when $4::text is null then status_notes else $5 end,
+	    status_updated_at = case when $4::text is null then status_updated_at else $9 end,
+	    follow_up_task_id = case when $4 = 'split_to_follow_up' then $6::bigint when $4::text is null then follow_up_task_id else null::bigint end,
+	    run_id = coalesce($7, run_id),
+	    subagent_role = coalesce($8, subagent_role),
+	    updated_at = $9
+	where id = $1
+	returning *
+)
+select ` + findingColumns + `
+from updated f
+join den_review.review_rounds r on r.id = f.review_round_id`
+)
+
+const setFindingStatusSQL = `
+with updated as (
+	update den_review.review_findings
+	set status = $2,
+	    status_updated_by = $3,
+	    status_notes = $4,
+	    status_updated_at = $8,
+	    follow_up_task_id = case when $2 = 'split_to_follow_up' then $5::bigint else null::bigint end,
+	    run_id = coalesce($6, run_id),
+	    subagent_role = coalesce($7, subagent_role),
+	    updated_at = $8
+	where id = $1
+	returning *
+)
+select ` + findingColumns + `
+from updated f
+join den_review.review_rounds r on r.id = f.review_round_id`
+
+const (
+	insertFindingEventSQL     = `insert into den_review.review_finding_events(project_id, task_id, review_round_id, review_finding_id, event_kind, actor, old_status, new_status, notes, response_notes, follow_up_task_id, run_id, subagent_role, created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`
+	storePacketSQL            = `insert into den_review.review_packets(project_id, task_id, review_round_id, packet_kind, sender, message_id, front_matter, typed_envelope, markdown_body, source_markdown, validation_status, validation_errors, idempotency_key, created_at, accepted_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) on conflict(project_id, idempotency_key) do update set message_id = excluded.message_id, front_matter = excluded.front_matter, typed_envelope = excluded.typed_envelope, markdown_body = excluded.markdown_body, source_markdown = excluded.source_markdown, validation_status = excluded.validation_status, validation_errors = excluded.validation_errors, accepted_at = excluded.accepted_at returning ` + packetColumns
+	getPacketSQL              = `select ` + packetColumns + ` from den_review.review_packets where id = $1`
+	getPacketByIdempotencySQL = `select ` + packetColumns + ` from den_review.review_packets where project_id = $1 and idempotency_key = $2`
+)
