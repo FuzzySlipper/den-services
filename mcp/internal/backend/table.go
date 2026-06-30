@@ -100,19 +100,36 @@ func validateRoute(route Route) error {
 	if route.Method == "" {
 		return fmt.Errorf("route %s method is required", route.Operation)
 	}
-	if route.Method != http.MethodPost {
+	if !supportedMethod(route.Method) {
 		return fmt.Errorf("route %s method %s is not supported", route.Operation, route.Method)
 	}
 	if route.Path == "" {
 		return fmt.Errorf("route %s path is required", route.Operation)
 	}
-	if route.RequestAdapter != RequestAdapterMCPToolsCall {
-		return fmt.Errorf("%w: %s", ErrUnsupportedAdapter, route.RequestAdapter)
-	}
-	if route.ResponseAdapter != ResponseAdapterMCPJSONRPC {
-		return fmt.Errorf("%w: %s", ErrUnsupportedAdapter, route.ResponseAdapter)
+	if !supportedAdapterPair(route.RequestAdapter, route.ResponseAdapter) {
+		return fmt.Errorf("%w: %s/%s", ErrUnsupportedAdapter, route.RequestAdapter, route.ResponseAdapter)
 	}
 	return nil
+}
+
+func supportedMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodPatch, http.MethodPost:
+		return true
+	default:
+		return false
+	}
+}
+
+func supportedAdapterPair(requestAdapter string, responseAdapter string) bool {
+	switch {
+	case requestAdapter == RequestAdapterMCPToolsCall && responseAdapter == ResponseAdapterMCPJSONRPC:
+		return true
+	case requestAdapter == RequestAdapterMCPProjectsREST && responseAdapter == ResponseAdapterMCPToolResultJSON:
+		return true
+	default:
+		return false
+	}
 }
 
 func cleanPath(path string) string {

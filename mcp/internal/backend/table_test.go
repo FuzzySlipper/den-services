@@ -65,9 +65,51 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 		if route.Operation != tool.Name {
 			t.Fatalf("route %s operation = %q, want %q", tool.Name, route.Operation, tool.Name)
 		}
-		if route.Backend != "den-core" {
-			t.Fatalf("route %s backend = %q, want den-core", tool.Name, route.Backend)
+		wantBackend := "den-core"
+		if projectsSafeSubsetRoute(tool.Name) {
+			wantBackend = "projects"
 		}
+		if route.Backend != wantBackend {
+			t.Fatalf("route %s backend = %q, want %s", tool.Name, route.Backend, wantBackend)
+		}
+	}
+}
+
+func TestRouteTableAllowsProjectsRESTAdapter(t *testing.T) {
+	route := Route{
+		Operation:       "list_projects",
+		Backend:         "projects",
+		Method:          "GET",
+		Path:            "/v1/projects",
+		RequestAdapter:  RequestAdapterMCPProjectsREST,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}
+
+	table, err := NewRouteTable([]Route{route})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	resolved, err := table.Resolve("list_projects")
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Method != "GET" {
+		t.Fatalf("Method = %q, want GET", resolved.Method)
+	}
+}
+
+func projectsSafeSubsetRoute(operation string) bool {
+	switch operation {
+	case "create_project",
+		"list_projects",
+		"update_project",
+		"create_space",
+		"list_spaces",
+		"update_space_visibility",
+		"archive_space":
+		return true
+	default:
+		return false
 	}
 }
 

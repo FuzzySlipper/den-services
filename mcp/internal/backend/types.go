@@ -7,10 +7,12 @@ import (
 )
 
 const (
-	RequestAdapterMCPToolsCall       = "mcp_tools_call"
-	ResponseAdapterMCPJSONRPC        = "mcp_jsonrpc_result"
-	StateReady                 State = "ready"
-	StateUnavailable           State = "unavailable"
+	RequestAdapterMCPToolsCall             = "mcp_tools_call"
+	RequestAdapterMCPProjectsREST          = "mcp_projects_rest"
+	ResponseAdapterMCPJSONRPC              = "mcp_jsonrpc_result"
+	ResponseAdapterMCPToolResultJSON       = "mcp_tool_result_json"
+	StateReady                       State = "ready"
+	StateUnavailable                 State = "unavailable"
 )
 
 type State string

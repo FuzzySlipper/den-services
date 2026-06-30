@@ -68,9 +68,17 @@ func NewClient(httpClient *http.Client) *Client {
 }
 
 func (c *Client) Call(ctx context.Context, backend config.BackendConfig, route Route, call ToolCall) (Result, *Failure, error) {
-	if route.RequestAdapter != RequestAdapterMCPToolsCall || route.ResponseAdapter != ResponseAdapterMCPJSONRPC {
+	switch {
+	case route.RequestAdapter == RequestAdapterMCPToolsCall && route.ResponseAdapter == ResponseAdapterMCPJSONRPC:
+		return c.callMCPTool(ctx, backend, route, call)
+	case route.RequestAdapter == RequestAdapterMCPProjectsREST && route.ResponseAdapter == ResponseAdapterMCPToolResultJSON:
+		return c.callProjectsREST(ctx, backend, route, call)
+	default:
 		return Result{}, nil, fmt.Errorf("%w: %s/%s", ErrUnsupportedAdapter, route.RequestAdapter, route.ResponseAdapter)
 	}
+}
+
+func (c *Client) callMCPTool(ctx context.Context, backend config.BackendConfig, route Route, call ToolCall) (Result, *Failure, error) {
 	body, err := buildMCPToolCall(call)
 	if err != nil {
 		return Result{}, nil, err

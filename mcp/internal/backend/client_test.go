@@ -125,6 +125,120 @@ func TestClientNegotiatesStreamableMCPSessionOnDemand(t *testing.T) {
 	}
 }
 
+func TestClientCallsProjectsRESTCreateProject(t *testing.T) {
+	var sawToken string
+	var sawPath string
+	var sawMethod string
+	var sawBody createProjectBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawToken = r.Header.Get("Authorization")
+		sawPath = r.URL.Path
+		sawMethod = r.Method
+		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"project-a","name":"Project A","kind":"project","visibility":"normal","writable":true}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	backendConfig := testBackend("projects", server.URL)
+	backendConfig.ServiceToken = "projects-token"
+	result, failure, err := client.Call(context.Background(), backendConfig, projectsRoute("create_project", http.MethodPost, "/v1/projects"), ToolCall{
+		ToolName:  "create_project",
+		Operation: "create_project",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"id":"project-a","name":"Project A","root_path":"/tmp/project-a"}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawToken != "Bearer projects-token" {
+		t.Fatalf("Authorization = %q, want Bearer projects-token", sawToken)
+	}
+	if sawMethod != http.MethodPost || sawPath != "/v1/projects" {
+		t.Fatalf("request = %s %s, want POST /v1/projects", sawMethod, sawPath)
+	}
+	if sawBody.ID != "project-a" || sawBody.Name != "Project A" || sawBody.RootPath != "/tmp/project-a" {
+		t.Fatalf("body = %#v", sawBody)
+	}
+	if !strings.Contains(string(result.Value), `"structuredContent":{"id":"project-a"`) {
+		t.Fatalf("result = %s", result.Value)
+	}
+}
+
+func TestClientCallsProjectsRESTListSpacesWithQuery(t *testing.T) {
+	var sawRawQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/spaces" {
+			t.Fatalf("request = %s %s, want GET /v1/spaces", r.Method, r.URL.Path)
+		}
+		sawRawQuery = r.URL.RawQuery
+		_, _ = w.Write([]byte(`[{"id":"assistant-a","name":"Assistant A","kind":"assistant","visibility":"hidden","writable":true}]`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	result, failure, err := client.Call(context.Background(), testBackend("projects", server.URL), projectsRoute("list_spaces", http.MethodGet, "/v1/spaces"), ToolCall{
+		ToolName:  "list_spaces",
+		Operation: "list_spaces",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"kind":"assistant","include_hidden":true,"include_archived":true}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	for _, want := range []string{"kind=assistant", "include_hidden=true", "include_archived=true"} {
+		if !strings.Contains(sawRawQuery, want) {
+			t.Fatalf("RawQuery = %q, missing %s", sawRawQuery, want)
+		}
+	}
+	if !strings.Contains(string(result.Value), `"structuredContent":[{"id":"assistant-a"`) {
+		t.Fatalf("result = %s", result.Value)
+	}
+}
+
+func TestClientCallsProjectsRESTUpdateProjectPathParameter(t *testing.T) {
+	var sawPath string
+	var sawBody updateProjectBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.EscapedPath()
+		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		_, _ = w.Write([]byte(`{"id":"project/a","name":"Renamed","kind":"project","visibility":"normal","writable":true}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("projects", server.URL), projectsRoute("update_project", http.MethodPatch, "/v1/projects/{project_id}"), ToolCall{
+		ToolName:  "update_project",
+		Operation: "update_project",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"project_id":"project/a","name":"Renamed"}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawPath != "/v1/projects/project%2Fa" {
+		t.Fatalf("path = %q, want escaped project id", sawPath)
+	}
+	if sawBody.Name == nil || *sawBody.Name != "Renamed" {
+		t.Fatalf("body = %#v", sawBody)
+	}
+}
+
 func TestFailureTextIncludesToolCircuitAndStatus(t *testing.T) {
 	statusCode := http.StatusBadGateway
 	failure := Failure{
@@ -143,5 +257,16 @@ func TestFailureTextIncludesToolCircuitAndStatus(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("Failure.Text() = %s, missing %s", text, want)
 		}
+	}
+}
+
+func projectsRoute(operation string, method string, path string) Route {
+	return Route{
+		Operation:       operation,
+		Backend:         "projects",
+		Method:          method,
+		Path:            path,
+		RequestAdapter:  RequestAdapterMCPProjectsREST,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
 	}
 }
