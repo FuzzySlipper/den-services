@@ -22,9 +22,11 @@ Expected output contains these checkpoints:
 
 ```text
 ok: local initialize
-ok: local tools/list returned 136 tools
+ok: local tools/list returned 61 tools
 ok: local read tool proxied through backend
 ok: local non-representative tool proxied through backend
+ok: local get_agent_guidance returned MCP-compatible successor shape
+ok: local list_agent_guidance_entries returned MCP-compatible array shape
 ok: local write tool proxied through backend and restored disposable state
 ok: mcp /health stayed healthy during backend outage
 ok: tools/list remained identical while backend was unavailable

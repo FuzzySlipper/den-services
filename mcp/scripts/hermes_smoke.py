@@ -18,7 +18,6 @@ import socket
 import subprocess
 import sys
 import tempfile
-import textwrap
 import threading
 import time
 import urllib.error
@@ -28,9 +27,19 @@ from pathlib import Path
 from typing import Any
 
 
-EXPECTED_TOOL_COUNT = 136
+EXPECTED_TOOL_COUNT = 61
 MCP_PATH = "/mcp"
 DEN_CORE_TOKEN_ENV = "DEN_CORE_SERVICE_TOKEN"
+SMOKE_BACKENDS = (
+    ("den-core", DEN_CORE_TOKEN_ENV),
+    ("projects", "DEN_PROJECTS_SERVICE_TOKEN"),
+    ("tasks", "DEN_TASKS_SERVICE_TOKEN"),
+    ("messages", "DEN_MESSAGES_SERVICE_TOKEN"),
+    ("documents", "DEN_DOCUMENTS_SERVICE_TOKEN"),
+    ("review", "DEN_REVIEW_SERVICE_TOKEN"),
+    ("knowledge", "DEN_KNOWLEDGE_SERVICE_TOKEN"),
+    ("guidance", "DEN_GUIDANCE_SERVICE_TOKEN"),
+)
 
 
 class SmokeError(RuntimeError):
@@ -57,6 +66,21 @@ class FakeDenCore:
                 "tags": ["mcp", "smoke"],
             }
         }
+        self.guidance_entries: list[dict[str, Any]] = [
+            {
+                "id": 501,
+                "entry_id": 501,
+                "project_id": "den-services",
+                "document_project_id": "den-services",
+                "document_slug": "mcp-smoke-disposable",
+                "importance": "normal",
+                "audience": ["agent"],
+                "sort_order": 10,
+                "notes": "local smoke entry",
+                "created_at": "2026-07-01T00:00:00Z",
+                "updated_at": "2026-07-01T00:00:00Z",
+            }
+        ]
         self._server: ReusableHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
@@ -68,17 +92,11 @@ class FakeDenCore:
                 return
 
             def do_GET(self) -> None:  # noqa: N802
-                if self.path != "/health":
-                    self.send_error(404)
-                    return
-                self.send_response(200)
-                self.send_header("Content-Type", "text/plain")
-                self.end_headers()
-                self.wfile.write(b"fake_den_core_health_ok")
+                fake.handle_rest(self)
 
             def do_POST(self) -> None:  # noqa: N802
                 if self.path != MCP_PATH:
-                    self.send_error(404)
+                    fake.handle_rest(self)
                     return
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
@@ -96,6 +114,9 @@ class FakeDenCore:
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+
+            def do_DELETE(self) -> None:  # noqa: N802
+                fake.handle_rest(self)
 
         self._server = ReusableHTTPServer(("127.0.0.1", self.port), Handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
@@ -152,6 +173,102 @@ class FakeDenCore:
         self.documents[key] = document
         return tool_result("fake:store_document", {"document": document})
 
+    def handle_rest(self, handler: BaseHTTPRequestHandler) -> None:
+        path, _, raw_query = handler.path.partition("?")
+        try:
+            if path == "/health":
+                send_text(handler, 200, "fake_den_services_health_ok")
+                return
+            if handler.command == "GET" and path.startswith("/v1/tasks/"):
+                task_id = int(path.removeprefix("/v1/tasks/"))
+                send_json(handler, 200, {"id": task_id, "project_id": "den-services", "title": "Fake smoke task"})
+                return
+            if handler.command == "GET" and path in ("/v1/documents/search", "/v1/projects/den-services/documents/search"):
+                send_json(handler, 200, {"documents": list(self.documents.values()), "count": len(self.documents)})
+                return
+            if handler.command == "GET" and path.startswith("/v1/projects/") and path.endswith("/documents/mcp-smoke-disposable"):
+                project_id = path.split("/")[3]
+                document = self.documents.get((project_id, "mcp-smoke-disposable"))
+                if document is None:
+                    send_json(handler, 404, {"error": "not_found"})
+                    return
+                send_json(handler, 200, {"document": document})
+                return
+            if handler.command == "POST" and path.startswith("/v1/projects/") and path.endswith("/documents"):
+                project_id = path.split("/")[3]
+                payload = read_json_body(handler)
+                document = {
+                    "project_id": project_id,
+                    "slug": payload["slug"],
+                    "title": payload["title"],
+                    "content": payload.get("content", ""),
+                    "doc_type": payload.get("doc_type", "note"),
+                    "summary": payload.get("summary"),
+                    "tags": payload.get("tags"),
+                }
+                self.documents[(project_id, document["slug"])] = document
+                send_json(handler, 200, {"document": document})
+                return
+            if handler.command == "GET" and path == "/v1/projects/den-services/agent-guidance":
+                send_json(handler, 200, self.guidance_packet())
+                return
+            if handler.command == "GET" and path == "/v1/projects/den-services/agent-guidance/entries":
+                send_json(handler, 200, {"entries": self.guidance_entries, "count": len(self.guidance_entries)})
+                return
+            if handler.command == "POST" and path == "/v1/projects/den-services/agent-guidance/entries":
+                payload = read_json_body(handler)
+                entry = {
+                    "id": 502,
+                    "entry_id": 502,
+                    "project_id": "den-services",
+                    "document_project_id": payload.get("document_project_id", ""),
+                    "document_slug": payload.get("document_slug", ""),
+                    "importance": payload.get("importance", "normal"),
+                    "audience": payload.get("audience", []),
+                    "sort_order": payload.get("sort_order", 0),
+                    "notes": payload.get("notes", ""),
+                    "created_at": "2026-07-01T00:00:00Z",
+                    "updated_at": "2026-07-01T00:00:00Z",
+                }
+                self.guidance_entries.append(entry)
+                send_json(handler, 200, {"entry": entry})
+                return
+        except Exception as exc:  # pragma: no cover - diagnostic path
+            send_text(handler, 500, str(exc))
+            return
+        _ = raw_query
+        handler.send_error(404)
+
+    def guidance_packet(self) -> dict[str, Any]:
+        return {
+            "project_id": "den-services",
+            "resolved_at": "2026-07-01T00:00:00Z",
+            "content_markdown": "# Smoke Guidance\n\nUse the successor guidance service.",
+            "content_sha256": "fake-sha",
+            "content_bytes": 51,
+            "truncated": False,
+            "incomplete": False,
+            "sources": [
+                {
+                    "entry_id": 501,
+                    "source_scope": "den-services",
+                    "document_project_id": "den-services",
+                    "document_slug": "mcp-smoke-disposable",
+                    "document_title": "MCP Smoke Disposable",
+                    "document_type": "note",
+                    "document_updated_at": "2026-07-01T00:00:00Z",
+                    "visibility": "normal",
+                    "tags": ["mcp", "smoke"],
+                    "importance": "normal",
+                    "audience": ["agent"],
+                    "sort_order": 10,
+                    "notes": "local smoke entry",
+                    "content_bytes": 51,
+                }
+            ],
+            "skipped_sources": [],
+        }
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -198,6 +315,23 @@ def run_local_smoke(repo_root: Path, startup_timeout: float) -> None:
         search = tools_call(mcp_url, "search_documents", {"project_id": "den-services", "query": "mcp", "verbose": False})
         assert_tool_success(search, "local search_documents tool")
         print("ok: local non-representative tool proxied through backend")
+
+        guidance = tools_call(mcp_url, "get_agent_guidance", {"project_id": "den-services"})
+        assert_tool_success(guidance, "local get_agent_guidance tool")
+        guidance_payload = json_from_result(guidance, "get_agent_guidance")
+        if guidance_payload.get("content") != "# Smoke Guidance\n\nUse the successor guidance service.":
+            raise SmokeError("get_agent_guidance did not expose legacy top-level content")
+        guidance_sources = guidance_payload.get("sources") or []
+        if not guidance_sources or guidance_sources[0].get("scope_project_id") != "den-services":
+            raise SmokeError("get_agent_guidance did not expose legacy source aliases")
+        print("ok: local get_agent_guidance returned MCP-compatible successor shape")
+
+        guidance_entries = tools_call(mcp_url, "list_agent_guidance_entries", {"project_id": "den-services", "include_global": True})
+        assert_tool_success(guidance_entries, "local list_agent_guidance_entries tool")
+        entries_payload = json_from_result(guidance_entries, "list_agent_guidance_entries")
+        if not isinstance(entries_payload, list):
+            raise SmokeError("list_agent_guidance_entries did not return the legacy raw array shape")
+        print("ok: local list_agent_guidance_entries returned MCP-compatible array shape")
 
         original = tools_call(
             mcp_url,
@@ -299,31 +433,32 @@ def mcp_process(repo_root: Path, mcp_port: int, backend_url: str, startup_timeou
         routes_path = temp_path / "routes.yaml"
         config_path = temp_path / "config.yaml"
         routes_path.write_text((repo_root / "mcp" / "routes.example.yaml").read_text(encoding="utf-8"), encoding="utf-8")
-        config_path.write_text(
-            textwrap.dedent(
-                f"""
-                server:
-                  listen_addr: "127.0.0.1:{mcp_port}"
-                  mcp_endpoint_path: "{MCP_PATH}"
-                  read_header_timeout: "5s"
-
-                security:
-                  service_token_env: "DEN_MCP_SERVICE_TOKEN"
-                  allow_unauthenticated_local_dev: true
-
-                routes:
-                  table_path: "{routes_path}"
-
-                backends:
-                  - name: "den-core"
-                    base_url: "{backend_url}"
-                    health_path: "/health"
-                    timeout: "1s"
-                    service_token_env: "{DEN_CORE_TOKEN_ENV}"
-                """
-            ).lstrip(),
-            encoding="utf-8",
-        )
+        config_lines = [
+            "server:",
+            f'  listen_addr: "127.0.0.1:{mcp_port}"',
+            f'  mcp_endpoint_path: "{MCP_PATH}"',
+            '  read_header_timeout: "5s"',
+            "",
+            "security:",
+            '  service_token_env: "DEN_MCP_SERVICE_TOKEN"',
+            "  allow_unauthenticated_local_dev: true",
+            "",
+            "routes:",
+            f'  table_path: "{routes_path}"',
+            "",
+            "backends:",
+        ]
+        for name, token_env in SMOKE_BACKENDS:
+            config_lines.extend(
+                [
+                    f'  - name: "{name}"',
+                    f'    base_url: "{backend_url}"',
+                    '    health_path: "/health"',
+                    '    timeout: "1s"',
+                    f'    service_token_env: "{token_env}"',
+                ]
+            )
+        config_path.write_text("\n".join(config_lines) + "\n", encoding="utf-8")
         log_path = temp_path / "mcp.log"
         log_file = log_path.open("w", encoding="utf-8")
         env = os.environ.copy()
@@ -412,6 +547,18 @@ def document_from_result(result: dict[str, Any]) -> dict[str, Any]:
     raise SmokeError("could not extract document payload from get_document result")
 
 
+def json_from_result(result: dict[str, Any], label: str) -> Any:
+    structured = result.get("structuredContent")
+    if structured is not None:
+        return structured
+    for item in result.get("content") or []:
+        if item.get("type") != "text":
+            continue
+        with contextlib.suppress(json.JSONDecodeError):
+            return json.loads(item.get("text", ""))
+    raise SmokeError(f"could not extract JSON payload from {label} result")
+
+
 def assert_tool_count(tools: list[dict[str, Any]], label: str) -> None:
     if len(tools) != EXPECTED_TOOL_COUNT:
         raise SmokeError(f"{label} tools/list returned {len(tools)} tools, want {EXPECTED_TOOL_COUNT}")
@@ -438,6 +585,34 @@ def post_json(url: str, payload: dict[str, Any], timeout: float = 5) -> dict[str
     request = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def read_json_body(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
+    length = int(handler.headers.get("Content-Length", "0"))
+    if length == 0:
+        return {}
+    payload = json.loads(handler.rfile.read(length))
+    if not isinstance(payload, dict):
+        raise SmokeError("REST request body was not a JSON object")
+    return payload
+
+
+def send_json(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
+    body = json.dumps(payload, sort_keys=True).encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def send_text(handler: BaseHTTPRequestHandler, status: int, text: str) -> None:
+    body = text.encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "text/plain")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
 
 
 def wait_for_http(url: str, timeout: float = 10) -> None:
