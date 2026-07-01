@@ -166,6 +166,7 @@ func (s *Service) Resolve(ctx context.Context, query ResolveQuery) (GuidancePack
 			DocumentType:      document.DocType,
 			DocumentUpdatedAt: document.UpdatedAt,
 			Visibility:        document.Visibility,
+			Tags:              append([]string(nil), document.Tags...),
 			Importance:        entry.Importance,
 			Audience:          append([]string(nil), entry.Audience...),
 			SortOrder:         entry.SortOrder,

@@ -56,11 +56,145 @@ func (c *Client) callGuidanceREST(ctx context.Context, backend config.BackendCon
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return Result{}, statusFailure(backend.Name, call.Operation, call.ToolName, response.StatusCode, responseBody), nil
 	}
-	result, err := buildRESTToolResult(responseBody)
+	compatibleBody, err := guidanceCompatibleResponseBody(route.Operation, responseBody)
+	if err != nil {
+		return Result{}, nil, err
+	}
+	result, err := buildRESTToolResult(compatibleBody)
 	if err != nil {
 		return Result{}, nil, err
 	}
 	return Result{Value: result}, nil, nil
+}
+
+type guidancePacketResponse struct {
+	ProjectID       string                   `json:"project_id"`
+	ResolvedAt      string                   `json:"resolved_at"`
+	Sources         []guidanceSourceResponse `json:"sources"`
+	SkippedSources  json.RawMessage          `json:"skipped_sources,omitempty"`
+	ContentMarkdown string                   `json:"content_markdown"`
+	ContentSHA256   string                   `json:"content_sha256,omitempty"`
+	ContentBytes    int                      `json:"content_bytes,omitempty"`
+	Truncated       bool                     `json:"truncated,omitempty"`
+	Incomplete      bool                     `json:"incomplete,omitempty"`
+}
+
+type guidanceSourceResponse struct {
+	EntryID           int64    `json:"entry_id"`
+	SourceScope       string   `json:"source_scope"`
+	DocumentProjectID string   `json:"document_project_id"`
+	DocumentSlug      string   `json:"document_slug"`
+	DocumentTitle     string   `json:"document_title"`
+	DocumentType      string   `json:"document_type"`
+	DocumentUpdatedAt string   `json:"document_updated_at"`
+	Visibility        string   `json:"visibility"`
+	Tags              []string `json:"tags,omitempty"`
+	Importance        string   `json:"importance"`
+	Audience          []string `json:"audience,omitempty"`
+	SortOrder         int      `json:"sort_order"`
+	Notes             string   `json:"notes,omitempty"`
+	ContentBytes      int      `json:"content_bytes,omitempty"`
+}
+
+type legacyGuidancePacket struct {
+	ProjectID       string                 `json:"project_id"`
+	ResolvedAt      string                 `json:"resolved_at"`
+	Content         string                 `json:"content"`
+	Sources         []legacyGuidanceSource `json:"sources"`
+	SkippedSources  json.RawMessage        `json:"skipped_sources,omitempty"`
+	ContentMarkdown string                 `json:"content_markdown,omitempty"`
+	ContentSHA256   string                 `json:"content_sha256,omitempty"`
+	ContentBytes    int                    `json:"content_bytes,omitempty"`
+	Truncated       bool                   `json:"truncated,omitempty"`
+	Incomplete      bool                   `json:"incomplete,omitempty"`
+}
+
+type legacyGuidanceSource struct {
+	EntryID           int64    `json:"entry_id"`
+	ID                int64    `json:"id"`
+	ScopeProjectID    string   `json:"scope_project_id"`
+	ProjectID         string   `json:"project_id"`
+	DocumentProjectID string   `json:"document_project_id"`
+	DocumentSlug      string   `json:"document_slug"`
+	Slug              string   `json:"slug"`
+	Title             string   `json:"title"`
+	DocType           string   `json:"doc_type"`
+	Tags              []string `json:"tags,omitempty"`
+	UpdatedAt         string   `json:"updated_at"`
+	Visibility        string   `json:"visibility,omitempty"`
+	Importance        string   `json:"importance"`
+	Audience          []string `json:"audience,omitempty"`
+	SortOrder         int      `json:"sort_order"`
+	Notes             string   `json:"notes,omitempty"`
+	ContentBytes      int      `json:"content_bytes,omitempty"`
+}
+
+type guidanceEntriesResponse struct {
+	Entries json.RawMessage `json:"entries"`
+}
+
+func guidanceCompatibleResponseBody(operation string, responseBody []byte) ([]byte, error) {
+	switch operation {
+	case "get_agent_guidance":
+		return legacyGuidancePacketBody(responseBody)
+	case "list_agent_guidance_entries":
+		return legacyGuidanceEntriesBody(responseBody)
+	default:
+		return responseBody, nil
+	}
+}
+
+func legacyGuidancePacketBody(responseBody []byte) ([]byte, error) {
+	var packet guidancePacketResponse
+	if err := json.Unmarshal(responseBody, &packet); err != nil {
+		return nil, fmt.Errorf("decoding guidance packet response: %w", err)
+	}
+	legacySources := make([]legacyGuidanceSource, 0, len(packet.Sources))
+	for _, source := range packet.Sources {
+		legacySources = append(legacySources, legacyGuidanceSource{
+			EntryID:           source.EntryID,
+			ID:                source.EntryID,
+			ScopeProjectID:    source.SourceScope,
+			ProjectID:         source.SourceScope,
+			DocumentProjectID: source.DocumentProjectID,
+			DocumentSlug:      source.DocumentSlug,
+			Slug:              source.DocumentSlug,
+			Title:             source.DocumentTitle,
+			DocType:           source.DocumentType,
+			Tags:              source.Tags,
+			UpdatedAt:         source.DocumentUpdatedAt,
+			Visibility:        source.Visibility,
+			Importance:        source.Importance,
+			Audience:          source.Audience,
+			SortOrder:         source.SortOrder,
+			Notes:             source.Notes,
+			ContentBytes:      source.ContentBytes,
+		})
+	}
+	legacy := legacyGuidancePacket{
+		ProjectID:       packet.ProjectID,
+		ResolvedAt:      packet.ResolvedAt,
+		Content:         packet.ContentMarkdown,
+		Sources:         legacySources,
+		SkippedSources:  compactRaw(packet.SkippedSources),
+		ContentMarkdown: packet.ContentMarkdown,
+		ContentSHA256:   packet.ContentSHA256,
+		ContentBytes:    packet.ContentBytes,
+		Truncated:       packet.Truncated,
+		Incomplete:      packet.Incomplete,
+	}
+	return json.Marshal(legacy)
+}
+
+func legacyGuidanceEntriesBody(responseBody []byte) ([]byte, error) {
+	var entries guidanceEntriesResponse
+	if err := json.Unmarshal(responseBody, &entries); err != nil {
+		return nil, fmt.Errorf("decoding guidance entries response: %w", err)
+	}
+	if len(bytes.TrimSpace(entries.Entries)) == 0 {
+		return []byte("[]"), nil
+	}
+	return entries.Entries, nil
 }
 
 func buildGuidanceRESTRequest(ctx context.Context, backend config.BackendConfig, route Route, call ToolCall) (*http.Request, error) {

@@ -170,6 +170,7 @@ type GuidanceSource struct {
 	DocumentType      string
 	DocumentUpdatedAt time.Time
 	Visibility        string
+	Tags              []string
 	Importance        string
 	Audience          []string
 	SortOrder         int

@@ -52,6 +52,7 @@ type GuidanceSourceResponse struct {
 	DocumentType      string    `json:"document_type"`
 	DocumentUpdatedAt time.Time `json:"document_updated_at"`
 	Visibility        string    `json:"visibility"`
+	Tags              []string  `json:"tags,omitempty"`
 	Importance        string    `json:"importance"`
 	Audience          []string  `json:"audience,omitempty"`
 	SortOrder         int       `json:"sort_order"`
