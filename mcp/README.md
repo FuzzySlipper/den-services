@@ -46,7 +46,8 @@ Live smoke requires those successor services to already be deployed and
 reachable from the machine running the harness. This branch's local smoke proves
 the MCP route table, outage behavior, and guidance compatibility shape; live
 Core-dependency removal still needs a deployed successor-service smoke with the
-URLs below.
+URLs below. In the task plan, that live deployment/cutover proof is tracked by
+#3890.
 
 ```sh
 DEN_MCP_SMOKE_DEN_CORE_URL=http://192.168.1.10:5199 \
