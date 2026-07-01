@@ -87,6 +87,9 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 		if knowledgeRoute(tool.Name) {
 			wantBackend = "knowledge"
 		}
+		if guidanceRoute(tool.Name) {
+			wantBackend = "guidance"
+		}
 		if route.Backend != wantBackend {
 			t.Fatalf("route %s backend = %q, want %s", tool.Name, route.Backend, wantBackend)
 		}
@@ -136,6 +139,29 @@ func TestRouteTableAllowsProjectsRESTAdapter(t *testing.T) {
 	}
 	if resolved.Method != "GET" {
 		t.Fatalf("Method = %q, want GET", resolved.Method)
+	}
+}
+
+func TestRouteTableAllowsGuidanceRESTAdapter(t *testing.T) {
+	route := Route{
+		Operation:       "get_agent_guidance",
+		Backend:         "guidance",
+		Method:          "GET",
+		Path:            "/v1/projects/{project_id}/agent-guidance",
+		RequestAdapter:  RequestAdapterMCPGuidanceREST,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}
+
+	table, err := NewRouteTable([]Route{route})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	resolved, err := table.Resolve("get_agent_guidance")
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Backend != "guidance" {
+		t.Fatalf("Backend = %q, want guidance", resolved.Backend)
 	}
 }
 
@@ -357,6 +383,18 @@ func knowledgeRoute(operation string) bool {
 		"den_knowledge_get",
 		"den_knowledge_guide",
 		"den_knowledge_store":
+		return true
+	default:
+		return false
+	}
+}
+
+func guidanceRoute(operation string) bool {
+	switch operation {
+	case "get_agent_guidance",
+		"list_agent_guidance_entries",
+		"add_agent_guidance_entry",
+		"delete_agent_guidance_entry":
 		return true
 	default:
 		return false

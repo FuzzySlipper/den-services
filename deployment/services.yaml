@@ -164,6 +164,16 @@ services:
     version_url: "http://127.0.0.1:8096/version"
     systemd_unit: "den-go@review.service"
 
+  - name: "guidance"
+    module: "guidance"
+    binary_name: "guidance"
+    binary_path: "./guidance/cmd/guidance"
+    config_example: "guidance/config/config.example.yaml"
+    env_example: "guidance/config/guidance.env.example"
+    health_url: "http://127.0.0.1:8097/health"
+    version_url: "http://127.0.0.1:8097/version"
+    systemd_unit: "den-go@guidance.service"
+
   - name: "mcp"
     module: "mcp"
     binary_name: "mcp"

@@ -52,6 +52,13 @@ postgres://den_delivery_app:<password>@127.0.0.1:5433/denservices
 postgres://den_runtime_app:<password>@127.0.0.1:5433/denservices
 postgres://den_observation_app:<password>@127.0.0.1:5433/denservices
 postgres://den_channels_app:<password>@127.0.0.1:5433/denservices
+postgres://den_projects_app:<password>@127.0.0.1:5433/denservices
+postgres://den_tasks_app:<password>@127.0.0.1:5433/denservices
+postgres://den_messages_app:<password>@127.0.0.1:5433/denservices
+postgres://den_review_app:<password>@127.0.0.1:5433/denservices
+postgres://den_documents_app:<password>@127.0.0.1:5433/denservices
+postgres://den_knowledge_app:<password>@127.0.0.1:5433/denservices
+postgres://den_guidance_app:<password>@127.0.0.1:5433/denservices
 ```
 
 Store-level integration tests should use a separate test database on the same
@@ -68,6 +75,15 @@ Required variables for [postgresql-app-roles.psql](postgresql-app-roles.psql):
 - `DEN_RUNTIME_APP_PASSWORD`
 - `DEN_OBSERVATION_APP_PASSWORD`
 - `DEN_CHANNELS_APP_PASSWORD`
+- `DEN_TIMELINE_APP_PASSWORD`
+- `DEN_ARTIFACTS_APP_PASSWORD`
+- `DEN_PROJECTS_APP_PASSWORD`
+- `DEN_TASKS_APP_PASSWORD`
+- `DEN_MESSAGES_APP_PASSWORD`
+- `DEN_REVIEW_APP_PASSWORD`
+- `DEN_DOCUMENTS_APP_PASSWORD`
+- `DEN_KNOWLEDGE_APP_PASSWORD`
+- `DEN_GUIDANCE_APP_PASSWORD`
 
 Run on `den-srv`:
 
@@ -81,10 +97,19 @@ psql "$DEN_MIGRATION_DATABASE_URL" \
   -v DEN_RUNTIME_APP_PASSWORD="$DEN_RUNTIME_APP_PASSWORD" \
   -v DEN_OBSERVATION_APP_PASSWORD="$DEN_OBSERVATION_APP_PASSWORD" \
   -v DEN_CHANNELS_APP_PASSWORD="$DEN_CHANNELS_APP_PASSWORD" \
+  -v DEN_TIMELINE_APP_PASSWORD="$DEN_TIMELINE_APP_PASSWORD" \
+  -v DEN_ARTIFACTS_APP_PASSWORD="$DEN_ARTIFACTS_APP_PASSWORD" \
+  -v DEN_PROJECTS_APP_PASSWORD="$DEN_PROJECTS_APP_PASSWORD" \
+  -v DEN_TASKS_APP_PASSWORD="$DEN_TASKS_APP_PASSWORD" \
+  -v DEN_MESSAGES_APP_PASSWORD="$DEN_MESSAGES_APP_PASSWORD" \
+  -v DEN_REVIEW_APP_PASSWORD="$DEN_REVIEW_APP_PASSWORD" \
+  -v DEN_DOCUMENTS_APP_PASSWORD="$DEN_DOCUMENTS_APP_PASSWORD" \
+  -v DEN_KNOWLEDGE_APP_PASSWORD="$DEN_KNOWLEDGE_APP_PASSWORD" \
+  -v DEN_GUIDANCE_APP_PASSWORD="$DEN_GUIDANCE_APP_PASSWORD" \
   -f deployment/postgresql-app-roles.psql
 ```
 
-The script creates the four runtime app roles. It does not grant cross-schema
+The script creates runtime app roles. It does not grant cross-schema
 access; schema grants are owned by the versioned migration files.
 
 If `den_migration` does not have `CREATEDB`, create the test database through

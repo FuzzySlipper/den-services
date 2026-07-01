@@ -139,6 +139,8 @@ func supportedAdapterPair(requestAdapter string, responseAdapter string) bool {
 		return true
 	case requestAdapter == RequestAdapterMCPKnowledgeREST && responseAdapter == ResponseAdapterMCPToolResultJSON:
 		return true
+	case requestAdapter == RequestAdapterMCPGuidanceREST && responseAdapter == ResponseAdapterMCPToolResultJSON:
+		return true
 	default:
 		return false
 	}

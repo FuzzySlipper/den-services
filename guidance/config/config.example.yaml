@@ -1,0 +1,10 @@
+bind_addr: "127.0.0.1:8097"
+database_url_env: "DEN_GUIDANCE_DATABASE_URL"
+service_token_env: "DEN_GUIDANCE_SERVICE_TOKEN"
+projects_base_url_env: "DEN_PROJECTS_BASE_URL"
+projects_token_env: "DEN_PROJECTS_SERVICE_TOKEN"
+documents_base_url_env: "DEN_DOCUMENTS_BASE_URL"
+documents_token_env: "DEN_DOCUMENTS_SERVICE_TOKEN"
+max_packet_bytes: 65536
+http:
+  read_header_timeout: "5s"
