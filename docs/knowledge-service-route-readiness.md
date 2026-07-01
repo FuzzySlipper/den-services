@@ -17,20 +17,18 @@ Role: `den_knowledge_app`
 
 ## MCP Mapping Guidance
 
-The compatibility tool names and schemas stay unchanged. Route these tools to
-`knowledge` only after `den-services/mcp` has an adapter or facade that can call
-successor HTTP routes and return MCP `tools/call` results:
+The compatibility tool names and schemas stay unchanged. `den-services/mcp`
+uses the `mcp_knowledge_rest` adapter to call successor HTTP routes and wrap
+responses in MCP `tools/call` result envelopes:
 
 - `den_knowledge_search` -> `POST /v1/knowledge/search`
 - `den_knowledge_get` -> `GET /v1/knowledge/entries/{slug}`
 - `den_knowledge_guide` -> `POST /v1/knowledge/guide`
 - `den_knowledge_store` -> `POST /v1/knowledge/entries`
 
-The current `mcp/routes.example.yaml` remains on `den-core` for these tools
-because the MCP gateway currently supports `mcp_tools_call` to
-`mcp_jsonrpc_result` backends only. Pointing the route table directly at this
-HTTP service before that adapter exists would make the live tool calls fail
-instead of preserving compatibility.
+`mcp/routes.example.yaml` and the deployed MCP route table now route these four
+operations to the `knowledge` backend with `mcp_knowledge_rest` and
+`mcp_tool_result_json`. The previous Core route remains the rollback target.
 
 ## Preserved Behavior
 
@@ -68,7 +66,15 @@ the generated `search_vector` path.
 
 ## Rollback
 
-No production MCP route flip or deployment has been performed in this task. The
-rollback point is therefore the existing den-core route table ownership. After a
-future adapter/facade task flips the four `den_knowledge_*` tools, rollback is
-to point those operations back to `den-core` `/mcp`.
+Rollback is route-table only unless the knowledge service itself is unhealthy
+for unrelated reasons: point the four `den_knowledge_*` operations in
+`/data/services/mcp/config/routes.yaml` back to:
+
+- `backend: "den-core"`
+- `method: "POST"`
+- `path: "/mcp"`
+- `request_adapter: "mcp_tools_call"`
+- `response_adapter: "mcp_jsonrpc_result"`
+
+Then restart `den-go@mcp.service`. This restores Core MCP ownership for the
+knowledge tools without changing the successor knowledge service data.
