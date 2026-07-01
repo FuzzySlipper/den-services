@@ -125,6 +125,110 @@ func TestClientNegotiatesStreamableMCPSessionOnDemand(t *testing.T) {
 	}
 }
 
+func TestClientRenegotiatesWhenCachedSessionNotFound(t *testing.T) {
+	var initialized bool
+	var sawStaleSession bool
+	var sawFreshSession bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Method string `json:"method"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		if request.Method == "initialize" {
+			initialized = true
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Mcp-Session-Id", "fresh-session")
+			_, _ = w.Write([]byte("event: message\n"))
+			_, _ = w.Write([]byte(`data: {"jsonrpc":"2.0","id":"den-services-mcp-backend-init","result":{"protocolVersion":"2025-11-25"}}` + "\n\n"))
+			return
+		}
+		if request.Method != "tools/call" {
+			t.Fatalf("method = %q, want tools/call", request.Method)
+		}
+		switch r.Header.Get("Mcp-Session-Id") {
+		case "stale-session":
+			sawStaleSession = true
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":{"code":-32001,"message":"Session not found"},"id":"","jsonrpc":"2.0"}`))
+		case "fresh-session":
+			sawFreshSession = true
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: message\n"))
+			_, _ = w.Write([]byte(`data: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"ok"}],"isError":false}}` + "\n\n"))
+		default:
+			t.Fatalf("unexpected session header %q", r.Header.Get("Mcp-Session-Id"))
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	client.setSession("den-core", "stale-session")
+	route := testRoute("get_agent_guidance", "den-core")
+	route.Path = "/mcp"
+	result, failure, err := client.Call(context.Background(), testBackend("den-core", server.URL), route, ToolCall{
+		ToolName:  "get_agent_guidance",
+		Operation: "get_agent_guidance",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"project_id":"den-services"}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if !sawStaleSession || !initialized || !sawFreshSession {
+		t.Fatalf("retry flow stale=%v initialized=%v fresh=%v", sawStaleSession, initialized, sawFreshSession)
+	}
+	if !strings.Contains(string(result.Value), `"text":"ok"`) {
+		t.Fatalf("result = %s", result.Value)
+	}
+}
+
+func TestClientAcceptsLargeStreamableMCPDataEvent(t *testing.T) {
+	largeText := strings.Repeat("guidance ", 20_000)
+	payload, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"result": map[string]any{
+			"content": []map[string]string{{"type": "text", "text": largeText}},
+			"isError": false,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: message\n"))
+		_, _ = w.Write([]byte("data: "))
+		_, _ = w.Write(payload)
+		_, _ = w.Write([]byte("\n\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	route := testRoute("get_agent_guidance", "den-core")
+	route.Path = "/mcp"
+	result, failure, err := client.Call(context.Background(), testBackend("den-core", server.URL), route, ToolCall{
+		ToolName:  "get_agent_guidance",
+		Operation: "get_agent_guidance",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"project_id":"den-services"}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if !strings.Contains(string(result.Value), "guidance guidance guidance") {
+		t.Fatalf("result did not include large guidance payload")
+	}
+}
+
 func TestClientCallsProjectsRESTCreateProject(t *testing.T) {
 	var sawToken string
 	var sawPath string
