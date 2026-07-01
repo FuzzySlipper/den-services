@@ -72,12 +72,12 @@ func TestMCPToolsListIsStatic(t *testing.T) {
 	decodeResponse(t, response, &body)
 	result := body["result"].(map[string]any)
 	tools := result["tools"].([]any)
-	if len(tools) != 136 {
-		t.Fatalf("tool count = %d, want 136", len(tools))
+	if len(tools) != 61 {
+		t.Fatalf("tool count = %d, want 61", len(tools))
 	}
 	first := tools[0].(map[string]any)
-	if first["name"] != "update_topic" {
-		t.Fatalf("first tool name = %v, want update_topic", first["name"])
+	if first["name"] != "search_documents" {
+		t.Fatalf("first tool name = %v, want search_documents", first["name"])
 	}
 }
 
@@ -185,6 +185,43 @@ func TestToolsCallReturnsBackendFailureResult(t *testing.T) {
 	}
 	if structured["circuit_state"] != "unavailable" {
 		t.Fatalf("structured circuit_state = %v", structured["circuit_state"])
+	}
+}
+
+func TestToolsCallReturnsRetiredToolTombstone(t *testing.T) {
+	server := newTestServer(t, true, nil)
+
+	response := postJSON(t, server, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      "lease_worker",
+			"arguments": map[string]any{"project_id": "den-services"},
+		},
+	}, "")
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("POST /mcp tools/call status = %d, want %d", response.Code, http.StatusOK)
+	}
+	var body map[string]any
+	decodeResponse(t, response, &body)
+	result := body["result"].(map[string]any)
+	if result["isError"] != true {
+		t.Fatalf("isError = %v, want true", result["isError"])
+	}
+	structured := result["structuredContent"].(map[string]any)
+	if structured["error"] != "den_mcp_tool_retired" {
+		t.Fatalf("structured error = %v", structured["error"])
+	}
+	if structured["tool"] != "lease_worker" {
+		t.Fatalf("structured tool = %v", structured["tool"])
+	}
+	if structured["retired"] != true {
+		t.Fatalf("structured retired = %v", structured["retired"])
+	}
+	if structured["hidden_from"] != "tools/list" {
+		t.Fatalf("structured hidden_from = %v", structured["hidden_from"])
 	}
 }
 

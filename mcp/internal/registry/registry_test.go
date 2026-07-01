@@ -17,8 +17,8 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 136 {
-		t.Fatalf("tool count = %d, want 136", len(names))
+	if len(names) != 61 {
+		t.Fatalf("tool count = %d, want 61", len(names))
 	}
 	for _, name := range []string{
 		"search_documents",
@@ -27,8 +27,19 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		"get_task",
 		"store_document",
 	} {
-		if _, err := registry.Resolve(name); err != nil {
-			t.Fatalf("Resolve(%s) error = %v", name, err)
+		if !containsName(names, name) {
+			t.Fatalf("visible tools missing %s", name)
+		}
+	}
+	for _, name := range []string{
+		"legacy_get_dispatch",
+		"store_blackboard_entry",
+		"lease_worker",
+		"invoke_capability",
+		"list_topics",
+	} {
+		if containsName(names, name) {
+			t.Fatalf("retired tool %s is visible", name)
 		}
 	}
 }
@@ -47,7 +58,27 @@ func TestDefaultRegistryResolvesToolsWithoutBackendLiveness(t *testing.T) {
 	}
 }
 
-func TestDefaultRegistryMatchesCapturedLiveSnapshot(t *testing.T) {
+func TestDefaultRegistryResolvesHiddenRetiredTools(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry() error = %v", err)
+	}
+	tool, err := registry.Resolve("lease_worker")
+	if err != nil {
+		t.Fatalf("Resolve(lease_worker) error = %v", err)
+	}
+	if !tool.Hidden {
+		t.Fatal("lease_worker Hidden = false, want true")
+	}
+	if tool.TombstoneMessage == "" {
+		t.Fatal("lease_worker TombstoneMessage is empty")
+	}
+	if !tool.Deprecated {
+		t.Fatal("lease_worker Deprecated = false, want true")
+	}
+}
+
+func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 	registry, err := DefaultRegistry()
 	if err != nil {
 		t.Fatalf("DefaultRegistry() error = %v", err)
@@ -57,22 +88,30 @@ func TestDefaultRegistryMatchesCapturedLiveSnapshot(t *testing.T) {
 		t.Fatalf("Unmarshal(snapshot) error = %v", err)
 	}
 	listed := registry.Tools()
-	if len(listed) != len(snapshot.Tools) {
-		t.Fatalf("listed count = %d, want %d", len(listed), len(snapshot.Tools))
+	visibleIndex := 0
+	for _, snapshotTool := range snapshot.Tools {
+		if _, retired := retiredToolPolicies[snapshotTool.Name]; retired {
+			continue
+		}
+		if visibleIndex >= len(listed) {
+			t.Fatalf("visible snapshot exhausted before %s", snapshotTool.Name)
+		}
+		if listed[visibleIndex].Name != snapshotTool.Name {
+			t.Fatalf("visible tool[%d].Name = %q, want %q", visibleIndex, listed[visibleIndex].Name, snapshotTool.Name)
+		}
+		if listed[visibleIndex].Description != snapshotTool.Description {
+			t.Fatalf("visible tool[%d].Description differs for %s", visibleIndex, listed[visibleIndex].Name)
+		}
+		if string(listed[visibleIndex].InputSchema) != string(snapshotTool.InputSchema) {
+			t.Fatalf("visible tool[%d].InputSchema differs for %s", visibleIndex, listed[visibleIndex].Name)
+		}
+		if string(listed[visibleIndex].Execution) != string(snapshotTool.Execution) {
+			t.Fatalf("visible tool[%d].Execution differs for %s", visibleIndex, listed[visibleIndex].Name)
+		}
+		visibleIndex++
 	}
-	for index := range listed {
-		if listed[index].Name != snapshot.Tools[index].Name {
-			t.Fatalf("tool[%d].Name = %q, want %q", index, listed[index].Name, snapshot.Tools[index].Name)
-		}
-		if listed[index].Description != snapshot.Tools[index].Description {
-			t.Fatalf("tool[%d].Description differs for %s", index, listed[index].Name)
-		}
-		if string(listed[index].InputSchema) != string(snapshot.Tools[index].InputSchema) {
-			t.Fatalf("tool[%d].InputSchema differs for %s", index, listed[index].Name)
-		}
-		if string(listed[index].Execution) != string(snapshot.Tools[index].Execution) {
-			t.Fatalf("tool[%d].Execution differs for %s", index, listed[index].Name)
-		}
+	if visibleIndex != len(listed) {
+		t.Fatalf("visible count = %d, listed count = %d", visibleIndex, len(listed))
 	}
 }
 
@@ -144,4 +183,13 @@ func minimalTool(name string) ToolDefinition {
 		Operation:   name,
 		InputSchema: ObjectSchema(nil),
 	}
+}
+
+func containsName(names []string, name string) bool {
+	for _, candidate := range names {
+		if candidate == name {
+			return true
+		}
+	}
+	return false
 }

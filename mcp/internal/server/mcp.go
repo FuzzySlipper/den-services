@@ -219,6 +219,9 @@ func (h *Handler) toolsCall(ctx context.Context, request rpcRequest) rpcResponse
 		}
 		return rpcErrorResponse(request.ID, errorInternal, err.Error())
 	}
+	if tool.TombstoneMessage != "" {
+		return rpcResultResponse(request.ID, retiredToolResult(tool))
+	}
 	if h.locator == nil {
 		return rpcResultResponse(request.ID, errorToolResult(fmt.Sprintf("Tool %s is registered for backend %s, but backend proxy execution is not implemented yet.", tool.Name, tool.Backend), nil))
 	}
@@ -249,6 +252,20 @@ func errorToolResult(message string, structured json.RawMessage) toolsCallResult
 		IsError:           true,
 		StructuredContent: structured,
 	}
+}
+
+func retiredToolResult(tool registry.ToolDefinition) toolsCallResult {
+	structured, _ := json.Marshal(map[string]any{
+		"error":       "den_mcp_tool_retired",
+		"tool":        tool.Name,
+		"operation":   tool.Operation,
+		"backend":     tool.Backend,
+		"retired":     true,
+		"retryable":   false,
+		"suggested":   tool.TombstoneMessage,
+		"hidden_from": "tools/list",
+	})
+	return errorToolResult(tool.TombstoneMessage, structured)
 }
 
 func negotiatedProtocol(requested string) string {

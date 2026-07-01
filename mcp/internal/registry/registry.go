@@ -19,6 +19,8 @@ type ToolDefinition struct {
 	Backend            string
 	Operation          string
 	Execution          json.RawMessage
+	Hidden             bool
+	TombstoneMessage   string
 	Deprecated         bool
 	DeprecationMessage string
 	Aliases            []ToolAlias
@@ -71,6 +73,9 @@ func New(tools []ToolDefinition) (*Registry, error) {
 func (r *Registry) Tools() []ListedTool {
 	listed := make([]ListedTool, 0, len(r.byName))
 	for _, tool := range r.tools {
+		if tool.Hidden {
+			continue
+		}
 		listed = append(listed, listedTool(tool, nil))
 		for index := range tool.Aliases {
 			alias := tool.Aliases[index]
