@@ -33,4 +33,13 @@ mcp-smoke-live:
 ifndef DEN_MCP_SMOKE_DEN_CORE_URL
 	$(error DEN_MCP_SMOKE_DEN_CORE_URL is required, for example http://192.168.1.10:5199)
 endif
+ifndef DEN_MCP_SMOKE_TASKS_URL
+	$(error DEN_MCP_SMOKE_TASKS_URL is required, for example http://192.168.1.10:8092)
+endif
+ifndef DEN_MCP_SMOKE_DOCUMENTS_URL
+	$(error DEN_MCP_SMOKE_DOCUMENTS_URL is required, for example http://192.168.1.10:8094)
+endif
+ifndef DEN_MCP_SMOKE_GUIDANCE_URL
+	$(error DEN_MCP_SMOKE_GUIDANCE_URL is required, for example http://192.168.1.10:8097)
+endif
 	python3 mcp/scripts/hermes_smoke.py --mode live

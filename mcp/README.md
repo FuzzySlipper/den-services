@@ -35,13 +35,24 @@ ok: backend recovered in the same MCP process
 ok: hermes stability smoke complete
 ```
 
-To add an opt-in smoke against the current den-core backend, pass `--mode both`
-and set the live backend URL explicitly. The current reachable MCP-compatible
-Den endpoint is the den-srv adapter on `192.168.1.10:5199`; the harness starts
-`den-services/mcp` locally and uses that URL as its backend:
+To add an opt-in live smoke, pass `--mode both` and set the live backend URLs
+explicitly. The route table now contains both legacy MCP-routed Core tools and
+REST-routed successor services, so do not point every backend at the old MCP
+facade. The harness starts `den-services/mcp` locally, uses
+`DEN_MCP_SMOKE_DEN_CORE_URL` for remaining Core-routed tools, and uses the
+successor URLs for the REST-routed smoke calls:
+
+Live smoke requires those successor services to already be deployed and
+reachable from the machine running the harness. This branch's local smoke proves
+the MCP route table, outage behavior, and guidance compatibility shape; live
+Core-dependency removal still needs a deployed successor-service smoke with the
+URLs below.
 
 ```sh
 DEN_MCP_SMOKE_DEN_CORE_URL=http://192.168.1.10:5199 \
+DEN_MCP_SMOKE_TASKS_URL=http://192.168.1.10:8092 \
+DEN_MCP_SMOKE_DOCUMENTS_URL=http://192.168.1.10:8094 \
+DEN_MCP_SMOKE_GUIDANCE_URL=http://192.168.1.10:8097 \
 DEN_MCP_SMOKE_READ_TASK_ID=3446 \
 python3 mcp/scripts/hermes_smoke.py --mode both
 ```
@@ -50,8 +61,22 @@ Or use the live-only Make target:
 
 ```sh
 DEN_MCP_SMOKE_DEN_CORE_URL=http://192.168.1.10:5199 \
+DEN_MCP_SMOKE_TASKS_URL=http://192.168.1.10:8092 \
+DEN_MCP_SMOKE_DOCUMENTS_URL=http://192.168.1.10:8094 \
+DEN_MCP_SMOKE_GUIDANCE_URL=http://192.168.1.10:8097 \
 DEN_MCP_SMOKE_READ_TASK_ID=3446 \
 make mcp-smoke-live
+```
+
+Expected live output includes:
+
+```text
+ok: live initialize
+ok: live tools/list returned 61 tools
+ok: live read tool proxied to tasks successor
+ok: live non-representative tool proxied to documents successor
+ok: live get_agent_guidance returned MCP-compatible successor shape
+ok: live list_agent_guidance_entries returned MCP-compatible array shape
 ```
 
 Live write smoke is disabled unless a pre-existing disposable document target
@@ -62,11 +87,15 @@ original document before exiting:
 
 ```sh
 DEN_MCP_SMOKE_DEN_CORE_URL=http://192.168.1.10:5199 \
+DEN_MCP_SMOKE_TASKS_URL=http://192.168.1.10:8092 \
+DEN_MCP_SMOKE_DOCUMENTS_URL=http://192.168.1.10:8094 \
+DEN_MCP_SMOKE_GUIDANCE_URL=http://192.168.1.10:8097 \
 DEN_MCP_SMOKE_WRITE_PROJECT=den-services \
 DEN_MCP_SMOKE_WRITE_SLUG=mcp-smoke-disposable \
 python3 mcp/scripts/hermes_smoke.py --mode both
 ```
 
-The live mode passes `DEN_CORE_SERVICE_TOKEN` through to the MCP process when
-that environment variable is set. The token value is never printed by the
-harness.
+The live mode passes backend service tokens through to the MCP process when
+their normal service-token variables are set, such as `DEN_CORE_SERVICE_TOKEN`,
+`DEN_TASKS_SERVICE_TOKEN`, `DEN_DOCUMENTS_SERVICE_TOKEN`, and
+`DEN_GUIDANCE_SERVICE_TOKEN`. Token values are never printed by the harness.

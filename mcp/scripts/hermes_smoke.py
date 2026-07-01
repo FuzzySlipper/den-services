@@ -3,8 +3,9 @@
 
 The local mode is safe for CI and developer machines: it starts a disposable
 fake den-core backend and a real den-services/mcp process on loopback ports.
-Live den-core checks are opt-in and restore a pre-existing disposable document
-after the representative write probe.
+Live checks are opt-in, require explicit successor backend URLs for REST-routed
+tools, and restore a pre-existing disposable document after the representative
+write probe.
 """
 
 from __future__ import annotations
@@ -274,6 +275,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("local", "live", "both"), default=os.getenv("DEN_MCP_SMOKE_MODE", "local"))
     parser.add_argument("--den-core-url", default=os.getenv("DEN_MCP_SMOKE_DEN_CORE_URL", ""))
+    parser.add_argument("--tasks-url", default=os.getenv("DEN_MCP_SMOKE_TASKS_URL", ""))
+    parser.add_argument("--documents-url", default=os.getenv("DEN_MCP_SMOKE_DOCUMENTS_URL", ""))
+    parser.add_argument("--guidance-url", default=os.getenv("DEN_MCP_SMOKE_GUIDANCE_URL", ""))
     parser.add_argument("--read-task-id", type=int, default=int(os.getenv("DEN_MCP_SMOKE_READ_TASK_ID", "3446")))
     parser.add_argument("--write-project", default=os.getenv("DEN_MCP_SMOKE_WRITE_PROJECT", ""))
     parser.add_argument("--write-slug", default=os.getenv("DEN_MCP_SMOKE_WRITE_SLUG", ""))
@@ -301,7 +305,7 @@ def run_local_smoke(repo_root: Path, startup_timeout: float) -> None:
     mcp_port = free_port()
     fake = FakeDenCore(backend_port)
     fake.start()
-    with mcp_process(repo_root, mcp_port, fake.base_url, startup_timeout):
+    with mcp_process(repo_root, mcp_port, uniform_backend_urls(fake.base_url), startup_timeout):
         mcp_url = f"http://127.0.0.1:{mcp_port}{MCP_PATH}"
         initialize(mcp_url, "local")
         healthy_tools = tools_list(mcp_url)
@@ -383,10 +387,9 @@ def run_local_smoke(repo_root: Path, startup_timeout: float) -> None:
 
 
 def run_live_smoke(repo_root: Path, args: argparse.Namespace) -> None:
-    if not args.den_core_url:
-        raise SmokeError("--den-core-url or DEN_MCP_SMOKE_DEN_CORE_URL is required for live mode")
+    backend_urls = live_backend_urls(args)
     mcp_port = free_port()
-    with mcp_process(repo_root, mcp_port, args.den_core_url.rstrip("/"), args.startup_timeout):
+    with mcp_process(repo_root, mcp_port, backend_urls, args.startup_timeout):
         mcp_url = f"http://127.0.0.1:{mcp_port}{MCP_PATH}"
         initialize(mcp_url, "live")
         live_tools = tools_list(mcp_url)
@@ -395,11 +398,24 @@ def run_live_smoke(repo_root: Path, args: argparse.Namespace) -> None:
 
         read = tools_call(mcp_url, "get_task", {"task_id": args.read_task_id, "verbose": False})
         assert_tool_success(read, "live read tool")
-        print("ok: live read tool proxied to den-core")
+        print("ok: live read tool proxied to tasks successor")
 
         search = tools_call(mcp_url, "search_documents", {"project_id": "den-services", "query": "mcp", "verbose": False})
         assert_tool_success(search, "live search_documents tool")
-        print("ok: live non-representative tool proxied to den-core")
+        print("ok: live non-representative tool proxied to documents successor")
+
+        guidance = tools_call(mcp_url, "get_agent_guidance", {"project_id": "den-services"})
+        assert_tool_success(guidance, "live get_agent_guidance tool")
+        guidance_payload = json_from_result(guidance, "get_agent_guidance")
+        if "content" not in guidance_payload:
+            raise SmokeError("live get_agent_guidance did not expose legacy top-level content")
+        print("ok: live get_agent_guidance returned MCP-compatible successor shape")
+
+        guidance_entries = tools_call(mcp_url, "list_agent_guidance_entries", {"project_id": "den-services", "include_global": True})
+        assert_tool_success(guidance_entries, "live list_agent_guidance_entries tool")
+        if not isinstance(json_from_result(guidance_entries, "list_agent_guidance_entries"), list):
+            raise SmokeError("live list_agent_guidance_entries did not return the legacy raw array shape")
+        print("ok: live list_agent_guidance_entries returned MCP-compatible array shape")
 
         if args.write_project and args.write_slug:
             run_live_write_restore(mcp_url, args.write_project, args.write_slug)
@@ -423,11 +439,41 @@ def run_live_write_restore(mcp_url: str, project_id: str, slug: str) -> None:
             raise SmokeError("live write did not round-trip through get_document")
     finally:
         store_document(mcp_url, original_doc)
-    print("ok: live write tool proxied to den-core and restored disposable document")
+    print("ok: live write tool proxied to documents successor and restored disposable document")
+
+
+def uniform_backend_urls(base_url: str) -> dict[str, str]:
+    return {name: base_url.rstrip("/") for name, _ in SMOKE_BACKENDS}
+
+
+def live_backend_urls(args: argparse.Namespace) -> dict[str, str]:
+    required = {
+        "den-core": args.den_core_url,
+        "tasks": args.tasks_url,
+        "documents": args.documents_url,
+        "guidance": args.guidance_url,
+    }
+    missing = [backend for backend, value in required.items() if not value]
+    if missing:
+        env_names = ", ".join(backend_url_env(backend) for backend in missing)
+        raise SmokeError(f"live mode requires explicit backend URL env vars: {env_names}")
+
+    backend_urls = uniform_backend_urls(args.den_core_url)
+    for backend, value in required.items():
+        backend_urls[backend] = value.rstrip("/")
+    for backend, _ in SMOKE_BACKENDS:
+        override = os.getenv(backend_url_env(backend), "")
+        if override:
+            backend_urls[backend] = override.rstrip("/")
+    return backend_urls
+
+
+def backend_url_env(backend: str) -> str:
+    return "DEN_MCP_SMOKE_" + backend.replace("-", "_").upper() + "_URL"
 
 
 @contextlib.contextmanager
-def mcp_process(repo_root: Path, mcp_port: int, backend_url: str, startup_timeout: float):
+def mcp_process(repo_root: Path, mcp_port: int, backend_urls: dict[str, str], startup_timeout: float):
     with tempfile.TemporaryDirectory(prefix="den-services-mcp-smoke-") as temp_dir:
         temp_path = Path(temp_dir)
         routes_path = temp_path / "routes.yaml"
@@ -452,7 +498,7 @@ def mcp_process(repo_root: Path, mcp_port: int, backend_url: str, startup_timeou
             config_lines.extend(
                 [
                     f'  - name: "{name}"',
-                    f'    base_url: "{backend_url}"',
+                    f'    base_url: "{backend_urls[name]}"',
                     '    health_path: "/health"',
                     '    timeout: "1s"',
                     f'    service_token_env: "{token_env}"',
