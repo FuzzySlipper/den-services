@@ -7,17 +7,18 @@ import (
 )
 
 const (
-	RequestAdapterMCPToolsCall             = "mcp_tools_call"
-	RequestAdapterMCPProjectsREST          = "mcp_projects_rest"
-	RequestAdapterMCPTasksREST             = "mcp_tasks_rest"
-	RequestAdapterMCPMessagesREST          = "mcp_messages_rest"
-	RequestAdapterMCPDocumentsREST         = "mcp_documents_rest"
-	RequestAdapterMCPReviewREST            = "mcp_review_rest"
-	RequestAdapterMCPKnowledgeREST         = "mcp_knowledge_rest"
-	ResponseAdapterMCPJSONRPC              = "mcp_jsonrpc_result"
-	ResponseAdapterMCPToolResultJSON       = "mcp_tool_result_json"
-	StateReady                       State = "ready"
-	StateUnavailable                 State = "unavailable"
+	RequestAdapterMCPToolsCall                   = "mcp_tools_call"
+	RequestAdapterMCPProjectsREST                = "mcp_projects_rest"
+	RequestAdapterMCPProjectSummaryCompose       = "mcp_project_summary_compose"
+	RequestAdapterMCPTasksREST                   = "mcp_tasks_rest"
+	RequestAdapterMCPMessagesREST                = "mcp_messages_rest"
+	RequestAdapterMCPDocumentsREST               = "mcp_documents_rest"
+	RequestAdapterMCPReviewREST                  = "mcp_review_rest"
+	RequestAdapterMCPKnowledgeREST               = "mcp_knowledge_rest"
+	ResponseAdapterMCPJSONRPC                    = "mcp_jsonrpc_result"
+	ResponseAdapterMCPToolResultJSON             = "mcp_tool_result_json"
+	StateReady                             State = "ready"
+	StateUnavailable                       State = "unavailable"
 )
 
 type State string

@@ -20,6 +20,7 @@ type MessageStore interface {
 	CreateMessage(ctx context.Context, message *Message) (*Message, error)
 	GetMessage(ctx context.Context, id int64) (*Message, error)
 	ListMessages(ctx context.Context, query ListMessagesQuery) ([]*Message, error)
+	UnreadCount(ctx context.Context, query UnreadCountQuery) (int64, error)
 	UnreadAfterCursor(ctx context.Context, projectID string, unreadFor string, cursor int64, limit int) ([]*Message, error)
 	GetThread(ctx context.Context, id int64) (Thread, error)
 	MarkRead(ctx context.Context, agent string, ids []int64) error
@@ -64,6 +65,22 @@ func (s *Service) ListMessages(ctx context.Context, projectID string, query List
 	query.ProjectID = projectID
 	query.Limit = clampLimit(query.Limit, 20)
 	return s.store.ListMessages(ctx, query)
+}
+
+func (s *Service) UnreadCount(ctx context.Context, projectID string, query UnreadCountQuery) (int64, error) {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return 0, validationFailed(ErrMissingProjectID)
+	}
+	query.UnreadFor = strings.TrimSpace(query.UnreadFor)
+	if query.UnreadFor == "" {
+		return 0, validationFailed(ErrMissingUnreadFor)
+	}
+	if query.Intent != "" && !validIntent(query.Intent) {
+		return 0, validationFailed(fmt.Errorf("%w: %s", ErrInvalidIntent, query.Intent))
+	}
+	query.ProjectID = projectID
+	return s.store.UnreadCount(ctx, query)
 }
 
 func (s *Service) GetMessage(ctx context.Context, id int64) (*Message, error) {

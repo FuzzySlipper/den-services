@@ -80,6 +80,31 @@ func (s *memoryStore) ListMessages(_ context.Context, query ListMessagesQuery) (
 	return limitMessages(found, query.Limit), nil
 }
 
+func (s *memoryStore) UnreadCount(_ context.Context, query UnreadCountQuery) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var count int64
+	for _, message := range s.messages {
+		if message.ProjectID() != query.ProjectID {
+			continue
+		}
+		if message.Sender() == query.UnreadFor || s.isRead(message.ID(), query.UnreadFor) {
+			continue
+		}
+		if query.TaskID != nil && (message.TaskID() == nil || *message.TaskID() != *query.TaskID) {
+			continue
+		}
+		if query.Intent != "" && message.Intent() != query.Intent {
+			continue
+		}
+		if query.AfterCursor != nil && message.ID() <= *query.AfterCursor {
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+
 func (s *memoryStore) UnreadAfterCursor(_ context.Context, projectID string, unreadFor string, cursor int64, limit int) ([]*Message, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

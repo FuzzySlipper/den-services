@@ -69,6 +69,9 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 		if projectsSafeSubsetRoute(tool.Name) {
 			wantBackend = "projects"
 		}
+		if projectSummaryComposeRoute(tool.Name) {
+			wantBackend = "projects"
+		}
 		if tasksRoute(tool.Name) {
 			wantBackend = "tasks"
 		}
@@ -128,6 +131,29 @@ func TestRouteTableAllowsProjectsRESTAdapter(t *testing.T) {
 		t.Fatalf("NewRouteTable() error = %v", err)
 	}
 	resolved, err := table.Resolve("list_projects")
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Method != "GET" {
+		t.Fatalf("Method = %q, want GET", resolved.Method)
+	}
+}
+
+func TestRouteTableAllowsProjectSummaryComposeAdapter(t *testing.T) {
+	route := Route{
+		Operation:       "get_project",
+		Backend:         "projects",
+		Method:          "GET",
+		Path:            "/v1/projects/{project_id}/summary",
+		RequestAdapter:  RequestAdapterMCPProjectSummaryCompose,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}
+
+	table, err := NewRouteTable([]Route{route})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	resolved, err := table.Resolve("get_project")
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -237,6 +263,15 @@ func projectsSafeSubsetRoute(operation string) bool {
 		"list_spaces",
 		"update_space_visibility",
 		"archive_space":
+		return true
+	default:
+		return false
+	}
+}
+
+func projectSummaryComposeRoute(operation string) bool {
+	switch operation {
+	case "get_project", "get_space":
 		return true
 	default:
 		return false

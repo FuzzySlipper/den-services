@@ -13,6 +13,7 @@ import (
 type MessageUseCases interface {
 	SendMessage(ctx context.Context, projectID string, req SendMessageRequest) (*Message, error)
 	ListMessages(ctx context.Context, projectID string, query ListMessagesQuery) ([]*Message, error)
+	UnreadCount(ctx context.Context, projectID string, query UnreadCountQuery) (int64, error)
 	GetMessage(ctx context.Context, id int64) (*Message, error)
 	GetThread(ctx context.Context, id int64) (Thread, error)
 	MarkRead(ctx context.Context, req MarkReadRequest) error
@@ -38,6 +39,7 @@ func NewHandler(service MessageUseCases) *Handler {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/projects/{project_id}/messages", h.sendMessage)
 	mux.HandleFunc("GET /v1/projects/{project_id}/messages", h.listMessages)
+	mux.HandleFunc("GET /v1/projects/{project_id}/messages/unread-count", h.unreadCount)
 	mux.HandleFunc("GET /v1/projects/{project_id}/messages/wait", h.waitForMessages)
 	mux.HandleFunc("GET /v1/projects/{project_id}/messages/threads/{thread_id}", h.getThread)
 	mux.HandleFunc("GET /v1/projects/{project_id}/packets/{message_id}/worker-prompt", h.renderWorkerPrompt)
@@ -82,6 +84,20 @@ func (h *Handler) listMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.WriteJSON(w, http.StatusOK, toMessageResponses(messages))
+}
+
+func (h *Handler) unreadCount(w http.ResponseWriter, r *http.Request) {
+	query, err := unreadCountQueryFromRequest(r)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	count, err := h.service.UnreadCount(r.Context(), r.PathValue("project_id"), query)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, UnreadCountResponse{UnreadMessageCount: count})
 }
 
 func (h *Handler) getMessage(w http.ResponseWriter, r *http.Request) {
@@ -316,6 +332,24 @@ func listQueryFromRequest(r *http.Request) (ListMessagesQuery, error) {
 		since = &parsed
 	}
 	return ListMessagesQuery{TaskID: int64Ptr(taskID), Since: since, UnreadFor: strings.TrimSpace(query.Get("unread_for")), Intent: strings.TrimSpace(query.Get("intent")), Limit: limit}, nil
+}
+
+func unreadCountQueryFromRequest(r *http.Request) (UnreadCountQuery, error) {
+	query := r.URL.Query()
+	taskID, err := optionalInt64(query.Get("task_id"))
+	if err != nil {
+		return UnreadCountQuery{}, err
+	}
+	afterCursor, err := optionalInt64(query.Get("after_cursor"))
+	if err != nil {
+		return UnreadCountQuery{}, err
+	}
+	return UnreadCountQuery{
+		TaskID:      int64Ptr(taskID),
+		UnreadFor:   strings.TrimSpace(query.Get("unread_for")),
+		Intent:      strings.TrimSpace(query.Get("intent")),
+		AfterCursor: int64Ptr(afterCursor),
+	}, nil
 }
 
 func notificationQueryFromRequest(r *http.Request) (NotificationQuery, error) {

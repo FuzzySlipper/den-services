@@ -78,6 +78,10 @@ type WaitForMessagesResponse struct {
 	Message  string             `json:"message,omitempty"`
 }
 
+type UnreadCountResponse struct {
+	UnreadMessageCount int64 `json:"unread_message_count"`
+}
+
 type WaitItemResponse struct {
 	ID        int64     `json:"id"`
 	ProjectID string    `json:"project_id"`

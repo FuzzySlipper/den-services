@@ -60,14 +60,20 @@ func (l *Locator) Resolve(operation string) (Route, config.BackendConfig, error)
 }
 
 func (l *Locator) Call(ctx context.Context, call ToolCall) (Result, *Failure, error) {
-	route, backend, err := l.Resolve(call.Operation)
+	route, backend, backends, err := l.resolveForCall(call.Operation)
 	if err != nil {
 		return Result{}, nil, err
 	}
-	result, failure, err := l.client.Call(ctx, backend, route, call)
+	var result Result
+	var failure *Failure
+	if route.RequestAdapter == RequestAdapterMCPProjectSummaryCompose {
+		result, failure, err = l.client.callProjectSummaryCompose(ctx, backends, route, call)
+	} else {
+		result, failure, err = l.client.Call(ctx, backend, route, call)
+	}
 	if failure != nil {
 		if failure.Retryable {
-			l.markState(backend.Name, StateUnavailable)
+			l.markState(failure.Backend, StateUnavailable)
 			failure.CircuitState = string(StateUnavailable)
 		}
 		return result, failure, err
@@ -77,6 +83,24 @@ func (l *Locator) Call(ctx context.Context, call ToolCall) (Result, *Failure, er
 	}
 	l.markState(backend.Name, StateReady)
 	return result, nil, nil
+}
+
+func (l *Locator) resolveForCall(operation string) (Route, config.BackendConfig, map[string]config.BackendConfig, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	route, err := l.table.Resolve(operation)
+	if err != nil {
+		return Route{}, config.BackendConfig{}, nil, err
+	}
+	backend, ok := l.backends[route.Backend]
+	if !ok {
+		return Route{}, config.BackendConfig{}, nil, fmt.Errorf("%w: %s", ErrBackendNotFound, route.Backend)
+	}
+	backends := make(map[string]config.BackendConfig, len(l.backends))
+	for name, backendConfig := range l.backends {
+		backends[name] = backendConfig
+	}
+	return route, backend, backends, nil
 }
 
 func (l *Locator) BackendState(name string) (State, bool) {

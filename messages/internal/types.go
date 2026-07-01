@@ -157,6 +157,14 @@ type ListMessagesQuery struct {
 	Limit     int
 }
 
+type UnreadCountQuery struct {
+	ProjectID   string
+	UnreadFor   string
+	TaskID      *int64
+	Intent      string
+	AfterCursor *int64
+}
+
 type NotificationQuery struct {
 	ProjectID     string
 	TaskID        *int64

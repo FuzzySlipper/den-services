@@ -62,6 +62,57 @@ func TestServiceSendThreadReadAndWait(t *testing.T) {
 	}
 }
 
+func TestServiceUnreadCount(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	service := NewService(store, NoopProjectValidator{}, NoopTaskReader{}, time.Now)
+	taskID := int64(42)
+
+	first, err := service.SendMessage(ctx, "den-services", SendMessageRequest{TaskID: &taskID, Sender: "planner", Content: "One"})
+	if err != nil {
+		t.Fatalf("SendMessage(first) error = %v", err)
+	}
+	second, err := service.SendMessage(ctx, "den-services", SendMessageRequest{TaskID: &taskID, Sender: "reviewer", Content: "Two", Intent: IntentReviewFeedback})
+	if err != nil {
+		t.Fatalf("SendMessage(second) error = %v", err)
+	}
+	if _, err := service.SendMessage(ctx, "den-services", SendMessageRequest{TaskID: &taskID, Sender: "codex", Content: "Self"}); err != nil {
+		t.Fatalf("SendMessage(self) error = %v", err)
+	}
+	if _, err := service.SendMessage(ctx, "other-project", SendMessageRequest{Sender: "planner", Content: "Other"}); err != nil {
+		t.Fatalf("SendMessage(other) error = %v", err)
+	}
+	if err := service.MarkRead(ctx, MarkReadRequest{Agent: "codex", MessageIDs: []int64{first.ID()}}); err != nil {
+		t.Fatalf("MarkRead() error = %v", err)
+	}
+
+	count, err := service.UnreadCount(ctx, "den-services", UnreadCountQuery{UnreadFor: "codex"})
+	if err != nil {
+		t.Fatalf("UnreadCount() error = %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("UnreadCount() = %d, want 1", count)
+	}
+	feedbackCount, err := service.UnreadCount(ctx, "den-services", UnreadCountQuery{UnreadFor: "codex", Intent: IntentReviewFeedback})
+	if err != nil {
+		t.Fatalf("UnreadCount(intent) error = %v", err)
+	}
+	if feedbackCount != 1 {
+		t.Fatalf("UnreadCount(intent) = %d, want 1", feedbackCount)
+	}
+	after := first.ID()
+	afterCount, err := service.UnreadCount(ctx, "den-services", UnreadCountQuery{UnreadFor: "codex", AfterCursor: &after})
+	if err != nil {
+		t.Fatalf("UnreadCount(after) error = %v", err)
+	}
+	if afterCount != 1 || second.ID() <= after {
+		t.Fatalf("UnreadCount(after) = %d, want second message only", afterCount)
+	}
+	if _, err := service.UnreadCount(ctx, "den-services", UnreadCountQuery{}); !errors.Is(err, ErrMissingUnreadFor) {
+		t.Fatalf("UnreadCount(missing unread_for) error = %v, want ErrMissingUnreadFor", err)
+	}
+}
+
 func TestServiceNotificationsAndPackets(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()

@@ -69,6 +69,20 @@ func (s *Store) ListMessages(ctx context.Context, query ListMessagesQuery) ([]*M
 	return scanMessages(rows)
 }
 
+func (s *Store) UnreadCount(ctx context.Context, query UnreadCountQuery) (int64, error) {
+	var count int64
+	if err := s.pool.QueryRow(ctx, unreadCountSQL,
+		query.ProjectID,
+		query.UnreadFor,
+		query.TaskID,
+		emptyToNil(query.Intent),
+		query.AfterCursor,
+	).Scan(&count); err != nil {
+		return 0, fmt.Errorf("counting unread messages: %w", err)
+	}
+	return count, nil
+}
+
 func (s *Store) UnreadAfterCursor(ctx context.Context, projectID string, unreadFor string, cursor int64, limit int) ([]*Message, error) {
 	rows, err := s.pool.Query(ctx, unreadAfterCursorSQL, projectID, unreadFor, cursor, limit)
 	if err != nil {
@@ -276,6 +290,16 @@ where m.project_id = $1
   and not exists (select 1 from den_messages.message_reads r where r.message_id = m.id and r.agent = $2)
 order by m.created_at desc, m.id desc
 limit $4`
+
+const unreadCountSQL = `
+select count(*)
+from den_messages.messages m
+where m.project_id = $1
+  and m.sender <> $2
+  and not exists (select 1 from den_messages.message_reads r where r.message_id = m.id and r.agent = $2)
+  and ($3::bigint is null or m.task_id = $3)
+  and ($4::text is null or m.intent = $4)
+  and ($5::bigint is null or m.id > $5)`
 
 const threadRepliesSQL = `
 select ` + messageColumns + `
