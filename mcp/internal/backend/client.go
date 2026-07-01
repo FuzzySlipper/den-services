@@ -16,6 +16,8 @@ import (
 	"den-services/mcp/internal/config"
 )
 
+const maxStreamableMCPEventSize = 4 * 1024 * 1024
+
 type Client struct {
 	httpClient *http.Client
 	mu         sync.Mutex
@@ -328,12 +330,13 @@ func sessionRequiredFailure(failure *Failure) bool {
 	if failure == nil || failure.StatusCode == nil {
 		return false
 	}
-	if *failure.StatusCode != http.StatusBadRequest && *failure.StatusCode != http.StatusNotAcceptable {
+	if *failure.StatusCode != http.StatusBadRequest && *failure.StatusCode != http.StatusNotAcceptable && *failure.StatusCode != http.StatusNotFound {
 		return false
 	}
 	message := strings.ToLower(failure.Message)
 	return strings.Contains(message, "mcp-session-id") ||
 		strings.Contains(message, "new session") ||
+		strings.Contains(message, "session not found") ||
 		strings.Contains(message, "text/event-stream")
 }
 
@@ -345,21 +348,25 @@ func readMCPResponseBody(response *http.Response) ([]byte, error) {
 	if !strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream") {
 		return body, nil
 	}
-	data, ok := firstSSEData(body)
+	data, ok, err := firstSSEData(body)
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return nil, errors.New("backend streamable MCP response missing message data")
 	}
 	return data, nil
 }
 
-func firstSSEData(body []byte) ([]byte, bool) {
+func firstSSEData(body []byte) ([]byte, bool, error) {
 	scanner := bufio.NewScanner(bytes.NewReader(body))
+	scanner.Buffer(make([]byte, 0, 64*1024), maxStreamableMCPEventSize)
 	var dataLines []string
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {
 			if len(dataLines) > 0 {
-				return []byte(strings.Join(dataLines, "\n")), true
+				return []byte(strings.Join(dataLines, "\n")), true, nil
 			}
 			continue
 		}
@@ -367,10 +374,13 @@ func firstSSEData(body []byte) ([]byte, bool) {
 			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
 		}
 	}
-	if len(dataLines) > 0 {
-		return []byte(strings.Join(dataLines, "\n")), true
+	if err := scanner.Err(); err != nil {
+		return nil, false, fmt.Errorf("parsing backend streamable MCP response data event: %w", err)
 	}
-	return nil, false
+	if len(dataLines) > 0 {
+		return []byte(strings.Join(dataLines, "\n")), true, nil
+	}
+	return nil, false, nil
 }
 
 func classifyBackendError(err error) string {
