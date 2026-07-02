@@ -17,8 +17,8 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 61 {
-		t.Fatalf("tool count = %d, want 61", len(names))
+	if len(names) != 60 {
+		t.Fatalf("tool count = %d, want 60", len(names))
 	}
 	for _, name := range []string{
 		"search_documents",
@@ -37,9 +37,10 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		"lease_worker",
 		"invoke_capability",
 		"list_topics",
+		"delete_space",
 	} {
 		if containsName(names, name) {
-			t.Fatalf("retired tool %s is visible", name)
+			t.Fatalf("hidden tool %s is visible", name)
 		}
 	}
 }
@@ -78,6 +79,26 @@ func TestDefaultRegistryResolvesHiddenRetiredTools(t *testing.T) {
 	}
 }
 
+func TestDefaultRegistryResolvesHiddenAdminToolsWithoutTombstone(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry() error = %v", err)
+	}
+	tool, err := registry.Resolve("delete_space")
+	if err != nil {
+		t.Fatalf("Resolve(delete_space) error = %v", err)
+	}
+	if !tool.Hidden {
+		t.Fatal("delete_space Hidden = false, want true")
+	}
+	if tool.TombstoneMessage != "" {
+		t.Fatalf("delete_space TombstoneMessage = %q, want empty", tool.TombstoneMessage)
+	}
+	if !tool.Deprecated || tool.DeprecationMessage == "" {
+		t.Fatalf("delete_space deprecation = %t/%q", tool.Deprecated, tool.DeprecationMessage)
+	}
+}
+
 func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 	registry, err := DefaultRegistry()
 	if err != nil {
@@ -91,6 +112,9 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 	visibleIndex := 0
 	for _, snapshotTool := range snapshot.Tools {
 		if _, retired := retiredToolPolicies[snapshotTool.Name]; retired {
+			continue
+		}
+		if _, hiddenAdmin := hiddenAdminToolPolicies[snapshotTool.Name]; hiddenAdmin {
 			continue
 		}
 		if visibleIndex >= len(listed) {

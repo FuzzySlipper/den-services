@@ -15,6 +15,7 @@ type ScopeStore interface {
 	ListScopes(ctx context.Context, query ListScopesQuery) ([]*Scope, error)
 	UpdateScope(ctx context.Context, id string, patch ScopePatch, updatedAt time.Time) (*Scope, error)
 	UpdateVisibility(ctx context.Context, id string, visibility string, updatedAt time.Time) (*Scope, error)
+	DeleteScope(ctx context.Context, id string) (*Scope, error)
 }
 
 type ListScopesQuery struct {
@@ -163,6 +164,21 @@ func (s *Service) AssertWritable(ctx context.Context, id string, allowArchived b
 		return nil, conflict(fmt.Errorf("%w: %s", ErrArchivedScopeWrite, scope.ID()), "archived_scope")
 	}
 	return scope, nil
+}
+
+func (s *Service) DeleteSpace(ctx context.Context, id string, force bool) (*Scope, error) {
+	scope, err := s.GetScope(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if scope.ProtectedFromDelete() && !force {
+		return nil, conflict(fmt.Errorf("%w: %s requires force", ErrProtectedScope, scope.ID()), "protected_scope")
+	}
+	deleted, err := s.store.DeleteScope(ctx, scope.ID())
+	if err != nil {
+		return nil, err
+	}
+	return deleted, nil
 }
 
 func normalizeSettings(raw json.RawMessage) ([]byte, error) {

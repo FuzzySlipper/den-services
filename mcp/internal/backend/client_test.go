@@ -343,6 +343,44 @@ func TestClientCallsProjectsRESTUpdateProjectPathParameter(t *testing.T) {
 	}
 }
 
+func TestClientCallsProjectsRESTDeleteSpaceAdminRoute(t *testing.T) {
+	var sawPath string
+	var sawBody deleteSpaceBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.EscapedPath()
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		_, _ = w.Write([]byte(`{"deleted":true,"space":{"id":"assistant/a","name":"Assistant A","kind":"assistant","visibility":"normal","writable":true},"dependency_counts":{},"dependency_counts_complete":false}`))
+	}))
+	defer server.Close()
+
+	result, failure, err := NewClient(server.Client()).Call(context.Background(), testBackend("projects", server.URL), projectsRoute("delete_space", http.MethodPost, "/v1/admin/spaces/{space_id}/delete"), ToolCall{
+		ToolName:  "delete_space",
+		Operation: "delete_space",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"space_id":"assistant/a","force":true}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawPath != "/v1/admin/spaces/assistant%2Fa/delete" {
+		t.Fatalf("path = %q, want escaped admin delete path", sawPath)
+	}
+	if !sawBody.Force {
+		t.Fatalf("force = false, want true")
+	}
+	if !strings.Contains(string(result.Value), `"deleted":true`) {
+		t.Fatalf("result = %s", result.Value)
+	}
+}
+
 func TestClientCallsTasksRESTCreateTask(t *testing.T) {
 	var sawPath string
 	var sawBody createTaskBody

@@ -19,11 +19,13 @@ local and staged verification, then a later explicit cutover task can update
 - `GET /v1/spaces/{id}`
 - `PATCH /v1/spaces/{id}/visibility`
 - `POST /v1/spaces/{id}/archive`
+- `POST /v1/admin/spaces/{id}/delete`
 - `GET /v1/scopes/{id}`
 - `POST /v1/scopes/{id}/assert-writable`
 
-The service intentionally does not implement a green-path `delete_space`
-replacement.
+The delete route is an admin-only escape hatch. It is not a green-path lifecycle
+route; ordinary callers should use `archive_space` or
+`update_space_visibility`.
 
 ## MCP Route Staging
 
@@ -51,8 +53,9 @@ Do not green-path:
 
 - `delete_space`
 
-Deletion remains operator/admin-only if it survives at all. Archive or
-visibility updates are the normal lifecycle path.
+Deletion remains operator/admin-only and hidden from default MCP discovery.
+Stale direct MCP calls route to the projects admin endpoint rather than Core.
+Archive or visibility updates are the normal lifecycle path.
 
 ## Required Before Cutover
 

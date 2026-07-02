@@ -106,6 +106,52 @@ func TestHTTPProjectsAndSpacesLifecycle(t *testing.T) {
 	if assertRestoredResponse.Code != http.StatusOK {
 		t.Fatalf("assert restored status = %d body = %s", assertRestoredResponse.Code, assertRestoredResponse.Body.String())
 	}
+
+	deleteSpace := authedJSONRequest(http.MethodPost, "/v1/admin/spaces/assistant-space/delete", `{}`)
+	deleteSpaceResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(deleteSpaceResponse, deleteSpace)
+	if deleteSpaceResponse.Code != http.StatusOK {
+		t.Fatalf("delete space status = %d body = %s", deleteSpaceResponse.Code, deleteSpaceResponse.Body.String())
+	}
+	var deleted DeleteSpaceResponse
+	decodeJSON(t, deleteSpaceResponse.Body, &deleted)
+	if !deleted.Deleted || deleted.Space.ID != "assistant-space" || deleted.DependencyCountsComplete {
+		t.Fatalf("delete response = %+v", deleted)
+	}
+	getDeleted := authedJSONRequest(http.MethodGet, "/v1/spaces/assistant-space", "")
+	getDeletedResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(getDeletedResponse, getDeleted)
+	if getDeletedResponse.Code != http.StatusNotFound {
+		t.Fatalf("get deleted status = %d body = %s", getDeletedResponse.Code, getDeletedResponse.Body.String())
+	}
+}
+
+func TestHTTPAdminDeleteSpaceProtectsCoreScopesWithoutForce(t *testing.T) {
+	server := testServer(t)
+	createGlobal := authedJSONRequest(http.MethodPost, "/v1/spaces", `{
+		"id": "_global",
+		"name": "Global",
+		"kind": "system"
+	}`)
+	createGlobalResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(createGlobalResponse, createGlobal)
+	if createGlobalResponse.Code != http.StatusCreated {
+		t.Fatalf("create global status = %d body = %s", createGlobalResponse.Code, createGlobalResponse.Body.String())
+	}
+
+	deleteGlobal := authedJSONRequest(http.MethodPost, "/v1/admin/spaces/_global/delete", `{}`)
+	deleteGlobalResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(deleteGlobalResponse, deleteGlobal)
+	if deleteGlobalResponse.Code != http.StatusConflict {
+		t.Fatalf("delete protected status = %d body = %s", deleteGlobalResponse.Code, deleteGlobalResponse.Body.String())
+	}
+
+	forceDelete := authedJSONRequest(http.MethodPost, "/v1/admin/spaces/_global/delete", `{"force":true}`)
+	forceDeleteResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(forceDeleteResponse, forceDelete)
+	if forceDeleteResponse.Code != http.StatusOK {
+		t.Fatalf("force delete protected status = %d body = %s", forceDeleteResponse.Code, forceDeleteResponse.Body.String())
+	}
 }
 
 func TestHTTPRejectsInvalidVisibility(t *testing.T) {

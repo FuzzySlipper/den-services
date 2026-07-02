@@ -26,6 +26,7 @@ type projectsToolArguments struct {
 	SettingsJSON    json.RawMessage `json:"settings_json"`
 	IncludeHidden   bool            `json:"include_hidden"`
 	IncludeArchived bool            `json:"include_archived"`
+	Force           bool            `json:"force"`
 }
 
 type createProjectBody struct {
@@ -56,6 +57,10 @@ type createSpaceBody struct {
 
 type updateVisibilityBody struct {
 	Visibility string `json:"visibility"`
+}
+
+type deleteSpaceBody struct {
+	Force bool `json:"force,omitempty"`
 }
 
 type mcpToolResult struct {
@@ -163,6 +168,8 @@ func projectsRESTRequestBody(operation string, arguments projectsToolArguments) 
 		})
 	case "update_space_visibility":
 		return json.Marshal(updateVisibilityBody{Visibility: arguments.Visibility})
+	case "delete_space":
+		return json.Marshal(deleteSpaceBody{Force: arguments.Force})
 	case "archive_space", "list_projects", "list_spaces":
 		return nil, nil
 	default:

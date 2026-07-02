@@ -12,6 +12,10 @@ type retiredToolPolicy struct {
 	message string
 }
 
+type hiddenToolPolicy struct {
+	message string
+}
+
 //go:embed testdata/live_tools_20260627.json
 var liveToolsSnapshot []byte
 
@@ -58,9 +62,18 @@ func DefaultTools() ([]ToolDefinition, error) {
 			definition.Deprecated = true
 			definition.DeprecationMessage = policy.message
 		}
+		if policy, ok := hiddenAdminToolPolicies[tool.Name]; ok {
+			definition.Hidden = true
+			definition.Deprecated = true
+			definition.DeprecationMessage = policy.message
+		}
 		tools = append(tools, definition)
 	}
 	return tools, nil
+}
+
+var hiddenAdminToolPolicies = map[string]hiddenToolPolicy{
+	"delete_space": {message: "delete_space is admin-only and hidden from default MCP tool discovery. Prefer archive_space or update_space_visibility for normal lifecycle removal."},
 }
 
 var retiredToolPolicies = map[string]retiredToolPolicy{

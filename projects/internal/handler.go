@@ -17,6 +17,7 @@ type ScopeUseCases interface {
 	UpdateVisibility(ctx context.Context, id string, visibility string) (*Scope, error)
 	ArchiveSpace(ctx context.Context, id string) (*Scope, error)
 	AssertWritable(ctx context.Context, id string, allowArchived bool) (*Scope, error)
+	DeleteSpace(ctx context.Context, id string, force bool) (*Scope, error)
 }
 
 type Handler struct {
@@ -38,6 +39,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/spaces/{id}", h.getSpace)
 	mux.HandleFunc("PATCH /v1/spaces/{id}/visibility", h.updateSpaceVisibility)
 	mux.HandleFunc("POST /v1/spaces/{id}/archive", h.archiveSpace)
+	mux.HandleFunc("POST /v1/admin/spaces/{id}/delete", h.deleteSpace)
 
 	mux.HandleFunc("GET /v1/scopes/{id}", h.getScope)
 	mux.HandleFunc("POST /v1/scopes/{id}/assert-writable", h.assertWritable)
@@ -160,6 +162,28 @@ func (h *Handler) assertWritable(w http.ResponseWriter, r *http.Request) {
 		ID:         scope.ID(),
 		Writable:   true,
 		Visibility: scope.Visibility(),
+	})
+}
+
+func (h *Handler) deleteSpace(w http.ResponseWriter, r *http.Request) {
+	var req DeleteSpaceRequest
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := api.DecodeJSON(r, &req); err != nil {
+			api.WriteServiceError(w, err)
+			return
+		}
+	}
+	scope, err := h.service.DeleteSpace(r.Context(), r.PathValue("id"), req.Force)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, DeleteSpaceResponse{
+		Deleted:                  true,
+		Space:                    toScopeResponse(scope),
+		DependencyCounts:         map[string]int{},
+		DependencyCountsComplete: false,
+		Message:                  "Space deleted by admin route. Cross-domain dependent counts are not owned by projects; prefer archive_space for normal lifecycle removal.",
 	})
 }
 

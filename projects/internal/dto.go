@@ -48,6 +48,10 @@ type AssertWritableRequest struct {
 	AllowArchivedScope bool `json:"allow_archived_scope,omitempty"`
 }
 
+type DeleteSpaceRequest struct {
+	Force bool `json:"force,omitempty"`
+}
+
 type ScopeResponse struct {
 	ID           string          `json:"id"`
 	Name         string          `json:"name"`
@@ -66,6 +70,14 @@ type AssertWritableResponse struct {
 	ID         string `json:"id"`
 	Writable   bool   `json:"writable"`
 	Visibility string `json:"visibility"`
+}
+
+type DeleteSpaceResponse struct {
+	Deleted                  bool           `json:"deleted"`
+	Space                    ScopeResponse  `json:"space"`
+	DependencyCounts         map[string]int `json:"dependency_counts"`
+	DependencyCountsComplete bool           `json:"dependency_counts_complete"`
+	Message                  string         `json:"message,omitempty"`
 }
 
 func toScopeResponse(scope *Scope) ScopeResponse {

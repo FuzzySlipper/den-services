@@ -100,6 +100,17 @@ func (s *Store) UpdateVisibility(ctx context.Context, id string, visibility stri
 	return scope, nil
 }
 
+func (s *Store) DeleteScope(ctx context.Context, id string) (*Scope, error) {
+	scope, err := scanScope(s.pool.QueryRow(ctx, deleteScopeSQL, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, notFound(id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("deleting scope %s: %w", id, err)
+	}
+	return scope, nil
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -223,5 +234,10 @@ const updateVisibilitySQL = `
 update den_projects.projects
 set visibility = $2,
     updated_at = $3
+where id = $1
+returning ` + scopeColumns
+
+const deleteScopeSQL = `
+delete from den_projects.projects
 where id = $1
 returning ` + scopeColumns

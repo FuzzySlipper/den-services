@@ -84,6 +84,8 @@ Run read-heavy smokes first:
   read against a recent task.
 - Task workflow: `get_task_workflow_summary` against a recent task; this should
   compose tasks, review, and message packet headers without Core.
+- Projects admin surface: default `tools/list` should omit `delete_space`; stale
+  direct calls should route to projects admin behavior, not Core.
 - Knowledge: `den_knowledge_search`, `den_knowledge_get`, and
   `den_knowledge_guide`.
 - Guidance and librarian: run only if the operator has accepted that they may

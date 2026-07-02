@@ -30,6 +30,7 @@ var (
 	ErrArchivedScopeWrite = errors.New("scope is archived")           //nolint:gochecknoglobals
 	ErrDuplicateScope     = errors.New("scope already exists")        //nolint:gochecknoglobals
 	ErrEmptyPatch         = errors.New("patch has no mutable fields") //nolint:gochecknoglobals
+	ErrProtectedScope     = errors.New("scope is protected")          //nolint:gochecknoglobals
 )
 
 type ServiceError struct {
@@ -184,6 +185,17 @@ func (s *Scope) Writable() bool {
 	return s.visibility != VisibilityArchived
 }
 
+func (s *Scope) ProtectedFromDelete() bool {
+	switch {
+	case protectedScopeID(s.id):
+		return true
+	case s.kind == KindSystem || s.kind == KindPersonal:
+		return true
+	default:
+		return false
+	}
+}
+
 func defaultKind(kind string) string {
 	kind = strings.TrimSpace(kind)
 	if kind == "" {
@@ -212,6 +224,15 @@ func validKind(kind string) bool {
 func validVisibility(visibility string) bool {
 	switch visibility {
 	case VisibilityNormal, VisibilityHidden, VisibilityArchived:
+		return true
+	default:
+		return false
+	}
+}
+
+func protectedScopeID(id string) bool {
+	switch strings.TrimSpace(id) {
+	case "_global", "den-core", "core":
 		return true
 	default:
 		return false

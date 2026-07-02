@@ -131,6 +131,17 @@ func (s *memoryStore) UpdateVisibility(_ context.Context, id string, visibility 
 	return cloneScope(updated), nil
 }
 
+func (s *memoryStore) DeleteScope(_ context.Context, id string) (*Scope, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	scope, ok := s.scopes[id]
+	if !ok {
+		return nil, notFound(id)
+	}
+	delete(s.scopes, id)
+	return cloneScope(scope), nil
+}
+
 func cloneScope(scope *Scope) *Scope {
 	clone, err := NewScope(NewScopeParams{
 		ID:           scope.ID(),

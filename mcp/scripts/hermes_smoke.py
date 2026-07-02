@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 
-EXPECTED_TOOL_COUNT = 61
+EXPECTED_TOOL_COUNT = 60
 MCP_PATH = "/mcp"
 DEN_CORE_TOKEN_ENV = "DEN_CORE_SERVICE_TOKEN"
 SMOKE_BACKENDS = (

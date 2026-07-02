@@ -67,4 +67,14 @@ func TestPostgresStoreScopeLifecycle(t *testing.T) {
 	if archived.Visibility() != VisibilityArchived {
 		t.Fatalf("archived visibility = %s", archived.Visibility())
 	}
+	deleted, err := store.DeleteScope(ctx, created.ID())
+	if err != nil {
+		t.Fatalf("DeleteScope() error = %v", err)
+	}
+	if deleted.ID() != created.ID() {
+		t.Fatalf("deleted id = %s, want %s", deleted.ID(), created.ID())
+	}
+	if _, err := store.GetScope(ctx, created.ID()); err == nil {
+		t.Fatal("GetScope(deleted) error = nil")
+	}
 }

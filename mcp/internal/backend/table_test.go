@@ -102,6 +102,20 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 	}
 }
 
+func TestRoutesExampleRoutesHiddenAdminDeleteSpaceToProjects(t *testing.T) {
+	table, err := LoadRouteTable(filepath.Join("..", "..", "routes.example.yaml"))
+	if err != nil {
+		t.Fatalf("LoadRouteTable() error = %v", err)
+	}
+	route, err := table.Resolve("delete_space")
+	if err != nil {
+		t.Fatalf("Resolve(delete_space) error = %v", err)
+	}
+	if route.Backend != "projects" || route.Path != "/v1/admin/spaces/{space_id}/delete" || route.RequestAdapter != RequestAdapterMCPProjectsREST {
+		t.Fatalf("delete_space route = %#v", route)
+	}
+}
+
 func TestRouteTableAllowsTasksRESTAdapter(t *testing.T) {
 	route := Route{
 		Operation:       "remove_dependency",
