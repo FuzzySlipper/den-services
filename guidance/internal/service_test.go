@@ -2,7 +2,10 @@ package guidance
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -62,6 +65,56 @@ func TestServiceRejectsHiddenDocumentOnAdd(t *testing.T) {
 	_, err := service.AddEntry(context.Background(), "den-services", AddEntryRequest{DocumentSlug: "hidden"})
 	if !errors.Is(err, ErrDocumentNotVisible) {
 		t.Fatalf("AddEntry(hidden) error = %v, want %v", err, ErrDocumentNotVisible)
+	}
+}
+
+func TestServiceAddEntryAcceptsSameScopeDocumentProjectFromDocumentsClient(t *testing.T) {
+	ctx := context.Background()
+	documentUpdatedAt := time.Date(2026, 7, 2, 0, 58, 22, 0, time.UTC)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/projects/rusty-crew/documents/architecture-phase0-boundary-clarifications-2026-07-01" {
+			t.Fatalf("unexpected document request %s %s", r.Method, r.URL.String())
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":         1643,
+			"project_id": "rusty-crew",
+			"slug":       "architecture-phase0-boundary-clarifications-2026-07-01",
+			"title":      "Architecture Phase 0 Boundary Clarifications",
+			"content":    "Boundary clarification.",
+			"doc_type":   "spec",
+			"visibility": "normal",
+			"tags":       []string{"architecture", "guidance"},
+			"summary":    "Phase 0 clarification.",
+			"updated_at": documentUpdatedAt.Format(time.RFC3339),
+		})
+	}))
+	defer server.Close()
+
+	store := newMemoryStore()
+	service := NewService(store, fakeProjects{}, NewDocumentsClient(server.URL, ""), fixedClock, 4096)
+	entry, err := service.AddEntry(ctx, "rusty-crew", AddEntryRequest{
+		DocumentProjectID: "rusty-crew",
+		DocumentSlug:      "architecture-phase0-boundary-clarifications-2026-07-01",
+		Importance:        ImportanceRequired,
+		SortOrder:         15,
+		Notes:             "Active amendment clarifying Phase 0 Rusty Crew architecture boundaries.",
+	})
+	if err != nil {
+		t.Fatalf("AddEntry() error = %v", err)
+	}
+	if entry.ProjectID != "rusty-crew" || entry.DocumentProjectID != "rusty-crew" {
+		t.Fatalf("entry scope/document project = %s/%s, want rusty-crew/rusty-crew", entry.ProjectID, entry.DocumentProjectID)
+	}
+	if entry.DocumentSlug != "architecture-phase0-boundary-clarifications-2026-07-01" {
+		t.Fatalf("entry slug = %q", entry.DocumentSlug)
+	}
+
+	entries, err := service.ListEntries(ctx, "rusty-crew", false)
+	if err != nil {
+		t.Fatalf("ListEntries() error = %v", err)
+	}
+	if len(entries) != 1 || entries[0].DocumentProjectID != "rusty-crew" {
+		t.Fatalf("persisted entries = %#v", entries)
 	}
 }
 

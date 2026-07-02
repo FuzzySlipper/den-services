@@ -56,6 +56,18 @@ type DocumentsClient struct {
 	client  *http.Client
 }
 
+type documentResponse struct {
+	ProjectID  string    `json:"project_id"`
+	Slug       string    `json:"slug"`
+	Title      string    `json:"title"`
+	Content    string    `json:"content"`
+	DocType    string    `json:"doc_type"`
+	Visibility string    `json:"visibility"`
+	Tags       []string  `json:"tags,omitempty"`
+	Summary    string    `json:"summary,omitempty"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
 func NewDocumentsClient(baseURL string, token string) *DocumentsClient {
 	return &DocumentsClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), token: strings.TrimSpace(token), client: &http.Client{Timeout: 5 * time.Second}}
 }
@@ -83,11 +95,21 @@ func (c *DocumentsClient) GetDocument(ctx context.Context, projectID string, slu
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, fmt.Errorf("document read failed: %s", errorMessage(resp))
 	}
-	var document Document
-	if err := json.NewDecoder(resp.Body).Decode(&document); err != nil {
+	var response documentResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("decoding document response: %w", err)
 	}
-	return &document, nil
+	return &Document{
+		ProjectID:  response.ProjectID,
+		Slug:       response.Slug,
+		Title:      response.Title,
+		Content:    response.Content,
+		DocType:    response.DocType,
+		Visibility: response.Visibility,
+		Tags:       append([]string(nil), response.Tags...),
+		Summary:    response.Summary,
+		UpdatedAt:  response.UpdatedAt,
+	}, nil
 }
 
 func errorMessage(resp *http.Response) string {
