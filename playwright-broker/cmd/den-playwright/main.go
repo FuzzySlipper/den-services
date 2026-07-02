@@ -80,7 +80,9 @@ func runProject(args []string) error {
 		DenProjectID:      denProjectID,
 		DenTaskID:         denTaskID,
 	})
-	fmt.Printf("evidence=%s\nbase_url=%s\nstatus=%s\n", result.Evidence.Artifacts.IndexPath, result.Evidence.Server.BaseURL, result.Evidence.Status)
+	if result.Evidence.Artifacts.IndexPath != "" {
+		fmt.Printf("evidence=%s\nbase_url=%s\nstatus=%s\n", result.Evidence.Artifacts.IndexPath, result.Evidence.Server.BaseURL, result.Evidence.Status)
+	}
 	return err
 }
 

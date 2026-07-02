@@ -14,6 +14,25 @@ import (
 	"time"
 )
 
+func TestLeaseRegistryRecoversStaleLock(t *testing.T) {
+	registry := NewLeaseRegistry(t.TempDir())
+	if err := os.MkdirAll(registry.dir, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(registry.lockPath, []byte("pid=999999999 acquired_at=2026-07-02T00:00:00Z\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := registry.Lock(t.Context(), time.Second); err != nil {
+		t.Fatalf("Lock() error = %v", err)
+	}
+	if registry.lockFile == nil {
+		t.Fatal("Lock() did not acquire replacement lock file")
+	}
+	if err := registry.Unlock(); err != nil {
+		t.Fatalf("Unlock() error = %v", err)
+	}
+}
+
 func TestRunChoosesCleanPortWhenPreferredPortHostsWrongApp(t *testing.T) {
 	wrongServer, wrongURL, wrongPort := startHTTPServer(t, "wrong-app", "")
 	defer wrongServer.Close()

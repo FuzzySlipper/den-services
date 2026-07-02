@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -56,6 +58,11 @@ func (r *LeaseRegistry) Lock(ctx context.Context, timeout time.Duration) error {
 		if !errors.Is(err, os.ErrExist) {
 			return fmt.Errorf("acquiring broker lock: %w", err)
 		}
+		if stale, staleErr := r.removeStaleLock(); staleErr != nil {
+			return staleErr
+		} else if stale {
+			continue
+		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("broker lease lock timed out after %s", timeout)
 		}
@@ -65,6 +72,45 @@ func (r *LeaseRegistry) Lock(ctx context.Context, timeout time.Duration) error {
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
+}
+
+func (r *LeaseRegistry) removeStaleLock() (bool, error) {
+	ownerPID, ok, err := readLockOwnerPID(r.lockPath)
+	if err != nil {
+		return false, err
+	}
+	if !ok || processAlive(ownerPID) {
+		return false, nil
+	}
+	if err := os.Remove(r.lockPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		return false, fmt.Errorf("removing stale broker lock: %w", err)
+	}
+	return true, nil
+}
+
+func readLockOwnerPID(path string) (int, bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, false, nil
+		}
+		return 0, false, fmt.Errorf("reading broker lock: %w", err)
+	}
+	for _, field := range strings.Fields(string(data)) {
+		rawPID, ok := strings.CutPrefix(field, "pid=")
+		if !ok {
+			continue
+		}
+		pid, err := strconv.Atoi(rawPID)
+		if err != nil || pid <= 0 {
+			return 0, false, nil
+		}
+		return pid, true, nil
+	}
+	return 0, false, nil
 }
 
 func (r *LeaseRegistry) Unlock() error {
