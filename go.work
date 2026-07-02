@@ -16,6 +16,7 @@ use (
 	./migration
 	./mcp
 	./observation
+	./playwright-broker
 	./projects
 	./review
 	./runtime

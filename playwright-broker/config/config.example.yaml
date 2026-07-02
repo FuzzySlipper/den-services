@@ -1,0 +1,19 @@
+# playwright-broker local configuration.
+# This tool is intended to run where agents run browser tests, currently den-k8.
+# It is not registered as a den-srv systemd deployment service.
+
+state_dir: "~/.cache/den-playwright/state"       # Lease registry and broker lock files.
+artifact_root: "~/.cache/den-playwright/runs"    # Run evidence, stdout/stderr logs, traces, screenshots, and videos.
+host: "127.0.0.1"                                # Default dev-server bind host.
+
+port_range:
+  start: 37100                                   # First broker-managed fallback port.
+  end: 37250                                     # Last broker-managed fallback port.
+
+timeouts:
+  lock_timeout: "10s"                            # How long another broker run may hold the lease lock before this run fails.
+  startup_timeout: "45s"                         # Default time to wait for a started dev server to pass health checks.
+  health_timeout: "2s"                           # Per-request health check timeout.
+  health_interval: "250ms"                       # Poll interval while waiting for a server to become healthy.
+  shutdown_timeout: "5s"                         # Grace period before killing a broker-owned process group.
+  run_timeout: "20m"                             # Maximum Playwright command duration.
