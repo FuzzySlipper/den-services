@@ -38,22 +38,29 @@ ok: hermes stability smoke complete
 To add an opt-in live smoke, pass `--mode both` and set the live backend URLs
 explicitly. The route table now contains both legacy MCP-routed Core tools and
 REST-routed successor services, so do not point every backend at the old MCP
-facade. The harness starts `den-services/mcp` locally, uses
+facade. The harness starts a temporary `den-services/mcp` locally, uses
 `DEN_MCP_SMOKE_DEN_CORE_URL` for remaining Core-routed tools, and uses the
-successor URLs for the REST-routed smoke calls:
+successor URLs for the REST-routed smoke calls.
 
 Live smoke requires those successor services to already be deployed and
-reachable from the machine running the harness. This branch's local smoke proves
-the MCP route table, outage behavior, and guidance compatibility shape; live
-Core-dependency removal still needs a deployed successor-service smoke with the
-URLs below. In the task plan, that live deployment/cutover proof is tracked by
-#3890.
+reachable from the machine running the harness. Successor services are
+loopback-bound on den-srv, so run the live smoke on den-srv or use the SSH helper
+below from a development host. Do not use `192.168.1.10:8092` style LAN URLs for
+the successor backends.
+
+From a development host with SSH access to den-srv:
 
 ```sh
-DEN_MCP_SMOKE_DEN_CORE_URL=http://192.168.1.10:5199 \
-DEN_MCP_SMOKE_TASKS_URL=http://192.168.1.10:8092 \
-DEN_MCP_SMOKE_DOCUMENTS_URL=http://192.168.1.10:8094 \
-DEN_MCP_SMOKE_GUIDANCE_URL=http://192.168.1.10:8097 \
+make mcp-smoke-live-den-srv
+```
+
+Directly on den-srv:
+
+```sh
+DEN_MCP_SMOKE_DEN_CORE_URL=http://127.0.0.1:5299 \
+DEN_MCP_SMOKE_TASKS_URL=http://127.0.0.1:8092 \
+DEN_MCP_SMOKE_DOCUMENTS_URL=http://127.0.0.1:8094 \
+DEN_MCP_SMOKE_GUIDANCE_URL=http://127.0.0.1:8097 \
 DEN_MCP_SMOKE_READ_TASK_ID=3446 \
 python3 mcp/scripts/hermes_smoke.py --mode both
 ```
@@ -61,10 +68,10 @@ python3 mcp/scripts/hermes_smoke.py --mode both
 Or use the live-only Make target:
 
 ```sh
-DEN_MCP_SMOKE_DEN_CORE_URL=http://192.168.1.10:5199 \
-DEN_MCP_SMOKE_TASKS_URL=http://192.168.1.10:8092 \
-DEN_MCP_SMOKE_DOCUMENTS_URL=http://192.168.1.10:8094 \
-DEN_MCP_SMOKE_GUIDANCE_URL=http://192.168.1.10:8097 \
+DEN_MCP_SMOKE_DEN_CORE_URL=http://127.0.0.1:5299 \
+DEN_MCP_SMOKE_TASKS_URL=http://127.0.0.1:8092 \
+DEN_MCP_SMOKE_DOCUMENTS_URL=http://127.0.0.1:8094 \
+DEN_MCP_SMOKE_GUIDANCE_URL=http://127.0.0.1:8097 \
 DEN_MCP_SMOKE_READ_TASK_ID=3446 \
 make mcp-smoke-live
 ```
@@ -87,10 +94,10 @@ The harness reads the document first, writes smoke content through
 original document before exiting:
 
 ```sh
-DEN_MCP_SMOKE_DEN_CORE_URL=http://192.168.1.10:5199 \
-DEN_MCP_SMOKE_TASKS_URL=http://192.168.1.10:8092 \
-DEN_MCP_SMOKE_DOCUMENTS_URL=http://192.168.1.10:8094 \
-DEN_MCP_SMOKE_GUIDANCE_URL=http://192.168.1.10:8097 \
+DEN_MCP_SMOKE_DEN_CORE_URL=http://127.0.0.1:5299 \
+DEN_MCP_SMOKE_TASKS_URL=http://127.0.0.1:8092 \
+DEN_MCP_SMOKE_DOCUMENTS_URL=http://127.0.0.1:8094 \
+DEN_MCP_SMOKE_GUIDANCE_URL=http://127.0.0.1:8097 \
 DEN_MCP_SMOKE_WRITE_PROJECT=den-services \
 DEN_MCP_SMOKE_WRITE_SLUG=mcp-smoke-disposable \
 python3 mcp/scripts/hermes_smoke.py --mode both
