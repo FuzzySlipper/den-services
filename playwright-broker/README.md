@@ -31,3 +31,5 @@ den-playwright run rusty-view -config playwright-broker/config/config.example.ya
 The broker selects a safe port, starts or reuses only a matching server, sets `BASE_URL`, runs Playwright, stops only broker-owned processes, and writes `run-index.json` under the configured artifact root.
 
 `artifactPolicy: "live-ui"` marks the evidence packet with `human_inspection_required: true`; Playwright pass/fail is not a substitute for inspecting screenshots/traces when the UI is subjective.
+
+See `docs/agent-usage.md` for the agent-facing usage guide, including manifest fields, safety rules, evidence handoff, and troubleshooting.
