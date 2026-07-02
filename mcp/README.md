@@ -27,6 +27,7 @@ ok: local read tool proxied through backend
 ok: local non-representative tool proxied through backend
 ok: local get_agent_guidance returned MCP-compatible successor shape
 ok: local list_agent_guidance_entries returned MCP-compatible array shape
+ok: local query_librarian proxied to librarian successor
 ok: local write tool proxied through backend and restored disposable state
 ok: mcp /health stayed healthy during backend outage
 ok: tools/list remained identical while backend was unavailable
@@ -61,6 +62,7 @@ DEN_MCP_SMOKE_DEN_CORE_URL=http://127.0.0.1:5299 \
 DEN_MCP_SMOKE_TASKS_URL=http://127.0.0.1:8092 \
 DEN_MCP_SMOKE_DOCUMENTS_URL=http://127.0.0.1:8094 \
 DEN_MCP_SMOKE_GUIDANCE_URL=http://127.0.0.1:8097 \
+DEN_MCP_SMOKE_LIBRARIAN_URL=http://127.0.0.1:8098 \
 DEN_MCP_SMOKE_READ_TASK_ID=3446 \
 python3 mcp/scripts/hermes_smoke.py --mode both
 ```
@@ -72,6 +74,7 @@ DEN_MCP_SMOKE_DEN_CORE_URL=http://127.0.0.1:5299 \
 DEN_MCP_SMOKE_TASKS_URL=http://127.0.0.1:8092 \
 DEN_MCP_SMOKE_DOCUMENTS_URL=http://127.0.0.1:8094 \
 DEN_MCP_SMOKE_GUIDANCE_URL=http://127.0.0.1:8097 \
+DEN_MCP_SMOKE_LIBRARIAN_URL=http://127.0.0.1:8098 \
 DEN_MCP_SMOKE_READ_TASK_ID=3446 \
 make mcp-smoke-live
 ```
@@ -85,6 +88,7 @@ ok: live read tool proxied to tasks successor
 ok: live non-representative tool proxied to documents successor
 ok: live get_agent_guidance returned MCP-compatible successor shape
 ok: live list_agent_guidance_entries returned MCP-compatible array shape
+ok: live query_librarian proxied to librarian successor
 ```
 
 Live write smoke is disabled unless a pre-existing disposable document target
@@ -98,6 +102,7 @@ DEN_MCP_SMOKE_DEN_CORE_URL=http://127.0.0.1:5299 \
 DEN_MCP_SMOKE_TASKS_URL=http://127.0.0.1:8092 \
 DEN_MCP_SMOKE_DOCUMENTS_URL=http://127.0.0.1:8094 \
 DEN_MCP_SMOKE_GUIDANCE_URL=http://127.0.0.1:8097 \
+DEN_MCP_SMOKE_LIBRARIAN_URL=http://127.0.0.1:8098 \
 DEN_MCP_SMOKE_WRITE_PROJECT=den-services \
 DEN_MCP_SMOKE_WRITE_SLUG=mcp-smoke-disposable \
 python3 mcp/scripts/hermes_smoke.py --mode both
@@ -106,4 +111,5 @@ python3 mcp/scripts/hermes_smoke.py --mode both
 The live mode passes backend service tokens through to the MCP process when
 their normal service-token variables are set, such as `DEN_CORE_SERVICE_TOKEN`,
 `DEN_TASKS_SERVICE_TOKEN`, `DEN_DOCUMENTS_SERVICE_TOKEN`, and
-`DEN_GUIDANCE_SERVICE_TOKEN`. Token values are never printed by the harness.
+`DEN_GUIDANCE_SERVICE_TOKEN`, and `DEN_LIBRARIAN_SERVICE_TOKEN`. Token values
+are never printed by the harness.

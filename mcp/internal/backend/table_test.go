@@ -90,6 +90,9 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 		if guidanceRoute(tool.Name) {
 			wantBackend = "guidance"
 		}
+		if librarianRoute(tool.Name) {
+			wantBackend = "librarian"
+		}
 		if route.Backend != wantBackend {
 			t.Fatalf("route %s backend = %q, want %s", tool.Name, route.Backend, wantBackend)
 		}
@@ -162,6 +165,29 @@ func TestRouteTableAllowsGuidanceRESTAdapter(t *testing.T) {
 	}
 	if resolved.Backend != "guidance" {
 		t.Fatalf("Backend = %q, want guidance", resolved.Backend)
+	}
+}
+
+func TestRouteTableAllowsLibrarianRESTAdapter(t *testing.T) {
+	route := Route{
+		Operation:       "query_librarian",
+		Backend:         "librarian",
+		Method:          "POST",
+		Path:            "/v1/projects/{project_id}/librarian/query",
+		RequestAdapter:  RequestAdapterMCPLibrarianREST,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}
+
+	table, err := NewRouteTable([]Route{route})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	resolved, err := table.Resolve("query_librarian")
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Backend != "librarian" {
+		t.Fatalf("Backend = %q, want librarian", resolved.Backend)
 	}
 }
 
@@ -395,6 +421,15 @@ func guidanceRoute(operation string) bool {
 		"list_agent_guidance_entries",
 		"add_agent_guidance_entry",
 		"delete_agent_guidance_entry":
+		return true
+	default:
+		return false
+	}
+}
+
+func librarianRoute(operation string) bool {
+	switch operation {
+	case "query_librarian":
 		return true
 	default:
 		return false

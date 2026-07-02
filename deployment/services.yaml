@@ -174,6 +174,16 @@ services:
     version_url: "http://127.0.0.1:8097/version"
     systemd_unit: "den-go@guidance.service"
 
+  - name: "librarian"
+    module: "librarian"
+    binary_name: "librarian"
+    binary_path: "./librarian/cmd/librarian"
+    config_example: "librarian/config/config.example.yaml"
+    env_example: "librarian/config/librarian.env.example"
+    health_url: "http://127.0.0.1:8098/health"
+    version_url: "http://127.0.0.1:8098/version"
+    systemd_unit: "den-go@librarian.service"
+
   - name: "mcp"
     module: "mcp"
     binary_name: "mcp"

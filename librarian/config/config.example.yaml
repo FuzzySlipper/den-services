@@ -1,0 +1,21 @@
+bind_addr: "127.0.0.1:8098"
+service_token_env: "DEN_LIBRARIAN_SERVICE_TOKEN"
+projects_base_url_env: "DEN_PROJECTS_BASE_URL"
+projects_token_env: "DEN_PROJECTS_SERVICE_TOKEN"
+tasks_base_url_env: "DEN_TASKS_BASE_URL"
+tasks_token_env: "DEN_TASKS_SERVICE_TOKEN"
+messages_base_url_env: "DEN_MESSAGES_BASE_URL"
+messages_token_env: "DEN_MESSAGES_SERVICE_TOKEN"
+documents_base_url_env: "DEN_DOCUMENTS_BASE_URL"
+documents_token_env: "DEN_DOCUMENTS_SERVICE_TOKEN"
+knowledge_base_url_env: "DEN_KNOWLEDGE_BASE_URL"
+knowledge_token_env: "DEN_KNOWLEDGE_SERVICE_TOKEN"
+default_budget:
+  tasks: 6
+  messages: 8
+  documents: 8
+  knowledge: 6
+http:
+  read_header_timeout: "5s"
+upstreams:
+  request_timeout: "5s"

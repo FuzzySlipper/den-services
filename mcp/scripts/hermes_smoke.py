@@ -40,6 +40,7 @@ SMOKE_BACKENDS = (
     ("review", "DEN_REVIEW_SERVICE_TOKEN"),
     ("knowledge", "DEN_KNOWLEDGE_SERVICE_TOKEN"),
     ("guidance", "DEN_GUIDANCE_SERVICE_TOKEN"),
+    ("librarian", "DEN_LIBRARIAN_SERVICE_TOKEN"),
 )
 
 
@@ -210,6 +211,30 @@ class FakeDenCore:
                 self.documents[(project_id, document["slug"])] = document
                 send_json(handler, 200, {"document": document})
                 return
+            if handler.command == "POST" and path == "/v1/projects/den-services/librarian/query":
+                payload = read_json_body(handler)
+                send_json(
+                    handler,
+                    200,
+                    {
+                        "query": payload.get("query", ""),
+                        "project_id": "den-services",
+                        "relevant_items": [
+                            {
+                                "type": "document",
+                                "source": "documents",
+                                "source_id": "mcp-smoke-disposable",
+                                "project_id": "den-services",
+                                "summary": "Disposable smoke document.",
+                                "why_relevant": "Matches mcp in documents context.",
+                                "snippet": "MCP smoke librarian citation.",
+                            }
+                        ],
+                        "recommendations": ["Review the cited sources before making changes."],
+                        "confidence": "medium",
+                    },
+                )
+                return
             if handler.command == "GET" and path == "/v1/projects/den-services/agent-guidance":
                 send_json(handler, 200, self.guidance_packet())
                 return
@@ -278,6 +303,7 @@ def main() -> int:
     parser.add_argument("--tasks-url", default=os.getenv("DEN_MCP_SMOKE_TASKS_URL", ""))
     parser.add_argument("--documents-url", default=os.getenv("DEN_MCP_SMOKE_DOCUMENTS_URL", ""))
     parser.add_argument("--guidance-url", default=os.getenv("DEN_MCP_SMOKE_GUIDANCE_URL", ""))
+    parser.add_argument("--librarian-url", default=os.getenv("DEN_MCP_SMOKE_LIBRARIAN_URL", ""))
     parser.add_argument("--read-task-id", type=int, default=int(os.getenv("DEN_MCP_SMOKE_READ_TASK_ID", "3446")))
     parser.add_argument("--write-project", default=os.getenv("DEN_MCP_SMOKE_WRITE_PROJECT", ""))
     parser.add_argument("--write-slug", default=os.getenv("DEN_MCP_SMOKE_WRITE_SLUG", ""))
@@ -336,6 +362,13 @@ def run_local_smoke(repo_root: Path, startup_timeout: float) -> None:
         if not isinstance(entries_payload, list):
             raise SmokeError("list_agent_guidance_entries did not return the legacy raw array shape")
         print("ok: local list_agent_guidance_entries returned MCP-compatible array shape")
+
+        librarian = tools_call(mcp_url, "query_librarian", {"project_id": "den-services", "query": "mcp smoke"})
+        assert_tool_success(librarian, "local query_librarian tool")
+        librarian_payload = json_from_result(librarian, "query_librarian")
+        if not isinstance(librarian_payload.get("relevant_items"), list) or "confidence" not in librarian_payload:
+            raise SmokeError("query_librarian did not return the MCP-compatible librarian shape")
+        print("ok: local query_librarian proxied to librarian successor")
 
         original = tools_call(
             mcp_url,
@@ -417,6 +450,13 @@ def run_live_smoke(repo_root: Path, args: argparse.Namespace) -> None:
             raise SmokeError("live list_agent_guidance_entries did not return the legacy raw array shape")
         print("ok: live list_agent_guidance_entries returned MCP-compatible array shape")
 
+        librarian = tools_call(mcp_url, "query_librarian", {"project_id": "den-services", "query": "mcp smoke"})
+        assert_tool_success(librarian, "live query_librarian tool")
+        librarian_payload = json_from_result(librarian, "query_librarian")
+        if not isinstance(librarian_payload.get("relevant_items"), list) or "confidence" not in librarian_payload:
+            raise SmokeError("live query_librarian did not return the MCP-compatible librarian shape")
+        print("ok: live query_librarian proxied to librarian successor")
+
         if args.write_project and args.write_slug:
             run_live_write_restore(mcp_url, args.write_project, args.write_slug)
         else:
@@ -452,6 +492,7 @@ def live_backend_urls(args: argparse.Namespace) -> dict[str, str]:
         "tasks": args.tasks_url,
         "documents": args.documents_url,
         "guidance": args.guidance_url,
+        "librarian": args.librarian_url,
     }
     missing = [backend for backend, value in required.items() if not value]
     if missing:

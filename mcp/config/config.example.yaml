@@ -55,3 +55,8 @@ backends:
     health_path: "/health"
     timeout: "3s"
     service_token_env: "DEN_GUIDANCE_SERVICE_TOKEN"
+  - name: "librarian"
+    base_url: "http://127.0.0.1:8098"
+    health_path: "/health"
+    timeout: "3s"
+    service_token_env: "DEN_LIBRARIAN_SERVICE_TOKEN"

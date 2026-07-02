@@ -925,6 +925,46 @@ func TestClientCallsKnowledgeRESTGetEscapesSlug(t *testing.T) {
 	}
 }
 
+func TestClientCallsLibrarianRESTQuery(t *testing.T) {
+	var sawPath string
+	var sawBody librarianQueryBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.EscapedPath()
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		_, _ = w.Write([]byte(`{"relevant_items":[],"recommendations":[],"confidence":"low"}`))
+	}))
+	defer server.Close()
+
+	includeGlobal := false
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("librarian", server.URL), librarianRouteForTest("query_librarian", http.MethodPost, "/v1/projects/{project_id}/librarian/query"), ToolCall{
+		ToolName:  "query_librarian",
+		Operation: "query_librarian",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"project_id":"project/a","query":"routing","task_id":3880,"include_global":false,"source_limits":{"documents":3}}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawPath != "/v1/projects/project%2Fa/librarian/query" {
+		t.Fatalf("path = %q, want escaped project", sawPath)
+	}
+	if sawBody.Query != "routing" || sawBody.TaskID == nil || *sawBody.TaskID != 3880 || sawBody.IncludeGlobal == nil || *sawBody.IncludeGlobal != includeGlobal {
+		t.Fatalf("body = %#v", sawBody)
+	}
+	if !strings.Contains(string(sawBody.SourceLimits), `"documents":3`) {
+		t.Fatalf("source_limits = %s", sawBody.SourceLimits)
+	}
+}
+
 func TestFailureTextIncludesToolCircuitAndStatus(t *testing.T) {
 	statusCode := http.StatusBadGateway
 	failure := Failure{
@@ -1008,6 +1048,17 @@ func knowledgeRouteForTest(operation string, method string, path string) Route {
 		Method:          method,
 		Path:            path,
 		RequestAdapter:  RequestAdapterMCPKnowledgeREST,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}
+}
+
+func librarianRouteForTest(operation string, method string, path string) Route {
+	return Route{
+		Operation:       operation,
+		Backend:         "librarian",
+		Method:          method,
+		Path:            path,
+		RequestAdapter:  RequestAdapterMCPLibrarianREST,
 		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
 	}
 }
