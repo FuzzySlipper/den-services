@@ -287,8 +287,9 @@ The service must reject project/task mismatches on project-scoped aliases.
 
 ## Detail and Workflow Composition
 
-Current Core `get_task` and `get_task_workflow_summary` include messages and
-review data. Tasks service must not move message or review SQL into `tasks`.
+Core `get_task` includes messages and review data, and legacy
+`get_task_workflow_summary` did the same before MCP composition. Tasks service
+must not move message or review SQL into `tasks`.
 
 Compatibility should be staged:
 
@@ -297,9 +298,10 @@ Compatibility should be staged:
 2. MCP may route `create_task`, `list_tasks`, `update_task`, `next_task`,
    `add_dependency`, and `remove_dependency` to tasks after import/parity
    smokes pass.
-3. MCP keeps `get_task` and `get_task_workflow_summary` Core-routed, or
-   MCP-composed, until messages and review successor APIs expose the required
-   summaries.
+3. MCP keeps `get_task` Core-routed, or MCP-composed, until messages and
+   review successor APIs expose the required summaries.
+   `get_task_workflow_summary` is MCP-composed once tasks, messages, and review
+   successor APIs exist.
 4. Once source services exist, MCP composes legacy detail from tasks metadata,
    messages headers, and review summaries.
 
@@ -316,7 +318,7 @@ This keeps tasks as a lifecycle authority rather than an aggregation hub.
 | `add_dependency` | `den-core` | `tasks` | Preserve same-project validation and cycle rejection. |
 | `remove_dependency` | `den-core` | `tasks` | Preserve idempotent remove behavior. |
 | `get_task` | `den-core` | staged | Keep Core-routed or MCP-composed until messages/review APIs exist. |
-| `get_task_workflow_summary` | `den-core` | staged | Same as `get_task`; do not put review/message SQL in tasks. |
+| `get_task_workflow_summary` | MCP compose | tasks + review + messages | Composed in MCP; do not put review/message SQL in tasks. |
 
 ## Parity Smokes
 
@@ -353,8 +355,9 @@ Run against a migrated staging copy before flipping MCP routes:
 3. Run read-only parity smokes without MCP route changes.
 4. Route write/read task lifecycle tools that do not need messages/review to
    `tasks`.
-5. Keep `get_task` and `get_task_workflow_summary` staged until message/review
-   successor summaries are available.
+5. Keep `get_task` staged until message/review successor summaries are
+   available; compose `get_task_workflow_summary` in MCP once those source
+   APIs exist.
 6. Remove any temporary dual-write/import mode quickly; avoid indefinite dual
    writers.
 

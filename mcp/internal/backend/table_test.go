@@ -72,6 +72,9 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 		if projectSummaryComposeRoute(tool.Name) {
 			wantBackend = "projects"
 		}
+		if taskWorkflowSummaryComposeRoute(tool.Name) {
+			wantBackend = "tasks"
+		}
 		if tasksRoute(tool.Name) {
 			wantBackend = "tasks"
 		}
@@ -214,6 +217,29 @@ func TestRouteTableAllowsProjectSummaryComposeAdapter(t *testing.T) {
 	}
 }
 
+func TestRouteTableAllowsTaskWorkflowSummaryComposeAdapter(t *testing.T) {
+	route := Route{
+		Operation:       "get_task_workflow_summary",
+		Backend:         "tasks",
+		Method:          "GET",
+		Path:            "/v1/tasks/{task_id}/workflow-summary",
+		RequestAdapter:  RequestAdapterMCPTaskWorkflowSummaryCompose,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}
+
+	table, err := NewRouteTable([]Route{route})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	resolved, err := table.Resolve("get_task_workflow_summary")
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Backend != "tasks" {
+		t.Fatalf("Backend = %q, want tasks", resolved.Backend)
+	}
+}
+
 func TestRouteTableAllowsMessagesRESTAdapter(t *testing.T) {
 	route := Route{
 		Operation:       "send_message",
@@ -324,6 +350,15 @@ func projectsSafeSubsetRoute(operation string) bool {
 func projectSummaryComposeRoute(operation string) bool {
 	switch operation {
 	case "get_project", "get_space":
+		return true
+	default:
+		return false
+	}
+}
+
+func taskWorkflowSummaryComposeRoute(operation string) bool {
+	switch operation {
+	case "get_task_workflow_summary":
 		return true
 	default:
 		return false

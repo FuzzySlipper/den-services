@@ -36,8 +36,6 @@ ownership decision is complete:
 - `get_agent_guidance`, `list_agent_guidance_entries`,
   `add_agent_guidance_entry`, and `delete_agent_guidance_entry`.
 - `query_librarian`.
-- `get_task_workflow_summary` if the tasks successor has not yet taken over the
-  composed workflow summary route.
 
 If Core is stopped before these are replaced, classify failures on these tools
 as expected Core-retained blockers, not successor regressions.
@@ -84,6 +82,8 @@ Run read-heavy smokes first:
   `query_archived_documents` as applicable.
 - Review: `list_review_rounds`, `list_review_findings`, and a non-mutating
   read against a recent task.
+- Task workflow: `get_task_workflow_summary` against a recent task; this should
+  compose tasks, review, and message packet headers without Core.
 - Knowledge: `den_knowledge_search`, `den_knowledge_get`, and
   `den_knowledge_guide`.
 - Guidance and librarian: run only if the operator has accepted that they may

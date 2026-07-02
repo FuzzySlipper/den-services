@@ -66,9 +66,12 @@ func (l *Locator) Call(ctx context.Context, call ToolCall) (Result, *Failure, er
 	}
 	var result Result
 	var failure *Failure
-	if route.RequestAdapter == RequestAdapterMCPProjectSummaryCompose {
+	switch route.RequestAdapter {
+	case RequestAdapterMCPProjectSummaryCompose:
 		result, failure, err = l.client.callProjectSummaryCompose(ctx, backends, route, call)
-	} else {
+	case RequestAdapterMCPTaskWorkflowSummaryCompose:
+		result, failure, err = l.client.callTaskWorkflowSummaryCompose(ctx, backends, route, call)
+	default:
 		result, failure, err = l.client.Call(ctx, backend, route, call)
 	}
 	if failure != nil {

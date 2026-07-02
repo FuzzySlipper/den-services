@@ -22,6 +22,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -183,7 +184,60 @@ class FakeDenCore:
                 return
             if handler.command == "GET" and path.startswith("/v1/tasks/"):
                 task_id = int(path.removeprefix("/v1/tasks/"))
-                send_json(handler, 200, {"id": task_id, "project_id": "den-services", "title": "Fake smoke task"})
+                send_json(
+                    handler,
+                    200,
+                    {
+                        "task": {
+                            "id": task_id,
+                            "project_id": "den-services",
+                            "title": "Fake smoke task",
+                            "status": "in_progress",
+                            "assigned_to": "codex",
+                        },
+                        "dependencies": [],
+                        "subtasks": [],
+                        "history": [],
+                    },
+                )
+                return
+            if handler.command == "GET" and path == "/v1/projects/den-services/tasks/3446/review/workflow-summary":
+                send_json(
+                    handler,
+                    200,
+                    {
+                        "current_round": {"id": 81, "round_number": 2},
+                        "current_verdict": "changes_requested",
+                        "review_round_count": 2,
+                        "unresolved_finding_count": 1,
+                        "resolved_finding_count": 3,
+                        "addressed_finding_count": 1,
+                        "open_findings": [{"id": 701, "severity": "major"}],
+                        "resolved_findings": [],
+                        "timeline": [],
+                    },
+                )
+                return
+            if handler.command == "GET" and path == "/v1/projects/den-services/tasks/3446/packets/latest":
+                query = urllib.parse.parse_qs(raw_query)
+                if query.get("role", [""])[0] != "coder":
+                    send_json(handler, 404, {"error": "not_found"})
+                    return
+                send_json(
+                    handler,
+                    200,
+                    {
+                        "id": 991,
+                        "project_id": "den-services",
+                        "task_id": 3446,
+                        "thread_id": 77,
+                        "sender": "orchestrator",
+                        "content": "body should stay out of workflow summaries",
+                        "intent": "context_packet",
+                        "metadata": {"type": "coder_context_packet", "role": "coder"},
+                        "created_at": "2026-07-01T00:00:00Z",
+                    },
+                )
                 return
             if handler.command == "GET" and path in ("/v1/documents/search", "/v1/projects/den-services/documents/search"):
                 send_json(handler, 200, {"documents": list(self.documents.values()), "count": len(self.documents)})
@@ -301,7 +355,9 @@ def main() -> int:
     parser.add_argument("--mode", choices=("local", "live", "both"), default=os.getenv("DEN_MCP_SMOKE_MODE", "local"))
     parser.add_argument("--den-core-url", default=os.getenv("DEN_MCP_SMOKE_DEN_CORE_URL", ""))
     parser.add_argument("--tasks-url", default=os.getenv("DEN_MCP_SMOKE_TASKS_URL", ""))
+    parser.add_argument("--messages-url", default=os.getenv("DEN_MCP_SMOKE_MESSAGES_URL", ""))
     parser.add_argument("--documents-url", default=os.getenv("DEN_MCP_SMOKE_DOCUMENTS_URL", ""))
+    parser.add_argument("--review-url", default=os.getenv("DEN_MCP_SMOKE_REVIEW_URL", ""))
     parser.add_argument("--guidance-url", default=os.getenv("DEN_MCP_SMOKE_GUIDANCE_URL", ""))
     parser.add_argument("--librarian-url", default=os.getenv("DEN_MCP_SMOKE_LIBRARIAN_URL", ""))
     parser.add_argument("--read-task-id", type=int, default=int(os.getenv("DEN_MCP_SMOKE_READ_TASK_ID", "3446")))
@@ -369,6 +425,18 @@ def run_local_smoke(repo_root: Path, startup_timeout: float) -> None:
         if not isinstance(librarian_payload.get("relevant_items"), list) or "confidence" not in librarian_payload:
             raise SmokeError("query_librarian did not return the MCP-compatible librarian shape")
         print("ok: local query_librarian proxied to librarian successor")
+
+        workflow = tools_call(mcp_url, "get_task_workflow_summary", {"task_id": 3446})
+        assert_tool_success(workflow, "local get_task_workflow_summary tool")
+        workflow_payload = json_from_result(workflow, "get_task_workflow_summary")
+        if workflow_payload.get("project_id") != "den-services" or workflow_payload.get("unresolved_finding_count") != 1:
+            raise SmokeError("get_task_workflow_summary did not compose task/review successor data")
+        packets = workflow_payload.get("latest_packets") or {}
+        if not isinstance(packets.get("coder"), dict) or packets["coder"].get("id") != 991:
+            raise SmokeError("get_task_workflow_summary did not include latest coder packet header")
+        if "content" in packets["coder"]:
+            raise SmokeError("get_task_workflow_summary leaked packet body content")
+        print("ok: local get_task_workflow_summary composed successor task/review/message data")
 
         original = tools_call(
             mcp_url,
@@ -457,6 +525,13 @@ def run_live_smoke(repo_root: Path, args: argparse.Namespace) -> None:
             raise SmokeError("live query_librarian did not return the MCP-compatible librarian shape")
         print("ok: live query_librarian proxied to librarian successor")
 
+        workflow = tools_call(mcp_url, "get_task_workflow_summary", {"task_id": args.read_task_id})
+        assert_tool_success(workflow, "live get_task_workflow_summary tool")
+        workflow_payload = json_from_result(workflow, "get_task_workflow_summary")
+        if workflow_payload.get("task_id") != args.read_task_id or "review_round_count" not in workflow_payload:
+            raise SmokeError("live get_task_workflow_summary did not return composed successor summary")
+        print("ok: live get_task_workflow_summary composed successor task/review/message data")
+
         if args.write_project and args.write_slug:
             run_live_write_restore(mcp_url, args.write_project, args.write_slug)
         else:
@@ -490,7 +565,9 @@ def live_backend_urls(args: argparse.Namespace) -> dict[str, str]:
     required = {
         "den-core": args.den_core_url,
         "tasks": args.tasks_url,
+        "messages": args.messages_url,
         "documents": args.documents_url,
+        "review": args.review_url,
         "guidance": args.guidance_url,
         "librarian": args.librarian_url,
     }

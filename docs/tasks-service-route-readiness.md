@@ -37,12 +37,12 @@ Ready after import and parity smoke:
 Still staged:
 
 - `get_task`
-- `get_task_workflow_summary`
 
-Those two Core tools currently include message and review projections. The
-tasks service owns only task lifecycle, dependencies, subtasks, availability,
-and history, so MCP should keep those tools Core-routed or compose them from
-message/review successor APIs when those exist.
+`get_task_workflow_summary` is now MCP-composed from tasks, review, and message
+packet-header successor reads. `get_task` still includes message and review
+projections. The tasks service owns only task lifecycle, dependencies, subtasks,
+availability, and history, so MCP should keep `get_task` Core-routed or compose
+it from message/review successor APIs when those exist.
 
 ## Required Before Cutover
 
