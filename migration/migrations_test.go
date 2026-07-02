@@ -66,6 +66,7 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 		"den_core":        2,
 		"den_delivery":    2,
 		"den_observation": 2,
+		"den_projects":    2,
 		"den_runtime":     2,
 	}
 	for schema, want := range wantVersions {

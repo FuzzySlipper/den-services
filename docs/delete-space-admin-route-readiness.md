@@ -34,6 +34,11 @@ record plus an empty `dependency_counts` object with
 query dependent service tables directly. Use archive preflight or
 domain-specific checks before deleting real scopes.
 
+The admin route requires the projects app role to hold `DELETE` on only
+`den_projects.projects`. That privilege is granted by
+`migration/postgres/den_projects/002_admin_delete_privilege.sql`; it is not a
+general default table privilege.
+
 ## Smoke
 
 Run:
