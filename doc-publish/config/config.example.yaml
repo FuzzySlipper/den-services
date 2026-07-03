@@ -17,7 +17,7 @@ records:
   path: "/data/services/doc-publish/data/publications" # File-backed publication audit records.
 
 source:
-  documents_base_url: "http://127.0.0.1:5299" # Core/Gateway document fetch base URL on den-srv.
+  documents_base_url: "http://127.0.0.1:8094" # Canonical documents service base URL on den-srv.
   request_timeout: "5s" # Timeout for source document fetches.
 
 git:

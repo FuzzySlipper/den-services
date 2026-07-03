@@ -28,25 +28,43 @@ func (f *HTTPDocumentFetcher) Fetch(ctx context.Context, source DocumentSource) 
 	if source.DocumentProjectID == "" || source.DocumentSlug == "" {
 		return nil, invalidRequest("source document project and slug are required")
 	}
-	endpoint := f.baseURL + "/api/projects/" + url.PathEscape(source.DocumentProjectID) + "/documents/" + url.PathEscape(source.DocumentSlug)
+	endpoints := documentSourceEndpoints(f.baseURL, source)
+	var lastStatus int
+	for _, endpoint := range endpoints {
+		doc, status, err := f.fetchEndpoint(ctx, endpoint, source)
+		if err != nil {
+			return nil, err
+		}
+		if status == http.StatusOK {
+			return doc, nil
+		}
+		lastStatus = status
+		if status != http.StatusNotFound {
+			break
+		}
+	}
+	return nil, invalidRequest(fmt.Sprintf("source document fetch returned status %d", lastStatus))
+}
+
+func (f *HTTPDocumentFetcher) fetchEndpoint(ctx context.Context, endpoint string, source DocumentSource) (*SourceDocument, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("building source document request: %w", err)
+		return nil, 0, fmt.Errorf("building source document request: %w", err)
 	}
 	if f.token != "" {
 		req.Header.Set("Authorization", "Bearer "+f.token)
 	}
 	resp, err := f.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetching source document: %w", err)
+		return nil, 0, fmt.Errorf("fetching source document: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, invalidRequest(fmt.Sprintf("source document fetch returned status %d", resp.StatusCode))
+		return nil, resp.StatusCode, nil
 	}
 	var coreDoc coreDocumentResponse
 	if err := json.NewDecoder(resp.Body).Decode(&coreDoc); err != nil {
-		return nil, fmt.Errorf("decoding source document: %w", err)
+		return nil, 0, fmt.Errorf("decoding source document: %w", err)
 	}
 	doc := SourceDocument{
 		Title:     firstNonEmpty(coreDoc.Title, coreDoc.Slug, source.DocumentSlug),
@@ -55,9 +73,25 @@ func (f *HTTPDocumentFetcher) Fetch(ctx context.Context, source DocumentSource) 
 		UpdatedAt: coreDoc.UpdatedAt.Time,
 	}
 	if doc.Title == "" || doc.Markdown == "" {
-		return nil, invalidRequest("source document response requires title and content")
+		return nil, 0, invalidRequest("source document response requires title and content")
 	}
-	return &doc, nil
+	return &doc, http.StatusOK, nil
+}
+
+func documentSourceEndpoints(baseURL string, source DocumentSource) []string {
+	escapedProject := url.PathEscape(source.DocumentProjectID)
+	escapedSlug := url.PathEscape(source.DocumentSlug)
+	documentPath := "/projects/" + escapedProject + "/documents/" + escapedSlug
+
+	normalized := strings.TrimRight(baseURL, "/")
+	if strings.HasSuffix(normalized, "/api") || strings.HasSuffix(normalized, "/v1") || strings.HasSuffix(normalized, "/api/v1") {
+		return []string{normalized + documentPath}
+	}
+	return []string{
+		normalized + "/api" + documentPath,
+		normalized + "/v1" + documentPath,
+		normalized + "/api/v1" + documentPath,
+	}
 }
 
 type coreDocumentResponse struct {
