@@ -62,6 +62,38 @@ func TestServiceSendThreadReadAndWait(t *testing.T) {
 	}
 }
 
+func TestServiceSendMessageAcceptsGitHubCheckEvidenceIntents(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	service := NewService(store, NoopProjectValidator{}, NoopTaskReader{}, time.Now)
+	taskID := int64(42)
+	intents := []string{
+		IntentGitHubChecksPassed,
+		IntentGitHubChecksFailed,
+		IntentGitHubChecksTimeout,
+		IntentGitHubChecksSuperseded,
+		IntentGitHubChecksUpdated,
+	}
+
+	for _, intent := range intents {
+		intent := intent
+		t.Run(intent, func(t *testing.T) {
+			message, err := service.SendMessage(ctx, "den-services", SendMessageRequest{
+				TaskID:  &taskID,
+				Sender:  "review",
+				Content: "GitHub check gate evidence",
+				Intent:  intent,
+			})
+			if err != nil {
+				t.Fatalf("SendMessage() error = %v", err)
+			}
+			if message.Intent() != intent {
+				t.Fatalf("message intent = %s, want %s", message.Intent(), intent)
+			}
+		})
+	}
+}
+
 func TestServiceUnreadCount(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()

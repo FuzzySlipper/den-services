@@ -9,18 +9,23 @@ import (
 )
 
 const (
-	IntentGeneral        = "general"
-	IntentNote           = "note"
-	IntentStatusUpdate   = "status_update"
-	IntentQuestion       = "question"
-	IntentAnswer         = "answer"
-	IntentHandoff        = "handoff"
-	IntentReviewRequest  = "review_request"
-	IntentReviewFeedback = "review_feedback"
-	IntentReviewApproval = "review_approval"
-	IntentTaskReady      = "task_ready"
-	IntentTaskBlocked    = "task_blocked"
-	IntentNotification   = "notification"
+	IntentGeneral                = "general"
+	IntentNote                   = "note"
+	IntentStatusUpdate           = "status_update"
+	IntentQuestion               = "question"
+	IntentAnswer                 = "answer"
+	IntentHandoff                = "handoff"
+	IntentReviewRequest          = "review_request"
+	IntentReviewFeedback         = "review_feedback"
+	IntentReviewApproval         = "review_approval"
+	IntentGitHubChecksPassed     = "github_checks_passed"
+	IntentGitHubChecksFailed     = "github_checks_failed"
+	IntentGitHubChecksTimeout    = "github_checks_timeout"
+	IntentGitHubChecksSuperseded = "github_checks_superseded"
+	IntentGitHubChecksUpdated    = "github_checks_updated"
+	IntentTaskReady              = "task_ready"
+	IntentTaskBlocked            = "task_blocked"
+	IntentNotification           = "notification"
 
 	PacketSchema          = "den_worker_packet"
 	CompletionSchema      = "den_worker_completion"
@@ -219,6 +224,8 @@ func validIntent(intent string) bool {
 	switch intent {
 	case IntentGeneral, IntentNote, IntentStatusUpdate, IntentQuestion, IntentAnswer,
 		IntentHandoff, IntentReviewRequest, IntentReviewFeedback, IntentReviewApproval,
+		IntentGitHubChecksPassed, IntentGitHubChecksFailed, IntentGitHubChecksTimeout,
+		IntentGitHubChecksSuperseded, IntentGitHubChecksUpdated,
 		IntentTaskReady, IntentTaskBlocked, IntentNotification:
 		return true
 	default:
@@ -249,6 +256,16 @@ func normalizeIntent(intent string, metadata map[string]any) string {
 		return IntentReviewFeedback
 	case "review_approval", "merge_request":
 		return IntentReviewApproval
+	case "github_checks_passed":
+		return IntentGitHubChecksPassed
+	case "github_checks_failed":
+		return IntentGitHubChecksFailed
+	case "github_checks_timeout":
+		return IntentGitHubChecksTimeout
+	case "github_checks_superseded":
+		return IntentGitHubChecksSuperseded
+	case "github_checks_updated":
+		return IntentGitHubChecksUpdated
 	case "task_ready":
 		return IntentTaskReady
 	case "task_blocked":
