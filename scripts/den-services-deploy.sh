@@ -168,6 +168,79 @@ rollback() {
   fi
 }
 
+backup_config_file() {
+  local path="$1"
+  local name="$2"
+
+  install -m 0644 "${path}" "${service_root}/backups/${name}.${built_at//[:-]/}"
+}
+
+route_operation_exists() {
+  local routes_target="$1"
+  local operation="$2"
+
+  grep -Eq "operation:[[:space:]]*['\"]?${operation}['\"]?([[:space:]]|$)" "${routes_target}"
+}
+
+append_mcp_route_if_missing() {
+  local routes_target="$1"
+  local operation="$2"
+  local backend="$3"
+  local method="$4"
+  local path="$5"
+  local request_adapter="$6"
+  local response_adapter="$7"
+
+  if route_operation_exists "${routes_target}" "${operation}"; then
+    return 0
+  fi
+
+  backup_config_file "${routes_target}" "routes.yaml"
+
+  local route_indent
+  route_indent="$(awk '/^[[:space:]]*- operation:/{ match($0, /^[[:space:]]*/); print substr($0, RSTART, RLENGTH); exit }' "${routes_target}")"
+  if [[ -z "${route_indent}" ]]; then
+    route_indent="  "
+  fi
+
+  local child_indent="${route_indent}  "
+  {
+    printf '\n'
+    printf '%s- operation: "%s"\n' "${route_indent}" "${operation}"
+    printf '%sbackend: "%s"\n' "${child_indent}" "${backend}"
+    printf '%smethod: "%s"\n' "${child_indent}" "${method}"
+    printf '%spath: "%s"\n' "${child_indent}" "${path}"
+    printf '%srequest_adapter: "%s"\n' "${child_indent}" "${request_adapter}"
+    printf '%sresponse_adapter: "%s"\n' "${child_indent}" "${response_adapter}"
+  } >> "${routes_target}"
+}
+
+install_mcp_routes() {
+  local routes_target="${service_root}/config/routes.yaml"
+
+  if [[ ! -f "${routes_target}" ]]; then
+    install -m 0644 mcp/routes.example.yaml "${routes_target}"
+    return 0
+  fi
+
+  if [[ "${DEN_MCP_REPLACE_ROUTES:-false}" == "true" ]]; then
+    if ! cmp -s mcp/routes.example.yaml "${routes_target}"; then
+      backup_config_file "${routes_target}" "routes.yaml"
+    fi
+    install -m 0644 mcp/routes.example.yaml "${routes_target}"
+    return 0
+  fi
+
+  append_mcp_route_if_missing \
+    "${routes_target}" \
+    "await_github_checks" \
+    "review" \
+    "POST" \
+    "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates" \
+    "mcp_review_rest" \
+    "mcp_tool_result_json"
+}
+
 cd "${repo_root}"
 if [[ ! -f go.mod ]]; then
   echo "repo path ${repo_root} does not contain go.mod" >&2
@@ -251,10 +324,7 @@ if [[ "${service}" == "gateway" && -f gateway/config/routes.example.yaml && ! -f
   install -m 0644 gateway/config/routes.example.yaml "${service_root}/config/routes.yaml"
 fi
 if [[ "${service}" == "mcp" && -f mcp/routes.example.yaml ]]; then
-  if [[ -f "${service_root}/config/routes.yaml" ]] && ! cmp -s mcp/routes.example.yaml "${service_root}/config/routes.yaml"; then
-    install -m 0644 "${service_root}/config/routes.yaml" "${service_root}/backups/routes.yaml.${built_at//[:-]/}"
-  fi
-  install -m 0644 mcp/routes.example.yaml "${service_root}/config/routes.yaml"
+  install_mcp_routes
 fi
 
 if [[ ! -f "/etc/den-services/${service}.env" ]]; then
