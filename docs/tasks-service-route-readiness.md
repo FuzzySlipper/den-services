@@ -12,6 +12,8 @@ local and staged verification, then a later explicit cutover task can update
 
 - `POST /v1/projects/{project_id}/tasks`
 - `GET /v1/projects/{project_id}/tasks`
+- `GET /v1/projects/{project_id}/tasks/changes`
+- `GET /v1/projects/{project_id}/tasks/changes/stream`
 - `GET /v1/projects/{project_id}/tasks/next`
 - `GET /v1/projects/{project_id}/tasks/{task_id}`
 - `PATCH /v1/projects/{project_id}/tasks/{task_id}`

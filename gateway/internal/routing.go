@@ -351,10 +351,53 @@ func (r Route) matches(method string, path string) bool {
 			return false
 		}
 	}
+	if strings.Contains(r.pathPattern, "{") {
+		return pathTemplateMatches(r.pathPattern, path)
+	}
 	if r.pathPattern == "/" {
 		return true
 	}
 	return path == r.pathPattern || strings.HasPrefix(path, strings.TrimRight(r.pathPattern, "/")+"/")
+}
+
+func pathTemplateMatches(pattern string, path string) bool {
+	pattern = strings.TrimRight(pattern, "/")
+	path = strings.TrimRight(path, "/")
+	if pattern == "" {
+		pattern = "/"
+	}
+	if path == "" {
+		path = "/"
+	}
+	patternSegments := splitPathSegments(pattern)
+	pathSegments := splitPathSegments(path)
+	if len(pathSegments) < len(patternSegments) {
+		return false
+	}
+	for i, patternSegment := range patternSegments {
+		if isPathVariable(patternSegment) {
+			if pathSegments[i] == "" {
+				return false
+			}
+			continue
+		}
+		if pathSegments[i] != patternSegment {
+			return false
+		}
+	}
+	return true
+}
+
+func splitPathSegments(path string) []string {
+	path = strings.Trim(path, "/")
+	if path == "" {
+		return nil
+	}
+	return strings.Split(path, "/")
+}
+
+func isPathVariable(segment string) bool {
+	return strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}") && len(segment) > 2
 }
 
 func (r Route) usesSuccessor(preferSuccessor bool) bool {

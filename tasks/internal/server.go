@@ -18,7 +18,7 @@ func NewHTTPServer(cfg *Config, buildInfo health.BuildInfo, service TaskUseCases
 	}
 
 	apiMux := http.NewServeMux()
-	NewHandler(service).RegisterRoutes(apiMux)
+	NewHandler(service, cfg).RegisterRoutes(apiMux)
 	auth, err := api.NewServiceTokenAuth(cfg.ServiceToken)
 	if err != nil {
 		return nil, err

@@ -61,6 +61,14 @@ func (s *Store) CreateTask(ctx context.Context, task *Task, dependsOn []int64) (
 			return nil, err
 		}
 	}
+	if err := recordTaskChangesTx(ctx, tx, "created", created.ID()); err != nil {
+		return nil, err
+	}
+	if parentID := created.ParentID(); parentID != nil {
+		if err := recordTaskChangesTx(ctx, tx, "subtask_created", *parentID); err != nil {
+			return nil, err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("committing create task: %w", err)
 	}
@@ -159,6 +167,9 @@ func (s *Store) UpdateTask(ctx context.Context, id int64, patch TaskPatch, agent
 	if err != nil {
 		return nil, fmt.Errorf("updating task %d: %w", id, err)
 	}
+	if err := recordUpdateTaskChangesTx(ctx, tx, current, updated, patch); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("committing update task: %w", err)
 	}
@@ -174,6 +185,9 @@ func (s *Store) AddDependency(ctx context.Context, taskID int64, dependsOn int64
 	if err := addDependencyTx(ctx, tx, taskID, dependsOn); err != nil {
 		return err
 	}
+	if err := recordTaskChangesTx(ctx, tx, "dependency_added", taskID); err != nil {
+		return err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("committing add dependency: %w", err)
 	}
@@ -181,9 +195,20 @@ func (s *Store) AddDependency(ctx context.Context, taskID int64, dependsOn int64
 }
 
 func (s *Store) RemoveDependency(ctx context.Context, taskID int64, dependsOn int64) error {
-	_, err := s.pool.Exec(ctx, removeDependencySQL, taskID, dependsOn)
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("beginning remove dependency: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	_, err = tx.Exec(ctx, removeDependencySQL, taskID, dependsOn)
 	if err != nil {
 		return fmt.Errorf("removing dependency %d -> %d: %w", taskID, dependsOn, err)
+	}
+	if err := recordTaskChangesTx(ctx, tx, "dependency_removed", taskID); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing remove dependency: %w", err)
 	}
 	return nil
 }
@@ -206,6 +231,69 @@ func (s *Store) History(ctx context.Context, taskID int64) ([]TaskHistoryEntry, 
 	}
 	defer rows.Close()
 	return scanHistory(rows)
+}
+
+func (s *Store) ListTaskChanges(ctx context.Context, query TaskChangeQuery) ([]TaskChangeEvent, error) {
+	rows, err := s.pool.Query(ctx, listTaskChangesSQL, query.ProjectID, query.AfterID, query.Limit)
+	if err != nil {
+		return nil, fmt.Errorf("listing task changes: %w", err)
+	}
+	defer rows.Close()
+	return scanTaskChangeEvents(rows)
+}
+
+func recordUpdateTaskChangesTx(ctx context.Context, tx pgx.Tx, current *Task, updated *Task, patch TaskPatch) error {
+	taskIDs := []int64{updated.ID()}
+	if patch.Status != nil {
+		dependentIDs, err := dependentTaskIDsTx(ctx, tx, updated.ID())
+		if err != nil {
+			return err
+		}
+		taskIDs = append(taskIDs, dependentIDs...)
+	}
+	if patch.HasParent {
+		if oldParent := current.ParentID(); oldParent != nil {
+			taskIDs = append(taskIDs, *oldParent)
+		}
+		if newParent := updated.ParentID(); newParent != nil {
+			taskIDs = append(taskIDs, *newParent)
+		}
+	}
+	return recordTaskChangesTx(ctx, tx, "updated", taskIDs...)
+}
+
+func recordTaskChangesTx(ctx context.Context, tx pgx.Tx, kind string, taskIDs ...int64) error {
+	seen := make(map[int64]bool, len(taskIDs))
+	for _, taskID := range taskIDs {
+		if taskID <= 0 || seen[taskID] {
+			continue
+		}
+		seen[taskID] = true
+		if _, err := tx.Exec(ctx, insertTaskChangeSQL, taskID, kind); err != nil {
+			return fmt.Errorf("recording task change %d: %w", taskID, err)
+		}
+	}
+	return nil
+}
+
+func dependentTaskIDsTx(ctx context.Context, tx pgx.Tx, taskID int64) ([]int64, error) {
+	rows, err := tx.Query(ctx, dependentTaskIDsSQL, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("listing task dependents: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading task dependents: %w", err)
+	}
+	return ids, nil
 }
 
 func (s *Store) dependencies(ctx context.Context, taskID int64) ([]DependencyInfo, error) {
@@ -441,58 +529,134 @@ func scanTask(row rowScanner) (*Task, error) {
 func scanTaskSummaries(rows pgx.Rows) ([]TaskSummary, error) {
 	var summaries []TaskSummary
 	for rows.Next() {
-		var summary TaskSummary
-		var parentID *int64
-		var description *string
-		var assignedTo *string
-		var tagsJSON []byte
-		var blockerSummary *string
-		var blockerReason *string
-		var blockerAttemptedRemedies *string
-		var blockerSuggestedNextStep *string
-		var params NewTaskParams
-		if err := rows.Scan(
-			&params.ID,
-			&params.ProjectID,
-			&parentID,
-			&params.Title,
-			&description,
-			&params.Status,
-			&params.Priority,
-			&assignedTo,
-			&tagsJSON,
-			&blockerSummary,
-			&blockerReason,
-			&blockerAttemptedRemedies,
-			&blockerSuggestedNextStep,
-			&params.BlockerRequiresHumanInput,
-			&params.CreatedAt,
-			&params.UpdatedAt,
-			&summary.DependencyCount,
-			&summary.UnfinishedDependencyCount,
-			&summary.SubtaskCount,
-		); err != nil {
-			return nil, err
-		}
-		params.ParentID = parentID
-		params.Description = nilToString(description)
-		params.AssignedTo = nilToString(assignedTo)
-		params.Tags = tagsFromJSON(tagsJSON)
-		params.BlockerSummary = nilToString(blockerSummary)
-		params.BlockerReason = nilToString(blockerReason)
-		params.BlockerAttemptedRemedies = nilToString(blockerAttemptedRemedies)
-		params.BlockerSuggestedNextStep = nilToString(blockerSuggestedNextStep)
-		task, err := NewTask(params)
+		summary, err := scanTaskSummary(rows)
 		if err != nil {
 			return nil, err
 		}
-		summary.Task = task
 		summaries = append(summaries, summary)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("reading task summaries: %w", err)
 	}
 	return summaries, nil
+}
+
+func scanTaskSummary(row rowScanner) (TaskSummary, error) {
+	var summary TaskSummary
+	var parentID *int64
+	var description *string
+	var assignedTo *string
+	var tagsJSON []byte
+	var blockerSummary *string
+	var blockerReason *string
+	var blockerAttemptedRemedies *string
+	var blockerSuggestedNextStep *string
+	var params NewTaskParams
+	if err := row.Scan(
+		&params.ID,
+		&params.ProjectID,
+		&parentID,
+		&params.Title,
+		&description,
+		&params.Status,
+		&params.Priority,
+		&assignedTo,
+		&tagsJSON,
+		&blockerSummary,
+		&blockerReason,
+		&blockerAttemptedRemedies,
+		&blockerSuggestedNextStep,
+		&params.BlockerRequiresHumanInput,
+		&params.CreatedAt,
+		&params.UpdatedAt,
+		&summary.DependencyCount,
+		&summary.UnfinishedDependencyCount,
+		&summary.SubtaskCount,
+	); err != nil {
+		return TaskSummary{}, err
+	}
+	params.ParentID = parentID
+	params.Description = nilToString(description)
+	params.AssignedTo = nilToString(assignedTo)
+	params.Tags = tagsFromJSON(tagsJSON)
+	params.BlockerSummary = nilToString(blockerSummary)
+	params.BlockerReason = nilToString(blockerReason)
+	params.BlockerAttemptedRemedies = nilToString(blockerAttemptedRemedies)
+	params.BlockerSuggestedNextStep = nilToString(blockerSuggestedNextStep)
+	task, err := NewTask(params)
+	if err != nil {
+		return TaskSummary{}, err
+	}
+	summary.Task = task
+	return summary, nil
+}
+
+func scanTaskChangeEvents(rows pgx.Rows) ([]TaskChangeEvent, error) {
+	var events []TaskChangeEvent
+	for rows.Next() {
+		var event TaskChangeEvent
+		summary, err := scanTaskSummaryWithPrefix(rows, &event.ID, &event.Kind, &event.Changed)
+		if err != nil {
+			return nil, err
+		}
+		event.Summary = summary
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading task changes: %w", err)
+	}
+	return events, nil
+}
+
+func scanTaskSummaryWithPrefix(row rowScanner, prefix ...any) (TaskSummary, error) {
+	var summary TaskSummary
+	var parentID *int64
+	var description *string
+	var assignedTo *string
+	var tagsJSON []byte
+	var blockerSummary *string
+	var blockerReason *string
+	var blockerAttemptedRemedies *string
+	var blockerSuggestedNextStep *string
+	var params NewTaskParams
+	dest := append(prefix,
+		&params.ID,
+		&params.ProjectID,
+		&parentID,
+		&params.Title,
+		&description,
+		&params.Status,
+		&params.Priority,
+		&assignedTo,
+		&tagsJSON,
+		&blockerSummary,
+		&blockerReason,
+		&blockerAttemptedRemedies,
+		&blockerSuggestedNextStep,
+		&params.BlockerRequiresHumanInput,
+		&params.CreatedAt,
+		&params.UpdatedAt,
+		&summary.DependencyCount,
+		&summary.UnfinishedDependencyCount,
+		&summary.SubtaskCount,
+	)
+	if err := row.Scan(dest...); err != nil {
+		return TaskSummary{}, err
+	}
+	params.ParentID = parentID
+	params.Description = nilToString(description)
+	params.AssignedTo = nilToString(assignedTo)
+	params.Tags = tagsFromJSON(tagsJSON)
+	params.BlockerSummary = nilToString(blockerSummary)
+	params.BlockerReason = nilToString(blockerReason)
+	params.BlockerAttemptedRemedies = nilToString(blockerAttemptedRemedies)
+	params.BlockerSuggestedNextStep = nilToString(blockerSuggestedNextStep)
+	task, err := NewTask(params)
+	if err != nil {
+		return TaskSummary{}, err
+	}
+	summary.Task = task
+	return summary, nil
 }
 
 func scanHistory(rows pgx.Rows) ([]TaskHistoryEntry, error) {
@@ -559,6 +723,11 @@ id, project_id, parent_id, title, description, status, priority, assigned_to, ta
 blocker_summary, blocker_reason, blocker_attempted_remedies, blocker_suggested_next_step,
 blocker_requires_human_input, created_at, updated_at`
 
+const qualifiedTaskColumns = `
+t.id, t.project_id, t.parent_id, t.title, t.description, t.status, t.priority, t.assigned_to, t.tags,
+t.blocker_summary, t.blocker_reason, t.blocker_attempted_remedies, t.blocker_suggested_next_step,
+t.blocker_requires_human_input, t.created_at, t.updated_at`
+
 const createTaskSQL = `
 insert into den_tasks.tasks (
 	project_id, parent_id, title, description, status, priority, assigned_to, tags,
@@ -602,10 +771,12 @@ set title = coalesce($2, title),
 where id = $1
 returning ` + taskColumns
 
-const addDependencySQL = `insert into den_tasks.task_dependencies (task_id, depends_on) values ($1, $2) on conflict do nothing`
-const removeDependencySQL = `delete from den_tasks.task_dependencies where task_id = $1 and depends_on = $2`
-const dependencyIDsSQL = `select depends_on from den_tasks.task_dependencies where task_id = $1`
-const parentIDSQL = `select parent_id from den_tasks.tasks where id = $1`
+const (
+	addDependencySQL    = `insert into den_tasks.task_dependencies (task_id, depends_on) values ($1, $2) on conflict do nothing`
+	removeDependencySQL = `delete from den_tasks.task_dependencies where task_id = $1 and depends_on = $2`
+	dependencyIDsSQL    = `select depends_on from den_tasks.task_dependencies where task_id = $1`
+	parentIDSQL         = `select parent_id from den_tasks.tasks where id = $1`
+)
 
 const dependenciesSQL = `
 select t.id, t.title, t.status
@@ -623,6 +794,25 @@ order by changed_at desc, id desc`
 const insertHistorySQL = `
 insert into den_tasks.task_history (task_id, field, old_value, new_value, changed_by)
 values ($1, $2, $3, $4, $5)`
+
+const insertTaskChangeSQL = `
+insert into den_tasks.task_change_events (task_id, project_id, change_kind)
+select id, project_id, $2
+from den_tasks.tasks
+where id = $1`
+
+const listTaskChangesSQL = `
+select e.id, e.change_kind, e.changed_at, ` + qualifiedTaskColumns + `,
+	(select count(*) from den_tasks.task_dependencies where task_id = t.id) as dep_count,
+	(select count(*) from den_tasks.task_dependencies td join den_tasks.tasks dep on dep.id = td.depends_on where td.task_id = t.id and dep.status not in ('done', 'cancelled')) as unfinished_dep_count,
+	(select count(*) from den_tasks.tasks where parent_id = t.id) as sub_count
+from den_tasks.task_change_events e
+join den_tasks.tasks t on t.id = e.task_id
+where e.project_id = $1 and e.id > $2
+order by e.id
+limit $3`
+
+const dependentTaskIDsSQL = `select task_id from den_tasks.task_dependencies where depends_on = $1 order by task_id`
 
 const nextTaskSQL = `
 with unblocked as (

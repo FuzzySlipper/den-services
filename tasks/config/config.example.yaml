@@ -7,5 +7,11 @@ service_token_env: "DEN_TASKS_SERVICE_TOKEN" # Env var containing the bearer tok
 projects_base_url_env: "DEN_PROJECTS_BASE_URL" # Required projects service base URL for assert-writable.
 projects_token_env: "DEN_PROJECTS_SERVICE_TOKEN" # Required projects service bearer token.
 
+stream:
+  poll_interval: "2s" # How often task-change SSE polls for new rows.
+  heartbeat_interval: "15s" # SSE heartbeat interval while no changes are available.
+  default_limit: 100 # Default max task-change events per poll/backfill response.
+  max_limit: 500 # Maximum accepted task-change events per poll/backfill response.
+
 http:
   read_header_timeout: "5s" # Maximum time to read request headers.

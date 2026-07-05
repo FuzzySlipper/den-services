@@ -141,6 +141,49 @@ func TestServiceBlockedInvariantAndHistory(t *testing.T) {
 	assertHistoryField(t, history, "blocker_requires_human_input", "false", "true")
 }
 
+func TestServiceTaskChangesIncludeSummaryForDependentAvailability(t *testing.T) {
+	service := newTestService()
+	ctx := context.Background()
+	dependency, err := service.CreateTask(ctx, "den-services", CreateTaskRequest{Title: "Dependency"})
+	if err != nil {
+		t.Fatalf("CreateTask(dependency) error = %v", err)
+	}
+	waiting, err := service.CreateTask(ctx, "den-services", CreateTaskRequest{Title: "Waiting", DependsOn: []int64{dependency.ID()}})
+	if err != nil {
+		t.Fatalf("CreateTask(waiting) error = %v", err)
+	}
+	initial, err := service.ListTaskChanges(ctx, "den-services", 0, 10)
+	if err != nil {
+		t.Fatalf("ListTaskChanges(initial) error = %v", err)
+	}
+	if len(initial) != 2 || initial[1].Summary.Task.ID() != waiting.ID() || initial[1].Summary.Availability() != AvailabilityWaitingOnDependencies {
+		t.Fatalf("initial changes = %+v", initial)
+	}
+	done := StatusDone
+	if _, err := service.UpdateTask(ctx, dependency.ID(), UpdateTaskRequest{Agent: "tester", Status: &done}); err != nil {
+		t.Fatalf("UpdateTask(done) error = %v", err)
+	}
+	changes, err := service.ListTaskChanges(ctx, "den-services", initial[len(initial)-1].ID, 10)
+	if err != nil {
+		t.Fatalf("ListTaskChanges(after done) error = %v", err)
+	}
+	if len(changes) != 2 {
+		t.Fatalf("changes len = %d, want dependency and dependent", len(changes))
+	}
+	foundWaiting := false
+	for _, event := range changes {
+		if event.Summary.Task.ID() == waiting.ID() {
+			foundWaiting = true
+			if event.Summary.Availability() != AvailabilityAvailable {
+				t.Fatalf("waiting availability = %q, want available", event.Summary.Availability())
+			}
+		}
+	}
+	if !foundWaiting {
+		t.Fatalf("dependent waiting task missing from changes: %+v", changes)
+	}
+}
+
 func TestServiceSubtaskTierPrecedesTopLevelPlanned(t *testing.T) {
 	service := newTestService()
 	ctx := context.Background()

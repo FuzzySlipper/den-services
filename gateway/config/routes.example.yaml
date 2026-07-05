@@ -114,6 +114,23 @@ routes:
 #    successor_auth:
 #      bearer_token: "${DEN_GATEWAY_TIMELINE_UPSTREAM_TOKEN}"
 
+# Tasks read/stream route example. The change stream is browser-facing SSE for
+# den-web task-list freshness. Keep this route scoped to the task subtree:
+# Gateway path matching is prefix-based, and a broader /v1/projects/ route
+# would steal unrelated project reads such as documents, messages, librarian,
+# and project detail.
+#
+#  - name: "tasks-reads-and-streams"
+#    path_pattern: "/v1/projects/{project_id}/tasks"
+#    methods: ["GET"]
+#    legacy_upstream_url: "http://127.0.0.1:5080"
+#    successor_upstream_url: "http://127.0.0.1:8092"
+#    successor_mode: "always"
+#    caller_auth:
+#      bearer_token: "${DEN_GATEWAY_TASKS_READ_TOKEN}"
+#    successor_auth:
+#      bearer_token: "${DEN_GATEWAY_TASKS_UPSTREAM_TOKEN}"
+
 # Doc Publish route example. This route performs external repo writes, so keep
 # caller auth distinct from the upstream doc-publish service token.
 #

@@ -144,6 +144,66 @@ func TestRouteTableUsesAlwaysSuccessorWithoutMigrationHeader(t *testing.T) {
 	}
 }
 
+func TestRouteTableProjectTaskTemplateDoesNotCatchOtherProjectReads(t *testing.T) {
+	table, err := NewRouteTable([]routeFile{
+		{
+			Name:                 "tasks-reads-and-streams",
+			PathPattern:          "/v1/projects/{project_id}/tasks",
+			Methods:              []string{httpMethodGet},
+			LegacyUpstreamURL:    "http://legacy",
+			SuccessorUpstreamURL: "http://tasks",
+			SuccessorMode:        "always",
+			CallerAuth:           callerAuthFile{BearerToken: "tasks-read-token"},
+			SuccessorAuth:        testSuccessorAuth(),
+		},
+		{Name: "all", PathPattern: "/", LegacyUpstreamURL: "http://legacy"},
+	})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+
+	successorPaths := []string{
+		"/v1/projects/den-services/tasks",
+		"/v1/projects/den-services/tasks/changes",
+		"/v1/projects/den-services/tasks/changes/stream",
+		"/v1/projects/den-services/tasks/4197",
+	}
+	for _, path := range successorPaths {
+		match, ok := table.Match(httpMethodGet, path, false)
+		if !ok {
+			t.Fatalf("%s did not match", path)
+		}
+		if !match.UsesSuccessor {
+			t.Fatalf("%s UsesSuccessor = false, want true", path)
+		}
+		if match.Target.String() != "http://tasks" {
+			t.Fatalf("%s target = %s, want http://tasks", path, match.Target.String())
+		}
+		if match.CallerAuth.bearerToken != "tasks-read-token" {
+			t.Fatalf("%s caller token = %q, want tasks read token", path, match.CallerAuth.bearerToken)
+		}
+	}
+
+	legacyPaths := []string{
+		"/v1/projects/den-services",
+		"/v1/projects/den-services/documents",
+		"/v1/projects/den-services/messages",
+		"/v1/projects/den-services/librarian/query",
+	}
+	for _, path := range legacyPaths {
+		match, ok := table.Match(httpMethodGet, path, false)
+		if !ok {
+			t.Fatalf("%s did not match fallback", path)
+		}
+		if match.UsesSuccessor {
+			t.Fatalf("%s UsesSuccessor = true, want false", path)
+		}
+		if match.Target.String() != "http://legacy" {
+			t.Fatalf("%s target = %s, want http://legacy", path, match.Target.String())
+		}
+	}
+}
+
 func TestRouteTableRejectsMissingCallerAuthExpansion(t *testing.T) {
 	_, err := NewRouteTableWithValues([]routeFile{{
 		Name:              "observation-read",

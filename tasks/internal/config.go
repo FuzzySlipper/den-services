@@ -18,7 +18,15 @@ type Config struct {
 	ServiceToken    string
 	ProjectsBaseURL string
 	ProjectsToken   string
+	Stream          StreamConfig
 	HTTP            HTTPConfig
+}
+
+type StreamConfig struct {
+	PollInterval      time.Duration
+	HeartbeatInterval time.Duration
+	DefaultLimit      int
+	MaxLimit          int
 }
 
 type HTTPConfig struct {
@@ -31,7 +39,15 @@ type configFile struct {
 	ServiceTokenEnv    string         `yaml:"service_token_env"`
 	ProjectsBaseURLEnv string         `yaml:"projects_base_url_env"`
 	ProjectsTokenEnv   string         `yaml:"projects_token_env"`
+	Stream             streamFile     `yaml:"stream"`
 	HTTP               httpConfigFile `yaml:"http"`
+}
+
+type streamFile struct {
+	PollInterval      string `yaml:"poll_interval"`
+	HeartbeatInterval string `yaml:"heartbeat_interval"`
+	DefaultLimit      int    `yaml:"default_limit"`
+	MaxLimit          int    `yaml:"max_limit"`
 }
 
 type httpConfigFile struct {
@@ -74,12 +90,17 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	streamConfig, err := f.Stream.toConfig()
+	if err != nil {
+		return nil, err
+	}
 	return &Config{
 		BindAddr:        f.BindAddr,
 		DatabaseURL:     values.String(f.DatabaseURLEnv, ""),
 		ServiceToken:    values.String(f.ServiceTokenEnv, ""),
 		ProjectsBaseURL: values.String(f.ProjectsBaseURLEnv, ""),
 		ProjectsToken:   values.String(f.ProjectsTokenEnv, values.String(f.ServiceTokenEnv, "")),
+		Stream:          streamConfig,
 		HTTP:            HTTPConfig{ReadHeaderTimeout: readHeaderTimeout},
 	}, nil
 }
@@ -100,10 +121,33 @@ func (c *Config) validate() error {
 	if strings.TrimSpace(c.ProjectsToken) == "" {
 		return errors.New("projects token is required")
 	}
+	if c.Stream.PollInterval <= 0 || c.Stream.HeartbeatInterval <= 0 {
+		return errors.New("stream intervals must be positive")
+	}
+	if c.Stream.DefaultLimit <= 0 || c.Stream.MaxLimit <= 0 || c.Stream.DefaultLimit > c.Stream.MaxLimit {
+		return errors.New("stream limits must be positive and default_limit must not exceed max_limit")
+	}
 	if c.HTTP.ReadHeaderTimeout <= 0 {
 		return errors.New("http.read_header_timeout must be positive")
 	}
 	return nil
+}
+
+func (f streamFile) toConfig() (StreamConfig, error) {
+	pollInterval, err := parseRequiredDuration("stream.poll_interval", f.PollInterval)
+	if err != nil {
+		return StreamConfig{}, err
+	}
+	heartbeatInterval, err := parseRequiredDuration("stream.heartbeat_interval", f.HeartbeatInterval)
+	if err != nil {
+		return StreamConfig{}, err
+	}
+	return StreamConfig{
+		PollInterval:      pollInterval,
+		HeartbeatInterval: heartbeatInterval,
+		DefaultLimit:      f.DefaultLimit,
+		MaxLimit:          f.MaxLimit,
+	}, nil
 }
 
 func parseRequiredDuration(name string, raw string) (time.Duration, error) {

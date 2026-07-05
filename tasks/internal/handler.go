@@ -18,19 +18,23 @@ type TaskUseCases interface {
 	RemoveDependency(ctx context.Context, taskID int64, dependsOn int64) error
 	NextTask(ctx context.Context, projectID string, assignedTo string) (*Task, error)
 	History(ctx context.Context, taskID int64) ([]TaskHistoryEntry, error)
+	ListTaskChanges(ctx context.Context, projectID string, afterID int64, limit int) ([]TaskChangeEvent, error)
 }
 
 type Handler struct {
 	service TaskUseCases
+	config  *Config
 }
 
-func NewHandler(service TaskUseCases) *Handler {
-	return &Handler{service: service}
+func NewHandler(service TaskUseCases, config *Config) *Handler {
+	return &Handler{service: service, config: config}
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks", h.createTask)
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks", h.listTasks)
+	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/changes", h.listTaskChanges)
+	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/changes/stream", h.taskChangesStream)
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/next", h.nextTask)
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}", h.getProjectTask)
 	mux.HandleFunc("PATCH /v1/projects/{project_id}/tasks/{task_id}", h.updateProjectTask)
@@ -221,6 +225,47 @@ func (h *Handler) history(w http.ResponseWriter, r *http.Request) {
 	api.WriteJSON(w, http.StatusOK, toHistoryResponses(entries))
 }
 
+func (h *Handler) listTaskChanges(w http.ResponseWriter, r *http.Request) {
+	afterID, err := h.parseAfter(r)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	limit, err := h.parseChangeLimit(r)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	events, err := h.service.ListTaskChanges(r.Context(), r.PathValue("project_id"), afterID, limit)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	responses := toTaskChangeResponses(events)
+	api.WriteJSON(w, http.StatusOK, TaskChangesResponse{
+		Events:     responses,
+		NextCursor: nextTaskChangeCursor(responses),
+	})
+}
+
+func (h *Handler) taskChangesStream(w http.ResponseWriter, r *http.Request) {
+	afterID, err := h.parseAfter(r)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	limit, err := h.parseChangeLimit(r)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	streamTaskChanges(w, r, h.service, h.config, taskChangeStreamQuery{
+		ProjectID: r.PathValue("project_id"),
+		AfterID:   afterID,
+		Limit:     limit,
+	})
+}
+
 func (h *Handler) projectMatches(w http.ResponseWriter, r *http.Request, taskID int64) bool {
 	detail, err := h.service.GetTask(r.Context(), taskID)
 	if err != nil {
@@ -256,6 +301,43 @@ func listQueryFromRequest(r *http.Request) (ListTasksQuery, error) {
 		result.ParentID = &parentID
 	}
 	return result, nil
+}
+
+func (h *Handler) parseAfter(r *http.Request) (int64, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get("after"))
+	if raw == "" {
+		raw = strings.TrimSpace(r.Header.Get("Last-Event-ID"))
+	}
+	if raw == "" {
+		return 0, nil
+	}
+	afterID, err := parseTaskChangeCursor(raw)
+	if err != nil {
+		return 0, badRequest(err)
+	}
+	return afterID, nil
+}
+
+func (h *Handler) parseChangeLimit(r *http.Request) (int, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get("limit"))
+	if raw == "" {
+		return h.config.Stream.DefaultLimit, nil
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, badRequest(err)
+	}
+	if limit <= 0 || limit > h.config.Stream.MaxLimit {
+		return 0, badRequest(ErrInvalidTask)
+	}
+	return limit, nil
+}
+
+func nextTaskChangeCursor(events []TaskChangeEventResponse) string {
+	if len(events) == 0 {
+		return ""
+	}
+	return events[len(events)-1].Cursor
 }
 
 func splitCSV(raw string) []string {

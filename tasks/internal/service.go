@@ -22,6 +22,7 @@ type TaskStore interface {
 	RemoveDependency(ctx context.Context, taskID int64, dependsOn int64) error
 	NextTask(ctx context.Context, projectID string, assignedTo string) (*Task, error)
 	History(ctx context.Context, taskID int64) ([]TaskHistoryEntry, error)
+	ListTaskChanges(ctx context.Context, query TaskChangeQuery) ([]TaskChangeEvent, error)
 }
 
 type ListTasksQuery struct {
@@ -32,6 +33,12 @@ type ListTasksQuery struct {
 	MaxPriority *int
 	ParentID    *int64
 	IncludeAll  bool
+}
+
+type TaskChangeQuery struct {
+	ProjectID string
+	AfterID   int64
+	Limit     int
 }
 
 type TaskPatch struct {
@@ -165,6 +172,20 @@ func (s *Service) NextTask(ctx context.Context, projectID string, assignedTo str
 
 func (s *Service) History(ctx context.Context, taskID int64) ([]TaskHistoryEntry, error) {
 	return s.store.History(ctx, taskID)
+}
+
+func (s *Service) ListTaskChanges(ctx context.Context, projectID string, afterID int64, limit int) ([]TaskChangeEvent, error) {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return nil, validationFailed(ErrMissingProjectID)
+	}
+	if afterID < 0 {
+		return nil, validationFailed(fmt.Errorf("after must be non-negative"))
+	}
+	if limit <= 0 {
+		return nil, validationFailed(fmt.Errorf("limit must be positive"))
+	}
+	return s.store.ListTaskChanges(ctx, TaskChangeQuery{ProjectID: projectID, AfterID: afterID, Limit: limit})
 }
 
 func buildPatch(current *Task, req UpdateTaskRequest) (TaskPatch, error) {

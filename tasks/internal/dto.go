@@ -99,6 +99,23 @@ type TaskHistoryEntryResponse struct {
 	ChangedAt time.Time `json:"changed_at"`
 }
 
+type TaskChangeEventResponse struct {
+	EventID      int64               `json:"event_id"`
+	Cursor       string              `json:"cursor"`
+	Kind         string              `json:"kind"`
+	ChangedAt    time.Time           `json:"changed_at"`
+	TaskID       int64               `json:"task_id"`
+	ProjectID    string              `json:"project_id"`
+	Task         TaskSummaryResponse `json:"task"`
+	BackfillURL  string              `json:"backfill_url,omitempty"`
+	ReconnectURL string              `json:"reconnect_url,omitempty"`
+}
+
+type TaskChangesResponse struct {
+	Events     []TaskChangeEventResponse `json:"events"`
+	NextCursor string                    `json:"next_cursor,omitempty"`
+}
+
 type MessageResponse struct {
 	Message string `json:"message"`
 }
@@ -165,4 +182,31 @@ func toHistoryResponses(entries []TaskHistoryEntry) []TaskHistoryEntryResponse {
 		responses = append(responses, TaskHistoryEntryResponse(entry))
 	}
 	return responses
+}
+
+func toTaskChangeResponse(event TaskChangeEvent) TaskChangeEventResponse {
+	return TaskChangeEventResponse{
+		EventID:   event.ID,
+		Cursor:    taskChangeCursor(event.ID),
+		Kind:      event.Kind,
+		ChangedAt: event.Changed,
+		TaskID:    event.Summary.Task.ID(),
+		ProjectID: event.Summary.Task.ProjectID(),
+		Task:      toTaskSummaryResponse(event.Summary),
+	}
+}
+
+func toTaskChangeResponses(events []TaskChangeEvent) []TaskChangeEventResponse {
+	responses := make([]TaskChangeEventResponse, 0, len(events))
+	for _, event := range events {
+		responses = append(responses, toTaskChangeResponse(event))
+	}
+	return responses
+}
+
+func taskChangeCursor(eventID int64) string {
+	if eventID <= 0 {
+		return ""
+	}
+	return int64String(&eventID)
 }

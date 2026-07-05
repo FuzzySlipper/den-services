@@ -13,15 +13,18 @@ type memoryStore struct {
 	mu            sync.Mutex
 	nextTaskID    int64
 	nextHistoryID int64
+	nextEventID   int64
 	tasks         map[int64]*Task
 	dependencies  map[int64]map[int64]bool
 	history       []TaskHistoryEntry
+	changes       []TaskChangeEvent
 }
 
 func newMemoryStore() *memoryStore {
 	return &memoryStore{
 		nextTaskID:    1,
 		nextHistoryID: 1,
+		nextEventID:   1,
 		tasks:         make(map[int64]*Task),
 		dependencies:  make(map[int64]map[int64]bool),
 	}
@@ -66,6 +69,10 @@ func (s *memoryStore) CreateTask(_ context.Context, task *Task, dependsOn []int6
 			delete(s.tasks, taskID)
 			return nil, err
 		}
+	}
+	s.appendChangeLocked("created", taskID, task.CreatedAt())
+	if parentID := created.ParentID(); parentID != nil {
+		s.appendChangeLocked("subtask_created", *parentID, task.CreatedAt())
 	}
 	return cloneTask(created), nil
 }
@@ -190,13 +197,31 @@ func (s *memoryStore) UpdateTask(_ context.Context, id int64, patch TaskPatch, a
 			s.appendHistoryLocked(id, field, values[0], values[1], agent, updatedAt)
 		}
 	}
+	s.appendChangeLocked("updated", id, updatedAt)
+	if patch.Status != nil {
+		for dependentID := range s.dependentTaskIDsLocked(id) {
+			s.appendChangeLocked("updated", dependentID, updatedAt)
+		}
+	}
+	if patch.HasParent {
+		if oldParent := current.ParentID(); oldParent != nil {
+			s.appendChangeLocked("updated", *oldParent, updatedAt)
+		}
+		if newParent := updated.ParentID(); newParent != nil {
+			s.appendChangeLocked("updated", *newParent, updatedAt)
+		}
+	}
 	return cloneTask(updated), nil
 }
 
 func (s *memoryStore) AddDependency(_ context.Context, taskID int64, dependsOn int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.addDependencyLocked(taskID, dependsOn)
+	if err := s.addDependencyLocked(taskID, dependsOn); err != nil {
+		return err
+	}
+	s.appendChangeLocked("dependency_added", taskID, time.Now().UTC())
+	return nil
 }
 
 func (s *memoryStore) RemoveDependency(_ context.Context, taskID int64, dependsOn int64) error {
@@ -205,6 +230,7 @@ func (s *memoryStore) RemoveDependency(_ context.Context, taskID int64, dependsO
 	if s.dependencies[taskID] != nil {
 		delete(s.dependencies[taskID], dependsOn)
 	}
+	s.appendChangeLocked("dependency_removed", taskID, time.Now().UTC())
 	return nil
 }
 
@@ -265,6 +291,22 @@ func (s *memoryStore) History(_ context.Context, taskID int64) ([]TaskHistoryEnt
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.historyLocked(taskID), nil
+}
+
+func (s *memoryStore) ListTaskChanges(_ context.Context, query TaskChangeQuery) ([]TaskChangeEvent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var events []TaskChangeEvent
+	for _, event := range s.changes {
+		if event.ID <= query.AfterID || event.Summary.Task.ProjectID() != query.ProjectID {
+			continue
+		}
+		events = append(events, event)
+		if len(events) == query.Limit {
+			break
+		}
+	}
+	return events, nil
 }
 
 func (s *memoryStore) addDependencyLocked(taskID int64, dependsOn int64) error {
@@ -433,6 +475,36 @@ func (s *memoryStore) appendHistoryLocked(taskID int64, field string, oldValue s
 	}
 	s.nextHistoryID++
 	s.history = append(s.history, entry)
+}
+
+func (s *memoryStore) appendChangeLocked(kind string, taskID int64, at time.Time) {
+	task := s.tasks[taskID]
+	if task == nil {
+		return
+	}
+	event := TaskChangeEvent{
+		ID:      s.nextEventID,
+		Kind:    kind,
+		Changed: at,
+		Summary: TaskSummary{
+			Task:                      cloneTask(task),
+			DependencyCount:           len(s.dependencies[taskID]),
+			UnfinishedDependencyCount: s.unfinishedDependencyCountLocked(taskID),
+			SubtaskCount:              s.subtaskCountLocked(taskID),
+		},
+	}
+	s.nextEventID++
+	s.changes = append(s.changes, event)
+}
+
+func (s *memoryStore) dependentTaskIDsLocked(taskID int64) map[int64]bool {
+	result := make(map[int64]bool)
+	for candidateID, deps := range s.dependencies {
+		if deps[taskID] {
+			result[candidateID] = true
+		}
+	}
+	return result
 }
 
 func (s *memoryStore) historyLocked(taskID int64) []TaskHistoryEntry {

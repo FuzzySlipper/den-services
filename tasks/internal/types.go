@@ -215,6 +215,13 @@ type TaskHistoryEntry struct {
 	ChangedAt time.Time
 }
 
+type TaskChangeEvent struct {
+	ID      int64
+	Kind    string
+	Changed time.Time
+	Summary TaskSummary
+}
+
 func defaultStatus(status string) string {
 	status = strings.TrimSpace(status)
 	if status == "" {

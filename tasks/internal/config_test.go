@@ -18,6 +18,11 @@ database_url_env: "DEN_TASKS_DATABASE_URL"
 service_token_env: "DEN_TASKS_SERVICE_TOKEN"
 projects_base_url_env: "DEN_PROJECTS_BASE_URL"
 projects_token_env: "DEN_PROJECTS_SERVICE_TOKEN"
+stream:
+  poll_interval: "2s"
+  heartbeat_interval: "15s"
+  default_limit: 100
+  max_limit: 500
 http:
   read_header_timeout: "5s"
 `), 0o600); err != nil {
@@ -44,6 +49,12 @@ http:
 	if cfg.ProjectsBaseURL != "http://127.0.0.1:8091" || cfg.ProjectsToken != "projects-token" {
 		t.Fatalf("projects config = %q %q", cfg.ProjectsBaseURL, cfg.ProjectsToken)
 	}
+	if cfg.Stream.PollInterval != 2*time.Second || cfg.Stream.HeartbeatInterval != 15*time.Second {
+		t.Fatalf("Stream intervals = %+v", cfg.Stream)
+	}
+	if cfg.Stream.DefaultLimit != 100 || cfg.Stream.MaxLimit != 500 {
+		t.Fatalf("Stream limits = %+v", cfg.Stream)
+	}
 	if cfg.HTTP.ReadHeaderTimeout != 5*time.Second {
 		t.Fatalf("ReadHeaderTimeout = %s", cfg.HTTP.ReadHeaderTimeout)
 	}
@@ -57,6 +68,11 @@ database_url_env: "DEN_TASKS_DATABASE_URL"
 service_token_env: "DEN_TASKS_SERVICE_TOKEN"
 projects_base_url_env: "DEN_PROJECTS_BASE_URL"
 projects_token_env: "DEN_PROJECTS_SERVICE_TOKEN"
+stream:
+  poll_interval: "2s"
+  heartbeat_interval: "15s"
+  default_limit: 100
+  max_limit: 500
 http:
   read_header_timeout: "5s"
 `), 0o600); err != nil {
