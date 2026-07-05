@@ -742,7 +742,7 @@ const getTaskSQL = `select ` + taskColumns + ` from den_tasks.tasks where id = $
 const listTasksSQL = `
 select ` + taskColumns + `,
 	(select count(*) from den_tasks.task_dependencies where task_id = t.id) as dep_count,
-	(select count(*) from den_tasks.task_dependencies td join den_tasks.tasks dep on dep.id = td.depends_on where td.task_id = t.id and dep.status not in ('done', 'cancelled')) as unfinished_dep_count,
+	(select count(*) from den_tasks.task_dependencies td join den_tasks.tasks dep on dep.id = td.depends_on where td.task_id = t.id and dep.status not in ('review', 'done', 'cancelled')) as unfinished_dep_count,
 	(select count(*) from den_tasks.tasks where parent_id = t.id) as sub_count
 from den_tasks.tasks t
 where t.project_id = $1
@@ -804,7 +804,7 @@ where id = $1`
 const listTaskChangesSQL = `
 select e.id, e.change_kind, e.changed_at, ` + qualifiedTaskColumns + `,
 	(select count(*) from den_tasks.task_dependencies where task_id = t.id) as dep_count,
-	(select count(*) from den_tasks.task_dependencies td join den_tasks.tasks dep on dep.id = td.depends_on where td.task_id = t.id and dep.status not in ('done', 'cancelled')) as unfinished_dep_count,
+	(select count(*) from den_tasks.task_dependencies td join den_tasks.tasks dep on dep.id = td.depends_on where td.task_id = t.id and dep.status not in ('review', 'done', 'cancelled')) as unfinished_dep_count,
 	(select count(*) from den_tasks.tasks where parent_id = t.id) as sub_count
 from den_tasks.task_change_events e
 join den_tasks.tasks t on t.id = e.task_id
@@ -823,7 +823,7 @@ with unblocked as (
 		select 1
 		from den_tasks.task_dependencies td
 		join den_tasks.tasks dep on dep.id = td.depends_on
-		where td.task_id = t.id and dep.status not in ('done', 'cancelled')
+		where td.task_id = t.id and dep.status not in ('review', 'done', 'cancelled')
 	  )
 ),
 candidates as (

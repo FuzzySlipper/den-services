@@ -81,16 +81,16 @@ func TestServiceNextTaskDependenciesAndCycles(t *testing.T) {
 		t.Fatalf("next before dependency completion = %+v", next)
 	}
 
-	done := StatusDone
-	if _, err := service.UpdateTask(ctx, dependency.ID(), UpdateTaskRequest{Agent: "tester", Status: &done}); err != nil {
-		t.Fatalf("UpdateTask(done) error = %v", err)
+	review := StatusReview
+	if _, err := service.UpdateTask(ctx, dependency.ID(), UpdateTaskRequest{Agent: "tester", Status: &review}); err != nil {
+		t.Fatalf("UpdateTask(review) error = %v", err)
 	}
 	next, err = service.NextTask(ctx, "den-services", "")
 	if err != nil {
-		t.Fatalf("NextTask(after done) error = %v", err)
+		t.Fatalf("NextTask(after review) error = %v", err)
 	}
 	if next == nil || next.ID() != waiting.ID() {
-		t.Fatalf("next after dependency completion = %+v", next)
+		t.Fatalf("next after dependency enters review = %+v", next)
 	}
 
 	if err := service.AddDependency(ctx, dependency.ID(), waiting.ID()); !errors.Is(err, ErrDependencyCycle) {

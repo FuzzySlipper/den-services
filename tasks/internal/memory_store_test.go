@@ -441,7 +441,7 @@ func (s *memoryStore) unfinishedDependencyCountLocked(taskID int64) int {
 	count := 0
 	for depID := range s.dependencies[taskID] {
 		dep := s.tasks[depID]
-		if dep != nil && !terminalStatus(dep.Status()) {
+		if dep != nil && !dependencySatisfiedStatus(dep.Status()) {
 			count++
 		}
 	}

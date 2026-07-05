@@ -66,14 +66,24 @@ func TestHTTPTasksLifecycle(t *testing.T) {
 		t.Fatalf("next = %+v, want dependency %+v", next, dependency)
 	}
 
-	patchDone := authedJSONRequest(http.MethodPatch, "/v1/tasks/"+int64String(&dependency.ID), `{
+	patchReview := authedJSONRequest(http.MethodPatch, "/v1/tasks/"+int64String(&dependency.ID), `{
 		"agent": "tester",
-		"status": "done"
+		"status": "review"
 	}`)
 	patchResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(patchResponse, patchDone)
+	server.Handler.ServeHTTP(patchResponse, patchReview)
 	if patchResponse.Code != http.StatusOK {
 		t.Fatalf("patch status = %d body = %s", patchResponse.Code, patchResponse.Body.String())
+	}
+
+	nextAfterReviewResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(nextAfterReviewResponse, authedJSONRequest(http.MethodGet, "/v1/projects/den-services/tasks/next", ""))
+	if nextAfterReviewResponse.Code != http.StatusOK {
+		t.Fatalf("next after review status = %d body = %s", nextAfterReviewResponse.Code, nextAfterReviewResponse.Body.String())
+	}
+	decodeJSON(t, nextAfterReviewResponse.Body, &next)
+	if next.ID != task.ID {
+		t.Fatalf("next after dependency review = %+v, want task %+v", next, task)
 	}
 
 	detailResponse := httptest.NewRecorder()

@@ -243,6 +243,10 @@ func terminalStatus(status string) bool {
 	return status == StatusDone || status == StatusCancelled
 }
 
+func dependencySatisfiedStatus(status string) bool {
+	return status == StatusReview || terminalStatus(status)
+}
+
 func availability(status string, unfinishedDependencies int) string {
 	switch status {
 	case StatusPlanned:

@@ -76,17 +76,24 @@ func TestStoreLifecycleSmoke(t *testing.T) {
 		t.Fatalf("next = %+v, want dependency %d", next, dependency.ID())
 	}
 
-	done := StatusDone
-	updated, err := store.UpdateTask(ctx, dependency.ID(), TaskPatch{Status: &done}, "store-test", now.Add(time.Minute))
+	review := StatusReview
+	updated, err := store.UpdateTask(ctx, dependency.ID(), TaskPatch{Status: &review}, "store-test", now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("UpdateTask() error = %v", err)
 	}
-	if updated.Status() != StatusDone {
+	if updated.Status() != StatusReview {
 		t.Fatalf("updated status = %q", updated.Status())
+	}
+	next, err = store.NextTask(ctx, projectID, "")
+	if err != nil {
+		t.Fatalf("NextTask(after review) error = %v", err)
+	}
+	if next == nil || next.ID() != task.ID() {
+		t.Fatalf("next after review = %+v, want waiting task %d", next, task.ID())
 	}
 	history, err := store.History(ctx, dependency.ID())
 	if err != nil {
 		t.Fatalf("History() error = %v", err)
 	}
-	assertHistoryField(t, history, "status", StatusPlanned, StatusDone)
+	assertHistoryField(t, history, "status", StatusPlanned, StatusReview)
 }
