@@ -1,4 +1,4 @@
-SERVICES := shared delivery runtime observation gateway conversation timeline mcp visual-contract visual-inspect doc-publish artifacts migration integration librarian playwright-broker
+SERVICES := shared delivery runtime observation gateway conversation timeline mcp visual-contract visual-inspect doc-publish artifacts migration integration librarian playwright-broker devserver-broker den-serve
 GOCACHE ?= $(CURDIR)/.gocache
 GOLANGCI_LINT_CACHE ?= $(CURDIR)/.golangci-lint-cache
 

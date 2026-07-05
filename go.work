@@ -5,6 +5,8 @@ use (
 	./artifacts
 	./conversation
 	./delivery
+	./den-serve
+	./devserver-broker
 	./doc-publish
 	./documents
 	./gateway
