@@ -55,6 +55,11 @@ GET /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_
 
 Both endpoints require the Review service token.
 
+For the current high-trust local deployment, Review may be configured with
+`allow_unauthenticated_local_dev: true`. In that mode, direct local HTTP
+fallbacks do not need `Authorization`; the Review service still keeps its token
+configured for MCP/backend callers.
+
 ## Evidence Behavior
 
 Terminal gates append task-thread messages with one of these intents:
