@@ -9,3 +9,13 @@ messages_base_url_env: "DEN_MESSAGES_BASE_URL"
 messages_token_env: "DEN_MESSAGES_SERVICE_TOKEN"
 http:
   read_header_timeout: "5s"
+github:
+  enabled: true
+  api_base_url: "https://api.github.com"
+  token_env: "DEN_REVIEW_GITHUB_TOKEN"
+  poll_interval: "30s"
+  request_timeout: "10s"
+  default_timeout: "30m"
+  max_timeout: "2h"
+  batch_size: 10
+  status_url_base: "http://127.0.0.1:8096"

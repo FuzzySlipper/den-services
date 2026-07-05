@@ -445,7 +445,8 @@ func reviewRoute(operation string) bool {
 		"create_review_finding",
 		"set_review_verdict",
 		"respond_to_review_finding",
-		"set_review_finding_status":
+		"set_review_finding_status",
+		"await_github_checks":
 		return true
 	default:
 		return false

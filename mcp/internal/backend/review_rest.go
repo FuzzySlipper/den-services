@@ -66,6 +66,15 @@ type reviewToolArguments struct {
 	OverrideBlocking        bool            `json:"override_blocking"`
 	IdempotencyKey          string          `json:"idempotency_key"`
 	Resolved                *bool           `json:"resolved"`
+	Repository              string          `json:"repository"`
+	CommitSHA               string          `json:"commit_sha"`
+	Ref                     string          `json:"ref"`
+	RequiredChecks          json.RawMessage `json:"required_checks"`
+	TimeoutSeconds          *int            `json:"timeout_seconds"`
+	PollIntervalSeconds     *int            `json:"poll_interval_seconds"`
+	AgentProfile            string          `json:"agent_profile"`
+	AgentInstanceID         string          `json:"agent_instance_id"`
+	SessionKey              string          `json:"session_key"`
 }
 
 type reviewRoundBody struct {
@@ -150,6 +159,19 @@ type splitReviewFindingsBody struct {
 	FollowUpTags         []string `json:"follow_up_tags,omitempty"`
 	OverrideBlocking     bool     `json:"override_blocking,omitempty"`
 	IdempotencyKey       string   `json:"idempotency_key,omitempty"`
+}
+
+type githubCheckGateBody struct {
+	Repository          string   `json:"repository"`
+	CommitSHA           string   `json:"commit_sha"`
+	Ref                 string   `json:"ref"`
+	RequiredChecks      []string `json:"required_checks"`
+	TimeoutSeconds      *int     `json:"timeout_seconds,omitempty"`
+	PollIntervalSeconds *int     `json:"poll_interval_seconds,omitempty"`
+	RequestedBy         string   `json:"requested_by"`
+	AgentProfile        string   `json:"agent_profile,omitempty"`
+	AgentInstanceID     string   `json:"agent_instance_id,omitempty"`
+	SessionKey          string   `json:"session_key,omitempty"`
 }
 
 func (c *Client) callReviewREST(ctx context.Context, backend config.BackendConfig, route Route, call ToolCall) (Result, *Failure, error) {
@@ -287,6 +309,18 @@ func reviewRESTRequestBody(operation string, arguments reviewToolArguments) ([]b
 			FindingIDs: findingIDs, SplitBy: strings.TrimSpace(arguments.SplitBy), FollowUpTitle: strings.TrimSpace(arguments.FollowUpTitle),
 			FollowUpParentTaskID: arguments.FollowUpParentTaskID, FollowUpPriority: priority, FollowUpAssignedTo: strings.TrimSpace(arguments.FollowUpAssignedTo),
 			FollowUpTags: followUpTags, OverrideBlocking: arguments.OverrideBlocking, IdempotencyKey: strings.TrimSpace(arguments.IdempotencyKey),
+		})
+	case "await_github_checks":
+		requiredChecks, err := parseStringList(arguments.RequiredChecks)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(githubCheckGateBody{
+			Repository: strings.TrimSpace(arguments.Repository), CommitSHA: strings.TrimSpace(arguments.CommitSHA),
+			Ref: strings.TrimSpace(arguments.Ref), RequiredChecks: requiredChecks, TimeoutSeconds: arguments.TimeoutSeconds,
+			PollIntervalSeconds: arguments.PollIntervalSeconds, RequestedBy: strings.TrimSpace(arguments.RequestedBy),
+			AgentProfile: strings.TrimSpace(arguments.AgentProfile), AgentInstanceID: strings.TrimSpace(arguments.AgentInstanceID),
+			SessionKey: strings.TrimSpace(arguments.SessionKey),
 		})
 	case "list_review_rounds", "list_review_findings":
 		return nil, nil

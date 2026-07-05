@@ -91,6 +91,19 @@ type PostPacketMarkdownRequest struct {
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
 
+type RegisterGitHubCheckGateRequest struct {
+	Repository          string   `json:"repository"`
+	CommitSHA           string   `json:"commit_sha"`
+	Ref                 string   `json:"ref"`
+	RequiredChecks      []string `json:"required_checks"`
+	TimeoutSeconds      *int     `json:"timeout_seconds,omitempty"`
+	PollIntervalSeconds *int     `json:"poll_interval_seconds,omitempty"`
+	RequestedBy         string   `json:"requested_by"`
+	AgentProfile        string   `json:"agent_profile,omitempty"`
+	AgentInstanceID     string   `json:"agent_instance_id,omitempty"`
+	SessionKey          string   `json:"session_key,omitempty"`
+}
+
 type ReviewRoundResponse struct {
 	ID                      int64      `json:"id"`
 	ProjectID               string     `json:"project_id"`
@@ -168,6 +181,36 @@ type ReviewPacketResponse struct {
 	AcceptedAt       *time.Time        `json:"accepted_at,omitempty"`
 }
 
+type GitHubCheckGateResponse struct {
+	ID                         int64            `json:"id"`
+	ProjectID                  string           `json:"project_id"`
+	TaskID                     int64            `json:"task_id"`
+	Repository                 string           `json:"repository"`
+	CommitSHA                  string           `json:"commit_sha"`
+	Ref                        string           `json:"ref"`
+	RequiredChecks             []string         `json:"required_checks"`
+	Status                     string           `json:"status"`
+	RequestedBy                string           `json:"requested_by"`
+	AgentProfile               string           `json:"agent_profile,omitempty"`
+	AgentInstanceID            string           `json:"agent_instance_id,omitempty"`
+	SessionKey                 string           `json:"session_key,omitempty"`
+	TimeoutAt                  time.Time        `json:"timeout_at"`
+	PollIntervalSeconds        int              `json:"poll_interval_seconds"`
+	NextPollAt                 time.Time        `json:"next_poll_at"`
+	LastCheckedAt              *time.Time       `json:"last_checked_at,omitempty"`
+	CompletedAt                *time.Time       `json:"completed_at,omitempty"`
+	StatusURL                  string           `json:"status_url,omitempty"`
+	Summary                    string           `json:"summary,omitempty"`
+	CheckRuns                  []GitHubCheckRun `json:"check_runs,omitempty"`
+	FailureSummary             string           `json:"failure_summary,omitempty"`
+	EvidenceMessageStatus      string           `json:"evidence_message_status,omitempty"`
+	EvidenceMessageID          *int64           `json:"evidence_message_id,omitempty"`
+	EvidenceMessageError       string           `json:"evidence_message_error,omitempty"`
+	EvidenceMessageAttemptedAt *time.Time       `json:"evidence_message_attempted_at,omitempty"`
+	CreatedAt                  time.Time        `json:"created_at"`
+	UpdatedAt                  time.Time        `json:"updated_at"`
+}
+
 type WorkflowSummaryResponse struct {
 	CurrentRound           *ReviewRoundResponse    `json:"current_round,omitempty"`
 	CurrentVerdict         string                  `json:"current_verdict,omitempty"`
@@ -208,4 +251,18 @@ func toRoundResponse(round *ReviewRound) ReviewRoundResponse {
 
 func toFindingResponse(finding *ReviewFinding) ReviewFindingResponse {
 	return ReviewFindingResponse(*finding)
+}
+
+func toGitHubCheckGateResponse(gate *GitHubCheckGate) GitHubCheckGateResponse {
+	return GitHubCheckGateResponse{
+		ID: gate.ID, ProjectID: gate.ProjectID, TaskID: gate.TaskID, Repository: gate.Repository,
+		CommitSHA: gate.CommitSHA, Ref: gate.Ref, RequiredChecks: gate.RequiredChecks, Status: gate.Status,
+		RequestedBy: gate.RequestedBy, AgentProfile: gate.AgentProfile, AgentInstanceID: gate.AgentInstanceID,
+		SessionKey: gate.SessionKey, TimeoutAt: gate.TimeoutAt, PollIntervalSeconds: gate.PollIntervalSeconds,
+		NextPollAt: gate.NextPollAt, LastCheckedAt: gate.LastCheckedAt, CompletedAt: gate.CompletedAt,
+		StatusURL: gate.StatusURL, Summary: gate.Summary, CheckRuns: gate.CheckRuns,
+		FailureSummary: gate.FailureSummary, EvidenceMessageStatus: gate.EvidenceMessageStatus,
+		EvidenceMessageID: gate.EvidenceMessageID, EvidenceMessageError: gate.EvidenceMessageError,
+		EvidenceMessageAttemptedAt: gate.EvidenceMessageAttemptedAt, CreatedAt: gate.CreatedAt, UpdatedAt: gate.UpdatedAt,
+	}
 }

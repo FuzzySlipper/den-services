@@ -3,6 +3,7 @@ package review
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -21,6 +22,10 @@ type MessageClient interface {
 	AppendTaskMessage(ctx context.Context, projectID string, req AppendMessageRequest) (AppendedMessage, error)
 }
 
+type GitHubCheckProvider interface {
+	CheckCommit(ctx context.Context, repository string, commitSHA string, requiredChecks []string) (GitHubCheckResult, error)
+}
+
 type ReviewStore interface {
 	Ping(ctx context.Context) error
 	CreateRound(ctx context.Context, round *ReviewRound) (*ReviewRound, error)
@@ -36,6 +41,14 @@ type ReviewStore interface {
 	GetPacket(ctx context.Context, id int64) (*ReviewPacket, error)
 	GetPacketByIdempotency(ctx context.Context, projectID string, idempotencyKey string) (*ReviewPacket, error)
 	WorkflowSummary(ctx context.Context, projectID string, taskID int64) (WorkflowSummary, error)
+	RegisterGitHubCheckGate(ctx context.Context, gate *GitHubCheckGate, now time.Time) (*GitHubCheckGate, []*GitHubCheckGate, error)
+	GetGitHubCheckGate(ctx context.Context, projectID string, taskID int64, commitSHA string) (*GitHubCheckGate, error)
+	ListPendingGitHubCheckGates(ctx context.Context, now time.Time, limit int) ([]*GitHubCheckGate, error)
+	ListGitHubCheckGatesPendingEvidence(ctx context.Context, limit int) ([]*GitHubCheckGate, error)
+	CompleteGitHubCheckGate(ctx context.Context, id int64, status string, result GitHubCheckResult, checkedAt time.Time) (*GitHubCheckGate, bool, error)
+	TimeoutGitHubCheckGate(ctx context.Context, id int64, checkedAt time.Time) (*GitHubCheckGate, bool, error)
+	MarkGitHubCheckGateEvidencePosted(ctx context.Context, id int64, messageID int64, at time.Time) (*GitHubCheckGate, error)
+	RecordGitHubCheckGateEvidenceError(ctx context.Context, id int64, messageError string, at time.Time) (*GitHubCheckGate, error)
 }
 
 type ListFindingsQuery struct {
@@ -116,15 +129,49 @@ type AppendMessageRequest struct {
 }
 
 type Service struct {
-	store    ReviewStore
-	projects ProjectValidator
-	tasks    TaskClient
-	messages MessageClient
-	clock    func() time.Time
+	store         ReviewStore
+	projects      ProjectValidator
+	tasks         TaskClient
+	messages      MessageClient
+	githubChecks  GitHubCheckProvider
+	githubOptions GitHubCheckOptions
+	clock         func() time.Time
 }
 
 func NewService(store ReviewStore, projects ProjectValidator, tasks TaskClient, messages MessageClient, clock func() time.Time) *Service {
-	return &Service{store: store, projects: projects, tasks: tasks, messages: messages, clock: clock}
+	return &Service{
+		store: store, projects: projects, tasks: tasks, messages: messages,
+		githubOptions: DefaultGitHubCheckOptions(), clock: clock,
+	}
+}
+
+type GitHubCheckOptions struct {
+	DefaultTimeout time.Duration
+	MaxTimeout     time.Duration
+	PollInterval   time.Duration
+	StatusURLBase  string
+}
+
+func DefaultGitHubCheckOptions() GitHubCheckOptions {
+	return GitHubCheckOptions{
+		DefaultTimeout: 30 * time.Minute,
+		MaxTimeout:     2 * time.Hour,
+		PollInterval:   30 * time.Second,
+	}
+}
+
+func (s *Service) ConfigureGitHubChecks(provider GitHubCheckProvider, options GitHubCheckOptions) {
+	if options.DefaultTimeout <= 0 {
+		options.DefaultTimeout = DefaultGitHubCheckOptions().DefaultTimeout
+	}
+	if options.MaxTimeout <= 0 {
+		options.MaxTimeout = DefaultGitHubCheckOptions().MaxTimeout
+	}
+	if options.PollInterval <= 0 {
+		options.PollInterval = DefaultGitHubCheckOptions().PollInterval
+	}
+	s.githubChecks = provider
+	s.githubOptions = options
 }
 
 func (s *Service) CheckStore(ctx context.Context) error {
@@ -418,6 +465,212 @@ func (s *Service) WorkflowSummaryForTask(ctx context.Context, taskID int64) (Wor
 	return s.WorkflowSummary(ctx, task.ProjectID, taskID)
 }
 
+func (s *Service) RegisterGitHubCheckGate(ctx context.Context, projectID string, taskID int64, req RegisterGitHubCheckGateRequest) (*GitHubCheckGate, error) {
+	task, err := s.validateTask(ctx, projectID, taskID, TaskStatusInProgress, TaskStatusReview)
+	if err != nil {
+		return nil, err
+	}
+	gate, err := s.githubGateFromRequest(task.ProjectID, taskID, req)
+	if err != nil {
+		return nil, err
+	}
+	stored, superseded, err := s.store.RegisterGitHubCheckGate(ctx, gate, s.clock().UTC())
+	if err != nil {
+		return nil, err
+	}
+	for _, gate := range superseded {
+		if err := s.deliverGitHubCheckGateEvidence(ctx, gate); err != nil {
+			return stored, err
+		}
+	}
+	if terminalGitHubCheckGateStatus(stored.Status) || s.githubChecks == nil {
+		return stored, nil
+	}
+	return s.evaluateGitHubCheckGate(ctx, stored)
+}
+
+func (s *Service) GetGitHubCheckGate(ctx context.Context, projectID string, taskID int64, commitSHA string) (*GitHubCheckGate, error) {
+	task, err := s.validateTask(ctx, projectID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	commitSHA = strings.ToLower(strings.TrimSpace(commitSHA))
+	if !validGitHubSHA(commitSHA) {
+		return nil, validationError(fmt.Errorf("commit_sha must be a full 40-character hex SHA"), "invalid_commit_sha", "commit_sha", "github_check_gate.commit_sha")
+	}
+	return s.store.GetGitHubCheckGate(ctx, task.ProjectID, taskID, commitSHA)
+}
+
+func (s *Service) PollGitHubCheckGates(ctx context.Context, limit int) error {
+	if err := s.retryGitHubCheckGateEvidence(ctx, limit); err != nil {
+		return err
+	}
+	if s.githubChecks == nil {
+		return NewServiceError(ErrGitHubChecksUnset, "github_checks_unconfigured", 500)
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+	now := s.clock().UTC()
+	gates, err := s.store.ListPendingGitHubCheckGates(ctx, now, limit)
+	if err != nil {
+		return err
+	}
+	for _, gate := range gates {
+		if _, err := s.evaluateGitHubCheckGate(ctx, gate); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) evaluateGitHubCheckGate(ctx context.Context, gate *GitHubCheckGate) (*GitHubCheckGate, error) {
+	now := s.clock().UTC()
+	if !now.Before(gate.TimeoutAt) {
+		updated, changed, err := s.store.TimeoutGitHubCheckGate(ctx, gate.ID, now)
+		if err != nil {
+			return nil, err
+		}
+		if changed {
+			if err := s.deliverGitHubCheckGateEvidence(ctx, updated); err != nil {
+				return updated, err
+			}
+			updated, err = s.store.GetGitHubCheckGate(ctx, updated.ProjectID, updated.TaskID, updated.CommitSHA)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return updated, nil
+	}
+	result, err := s.githubChecks.CheckCommit(ctx, gate.Repository, gate.CommitSHA, gate.RequiredChecks)
+	if err != nil {
+		return nil, fmt.Errorf("checking github commit %s: %w", gate.CommitSHA, err)
+	}
+	if result.Status == GitHubCheckGateStatusPending {
+		pending := GitHubCheckResult{Status: GitHubCheckGateStatusPending, Summary: result.Summary, CheckRuns: result.CheckRuns}
+		updated, _, err := s.store.CompleteGitHubCheckGate(ctx, gate.ID, GitHubCheckGateStatusPending, pending, now)
+		return updated, err
+	}
+	updated, changed, err := s.store.CompleteGitHubCheckGate(ctx, gate.ID, result.Status, result, now)
+	if err != nil {
+		return nil, err
+	}
+	if changed {
+		if err := s.deliverGitHubCheckGateEvidence(ctx, updated); err != nil {
+			return updated, err
+		}
+		updated, err = s.store.GetGitHubCheckGate(ctx, updated.ProjectID, updated.TaskID, updated.CommitSHA)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return updated, nil
+}
+
+func (s *Service) retryGitHubCheckGateEvidence(ctx context.Context, limit int) error {
+	if limit <= 0 {
+		limit = 10
+	}
+	gates, err := s.store.ListGitHubCheckGatesPendingEvidence(ctx, limit)
+	if err != nil {
+		return err
+	}
+	for _, gate := range gates {
+		if err := s.deliverGitHubCheckGateEvidence(ctx, gate); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) deliverGitHubCheckGateEvidence(ctx context.Context, gate *GitHubCheckGate) error {
+	if gate.EvidenceMessageStatus == GitHubCheckEvidenceStatusPosted {
+		return nil
+	}
+	content, intent := renderGitHubCheckGateEvidence(gate)
+	message, err := s.messages.AppendTaskMessage(ctx, gate.ProjectID, AppendMessageRequest{
+		TaskID:  gate.TaskID,
+		Sender:  firstNonEmpty(gate.RequestedBy, "den-review"),
+		Content: content,
+		Intent:  intent,
+		Metadata: map[string]any{
+			"type":              "github_check_gate",
+			"gate_id":           gate.ID,
+			"status":            gate.Status,
+			"repository":        gate.Repository,
+			"commit_sha":        gate.CommitSHA,
+			"ref":               gate.Ref,
+			"required_checks":   gate.RequiredChecks,
+			"agent_profile":     gate.AgentProfile,
+			"agent_instance_id": gate.AgentInstanceID,
+			"session_key":       gate.SessionKey,
+		},
+	})
+	now := s.clock().UTC()
+	if err != nil {
+		_, recordErr := s.store.RecordGitHubCheckGateEvidenceError(ctx, gate.ID, err.Error(), now)
+		if recordErr != nil {
+			return fmt.Errorf("appending github check evidence: %w; recording evidence error: %v", err, recordErr)
+		}
+		return fmt.Errorf("appending github check evidence: %w", err)
+	}
+	_, err = s.store.MarkGitHubCheckGateEvidencePosted(ctx, gate.ID, message.ID, now)
+	return err
+}
+
+func (s *Service) githubGateFromRequest(projectID string, taskID int64, req RegisterGitHubCheckGateRequest) (*GitHubCheckGate, error) {
+	now := s.clock().UTC()
+	repository := strings.TrimSpace(req.Repository)
+	if !validGitHubRepository(repository) {
+		return nil, validationError(fmt.Errorf("repository must be owner/name"), "invalid_repository", "repository", "github_check_gate.repository")
+	}
+	commitSHA := strings.ToLower(strings.TrimSpace(req.CommitSHA))
+	if !validGitHubSHA(commitSHA) {
+		return nil, validationError(fmt.Errorf("commit_sha must be a full 40-character hex SHA"), "invalid_commit_sha", "commit_sha", "github_check_gate.commit_sha")
+	}
+	requiredChecks := trimSlice(req.RequiredChecks)
+	if len(requiredChecks) == 0 {
+		return nil, validationError(fmt.Errorf("required_checks is required"), "missing_required_checks", "required_checks", "github_check_gate.required_checks")
+	}
+	ref := strings.TrimSpace(req.Ref)
+	if ref == "" {
+		return nil, validationError(fmt.Errorf("ref is required"), "missing_ref", "ref", "github_check_gate.ref")
+	}
+	requestedBy := strings.TrimSpace(req.RequestedBy)
+	if requestedBy == "" {
+		return nil, validationError(ErrMissingActor, "missing_requested_by", "requested_by", "github_check_gate.requested_by")
+	}
+	timeout := s.githubOptions.DefaultTimeout
+	if req.TimeoutSeconds != nil {
+		timeout = time.Duration(*req.TimeoutSeconds) * time.Second
+	}
+	if timeout <= 0 || timeout > s.githubOptions.MaxTimeout {
+		return nil, validationError(fmt.Errorf("timeout_seconds must be positive and no greater than %d", int(s.githubOptions.MaxTimeout.Seconds())), "invalid_timeout", "timeout_seconds", "github_check_gate.timeout_seconds")
+	}
+	pollInterval := s.githubOptions.PollInterval
+	if req.PollIntervalSeconds != nil {
+		pollInterval = time.Duration(*req.PollIntervalSeconds) * time.Second
+	}
+	if pollInterval <= 0 {
+		return nil, validationError(fmt.Errorf("poll_interval_seconds must be positive"), "invalid_poll_interval", "poll_interval_seconds", "github_check_gate.poll_interval_seconds")
+	}
+	return &GitHubCheckGate{
+		ProjectID: projectID, TaskID: taskID, Repository: repository, CommitSHA: commitSHA,
+		Ref: ref, RequiredChecks: requiredChecks, Status: GitHubCheckGateStatusPending,
+		RequestedBy: requestedBy, AgentProfile: strings.TrimSpace(req.AgentProfile),
+		AgentInstanceID: strings.TrimSpace(req.AgentInstanceID), SessionKey: strings.TrimSpace(req.SessionKey),
+		TimeoutAt: now.Add(timeout), PollIntervalSeconds: int(pollInterval.Seconds()), NextPollAt: now,
+		StatusURL: s.statusURL(projectID, taskID, commitSHA), CreatedAt: now, UpdatedAt: now,
+	}, nil
+}
+
+func (s *Service) statusURL(projectID string, taskID int64, commitSHA string) string {
+	if strings.TrimSpace(s.githubOptions.StatusURLBase) == "" {
+		return ""
+	}
+	return strings.TrimRight(s.githubOptions.StatusURLBase, "/") + "/v1/projects/" + projectID + "/tasks/" + fmt.Sprint(taskID) + "/review/github-check-gates/" + commitSHA
+}
+
 func (s *Service) acceptPacket(ctx context.Context, packet *ReviewPacket, threadID *int64) (*ReviewPacket, error) {
 	if packet.CreatedAt.IsZero() {
 		packet.CreatedAt = s.clock().UTC()
@@ -595,4 +848,15 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+var githubSHARegex = regexp.MustCompile(`^[0-9a-f]{40}$`) //nolint:gochecknoglobals
+
+func validGitHubSHA(value string) bool {
+	return githubSHARegex.MatchString(value)
+}
+
+func validGitHubRepository(value string) bool {
+	parts := strings.Split(value, "/")
+	return len(parts) == 2 && strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != ""
 }

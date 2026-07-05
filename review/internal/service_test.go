@@ -354,10 +354,191 @@ func TestPostPacketMarkdownMessageFailureLeavesPendingWithoutRetryDuplicate(t *t
 	}
 }
 
+func TestRegisterGitHubCheckGateRecordsPassEvidence(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	github := &fakeGitHubChecks{result: GitHubCheckResult{
+		Status:  GitHubCheckGateStatusPassed,
+		Summary: "All required GitHub checks passed.",
+		CheckRuns: []GitHubCheckRun{
+			{Name: "go test", Status: "completed", Conclusion: "success", URL: "https://github.test/run/1"},
+		},
+	}}
+	service := newTestService(store, messages, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+	}})
+	service.ConfigureGitHubChecks(github, GitHubCheckOptions{DefaultTimeout: time.Hour, MaxTimeout: 2 * time.Hour, PollInterval: time.Minute})
+
+	gate, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Ref: "main",
+		RequiredChecks: []string{"go test"}, RequestedBy: "codex",
+	})
+	if err != nil {
+		t.Fatalf("RegisterGitHubCheckGate() error = %v", err)
+	}
+	if gate.Status != GitHubCheckGateStatusPassed || gate.CompletedAt == nil {
+		t.Fatalf("gate not passed: %+v", gate)
+	}
+	if len(messages.appended) != 1 || messages.appended[0].Intent != "github_checks_passed" {
+		t.Fatalf("pass evidence message not appended: %+v", messages.appended)
+	}
+	if !strings.Contains(messages.appended[0].Content, "https://github.test/run/1") {
+		t.Fatalf("message missing check run URL: %s", messages.appended[0].Content)
+	}
+}
+
+func TestRegisterGitHubCheckGateSupersedesOlderPendingSHA(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	service := newTestService(store, messages, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+	}})
+	firstSHA := "0123456789abcdef0123456789abcdef01234567"
+	secondSHA := "abcdef0123456789abcdef0123456789abcdef01"
+
+	first, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: firstSHA, Ref: "main", RequiredChecks: []string{"go test"}, RequestedBy: "codex",
+	})
+	if err != nil {
+		t.Fatalf("first RegisterGitHubCheckGate() error = %v", err)
+	}
+	second, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: secondSHA, Ref: "main", RequiredChecks: []string{"go test"}, RequestedBy: "codex",
+	})
+	if err != nil {
+		t.Fatalf("second RegisterGitHubCheckGate() error = %v", err)
+	}
+	if second.Status != GitHubCheckGateStatusPending {
+		t.Fatalf("second gate status = %s", second.Status)
+	}
+	old := store.githubCheckGates[first.ID]
+	if old.Status != GitHubCheckGateStatusSuperseded {
+		t.Fatalf("older gate was not superseded: %+v", old)
+	}
+	if len(messages.appended) != 1 || messages.appended[0].Intent != "github_checks_superseded" {
+		t.Fatalf("superseded message not appended: %+v", messages.appended)
+	}
+	if old.EvidenceMessageStatus != GitHubCheckEvidenceStatusPosted {
+		t.Fatalf("superseded evidence was not marked posted: %+v", old)
+	}
+}
+
+func TestRegisterGitHubCheckGateRecordsFailureEvidence(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	github := &fakeGitHubChecks{result: GitHubCheckResult{
+		Status:         GitHubCheckGateStatusFailed,
+		Summary:        "One or more required GitHub checks failed.",
+		FailureSummary: "Failed checks: go test (failure)",
+		CheckRuns: []GitHubCheckRun{
+			{Name: "go test", Status: "completed", Conclusion: "failure", URL: "https://github.test/run/2"},
+		},
+	}}
+	service := newTestService(store, messages, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+	}})
+	service.ConfigureGitHubChecks(github, GitHubCheckOptions{DefaultTimeout: time.Hour, MaxTimeout: 2 * time.Hour, PollInterval: time.Minute})
+
+	gate, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Ref: "main",
+		RequiredChecks: []string{"go test"}, RequestedBy: "codex",
+	})
+	if err != nil {
+		t.Fatalf("RegisterGitHubCheckGate() error = %v", err)
+	}
+	if gate.Status != GitHubCheckGateStatusFailed || gate.EvidenceMessageStatus != GitHubCheckEvidenceStatusPosted {
+		t.Fatalf("gate failure evidence not recorded: %+v", gate)
+	}
+	if len(messages.appended) != 1 || messages.appended[0].Intent != "github_checks_failed" {
+		t.Fatalf("failure evidence message not appended: %+v", messages.appended)
+	}
+	if !strings.Contains(messages.appended[0].Content, "Failed checks: go test") || !strings.Contains(messages.appended[0].Content, "https://github.test/run/2") {
+		t.Fatalf("failure message missing summary or URL: %s", messages.appended[0].Content)
+	}
+}
+
+func TestPollGitHubCheckGatesRecordsTimeoutEvidence(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	service := newTestService(store, messages, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+	}})
+	service.ConfigureGitHubChecks(&fakeGitHubChecks{result: GitHubCheckResult{Status: GitHubCheckGateStatusPending}}, GitHubCheckOptions{
+		DefaultTimeout: time.Hour, MaxTimeout: 2 * time.Hour, PollInterval: time.Minute,
+	})
+	pastTimeout := -1
+	gate, _, err := store.RegisterGitHubCheckGate(ctx, &GitHubCheckGate{
+		ProjectID: "den-services", TaskID: 42, Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567",
+		Ref: "main", RequiredChecks: []string{"go test"}, Status: GitHubCheckGateStatusPending, RequestedBy: "codex",
+		TimeoutAt: fixedReviewTestTime().Add(-time.Minute), PollIntervalSeconds: 60, NextPollAt: fixedReviewTestTime().Add(time.Duration(pastTimeout) * time.Minute),
+		CreatedAt: fixedReviewTestTime(), UpdatedAt: fixedReviewTestTime(),
+	}, fixedReviewTestTime())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.PollGitHubCheckGates(ctx, 10); err != nil {
+		t.Fatalf("PollGitHubCheckGates() error = %v", err)
+	}
+	updated := store.githubCheckGates[gate.ID]
+	if updated.Status != GitHubCheckGateStatusTimedOut || updated.EvidenceMessageStatus != GitHubCheckEvidenceStatusPosted {
+		t.Fatalf("timeout evidence not recorded: %+v", updated)
+	}
+	if len(messages.appended) != 1 || messages.appended[0].Intent != "github_checks_timeout" {
+		t.Fatalf("timeout message not appended: %+v", messages.appended)
+	}
+}
+
+func TestGitHubCheckGateEvidenceAppendFailureIsDurableAndRetried(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{failAppend: true}
+	service := newTestService(store, messages, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+	}})
+	service.ConfigureGitHubChecks(&fakeGitHubChecks{result: GitHubCheckResult{
+		Status:  GitHubCheckGateStatusPassed,
+		Summary: "All required GitHub checks passed.",
+	}}, GitHubCheckOptions{DefaultTimeout: time.Hour, MaxTimeout: 2 * time.Hour, PollInterval: time.Minute})
+
+	gate, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Ref: "main",
+		RequiredChecks: []string{"go test"}, RequestedBy: "codex",
+	})
+	if err == nil {
+		t.Fatal("expected message append failure")
+	}
+	if gate == nil || gate.Status != GitHubCheckGateStatusPassed {
+		t.Fatalf("terminal gate should still be durable, got %+v", gate)
+	}
+	stored := store.githubCheckGates[gate.ID]
+	if stored.EvidenceMessageStatus != GitHubCheckEvidenceStatusError || stored.EvidenceMessageError == "" {
+		t.Fatalf("append failure was not recorded durably: %+v", stored)
+	}
+
+	messages.failAppend = false
+	if err := service.PollGitHubCheckGates(ctx, 10); err != nil {
+		t.Fatalf("PollGitHubCheckGates() retry error = %v", err)
+	}
+	if stored = store.githubCheckGates[gate.ID]; stored.EvidenceMessageStatus != GitHubCheckEvidenceStatusPosted || stored.EvidenceMessageID == nil {
+		t.Fatalf("evidence retry did not mark posted: %+v", stored)
+	}
+	if len(messages.appended) != 1 || messages.appended[0].Intent != "github_checks_passed" {
+		t.Fatalf("retry did not append pass evidence: %+v", messages.appended)
+	}
+}
+
 func newTestService(store ReviewStore, messages MessageClient, tasks TaskClient) *Service {
 	return NewService(store, NoopProjectValidator{}, tasks, messages, func() time.Time {
-		return time.Date(2026, 6, 29, 12, 0, 0, 0, time.UTC)
+		return fixedReviewTestTime()
 	})
+}
+
+func fixedReviewTestTime() time.Time {
+	return time.Date(2026, 6, 29, 12, 0, 0, 0, time.UTC)
 }
 
 type fakeTasks struct {
@@ -387,6 +568,15 @@ func (f *fakeTasks) CreateFollowUpTask(_ context.Context, projectID string, req 
 type fakeMessages struct {
 	appended   []AppendMessageRequest
 	failAppend bool
+}
+
+type fakeGitHubChecks struct {
+	result GitHubCheckResult
+	err    error
+}
+
+func (f fakeGitHubChecks) CheckCommit(context.Context, string, string, []string) (GitHubCheckResult, error) {
+	return f.result, f.err
 }
 
 func (f *fakeMessages) AppendTaskMessage(_ context.Context, projectID string, req AppendMessageRequest) (AppendedMessage, error) {

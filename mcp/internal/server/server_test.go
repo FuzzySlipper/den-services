@@ -72,8 +72,8 @@ func TestMCPToolsListIsStatic(t *testing.T) {
 	decodeResponse(t, response, &body)
 	result := body["result"].(map[string]any)
 	tools := result["tools"].([]any)
-	if len(tools) != 60 {
-		t.Fatalf("tool count = %d, want 60", len(tools))
+	if len(tools) != 61 {
+		t.Fatalf("tool count = %d, want 61", len(tools))
 	}
 	first := tools[0].(map[string]any)
 	if first["name"] != "search_documents" {

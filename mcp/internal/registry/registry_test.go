@@ -17,8 +17,8 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 60 {
-		t.Fatalf("tool count = %d, want 60", len(names))
+	if len(names) != 61 {
+		t.Fatalf("tool count = %d, want 61", len(names))
 	}
 	for _, name := range []string{
 		"search_documents",
@@ -26,6 +26,7 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		"comment_on_document",
 		"get_task",
 		"store_document",
+		"await_github_checks",
 	} {
 		if !containsName(names, name) {
 			t.Fatalf("visible tools missing %s", name)
@@ -134,8 +135,13 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 		}
 		visibleIndex++
 	}
-	if visibleIndex != len(listed) {
+	if visibleIndex > len(listed) {
 		t.Fatalf("visible count = %d, listed count = %d", visibleIndex, len(listed))
+	}
+	for _, tool := range listed[visibleIndex:] {
+		if tool.Name != "await_github_checks" {
+			t.Fatalf("unexpected non-snapshot tool %q", tool.Name)
+		}
 	}
 }
 

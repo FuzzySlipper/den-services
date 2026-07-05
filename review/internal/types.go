@@ -37,6 +37,17 @@ const (
 	PacketStatusAccepted             = "accepted"
 	PacketStatusPendingMessageAppend = "pending_message_append"
 
+	GitHubCheckGateStatusPending    = "pending"
+	GitHubCheckGateStatusPassed     = "passed"
+	GitHubCheckGateStatusFailed     = "failed"
+	GitHubCheckGateStatusTimedOut   = "timed_out"
+	GitHubCheckGateStatusSuperseded = "superseded"
+
+	GitHubCheckEvidenceStatusNotRequired = "not_required"
+	GitHubCheckEvidenceStatusPending     = "pending"
+	GitHubCheckEvidenceStatusPosted      = "posted"
+	GitHubCheckEvidenceStatusError       = "error"
+
 	TaskStatusInProgress = "in_progress"
 	TaskStatusReview     = "review"
 	TaskStatusDone       = "done"
@@ -60,6 +71,7 @@ var (
 	ErrMessageClientUnset      = errors.New("messages client is not configured") //nolint:gochecknoglobals
 	ErrTaskClientUnset         = errors.New("tasks client is not configured")    //nolint:gochecknoglobals
 	ErrProjectScopeClientUnset = errors.New("projects client is not configured") //nolint:gochecknoglobals
+	ErrGitHubChecksUnset       = errors.New("github check provider is not configured")
 )
 
 type ServiceError struct {
@@ -203,6 +215,71 @@ type AppendedMessage struct {
 	ProjectID string `json:"project_id"`
 	TaskID    *int64 `json:"task_id,omitempty"`
 	Intent    string `json:"intent"`
+}
+
+type GitHubCheckGate struct {
+	ID                         int64
+	ProjectID                  string
+	TaskID                     int64
+	Repository                 string
+	CommitSHA                  string
+	Ref                        string
+	RequiredChecks             []string
+	Status                     string
+	RequestedBy                string
+	AgentProfile               string
+	AgentInstanceID            string
+	SessionKey                 string
+	TimeoutAt                  time.Time
+	PollIntervalSeconds        int
+	NextPollAt                 time.Time
+	LastCheckedAt              *time.Time
+	CompletedAt                *time.Time
+	StatusURL                  string
+	Summary                    string
+	CheckRuns                  []GitHubCheckRun
+	FailureSummary             string
+	EvidenceMessageStatus      string
+	EvidenceMessageID          *int64
+	EvidenceMessageError       string
+	EvidenceMessageAttemptedAt *time.Time
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
+}
+
+type GitHubCheckRun struct {
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion,omitempty"`
+	URL        string `json:"url,omitempty"`
+	DetailsURL string `json:"details_url,omitempty"`
+	Summary    string `json:"summary,omitempty"`
+}
+
+type GitHubCheckResult struct {
+	Status         string
+	Summary        string
+	FailureSummary string
+	CheckRuns      []GitHubCheckRun
+}
+
+func validGitHubCheckGateStatus(status string) bool {
+	switch status {
+	case GitHubCheckGateStatusPending, GitHubCheckGateStatusPassed, GitHubCheckGateStatusFailed,
+		GitHubCheckGateStatusTimedOut, GitHubCheckGateStatusSuperseded:
+		return true
+	default:
+		return false
+	}
+}
+
+func terminalGitHubCheckGateStatus(status string) bool {
+	switch status {
+	case GitHubCheckGateStatusPassed, GitHubCheckGateStatusFailed, GitHubCheckGateStatusTimedOut, GitHubCheckGateStatusSuperseded:
+		return true
+	default:
+		return false
+	}
 }
 
 func validVerdict(verdict string) bool {

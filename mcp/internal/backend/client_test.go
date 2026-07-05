@@ -842,6 +842,40 @@ func TestClientCallsReviewRESTSplitFindingsLists(t *testing.T) {
 	}
 }
 
+func TestClientCallsReviewRESTAwaitGitHubChecks(t *testing.T) {
+	var sawPath string
+	var sawBody githubCheckGateBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":9,"status":"pending"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("review", server.URL), reviewRouteForTest("await_github_checks", http.MethodPost, "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates"), ToolCall{
+		ToolName:  "await_github_checks",
+		Operation: "await_github_checks",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"project_id":"den-services","task_id":3726,"repository":"owner/repo","commit_sha":"0123456789abcdef0123456789abcdef01234567","ref":"main","required_checks":"go test,lint","requested_by":"codex","timeout_seconds":1800}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawPath != "/v1/projects/den-services/tasks/3726/review/github-check-gates" {
+		t.Fatalf("path = %q", sawPath)
+	}
+	if sawBody.Repository != "owner/repo" || sawBody.CommitSHA == "" || len(sawBody.RequiredChecks) != 2 || *sawBody.TimeoutSeconds != 1800 {
+		t.Fatalf("body = %#v", sawBody)
+	}
+}
+
 func TestClientCallsKnowledgeRESTStoreEntry(t *testing.T) {
 	var sawPath string
 	var sawBody knowledgeStoreBody

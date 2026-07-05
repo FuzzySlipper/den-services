@@ -29,6 +29,8 @@ type ReviewUseCases interface {
 	PostPacketMarkdown(ctx context.Context, projectID string, taskID int64, req PostPacketMarkdownRequest) (*ReviewPacket, error)
 	WorkflowSummary(ctx context.Context, projectID string, taskID int64) (WorkflowSummary, error)
 	WorkflowSummaryForTask(ctx context.Context, taskID int64) (WorkflowSummary, error)
+	RegisterGitHubCheckGate(ctx context.Context, projectID string, taskID int64, req RegisterGitHubCheckGateRequest) (*GitHubCheckGate, error)
+	GetGitHubCheckGate(ctx context.Context, projectID string, taskID int64, commitSHA string) (*GitHubCheckGate, error)
 }
 
 type Handler struct {
@@ -49,6 +51,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}/review/workflow-summary", h.workflowSummary)
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/packets/validate", h.validatePacket)
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/packets", h.postPacket)
+	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates", h.registerGitHubCheckGate)
+	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}", h.getGitHubCheckGate)
 	mux.HandleFunc("POST /v1/tasks/{task_id}/review/rounds", h.createRoundForTask)
 	mux.HandleFunc("GET /v1/tasks/{task_id}/review/rounds", h.listRoundsForTask)
 	mux.HandleFunc("GET /v1/tasks/{task_id}/review/findings", h.listFindingsForTask)
@@ -332,6 +336,36 @@ func (h *Handler) workflowSummaryForTask(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	api.WriteJSON(w, http.StatusOK, toWorkflowSummaryResponse(summary))
+}
+
+func (h *Handler) registerGitHubCheckGate(w http.ResponseWriter, r *http.Request) {
+	taskID, ok := h.taskID(w, r)
+	if !ok {
+		return
+	}
+	var req RegisterGitHubCheckGateRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	gate, err := h.service.RegisterGitHubCheckGate(r.Context(), r.PathValue("project_id"), taskID, req)
+	if err != nil {
+		writeReviewError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusCreated, toGitHubCheckGateResponse(gate))
+}
+
+func (h *Handler) getGitHubCheckGate(w http.ResponseWriter, r *http.Request) {
+	taskID, ok := h.taskID(w, r)
+	if !ok {
+		return
+	}
+	gate, err := h.service.GetGitHubCheckGate(r.Context(), r.PathValue("project_id"), taskID, r.PathValue("commit_sha"))
+	if err != nil {
+		writeReviewError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, toGitHubCheckGateResponse(gate))
 }
 
 func (h *Handler) taskID(w http.ResponseWriter, r *http.Request) (int64, bool) {

@@ -240,6 +240,122 @@ func (s *Store) WorkflowSummary(ctx context.Context, projectID string, taskID in
 	return buildWorkflowSummary(rounds, findings), nil
 }
 
+func (s *Store) RegisterGitHubCheckGate(ctx context.Context, gate *GitHubCheckGate, now time.Time) (*GitHubCheckGate, []*GitHubCheckGate, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("beginning github check gate registration: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	rows, err := tx.Query(ctx, supersedeGitHubCheckGatesSQL, gate.ProjectID, gate.TaskID, gate.CommitSHA, now)
+	if err != nil {
+		return nil, nil, fmt.Errorf("superseding github check gates: %w", err)
+	}
+	superseded, err := scanGitHubCheckGates(rows)
+	if err != nil {
+		return nil, nil, err
+	}
+	stored, err := scanGitHubCheckGate(tx.QueryRow(ctx, upsertGitHubCheckGateSQL, gate.ProjectID, gate.TaskID, gate.Repository, gate.CommitSHA,
+		gate.Ref, jsonOrNil(gate.RequiredChecks), gate.Status, gate.RequestedBy, emptyToNil(gate.AgentProfile),
+		emptyToNil(gate.AgentInstanceID), emptyToNil(gate.SessionKey), gate.TimeoutAt, gate.PollIntervalSeconds,
+		gate.NextPollAt, emptyToNil(gate.StatusURL), gate.CreatedAt, now))
+	if err != nil {
+		return nil, nil, fmt.Errorf("upserting github check gate: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, fmt.Errorf("committing github check gate registration: %w", err)
+	}
+	return stored, superseded, nil
+}
+
+func (s *Store) GetGitHubCheckGate(ctx context.Context, projectID string, taskID int64, commitSHA string) (*GitHubCheckGate, error) {
+	gate, err := scanGitHubCheckGate(s.pool.QueryRow(ctx, getGitHubCheckGateByCommitSQL, projectID, taskID, commitSHA))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, notFound(fmt.Errorf("github check gate not found for task %d commit %s", taskID, commitSHA), "github_check_gate_not_found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting github check gate by commit: %w", err)
+	}
+	return gate, nil
+}
+
+func (s *Store) ListPendingGitHubCheckGates(ctx context.Context, now time.Time, limit int) ([]*GitHubCheckGate, error) {
+	rows, err := s.pool.Query(ctx, listPendingGitHubCheckGatesSQL, now, limit)
+	if err != nil {
+		return nil, fmt.Errorf("listing pending github check gates: %w", err)
+	}
+	return scanGitHubCheckGates(rows)
+}
+
+func (s *Store) ListGitHubCheckGatesPendingEvidence(ctx context.Context, limit int) ([]*GitHubCheckGate, error) {
+	rows, err := s.pool.Query(ctx, listGitHubCheckGatesPendingEvidenceSQL, limit)
+	if err != nil {
+		return nil, fmt.Errorf("listing github check gates pending evidence: %w", err)
+	}
+	return scanGitHubCheckGates(rows)
+}
+
+func (s *Store) CompleteGitHubCheckGate(ctx context.Context, id int64, status string, result GitHubCheckResult, checkedAt time.Time) (*GitHubCheckGate, bool, error) {
+	nextPollAt := checkedAt
+	if status == GitHubCheckGateStatusPending {
+		current, err := s.getGitHubCheckGateByID(ctx, id)
+		if err != nil {
+			return nil, false, err
+		}
+		nextPollAt = checkedAt.Add(time.Duration(current.PollIntervalSeconds) * time.Second)
+	}
+	gate, err := scanGitHubCheckGate(s.pool.QueryRow(ctx, completeGitHubCheckGateSQL, id, status, emptyToNil(result.Summary),
+		jsonOrNil(result.CheckRuns), emptyToNil(result.FailureSummary), checkedAt, nextPollAt))
+	if errors.Is(err, pgx.ErrNoRows) {
+		current, getErr := s.getGitHubCheckGateByID(ctx, id)
+		if getErr != nil {
+			return nil, false, getErr
+		}
+		return current, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("completing github check gate: %w", err)
+	}
+	return gate, true, nil
+}
+
+func (s *Store) MarkGitHubCheckGateEvidencePosted(ctx context.Context, id int64, messageID int64, at time.Time) (*GitHubCheckGate, error) {
+	gate, err := scanGitHubCheckGate(s.pool.QueryRow(ctx, markGitHubCheckGateEvidencePostedSQL, id, messageID, at))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, notFound(fmt.Errorf("github check gate not found: %d", id), "github_check_gate_not_found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("marking github check gate evidence posted: %w", err)
+	}
+	return gate, nil
+}
+
+func (s *Store) RecordGitHubCheckGateEvidenceError(ctx context.Context, id int64, messageError string, at time.Time) (*GitHubCheckGate, error) {
+	gate, err := scanGitHubCheckGate(s.pool.QueryRow(ctx, recordGitHubCheckGateEvidenceErrorSQL, id, emptyToNil(messageError), at))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, notFound(fmt.Errorf("github check gate not found: %d", id), "github_check_gate_not_found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("recording github check gate evidence error: %w", err)
+	}
+	return gate, nil
+}
+
+func (s *Store) TimeoutGitHubCheckGate(ctx context.Context, id int64, checkedAt time.Time) (*GitHubCheckGate, bool, error) {
+	result := GitHubCheckResult{Status: GitHubCheckGateStatusTimedOut, Summary: "GitHub check gate timed out before all required checks passed."}
+	return s.CompleteGitHubCheckGate(ctx, id, GitHubCheckGateStatusTimedOut, result, checkedAt)
+}
+
+func (s *Store) getGitHubCheckGateByID(ctx context.Context, id int64) (*GitHubCheckGate, error) {
+	gate, err := scanGitHubCheckGate(s.pool.QueryRow(ctx, getGitHubCheckGateSQL, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, notFound(fmt.Errorf("github check gate not found: %d", id), "github_check_gate_not_found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting github check gate: %w", err)
+	}
+	return gate, nil
+}
+
 func writeFindingEvent(ctx context.Context, tx pgx.Tx, finding *ReviewFinding, kind string, actor string, oldStatus string, newStatus string, notes string, responseNotes string, followUpTaskID *int64, runID string, subagentRole string, createdAt time.Time) error {
 	_, err := tx.Exec(ctx, insertFindingEventSQL, finding.ProjectID, finding.TaskID, finding.ReviewRoundID, finding.ID, kind, actor, emptyToNil(oldStatus), emptyToNil(newStatus), emptyToNil(notes), emptyToNil(responseNotes), followUpTaskID, emptyToNil(runID), emptyToNil(subagentRole), createdAt)
 	if err != nil {
@@ -321,6 +437,19 @@ func scanFindings(rows pgx.Rows) ([]*ReviewFinding, error) {
 	return findings, rows.Err()
 }
 
+func scanGitHubCheckGates(rows pgx.Rows) ([]*GitHubCheckGate, error) {
+	defer rows.Close()
+	var gates []*GitHubCheckGate
+	for rows.Next() {
+		gate, err := scanGitHubCheckGate(rows)
+		if err != nil {
+			return nil, err
+		}
+		gates = append(gates, gate)
+	}
+	return gates, rows.Err()
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -375,6 +504,23 @@ func scanPacket(row rowScanner) (*ReviewPacket, error) {
 	return &packet, nil
 }
 
+func scanGitHubCheckGate(row rowScanner) (*GitHubCheckGate, error) {
+	var gate GitHubCheckGate
+	var requiredChecks []byte
+	var checkRuns []byte
+	err := row.Scan(&gate.ID, &gate.ProjectID, &gate.TaskID, &gate.Repository, &gate.CommitSHA, &gate.Ref,
+		&requiredChecks, &gate.Status, &gate.RequestedBy, &gate.AgentProfile, &gate.AgentInstanceID,
+		&gate.SessionKey, &gate.TimeoutAt, &gate.PollIntervalSeconds, &gate.NextPollAt, &gate.LastCheckedAt,
+		&gate.CompletedAt, &gate.StatusURL, &gate.Summary, &checkRuns, &gate.FailureSummary, &gate.EvidenceMessageStatus,
+		&gate.EvidenceMessageID, &gate.EvidenceMessageError, &gate.EvidenceMessageAttemptedAt, &gate.CreatedAt, &gate.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	_ = json.Unmarshal(requiredChecks, &gate.RequiredChecks)
+	_ = json.Unmarshal(checkRuns, &gate.CheckRuns)
+	return &gate, nil
+}
+
 func jsonOrNil(value any) any {
 	if value == nil {
 		return nil
@@ -397,9 +543,10 @@ func emptyToNil(value string) any {
 }
 
 const (
-	roundColumns   = `id, project_id, task_id, round_number, requested_by, branch, base_branch, base_commit, head_commit, coalesce(last_reviewed_head_commit, ''), commits_since_last_review, coalesce(tests_run, '[]'::jsonb), coalesce(notes, ''), coalesce(preferred_diff_base_ref, ''), coalesce(preferred_diff_base_commit, ''), coalesce(preferred_diff_head_ref, ''), coalesce(preferred_diff_head_commit, ''), coalesce(alternate_diff_base_ref, ''), coalesce(alternate_diff_base_commit, ''), coalesce(alternate_diff_head_ref, ''), coalesce(alternate_diff_head_commit, ''), coalesce(delta_base_commit, ''), inherited_commit_count, task_local_commit_count, coalesce(verdict, ''), coalesce(verdict_by, ''), coalesce(verdict_notes, ''), requested_at, verdict_at, created_at, updated_at`
-	findingColumns = `f.id, f.project_id, f.finding_key, f.task_id, f.review_round_id, r.round_number, f.finding_number, f.created_by, f.category, f.summary, coalesce(f.notes, ''), coalesce(f.file_references, '[]'::jsonb), coalesce(f.test_commands, '[]'::jsonb), f.status, coalesce(f.status_updated_by, ''), coalesce(f.status_notes, ''), f.status_updated_at, coalesce(f.response_by, ''), coalesce(f.response_notes, ''), f.response_at, f.follow_up_task_id, coalesce(f.run_id, ''), coalesce(f.subagent_role, ''), f.created_at, f.updated_at`
-	packetColumns  = `id, project_id, task_id, review_round_id, packet_kind, sender, message_id, front_matter, typed_envelope, markdown_body, source_markdown, validation_status, coalesce(validation_errors, '[]'::jsonb), coalesce(idempotency_key, ''), created_at, accepted_at`
+	roundColumns           = `id, project_id, task_id, round_number, requested_by, branch, base_branch, base_commit, head_commit, coalesce(last_reviewed_head_commit, ''), commits_since_last_review, coalesce(tests_run, '[]'::jsonb), coalesce(notes, ''), coalesce(preferred_diff_base_ref, ''), coalesce(preferred_diff_base_commit, ''), coalesce(preferred_diff_head_ref, ''), coalesce(preferred_diff_head_commit, ''), coalesce(alternate_diff_base_ref, ''), coalesce(alternate_diff_base_commit, ''), coalesce(alternate_diff_head_ref, ''), coalesce(alternate_diff_head_commit, ''), coalesce(delta_base_commit, ''), inherited_commit_count, task_local_commit_count, coalesce(verdict, ''), coalesce(verdict_by, ''), coalesce(verdict_notes, ''), requested_at, verdict_at, created_at, updated_at`
+	findingColumns         = `f.id, f.project_id, f.finding_key, f.task_id, f.review_round_id, r.round_number, f.finding_number, f.created_by, f.category, f.summary, coalesce(f.notes, ''), coalesce(f.file_references, '[]'::jsonb), coalesce(f.test_commands, '[]'::jsonb), f.status, coalesce(f.status_updated_by, ''), coalesce(f.status_notes, ''), f.status_updated_at, coalesce(f.response_by, ''), coalesce(f.response_notes, ''), f.response_at, f.follow_up_task_id, coalesce(f.run_id, ''), coalesce(f.subagent_role, ''), f.created_at, f.updated_at`
+	packetColumns          = `id, project_id, task_id, review_round_id, packet_kind, sender, message_id, front_matter, typed_envelope, markdown_body, source_markdown, validation_status, coalesce(validation_errors, '[]'::jsonb), coalesce(idempotency_key, ''), created_at, accepted_at`
+	githubCheckGateColumns = `id, project_id, task_id, repository, commit_sha, ref, coalesce(required_checks, '[]'::jsonb), status, requested_by, coalesce(agent_profile, ''), coalesce(agent_instance_id, ''), coalesce(session_key, ''), timeout_at, poll_interval_seconds, next_poll_at, last_checked_at, completed_at, coalesce(status_url, ''), coalesce(summary, ''), coalesce(check_runs, '[]'::jsonb), coalesce(failure_summary, ''), evidence_message_status, evidence_message_id, coalesce(evidence_message_error, ''), evidence_message_attempted_at, created_at, updated_at`
 )
 
 const (
@@ -468,4 +615,76 @@ const (
 	storePacketSQL            = `insert into den_review.review_packets(project_id, task_id, review_round_id, packet_kind, sender, message_id, front_matter, typed_envelope, markdown_body, source_markdown, validation_status, validation_errors, idempotency_key, created_at, accepted_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) on conflict(project_id, idempotency_key) do update set message_id = excluded.message_id, front_matter = excluded.front_matter, typed_envelope = excluded.typed_envelope, markdown_body = excluded.markdown_body, source_markdown = excluded.source_markdown, validation_status = excluded.validation_status, validation_errors = excluded.validation_errors, accepted_at = excluded.accepted_at returning ` + packetColumns
 	getPacketSQL              = `select ` + packetColumns + ` from den_review.review_packets where id = $1`
 	getPacketByIdempotencySQL = `select ` + packetColumns + ` from den_review.review_packets where project_id = $1 and idempotency_key = $2`
+)
+
+const (
+	supersedeGitHubCheckGatesSQL = `
+with updated as (
+	update den_review.github_check_gates
+	set status = 'superseded',
+	    completed_at = $4,
+	    summary = 'Superseded by newer commit ' || $3,
+	    evidence_message_status = 'pending',
+	    evidence_message_error = null,
+	    updated_at = $4
+	where project_id = $1
+	  and task_id = $2
+	  and commit_sha <> $3
+	  and status = 'pending'
+	returning *
+)
+select ` + githubCheckGateColumns + ` from updated`
+	upsertGitHubCheckGateSQL = `
+insert into den_review.github_check_gates(project_id, task_id, repository, commit_sha, ref, required_checks, status, requested_by, agent_profile, agent_instance_id, session_key, timeout_at, poll_interval_seconds, next_poll_at, status_url, created_at, updated_at)
+values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+on conflict(project_id, task_id, commit_sha) do update
+set repository = excluded.repository,
+    ref = excluded.ref,
+    required_checks = excluded.required_checks,
+    requested_by = excluded.requested_by,
+    agent_profile = excluded.agent_profile,
+    agent_instance_id = excluded.agent_instance_id,
+    session_key = excluded.session_key,
+    timeout_at = case when den_review.github_check_gates.status = 'pending' then excluded.timeout_at else den_review.github_check_gates.timeout_at end,
+    poll_interval_seconds = case when den_review.github_check_gates.status = 'pending' then excluded.poll_interval_seconds else den_review.github_check_gates.poll_interval_seconds end,
+    next_poll_at = case when den_review.github_check_gates.status = 'pending' then excluded.next_poll_at else den_review.github_check_gates.next_poll_at end,
+    status_url = excluded.status_url,
+    updated_at = excluded.updated_at
+returning ` + githubCheckGateColumns
+	listPendingGitHubCheckGatesSQL         = `select ` + githubCheckGateColumns + ` from den_review.github_check_gates where status = 'pending' and next_poll_at <= $1 order by next_poll_at asc, id asc limit $2`
+	listGitHubCheckGatesPendingEvidenceSQL = `select ` + githubCheckGateColumns + ` from den_review.github_check_gates where evidence_message_status in ('pending','error') and status in ('passed','failed','timed_out','superseded') order by coalesce(evidence_message_attempted_at, completed_at, updated_at), id limit $1`
+	getGitHubCheckGateSQL                  = `select ` + githubCheckGateColumns + ` from den_review.github_check_gates where id = $1`
+	getGitHubCheckGateByCommitSQL          = `select ` + githubCheckGateColumns + ` from den_review.github_check_gates where project_id = $1 and task_id = $2 and commit_sha = $3`
+	completeGitHubCheckGateSQL             = `
+update den_review.github_check_gates
+set status = $2,
+    summary = $3,
+    check_runs = $4,
+    failure_summary = $5,
+    last_checked_at = $6,
+    completed_at = case when $2 in ('passed','failed','timed_out','superseded') then $6 else completed_at end,
+    next_poll_at = $7,
+    evidence_message_status = case when $2 in ('passed','failed','timed_out','superseded') then 'pending' else evidence_message_status end,
+    evidence_message_error = case when $2 in ('passed','failed','timed_out','superseded') then null else evidence_message_error end,
+    updated_at = $6
+where id = $1
+  and status = 'pending'
+returning ` + githubCheckGateColumns
+	markGitHubCheckGateEvidencePostedSQL = `
+update den_review.github_check_gates
+set evidence_message_status = 'posted',
+    evidence_message_id = $2,
+    evidence_message_error = null,
+    evidence_message_attempted_at = $3,
+    updated_at = $3
+where id = $1
+returning ` + githubCheckGateColumns
+	recordGitHubCheckGateEvidenceErrorSQL = `
+update den_review.github_check_gates
+set evidence_message_status = 'error',
+    evidence_message_error = $2,
+    evidence_message_attempted_at = $3,
+    updated_at = $3
+where id = $1
+returning ` + githubCheckGateColumns
 )
