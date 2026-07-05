@@ -15,6 +15,7 @@ func TestLoadConfigPinsReviewPortAndSuccessorUpstreams(t *testing.T) {
 bind_addr: "127.0.0.1:8096"
 database_url_env: "DEN_REVIEW_DATABASE_URL"
 service_token_env: "DEN_REVIEW_SERVICE_TOKEN"
+allow_unauthenticated_local_dev: true
 projects_base_url_env: "DEN_PROJECTS_BASE_URL"
 tasks_base_url_env: "DEN_TASKS_BASE_URL"
 messages_base_url_env: "DEN_MESSAGES_BASE_URL"
@@ -45,6 +46,9 @@ github:
 	}
 	if cfg.BindAddr != "127.0.0.1:8096" {
 		t.Fatalf("BindAddr = %q", cfg.BindAddr)
+	}
+	if !cfg.AllowUnauthenticatedLocalDev {
+		t.Fatal("AllowUnauthenticatedLocalDev = false, want true")
 	}
 	if cfg.ProjectsBaseURL != "http://127.0.0.1:8091" || cfg.TasksBaseURL != "http://127.0.0.1:8092" || cfg.MessagesBaseURL != "http://127.0.0.1:8093" {
 		t.Fatalf("upstream URLs not pinned to successor services: %#v", cfg)

@@ -13,17 +13,18 @@ import (
 )
 
 type Config struct {
-	BindAddr        string
-	DatabaseURL     string
-	ServiceToken    string
-	ProjectsBaseURL string
-	ProjectsToken   string
-	TasksBaseURL    string
-	TasksToken      string
-	MessagesBaseURL string
-	MessagesToken   string
-	HTTP            HTTPConfig
-	GitHub          GitHubConfig
+	BindAddr                     string
+	DatabaseURL                  string
+	ServiceToken                 string
+	AllowUnauthenticatedLocalDev bool
+	ProjectsBaseURL              string
+	ProjectsToken                string
+	TasksBaseURL                 string
+	TasksToken                   string
+	MessagesBaseURL              string
+	MessagesToken                string
+	HTTP                         HTTPConfig
+	GitHub                       GitHubConfig
 }
 
 type HTTPConfig struct {
@@ -43,17 +44,18 @@ type GitHubConfig struct {
 }
 
 type configFile struct {
-	BindAddr           string           `yaml:"bind_addr"`
-	DatabaseURLEnv     string           `yaml:"database_url_env"`
-	ServiceTokenEnv    string           `yaml:"service_token_env"`
-	ProjectsBaseURLEnv string           `yaml:"projects_base_url_env"`
-	ProjectsTokenEnv   string           `yaml:"projects_token_env"`
-	TasksBaseURLEnv    string           `yaml:"tasks_base_url_env"`
-	TasksTokenEnv      string           `yaml:"tasks_token_env"`
-	MessagesBaseURLEnv string           `yaml:"messages_base_url_env"`
-	MessagesTokenEnv   string           `yaml:"messages_token_env"`
-	HTTP               httpConfigFile   `yaml:"http"`
-	GitHub             githubConfigFile `yaml:"github"`
+	BindAddr                     string           `yaml:"bind_addr"`
+	DatabaseURLEnv               string           `yaml:"database_url_env"`
+	ServiceTokenEnv              string           `yaml:"service_token_env"`
+	AllowUnauthenticatedLocalDev bool             `yaml:"allow_unauthenticated_local_dev"`
+	ProjectsBaseURLEnv           string           `yaml:"projects_base_url_env"`
+	ProjectsTokenEnv             string           `yaml:"projects_token_env"`
+	TasksBaseURLEnv              string           `yaml:"tasks_base_url_env"`
+	TasksTokenEnv                string           `yaml:"tasks_token_env"`
+	MessagesBaseURLEnv           string           `yaml:"messages_base_url_env"`
+	MessagesTokenEnv             string           `yaml:"messages_token_env"`
+	HTTP                         httpConfigFile   `yaml:"http"`
+	GitHub                       githubConfigFile `yaml:"github"`
 }
 
 type httpConfigFile struct {
@@ -114,17 +116,18 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 	}
 	serviceToken := values.String(f.ServiceTokenEnv, "")
 	return &Config{
-		BindAddr:        f.BindAddr,
-		DatabaseURL:     values.String(f.DatabaseURLEnv, ""),
-		ServiceToken:    serviceToken,
-		ProjectsBaseURL: values.String(f.ProjectsBaseURLEnv, ""),
-		ProjectsToken:   values.String(f.ProjectsTokenEnv, serviceToken),
-		TasksBaseURL:    values.String(f.TasksBaseURLEnv, ""),
-		TasksToken:      values.String(f.TasksTokenEnv, serviceToken),
-		MessagesBaseURL: values.String(f.MessagesBaseURLEnv, ""),
-		MessagesToken:   values.String(f.MessagesTokenEnv, serviceToken),
-		HTTP:            HTTPConfig{ReadHeaderTimeout: readHeaderTimeout},
-		GitHub:          github,
+		BindAddr:                     f.BindAddr,
+		DatabaseURL:                  values.String(f.DatabaseURLEnv, ""),
+		ServiceToken:                 serviceToken,
+		AllowUnauthenticatedLocalDev: f.AllowUnauthenticatedLocalDev,
+		ProjectsBaseURL:              values.String(f.ProjectsBaseURLEnv, ""),
+		ProjectsToken:                values.String(f.ProjectsTokenEnv, serviceToken),
+		TasksBaseURL:                 values.String(f.TasksBaseURLEnv, ""),
+		TasksToken:                   values.String(f.TasksTokenEnv, serviceToken),
+		MessagesBaseURL:              values.String(f.MessagesBaseURLEnv, ""),
+		MessagesToken:                values.String(f.MessagesTokenEnv, serviceToken),
+		HTTP:                         HTTPConfig{ReadHeaderTimeout: readHeaderTimeout},
+		GitHub:                       github,
 	}, nil
 }
 

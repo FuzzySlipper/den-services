@@ -18,13 +18,21 @@ func NewHTTPServer(cfg *Config, info health.BuildInfo, service ReviewUseCases) (
 	}
 	apiMux := http.NewServeMux()
 	NewHandler(service).RegisterRoutes(apiMux)
+	root := http.NewServeMux()
+	root.Handle("GET /health", healthHandler)
+	root.Handle("GET /version", versionHandler)
+	if cfg.AllowUnauthenticatedLocalDev {
+		root.Handle("/", apiMux)
+		return &http.Server{
+			Addr:              cfg.BindAddr,
+			Handler:           root,
+			ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout,
+		}, nil
+	}
 	auth, err := api.NewServiceTokenAuth(cfg.ServiceToken)
 	if err != nil {
 		return nil, err
 	}
-	root := http.NewServeMux()
-	root.Handle("GET /health", healthHandler)
-	root.Handle("GET /version", versionHandler)
 	root.Handle("/", auth.Middleware(apiMux))
 	return &http.Server{
 		Addr:              cfg.BindAddr,

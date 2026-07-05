@@ -1,6 +1,7 @@
 bind_addr: "127.0.0.1:8096"
 database_url_env: "DEN_REVIEW_DATABASE_URL"
 service_token_env: "DEN_REVIEW_SERVICE_TOKEN"
+allow_unauthenticated_local_dev: true
 projects_base_url_env: "DEN_PROJECTS_BASE_URL"
 projects_token_env: "DEN_PROJECTS_SERVICE_TOKEN"
 tasks_base_url_env: "DEN_TASKS_BASE_URL"
