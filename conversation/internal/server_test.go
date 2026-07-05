@@ -153,20 +153,75 @@ func TestConversationAPIPilotLifecycle(t *testing.T) {
 	}
 }
 
+func TestConversationAPIMembershipIncludesWakeTarget(t *testing.T) {
+	runtimeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/runtime/instances" {
+			t.Fatalf("runtime path = %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer runtime-token" {
+			t.Fatalf("runtime auth = %q", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{
+			"instance_id": "den-mcp-runner@den-k8plus",
+			"profile_identity": "den-mcp-runner",
+			"state": "active",
+			"started_at": "2026-07-05T01:00:00Z",
+			"last_heartbeat_at": "2026-07-05T01:05:00Z"
+		}]`))
+	}))
+	t.Cleanup(runtimeServer.Close)
+	server := newTestServerWithConfig(t, &Config{
+		BindAddr:     "127.0.0.1:0",
+		DatabaseURL:  "postgres://channels.example/denservices",
+		ServiceToken: "conversation-token",
+		DefaultLimit: 100,
+		MaxLimit:     500,
+		WakeTargets: WakeTargetsConfig{
+			RuntimeBaseURL:      runtimeServer.URL,
+			RuntimeServiceToken: "runtime-token",
+			Timeout:             time.Second,
+			Enabled:             true,
+		},
+		HTTP: HTTPConfig{ReadHeaderTimeout: 5 * time.Second},
+	})
+
+	membership := postJSON[MembershipResponse](t, server, http.MethodPut, "/v1/conversation/channels/1/memberships", `{
+		"member_type": "agent",
+		"member_identity": "den-mcp-runner",
+		"profile_identity": "den-mcp-runner",
+		"membership_status": "active",
+		"wake_policy": "mentions_only",
+		"membership_purpose": "ordinary"
+	}`, nil, http.StatusOK)
+
+	if membership.WakeTarget == nil {
+		t.Fatal("WakeTarget is nil")
+	}
+	if membership.WakeTarget.Profile.String() != "den-mcp-runner" || membership.WakeTarget.InstanceID.String() != "den-mcp-runner@den-k8plus" {
+		t.Fatalf("WakeTarget = %+v", membership.WakeTarget)
+	}
+}
+
 func newTestServer(t *testing.T) *http.Server {
 	t.Helper()
-	info, err := health.NewBuildInfo("conversation", "test", "testcommit", fixedBuiltAt())
-	if err != nil {
-		t.Fatalf("NewBuildInfo() error = %v", err)
-	}
-	server, err := NewHTTPServerWithStore(&Config{
+	return newTestServerWithConfig(t, &Config{
 		BindAddr:     "127.0.0.1:0",
 		DatabaseURL:  "postgres://channels.example/denservices",
 		ServiceToken: "conversation-token",
 		DefaultLimit: 100,
 		MaxLimit:     500,
 		HTTP:         HTTPConfig{ReadHeaderTimeout: 5 * time.Second},
-	}, info, newMemoryConversationStore(t))
+	})
+}
+
+func newTestServerWithConfig(t *testing.T, cfg *Config) *http.Server {
+	t.Helper()
+	info, err := health.NewBuildInfo("conversation", "test", "testcommit", fixedBuiltAt())
+	if err != nil {
+		t.Fatalf("NewBuildInfo() error = %v", err)
+	}
+	server, err := NewHTTPServerWithStore(cfg, info, newMemoryConversationStore(t))
 	if err != nil {
 		t.Fatalf("NewHTTPServerWithStore() error = %v", err)
 	}

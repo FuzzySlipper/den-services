@@ -30,7 +30,7 @@ func NewHTTPServerWithStore(cfg *Config, buildInfo health.BuildInfo, store Conve
 	if err != nil {
 		return nil, err
 	}
-	service := NewService(store, time.Now, cfg)
+	service := NewService(store, wakeTargetResolver(cfg), time.Now, cfg)
 	handler := NewHandler(service)
 
 	apiMux := http.NewServeMux()
@@ -50,4 +50,15 @@ func NewHTTPServerWithStore(cfg *Config, buildInfo health.BuildInfo, store Conve
 		Handler:           root,
 		ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout,
 	}, nil
+}
+
+func wakeTargetResolver(cfg *Config) WakeTargetResolver {
+	if cfg == nil || !cfg.WakeTargets.Enabled {
+		return NoopWakeTargetResolver{}
+	}
+	return NewRuntimeWakeTargetResolver(
+		cfg.WakeTargets.RuntimeBaseURL,
+		cfg.WakeTargets.RuntimeServiceToken,
+		cfg.WakeTargets.Timeout,
+	)
 }

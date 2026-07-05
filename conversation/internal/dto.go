@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"den-services/shared/api"
+	"den-services/shared/identity"
 )
 
 const idempotencyHeader = "Idempotency-Key"
@@ -241,21 +242,22 @@ type MessageResponse struct {
 }
 
 type MembershipResponse struct {
-	ID                int64           `json:"id"`
-	ChannelID         int64           `json:"channel_id"`
-	MemberType        string          `json:"member_type"`
-	MemberIdentity    string          `json:"member_identity"`
-	ProfileIdentity   *string         `json:"profile_identity"`
-	MembershipStatus  string          `json:"membership_status"`
-	WakePolicy        string          `json:"wake_policy"`
-	CanSend           bool            `json:"can_send"`
-	CanReact          bool            `json:"can_react"`
-	CanInvite         bool            `json:"can_invite"`
-	MembershipPurpose string          `json:"membership_purpose"`
-	Settings          json.RawMessage `json:"settings"`
-	CreatedAt         time.Time       `json:"created_at"`
-	UpdatedAt         time.Time       `json:"updated_at"`
-	LeftAt            *time.Time      `json:"left_at"`
+	ID                int64                   `json:"id"`
+	ChannelID         int64                   `json:"channel_id"`
+	MemberType        string                  `json:"member_type"`
+	MemberIdentity    string                  `json:"member_identity"`
+	ProfileIdentity   *string                 `json:"profile_identity"`
+	MembershipStatus  string                  `json:"membership_status"`
+	WakePolicy        string                  `json:"wake_policy"`
+	CanSend           bool                    `json:"can_send"`
+	CanReact          bool                    `json:"can_react"`
+	CanInvite         bool                    `json:"can_invite"`
+	MembershipPurpose string                  `json:"membership_purpose"`
+	Settings          json.RawMessage         `json:"settings"`
+	WakeTarget        *identity.AgentIdentity `json:"wake_target,omitempty"`
+	CreatedAt         time.Time               `json:"created_at"`
+	UpdatedAt         time.Time               `json:"updated_at"`
+	LeftAt            *time.Time              `json:"left_at"`
 }
 
 type ReactionResponse struct {
@@ -342,6 +344,7 @@ func toMembershipResponse(membership *ChannelMembership) MembershipResponse {
 		CanInvite:         membership.CanInvite,
 		MembershipPurpose: membership.MembershipPurpose,
 		Settings:          defaultJSON(membership.Settings),
+		WakeTarget:        membership.WakeTarget,
 		CreatedAt:         membership.CreatedAt,
 		UpdatedAt:         membership.UpdatedAt,
 		LeftAt:            membership.LeftAt,

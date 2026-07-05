@@ -3,6 +3,8 @@ package conversation
 import (
 	"encoding/json"
 	"time"
+
+	"den-services/shared/identity"
 )
 
 type Channel struct {
@@ -64,6 +66,7 @@ type ChannelMembership struct {
 	CanInvite         bool
 	MembershipPurpose string
 	Settings          json.RawMessage
+	WakeTarget        *identity.AgentIdentity
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 	LeftAt            *time.Time

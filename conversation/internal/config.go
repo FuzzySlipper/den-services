@@ -17,7 +17,15 @@ type Config struct {
 	ServiceToken string
 	DefaultLimit int
 	MaxLimit     int
+	WakeTargets  WakeTargetsConfig
 	HTTP         HTTPConfig
+}
+
+type WakeTargetsConfig struct {
+	RuntimeBaseURL      string
+	RuntimeServiceToken string
+	Timeout             time.Duration
+	Enabled             bool
 }
 
 type HTTPConfig struct {
@@ -25,10 +33,11 @@ type HTTPConfig struct {
 }
 
 type configFile struct {
-	BindAddr    string          `yaml:"bind_addr"`
-	DatabaseURL string          `yaml:"database_url"`
-	Query       queryConfigFile `yaml:"query"`
-	HTTP        httpConfigFile  `yaml:"http"`
+	BindAddr    string                `yaml:"bind_addr"`
+	DatabaseURL string                `yaml:"database_url"`
+	Query       queryConfigFile       `yaml:"query"`
+	WakeTargets wakeTargetsConfigFile `yaml:"wake_targets"`
+	HTTP        httpConfigFile        `yaml:"http"`
 }
 
 type queryConfigFile struct {
@@ -38,6 +47,12 @@ type queryConfigFile struct {
 
 type httpConfigFile struct {
 	ReadHeaderTimeout string `yaml:"read_header_timeout"`
+}
+
+type wakeTargetsConfigFile struct {
+	RuntimeBaseURL         string `yaml:"runtime_base_url"`
+	RuntimeServiceTokenEnv string `yaml:"runtime_service_token_env"`
+	Timeout                string `yaml:"timeout"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -65,12 +80,17 @@ func LoadConfigFromPath(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	wakeTargets, err := file.WakeTargets.toConfig(values)
+	if err != nil {
+		return nil, err
+	}
 	cfg := &Config{
 		BindAddr:     file.BindAddr,
 		DatabaseURL:  databaseURL,
 		ServiceToken: values.String("DEN_CONVERSATION_SERVICE_TOKEN", ""),
 		DefaultLimit: file.Query.DefaultLimit,
 		MaxLimit:     file.Query.MaxLimit,
+		WakeTargets:  wakeTargets,
 		HTTP:         httpConfig,
 	}
 	if err := cfg.validate(); err != nil {
@@ -92,6 +112,14 @@ func (c *Config) validate() error {
 	if c.DefaultLimit <= 0 || c.MaxLimit <= 0 || c.DefaultLimit > c.MaxLimit {
 		return errors.New("query limits must be positive and default_limit must not exceed max_limit")
 	}
+	if c.WakeTargets.Enabled {
+		if c.WakeTargets.RuntimeBaseURL == "" || c.WakeTargets.RuntimeServiceToken == "" {
+			return errors.New("wake_targets runtime base URL and service token are required when enabled")
+		}
+		if c.WakeTargets.Timeout <= 0 {
+			return errors.New("wake_targets timeout must be positive when enabled")
+		}
+	}
 	if c.HTTP.ReadHeaderTimeout <= 0 {
 		return errors.New("http read_header_timeout must be positive")
 	}
@@ -104,6 +132,25 @@ func (c httpConfigFile) toConfig() (HTTPConfig, error) {
 		return HTTPConfig{}, err
 	}
 	return HTTPConfig{ReadHeaderTimeout: readHeaderTimeout}, nil
+}
+
+func (c wakeTargetsConfigFile) toConfig(values sharedconfig.Values) (WakeTargetsConfig, error) {
+	if c.RuntimeBaseURL == "" && c.RuntimeServiceTokenEnv == "" && c.Timeout == "" {
+		return WakeTargetsConfig{}, nil
+	}
+	if c.RuntimeBaseURL == "" || c.RuntimeServiceTokenEnv == "" || c.Timeout == "" {
+		return WakeTargetsConfig{}, errors.New("wake_targets requires runtime_base_url, runtime_service_token_env, and timeout")
+	}
+	timeout, err := parseRequiredDuration("wake_targets.timeout", c.Timeout)
+	if err != nil {
+		return WakeTargetsConfig{}, err
+	}
+	return WakeTargetsConfig{
+		RuntimeBaseURL:      c.RuntimeBaseURL,
+		RuntimeServiceToken: values.String(c.RuntimeServiceTokenEnv, ""),
+		Timeout:             timeout,
+		Enabled:             true,
+	}, nil
 }
 
 func parseRequiredDuration(name string, raw string) (time.Duration, error) {

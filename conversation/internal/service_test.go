@@ -189,7 +189,7 @@ func TestConversationNoActivityEventRegressionRoutes(t *testing.T) {
 }
 
 func newTestConversationService(store ConversationStore) *Service {
-	return NewService(store, fixedClock, &Config{DefaultLimit: 100, MaxLimit: 500})
+	return NewService(store, NoopWakeTargetResolver{}, fixedClock, &Config{DefaultLimit: 100, MaxLimit: 500})
 }
 
 func mustCreateChannel(t *testing.T, service *Service) *Channel {

@@ -8,5 +8,14 @@ query:
   default_limit: 100
   max_limit: 500
 
+# Optional Runtime read dependency for membership wake_target enrichment. Leave
+# omitted until DEN_CONVERSATION_RUNTIME_SERVICE_TOKEN is provisioned; without
+# this block, membership responses simply do not include wake_target.
+#
+# wake_targets:
+#   runtime_base_url: "http://127.0.0.1:8081"
+#   runtime_service_token_env: "DEN_CONVERSATION_RUNTIME_SERVICE_TOKEN"
+#   timeout: "2s"
+
 http:
   read_header_timeout: "5s"

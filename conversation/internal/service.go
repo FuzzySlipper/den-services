@@ -20,17 +20,26 @@ type ConversationStore interface {
 	UpsertReadCursor(ctx context.Context, cursor *ChannelReadCursor) (*ChannelReadCursor, error)
 }
 
-type Service struct {
-	store  ConversationStore
-	clock  func() time.Time
-	config *Config
+type WakeTargetResolver interface {
+	ResolveWakeTargets(ctx context.Context, memberships []*ChannelMembership) error
 }
 
-func NewService(store ConversationStore, clock func() time.Time, config *Config) *Service {
+type Service struct {
+	store       ConversationStore
+	wakeTargets WakeTargetResolver
+	clock       func() time.Time
+	config      *Config
+}
+
+func NewService(store ConversationStore, wakeTargets WakeTargetResolver, clock func() time.Time, config *Config) *Service {
+	if wakeTargets == nil {
+		wakeTargets = NoopWakeTargetResolver{}
+	}
 	return &Service{
-		store:  store,
-		clock:  clock,
-		config: config,
+		store:       store,
+		wakeTargets: wakeTargets,
+		clock:       clock,
+		config:      config,
 	}
 }
 
@@ -142,7 +151,7 @@ func (s *Service) PutMembership(ctx context.Context, channelID int64, req PutMem
 		canInvite = *req.CanInvite
 	}
 	now := s.clock().UTC()
-	return s.store.UpsertMembership(ctx, &ChannelMembership{
+	membership, err := s.store.UpsertMembership(ctx, &ChannelMembership{
 		ChannelID:         channelID,
 		MemberType:        req.MemberType,
 		MemberIdentity:    req.MemberIdentity,
@@ -157,6 +166,13 @@ func (s *Service) PutMembership(ctx context.Context, channelID int64, req PutMem
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.wakeTargets.ResolveWakeTargets(ctx, []*ChannelMembership{membership}); err != nil {
+		return nil, err
+	}
+	return membership, nil
 }
 
 func (s *Service) ListMemberships(ctx context.Context, query ListMembershipsQuery) ([]*ChannelMembership, error) {
@@ -166,7 +182,14 @@ func (s *Service) ListMemberships(ctx context.Context, query ListMembershipsQuer
 	if query.Limit <= 0 || query.Limit > 1000 {
 		return nil, badRequest(ErrInvalidLimit)
 	}
-	return s.store.ListMemberships(ctx, query)
+	memberships, err := s.store.ListMemberships(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.wakeTargets.ResolveWakeTargets(ctx, memberships); err != nil {
+		return nil, err
+	}
+	return memberships, nil
 }
 
 func (s *Service) AddReaction(ctx context.Context, messageID int64, req AddReactionRequest) (*ChannelReaction, error) {
