@@ -305,8 +305,9 @@ func TestClientCallsProjectsRESTListSpacesWithQuery(t *testing.T) {
 			t.Fatalf("RawQuery = %q, missing %s", sawRawQuery, want)
 		}
 	}
-	if !strings.Contains(string(result.Value), `"structuredContent":[{"id":"assistant-a"`) {
-		t.Fatalf("result = %s", result.Value)
+	items := structuredItemsForTest(t, result)
+	if len(items) != 1 || items[0]["id"] != "assistant-a" {
+		t.Fatalf("structured items = %#v", items)
 	}
 }
 
@@ -559,6 +560,80 @@ func TestClientCallsMessagesRESTMarkReadCSV(t *testing.T) {
 	}
 }
 
+func TestClientCallsMessagesRESTGetMessagesWrapsListStructuredContent(t *testing.T) {
+	tests := []struct {
+		name      string
+		arguments string
+		response  string
+		wantItems int
+		wantQuery []string
+		wantMsgID float64
+	}{
+		{
+			name:      "non-empty task scoped verbose false",
+			arguments: `{"project_id":"asha","task_id":4227,"limit":30,"verbose":false}`,
+			response:  `[{"id":17779,"project_id":"asha","task_id":4227,"sender":"reviewer","content_preview":"ready","created_at":"2026-07-05T07:57:39.355696Z"}]`,
+			wantItems: 1,
+			wantQuery: []string{"task_id=4227", "limit=30", "verbose=false"},
+			wantMsgID: 17779,
+		},
+		{
+			name:      "non-empty task scoped verbose true",
+			arguments: `{"project_id":"asha","task_id":4228,"limit":30,"verbose":true}`,
+			response:  `[{"id":17782,"project_id":"asha","task_id":4228,"sender":"reviewer","content":"full body","created_at":"2026-07-05T07:58:39.355696Z"}]`,
+			wantItems: 1,
+			wantQuery: []string{"task_id=4228", "limit=30", "verbose=true"},
+			wantMsgID: 17782,
+		},
+		{
+			name:      "empty result",
+			arguments: `{"project_id":"asha","task_id":4229,"limit":30,"verbose":true}`,
+			response:  `[]`,
+			wantItems: 0,
+			wantQuery: []string{"task_id=4229", "limit=30", "verbose=true"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var sawRawQuery string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.EscapedPath() != "/v1/projects/asha/messages" {
+					t.Fatalf("request = %s %s, want GET /v1/projects/asha/messages", r.Method, r.URL.EscapedPath())
+				}
+				sawRawQuery = r.URL.RawQuery
+				_, _ = w.Write([]byte(tt.response))
+			}))
+			defer server.Close()
+
+			result, failure, err := NewClient(server.Client()).Call(context.Background(), testBackend("messages", server.URL), messagesRouteForTest("get_messages", http.MethodGet, "/v1/projects/{project_id}/messages"), ToolCall{
+				ToolName:  "get_messages",
+				Operation: "get_messages",
+				RequestID: json.RawMessage(`1`),
+				Arguments: json.RawMessage(tt.arguments),
+			})
+			if err != nil {
+				t.Fatalf("Call() error = %v", err)
+			}
+			if failure != nil {
+				t.Fatalf("Call() failure = %#v", failure)
+			}
+			for _, want := range tt.wantQuery {
+				if !strings.Contains(sawRawQuery, want) {
+					t.Fatalf("RawQuery = %q, missing %s", sawRawQuery, want)
+				}
+			}
+			items := structuredItemsForTest(t, result)
+			if len(items) != tt.wantItems {
+				t.Fatalf("structured item count = %d, want %d: %#v", len(items), tt.wantItems, items)
+			}
+			if tt.wantItems > 0 && items[0]["id"] != tt.wantMsgID {
+				t.Fatalf("structured first id = %v, want %v", items[0]["id"], tt.wantMsgID)
+			}
+		})
+	}
+}
+
 func TestClientCallsMessagesRESTGetUserNotificationsQuery(t *testing.T) {
 	var sawRawQuery string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -566,11 +641,12 @@ func TestClientCallsMessagesRESTGetUserNotificationsQuery(t *testing.T) {
 			t.Fatalf("request = %s %s, want GET /v1/user-notifications", r.Method, r.URL.Path)
 		}
 		sawRawQuery = r.URL.RawQuery
-		_, _ = w.Write([]byte(`[]`))
+		_, _ = w.Write([]byte(`[{"id":7001,"project_id":"den-services","content_preview":"wake up","created_at":"2026-07-05T08:00:00Z"}]`))
 	}))
 	defer server.Close()
 
 	isRead := false
+	verbose := true
 	arguments, err := json.Marshal(map[string]any{
 		"project_id":     "den-services",
 		"task_id":        3726,
@@ -581,12 +657,13 @@ func TestClientCallsMessagesRESTGetUserNotificationsQuery(t *testing.T) {
 		"is_read":        isRead,
 		"limit":          10,
 		"offset":         5,
+		"verbose":        verbose,
 	})
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
 	client := NewClient(server.Client())
-	_, failure, err := client.Call(context.Background(), testBackend("messages", server.URL), messagesRouteForTest("get_user_notifications", http.MethodGet, "/v1/user-notifications"), ToolCall{
+	result, failure, err := client.Call(context.Background(), testBackend("messages", server.URL), messagesRouteForTest("get_user_notifications", http.MethodGet, "/v1/user-notifications"), ToolCall{
 		ToolName:  "get_user_notifications",
 		Operation: "get_user_notifications",
 		RequestID: json.RawMessage(`1`),
@@ -598,10 +675,14 @@ func TestClientCallsMessagesRESTGetUserNotificationsQuery(t *testing.T) {
 	if failure != nil {
 		t.Fatalf("Call() failure = %#v", failure)
 	}
-	for _, want := range []string{"project_id=den-services", "task_id=3726", "sender=codex", "metadata_type=review", "urgency=normal", "read_for_agent=planner", "is_read=false", "limit=10", "offset=5"} {
+	for _, want := range []string{"project_id=den-services", "task_id=3726", "sender=codex", "metadata_type=review", "urgency=normal", "read_for_agent=planner", "is_read=false", "limit=10", "offset=5", "verbose=true"} {
 		if !strings.Contains(sawRawQuery, want) {
 			t.Fatalf("RawQuery = %q, missing %s", sawRawQuery, want)
 		}
+	}
+	items := structuredItemsForTest(t, result)
+	if len(items) != 1 || items[0]["id"] != float64(7001) {
+		t.Fatalf("structured notification items = %#v", items)
 	}
 }
 
@@ -1056,6 +1137,25 @@ func TestFailureTextIncludesToolCircuitAndStatus(t *testing.T) {
 			t.Fatalf("Failure.Text() = %s, missing %s", text, want)
 		}
 	}
+}
+
+func structuredItemsForTest(t *testing.T, result Result) []map[string]any {
+	t.Helper()
+
+	var toolResult mcpToolResult
+	if err := json.Unmarshal(result.Value, &toolResult); err != nil {
+		t.Fatalf("Unmarshal tool result: %v; body=%s", err, result.Value)
+	}
+	var structured struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(toolResult.StructuredContent, &structured); err != nil {
+		t.Fatalf("Unmarshal structured content object: %v; structured=%s", err, toolResult.StructuredContent)
+	}
+	if structured.Items == nil {
+		t.Fatalf("structured content missing items array: %s", toolResult.StructuredContent)
+	}
+	return structured.Items
 }
 
 func projectsRoute(operation string, method string, path string) Route {

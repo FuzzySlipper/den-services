@@ -230,7 +230,11 @@ func buildRESTToolResult(responseBody []byte) (json.RawMessage, error) {
 	}
 	var parsed json.RawMessage
 	if err := json.Unmarshal(trimmed, &parsed); err != nil {
-		return nil, fmt.Errorf("parsing projects backend JSON response: %w", err)
+		return nil, fmt.Errorf("parsing REST backend JSON response: %w", err)
+	}
+	structured, err := mcpStructuredContentObject(parsed)
+	if err != nil {
+		return nil, err
 	}
 	result := mcpToolResult{
 		Content: []mcpToolContent{{
@@ -238,13 +242,34 @@ func buildRESTToolResult(responseBody []byte) (json.RawMessage, error) {
 			Text: string(trimmed),
 		}},
 		IsError:           false,
-		StructuredContent: parsed,
+		StructuredContent: structured,
 	}
 	data, err := json.Marshal(result)
 	if err != nil {
-		return nil, fmt.Errorf("encoding projects MCP tool result: %w", err)
+		return nil, fmt.Errorf("encoding REST MCP tool result: %w", err)
 	}
 	return data, nil
+}
+
+func mcpStructuredContentObject(parsed json.RawMessage) (json.RawMessage, error) {
+	trimmed := bytes.TrimSpace(parsed)
+	if len(trimmed) == 0 {
+		trimmed = json.RawMessage(`null`)
+	}
+	if bytes.HasPrefix(trimmed, []byte("{")) {
+		return trimmed, nil
+	}
+	key := "value"
+	if bytes.HasPrefix(trimmed, []byte("[")) {
+		key = "items"
+	}
+	structured, err := json.Marshal(map[string]json.RawMessage{
+		key: trimmed,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encoding MCP structured content object: %w", err)
+	}
+	return structured, nil
 }
 
 func (c *Client) doRESTRequest(request *http.Request, backend config.BackendConfig) (*http.Response, context.CancelFunc, error) {

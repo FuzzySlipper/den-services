@@ -94,8 +94,13 @@ func TestGuidanceRESTToolResultUsesCompatibleShape(t *testing.T) {
 	if len(result.Content) != 1 || result.Content[0].Text != `[{"id":1,"project_id":"_global","document_slug":"agent-policy"}]` {
 		t.Fatalf("content text = %#v", result.Content)
 	}
-	var structured []map[string]any
+	var structured struct {
+		Items []map[string]any `json:"items"`
+	}
 	if err := json.Unmarshal(result.StructuredContent, &structured); err != nil {
-		t.Fatalf("structured content is not legacy array: %v", err)
+		t.Fatalf("structured content is not object-wrapped legacy array: %v", err)
+	}
+	if len(structured.Items) != 1 || structured.Items[0]["id"] != float64(1) {
+		t.Fatalf("structured items = %#v", structured.Items)
 	}
 }

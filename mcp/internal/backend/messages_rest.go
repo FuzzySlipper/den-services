@@ -33,6 +33,7 @@ type messagesToolArguments struct {
 	Limit                   *int            `json:"limit"`
 	TimeoutMS               *int            `json:"timeout_ms"`
 	Since                   *string         `json:"since"`
+	Verbose                 *bool           `json:"verbose"`
 	PacketType              string          `json:"packet_type"`
 	Role                    string          `json:"role"`
 	RunID                   string          `json:"run_id"`
@@ -209,6 +210,7 @@ func messagesRESTURL(baseURL string, route Route, arguments messagesToolArgument
 		setStringValueQuery(query, "unread_for", arguments.UnreadFor)
 		setStringValueQuery(query, "intent", arguments.Intent)
 		setIntQuery(query, "limit", arguments.Limit)
+		setBoolQuery(query, "verbose", arguments.Verbose)
 	case "wait_for_messages":
 		setStringValueQuery(query, "unread_for", arguments.UnreadFor)
 		setInt64Query(query, "cursor", arguments.Cursor)
@@ -224,9 +226,12 @@ func messagesRESTURL(baseURL string, route Route, arguments messagesToolArgument
 		setBoolQuery(query, "is_read", arguments.IsRead)
 		setIntQuery(query, "limit", arguments.Limit)
 		setIntQuery(query, "offset", arguments.Offset)
+		setBoolQuery(query, "verbose", arguments.Verbose)
 	case "get_latest_task_packet":
 		setStringValueQuery(query, "packet_type", arguments.PacketType)
 		setStringValueQuery(query, "role", arguments.Role)
+	case "get_thread":
+		setBoolQuery(query, "verbose", arguments.Verbose)
 	case "render_worker_prompt":
 		setStringValueQuery(query, "completion_reporting_mode", arguments.CompletionReportingMode)
 	case "get_latest_worker_completion":
