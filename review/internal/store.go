@@ -318,6 +318,22 @@ func (s *Store) CompleteGitHubCheckGate(ctx context.Context, id int64, status st
 	return gate, true, nil
 }
 
+func (s *Store) DelayGitHubCheckGate(ctx context.Context, id int64, result GitHubCheckResult, nextPollAt time.Time, checkedAt time.Time) (*GitHubCheckGate, bool, error) {
+	gate, err := scanGitHubCheckGate(s.pool.QueryRow(ctx, delayGitHubCheckGateSQL, id, emptyToNil(result.Summary),
+		jsonOrNil(result.CheckRuns), emptyToNil(result.FailureSummary), checkedAt, nextPollAt))
+	if errors.Is(err, pgx.ErrNoRows) {
+		current, getErr := s.getGitHubCheckGateByID(ctx, id)
+		if getErr != nil {
+			return nil, false, getErr
+		}
+		return current, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("delaying github check gate: %w", err)
+	}
+	return gate, true, nil
+}
+
 func (s *Store) MarkGitHubCheckGateEvidencePosted(ctx context.Context, id int64, messageID int64, at time.Time) (*GitHubCheckGate, error) {
 	gate, err := scanGitHubCheckGate(s.pool.QueryRow(ctx, markGitHubCheckGateEvidencePostedSQL, id, messageID, at))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -667,6 +683,17 @@ set status = $2,
     evidence_message_status = case when $2 in ('passed','failed','timed_out','superseded') then 'pending' else evidence_message_status end,
     evidence_message_error = case when $2 in ('passed','failed','timed_out','superseded') then null else evidence_message_error end,
     updated_at = $6
+where id = $1
+  and status = 'pending'
+returning ` + githubCheckGateColumns
+	delayGitHubCheckGateSQL = `
+update den_review.github_check_gates
+set summary = $2,
+    check_runs = $3,
+    failure_summary = $4,
+    last_checked_at = $5,
+    next_poll_at = $6,
+    updated_at = $5
 where id = $1
   and status = 'pending'
 returning ` + githubCheckGateColumns

@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -49,13 +51,85 @@ func (c *GitHubClient) CheckCommit(ctx context.Context, repository string, commi
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return GitHubCheckResult{}, fmt.Errorf("github checks request failed: %s", resp.Status)
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if readErr != nil {
+			return GitHubCheckResult{}, fmt.Errorf("reading github checks error response: %w", readErr)
+		}
+		return GitHubCheckResult{}, newGitHubHTTPError(resp, body)
 	}
 	var payload githubCheckRunsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return GitHubCheckResult{}, fmt.Errorf("decoding github checks: %w", err)
 	}
 	return evaluateGitHubCheckRuns(payload.CheckRuns, requiredChecks), nil
+}
+
+type GitHubHTTPError struct {
+	Status                string
+	StatusCode            int
+	Message               string
+	RateLimitRemaining    int
+	RateLimitRemainingSet bool
+	RateLimitReset        time.Time
+	RateLimitResetSet     bool
+	RetryAfter            time.Duration
+	RetryAfterSet         bool
+	RequestID             string
+}
+
+func (e *GitHubHTTPError) Error() string {
+	if strings.TrimSpace(e.Message) != "" {
+		return fmt.Sprintf("github checks request failed: %s: %s", e.Status, e.Message)
+	}
+	return fmt.Sprintf("github checks request failed: %s", e.Status)
+}
+
+func newGitHubHTTPError(resp *http.Response, body []byte) *GitHubHTTPError {
+	var payload struct {
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(body, &payload)
+	err := &GitHubHTTPError{
+		Status:     resp.Status,
+		StatusCode: resp.StatusCode,
+		Message:    strings.TrimSpace(payload.Message),
+		RequestID:  strings.TrimSpace(resp.Header.Get("x-github-request-id")),
+	}
+	if remaining, parseErr := strconv.Atoi(strings.TrimSpace(resp.Header.Get("x-ratelimit-remaining"))); parseErr == nil {
+		err.RateLimitRemaining = remaining
+		err.RateLimitRemainingSet = true
+	}
+	if resetUnix, parseErr := strconv.ParseInt(strings.TrimSpace(resp.Header.Get("x-ratelimit-reset")), 10, 64); parseErr == nil {
+		err.RateLimitReset = time.Unix(resetUnix, 0).UTC()
+		err.RateLimitResetSet = true
+	}
+	if retryAfter, ok := parseGitHubRetryAfter(resp.Header.Get("retry-after")); ok {
+		err.RetryAfter = retryAfter
+		err.RetryAfterSet = true
+	}
+	return err
+}
+
+func parseGitHubRetryAfter(value string) (time.Duration, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+	if seconds, err := strconv.Atoi(value); err == nil {
+		if seconds <= 0 {
+			return 0, false
+		}
+		return time.Duration(seconds) * time.Second, true
+	}
+	when, err := http.ParseTime(value)
+	if err != nil {
+		return 0, false
+	}
+	delay := time.Until(when)
+	if delay <= 0 {
+		return 0, false
+	}
+	return delay, true
 }
 
 type githubCheckRunsResponse struct {

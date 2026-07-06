@@ -335,6 +335,25 @@ func (s *memoryStore) CompleteGitHubCheckGate(_ context.Context, id int64, statu
 	return &copied, true, nil
 }
 
+func (s *memoryStore) DelayGitHubCheckGate(_ context.Context, id int64, result GitHubCheckResult, nextPollAt time.Time, checkedAt time.Time) (*GitHubCheckGate, bool, error) {
+	gate, ok := s.githubCheckGates[id]
+	if !ok {
+		return nil, false, notFound(fmt.Errorf("github check gate not found: %d", id), "github_check_gate_not_found")
+	}
+	if gate.Status != GitHubCheckGateStatusPending {
+		copied := *gate
+		return &copied, false, nil
+	}
+	gate.Summary = result.Summary
+	gate.FailureSummary = result.FailureSummary
+	gate.CheckRuns = result.CheckRuns
+	gate.LastCheckedAt = &checkedAt
+	gate.NextPollAt = nextPollAt
+	gate.UpdatedAt = checkedAt
+	copied := *gate
+	return &copied, true, nil
+}
+
 func (s *memoryStore) MarkGitHubCheckGateEvidencePosted(_ context.Context, id int64, messageID int64, at time.Time) (*GitHubCheckGate, error) {
 	gate, ok := s.githubCheckGates[id]
 	if !ok {

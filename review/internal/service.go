@@ -2,11 +2,15 @@ package review
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strings"
 	"time"
 )
+
+const defaultGitHubHTTPErrorBackoff = 15 * time.Minute
 
 type ProjectValidator interface {
 	AssertWritable(ctx context.Context, projectID string) error
@@ -46,6 +50,7 @@ type ReviewStore interface {
 	ListPendingGitHubCheckGates(ctx context.Context, now time.Time, limit int) ([]*GitHubCheckGate, error)
 	ListGitHubCheckGatesPendingEvidence(ctx context.Context, limit int) ([]*GitHubCheckGate, error)
 	CompleteGitHubCheckGate(ctx context.Context, id int64, status string, result GitHubCheckResult, checkedAt time.Time) (*GitHubCheckGate, bool, error)
+	DelayGitHubCheckGate(ctx context.Context, id int64, result GitHubCheckResult, nextPollAt time.Time, checkedAt time.Time) (*GitHubCheckGate, bool, error)
 	TimeoutGitHubCheckGate(ctx context.Context, id int64, checkedAt time.Time) (*GitHubCheckGate, bool, error)
 	MarkGitHubCheckGateEvidencePosted(ctx context.Context, id int64, messageID int64, at time.Time) (*GitHubCheckGate, error)
 	RecordGitHubCheckGateEvidenceError(ctx context.Context, id int64, messageError string, at time.Time) (*GitHubCheckGate, error)
@@ -544,6 +549,10 @@ func (s *Service) evaluateGitHubCheckGate(ctx context.Context, gate *GitHubCheck
 	}
 	result, err := s.githubChecks.CheckCommit(ctx, gate.Repository, gate.CommitSHA, gate.RequiredChecks)
 	if err != nil {
+		var githubErr *GitHubHTTPError
+		if errors.As(err, &githubErr) && delayableGitHubHTTPStatus(githubErr.StatusCode) {
+			return s.delayGitHubCheckGateAfterGitHubHTTPError(ctx, gate, githubErr, now)
+		}
 		return nil, fmt.Errorf("checking github commit %s: %w", gate.CommitSHA, err)
 	}
 	if result.Status == GitHubCheckGateStatusPending {
@@ -565,6 +574,50 @@ func (s *Service) evaluateGitHubCheckGate(ctx context.Context, gate *GitHubCheck
 		}
 	}
 	return updated, nil
+}
+
+func (s *Service) delayGitHubCheckGateAfterGitHubHTTPError(ctx context.Context, gate *GitHubCheckGate, githubErr *GitHubHTTPError, checkedAt time.Time) (*GitHubCheckGate, error) {
+	nextPollAt := nextGitHubHTTPErrorPollAt(checkedAt, gate.TimeoutAt, githubErr)
+	summary := githubHTTPErrorSummary(githubErr, nextPollAt)
+	result := GitHubCheckResult{Status: GitHubCheckGateStatusPending, Summary: summary}
+	updated, _, err := s.store.DelayGitHubCheckGate(ctx, gate.ID, result, nextPollAt, checkedAt)
+	return updated, err
+}
+
+func delayableGitHubHTTPStatus(statusCode int) bool {
+	return statusCode == http.StatusForbidden || statusCode == http.StatusTooManyRequests
+}
+
+func nextGitHubHTTPErrorPollAt(now time.Time, timeoutAt time.Time, githubErr *GitHubHTTPError) time.Time {
+	next := now.Add(defaultGitHubHTTPErrorBackoff)
+	if githubErr.RetryAfterSet {
+		next = now.Add(githubErr.RetryAfter)
+	} else if githubErr.RateLimitResetSet && (!githubErr.RateLimitRemainingSet || githubErr.RateLimitRemaining == 0) && githubErr.RateLimitReset.After(now) {
+		next = githubErr.RateLimitReset.Add(time.Minute)
+	}
+	if !timeoutAt.IsZero() && timeoutAt.After(now) && next.After(timeoutAt) {
+		return timeoutAt
+	}
+	if !next.After(now) {
+		return now.Add(defaultGitHubHTTPErrorBackoff)
+	}
+	return next
+}
+
+func githubHTTPErrorSummary(githubErr *GitHubHTTPError, nextPollAt time.Time) string {
+	status := strings.TrimSpace(githubErr.Status)
+	if status == "" {
+		status = fmt.Sprintf("HTTP %d", githubErr.StatusCode)
+	}
+	summary := "GitHub check polling delayed after GitHub returned " + status + "."
+	if message := strings.TrimSpace(githubErr.Message); message != "" {
+		summary += " " + message
+	}
+	if githubErr.RateLimitResetSet {
+		summary += " GitHub rate limit reset is " + githubErr.RateLimitReset.Format(time.RFC3339) + "."
+	}
+	summary += " Next poll is " + nextPollAt.Format(time.RFC3339) + "."
+	return summary
 }
 
 func (s *Service) retryGitHubCheckGateEvidence(ctx context.Context, limit int) error {

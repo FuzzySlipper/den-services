@@ -3,6 +3,7 @@ package review
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strconv"
 	"strings"
 	"testing"
@@ -489,6 +490,53 @@ func TestPollGitHubCheckGatesRecordsTimeoutEvidence(t *testing.T) {
 	}
 	if len(messages.appended) != 1 || messages.appended[0].Intent != "github_checks_timeout" {
 		t.Fatalf("timeout message not appended: %+v", messages.appended)
+	}
+}
+
+func TestPollGitHubCheckGatesBacksOffGitHubRateLimit(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	resetAt := fixedReviewTestTime().Add(42 * time.Minute)
+	service := newTestService(store, messages, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+	}})
+	service.ConfigureGitHubChecks(&fakeGitHubChecks{err: &GitHubHTTPError{
+		Status:                "403 Forbidden",
+		StatusCode:            http.StatusForbidden,
+		Message:               "API rate limit exceeded",
+		RateLimitRemaining:    0,
+		RateLimitRemainingSet: true,
+		RateLimitReset:        resetAt,
+		RateLimitResetSet:     true,
+	}}, GitHubCheckOptions{DefaultTimeout: time.Hour, MaxTimeout: 2 * time.Hour, PollInterval: 30 * time.Second})
+	gate, _, err := store.RegisterGitHubCheckGate(ctx, &GitHubCheckGate{
+		ProjectID: "den-services", TaskID: 42, Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567",
+		Ref: "main", RequiredChecks: []string{"go test"}, Status: GitHubCheckGateStatusPending, RequestedBy: "codex",
+		TimeoutAt: fixedReviewTestTime().Add(2 * time.Hour), PollIntervalSeconds: 30, NextPollAt: fixedReviewTestTime().Add(-time.Minute),
+		CreatedAt: fixedReviewTestTime(), UpdatedAt: fixedReviewTestTime(),
+	}, fixedReviewTestTime())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.PollGitHubCheckGates(ctx, 10); err != nil {
+		t.Fatalf("PollGitHubCheckGates() error = %v", err)
+	}
+	updated := store.githubCheckGates[gate.ID]
+	if updated.Status != GitHubCheckGateStatusPending {
+		t.Fatalf("gate should remain pending after GitHub throttle, got %+v", updated)
+	}
+	if updated.LastCheckedAt == nil || !updated.LastCheckedAt.Equal(fixedReviewTestTime()) {
+		t.Fatalf("last_checked_at not recorded: %+v", updated.LastCheckedAt)
+	}
+	if want := resetAt.Add(time.Minute); !updated.NextPollAt.Equal(want) {
+		t.Fatalf("next_poll_at = %s, want %s", updated.NextPollAt, want)
+	}
+	if !strings.Contains(updated.Summary, "403 Forbidden") || !strings.Contains(updated.Summary, "API rate limit exceeded") {
+		t.Fatalf("summary did not preserve GitHub throttle details: %s", updated.Summary)
+	}
+	if len(messages.appended) != 0 {
+		t.Fatalf("throttled pending gate should not append evidence: %+v", messages.appended)
 	}
 }
 
