@@ -10,7 +10,10 @@ import (
 	"time"
 )
 
-const defaultGitHubHTTPErrorBackoff = 15 * time.Minute
+const (
+	defaultGitHubCheckPollInterval = 2 * time.Minute
+	defaultGitHubHTTPErrorBackoff  = 15 * time.Minute
+)
 
 type ProjectValidator interface {
 	AssertWritable(ctx context.Context, projectID string) error
@@ -161,7 +164,7 @@ func DefaultGitHubCheckOptions() GitHubCheckOptions {
 	return GitHubCheckOptions{
 		DefaultTimeout: 30 * time.Minute,
 		MaxTimeout:     2 * time.Hour,
-		PollInterval:   30 * time.Second,
+		PollInterval:   defaultGitHubCheckPollInterval,
 	}
 }
 
@@ -174,6 +177,9 @@ func (s *Service) ConfigureGitHubChecks(provider GitHubCheckProvider, options Gi
 	}
 	if options.PollInterval <= 0 {
 		options.PollInterval = DefaultGitHubCheckOptions().PollInterval
+	}
+	if options.PollInterval < defaultGitHubCheckPollInterval {
+		options.PollInterval = defaultGitHubCheckPollInterval
 	}
 	s.githubChecks = provider
 	s.githubOptions = options
@@ -706,6 +712,9 @@ func (s *Service) githubGateFromRequest(projectID string, taskID int64, req Regi
 	}
 	if pollInterval <= 0 {
 		return nil, validationError(fmt.Errorf("poll_interval_seconds must be positive"), "invalid_poll_interval", "poll_interval_seconds", "github_check_gate.poll_interval_seconds")
+	}
+	if pollInterval < defaultGitHubCheckPollInterval {
+		pollInterval = defaultGitHubCheckPollInterval
 	}
 	return &GitHubCheckGate{
 		ProjectID: projectID, TaskID: taskID, Repository: repository, CommitSHA: commitSHA,

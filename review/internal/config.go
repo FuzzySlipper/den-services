@@ -153,7 +153,7 @@ func (c *Config) validate() error {
 }
 
 func (f githubConfigFile) toConfig(values sharedconfig.Values) (GitHubConfig, error) {
-	pollInterval, err := parseOptionalDuration("github.poll_interval", f.PollInterval, 30*time.Second)
+	pollInterval, err := parseOptionalDuration("github.poll_interval", f.PollInterval, defaultGitHubCheckPollInterval)
 	if err != nil {
 		return GitHubConfig{}, err
 	}

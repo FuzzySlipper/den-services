@@ -426,6 +426,25 @@ func TestRegisterGitHubCheckGateSupersedesOlderPendingSHA(t *testing.T) {
 	}
 }
 
+func TestRegisterGitHubCheckGateClampsShortPollInterval(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(newMemoryStore(), &fakeMessages{}, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+	}})
+
+	shortInterval := 30
+	gate, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Ref: "main",
+		RequiredChecks: []string{"go test"}, RequestedBy: "codex", PollIntervalSeconds: &shortInterval,
+	})
+	if err != nil {
+		t.Fatalf("RegisterGitHubCheckGate() error = %v", err)
+	}
+	if gate.PollIntervalSeconds != int(defaultGitHubCheckPollInterval.Seconds()) {
+		t.Fatalf("PollIntervalSeconds = %d, want %d", gate.PollIntervalSeconds, int(defaultGitHubCheckPollInterval.Seconds()))
+	}
+}
+
 func TestRegisterGitHubCheckGateRecordsFailureEvidence(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()
