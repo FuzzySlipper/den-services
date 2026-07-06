@@ -162,8 +162,8 @@ type GitHubCheckOptions struct {
 
 func DefaultGitHubCheckOptions() GitHubCheckOptions {
 	return GitHubCheckOptions{
-		DefaultTimeout: 30 * time.Minute,
-		MaxTimeout:     2 * time.Hour,
+		DefaultTimeout: 2 * time.Hour,
+		MaxTimeout:     12 * time.Hour,
 		PollInterval:   defaultGitHubCheckPollInterval,
 	}
 }

@@ -21,7 +21,7 @@ Use `await_github_checks` after pushing:
   "ref": "main",
   "required_checks": ["go test", "lint"],
   "requested_by": "codex",
-  "timeout_seconds": 1800,
+  "timeout_seconds": 7200,
   "poll_interval_seconds": 120,
   "agent_profile": "codex",
   "agent_instance_id": "optional-runtime-instance",

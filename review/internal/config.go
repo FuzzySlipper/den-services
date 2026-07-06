@@ -161,11 +161,11 @@ func (f githubConfigFile) toConfig(values sharedconfig.Values) (GitHubConfig, er
 	if err != nil {
 		return GitHubConfig{}, err
 	}
-	defaultTimeout, err := parseOptionalDuration("github.default_timeout", f.DefaultTimeout, 30*time.Minute)
+	defaultTimeout, err := parseOptionalDuration("github.default_timeout", f.DefaultTimeout, DefaultGitHubCheckOptions().DefaultTimeout)
 	if err != nil {
 		return GitHubConfig{}, err
 	}
-	maxTimeout, err := parseOptionalDuration("github.max_timeout", f.MaxTimeout, 2*time.Hour)
+	maxTimeout, err := parseOptionalDuration("github.max_timeout", f.MaxTimeout, DefaultGitHubCheckOptions().MaxTimeout)
 	if err != nil {
 		return GitHubConfig{}, err
 	}

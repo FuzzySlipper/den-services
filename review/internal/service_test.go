@@ -445,6 +445,33 @@ func TestRegisterGitHubCheckGateClampsShortPollInterval(t *testing.T) {
 	}
 }
 
+func TestRegisterGitHubCheckGateAcceptsLongBoundedTimeout(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(newMemoryStore(), &fakeMessages{}, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+	}})
+
+	maxTimeout := int(DefaultGitHubCheckOptions().MaxTimeout.Seconds())
+	gate, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Ref: "main",
+		RequiredChecks: []string{"go test"}, RequestedBy: "codex", TimeoutSeconds: &maxTimeout,
+	})
+	if err != nil {
+		t.Fatalf("RegisterGitHubCheckGate() max timeout error = %v", err)
+	}
+	if want := fixedReviewTestTime().Add(DefaultGitHubCheckOptions().MaxTimeout); !gate.TimeoutAt.Equal(want) {
+		t.Fatalf("TimeoutAt = %s, want %s", gate.TimeoutAt, want)
+	}
+
+	tooLong := maxTimeout + 1
+	if _, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: "abcdef0123456789abcdef0123456789abcdef01", Ref: "main",
+		RequiredChecks: []string{"go test"}, RequestedBy: "codex", TimeoutSeconds: &tooLong,
+	}); err == nil {
+		t.Fatal("expected timeout above max to be rejected")
+	}
+}
+
 func TestRegisterGitHubCheckGateRecordsFailureEvidence(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()

@@ -27,8 +27,8 @@ github:
   token_env: "DEN_REVIEW_GITHUB_TOKEN"
   poll_interval: "30s"
   request_timeout: "10s"
-  default_timeout: "30m"
-  max_timeout: "2h"
+  default_timeout: "2h"
+  max_timeout: "12h"
   batch_size: 10
   status_url_base: "http://127.0.0.1:8096"
 `), 0o600); err != nil {
@@ -56,7 +56,7 @@ github:
 	if cfg.ProjectsToken != "review-token" || cfg.TasksToken != "review-token" || cfg.MessagesToken != "review-token" {
 		t.Fatalf("upstream tokens did not default to service token: %#v", cfg)
 	}
-	if !cfg.GitHub.Enabled || cfg.GitHub.APIBaseURL != "https://api.github.com" || cfg.GitHub.DefaultTimeout.String() != "30m0s" {
+	if !cfg.GitHub.Enabled || cfg.GitHub.APIBaseURL != "https://api.github.com" || cfg.GitHub.DefaultTimeout.String() != "2h0m0s" || cfg.GitHub.MaxTimeout.String() != "12h0m0s" {
 		t.Fatalf("github config not loaded: %#v", cfg.GitHub)
 	}
 }

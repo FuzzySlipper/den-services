@@ -16,7 +16,7 @@ github:
   token_env: "DEN_REVIEW_GITHUB_TOKEN"
   poll_interval: "2m"
   request_timeout: "10s"
-  default_timeout: "30m"
-  max_timeout: "2h"
+  default_timeout: "2h"
+  max_timeout: "12h"
   batch_size: 10
   status_url_base: "http://127.0.0.1:8096"
