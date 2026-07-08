@@ -246,7 +246,7 @@ func (s *memoryStore) NextTask(_ context.Context, projectID string, assignedTo s
 		if task.ProjectID() != projectID || !s.unblockedLocked(task.ID()) {
 			continue
 		}
-		if assignedTo != "" && task.AssignedTo() != assignedTo {
+		if assignedTo != "" && task.AssignedTo() != "" && task.AssignedTo() != assignedTo {
 			continue
 		}
 		if parentID := task.ParentID(); parentID != nil {

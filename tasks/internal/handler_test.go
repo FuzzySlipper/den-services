@@ -66,6 +66,16 @@ func TestHTTPTasksLifecycle(t *testing.T) {
 		t.Fatalf("next = %+v, want dependency %+v", next, dependency)
 	}
 
+	nextForAssignedResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(nextForAssignedResponse, authedJSONRequest(http.MethodGet, "/v1/projects/den-services/tasks/next?assigned_to=codex", ""))
+	if nextForAssignedResponse.Code != http.StatusOK {
+		t.Fatalf("next assigned status = %d body = %s", nextForAssignedResponse.Code, nextForAssignedResponse.Body.String())
+	}
+	decodeJSON(t, nextForAssignedResponse.Body, &next)
+	if next.ID != dependency.ID {
+		t.Fatalf("next assigned should include unassigned task = %+v, want dependency %+v", next, dependency)
+	}
+
 	patchReview := authedJSONRequest(http.MethodPatch, "/v1/tasks/"+int64String(&dependency.ID), `{
 		"agent": "tester",
 		"status": "review"

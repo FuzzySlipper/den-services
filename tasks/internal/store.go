@@ -833,7 +833,7 @@ candidates as (
 	where t.project_id = $1
 	  and t.status in ('planned', 'in_progress')
 	  and t.id in (select id from unblocked)
-	  and ($2::text is null or t.assigned_to = $2)
+	  and ($2::text is null or t.assigned_to is null or t.assigned_to = $2)
 	union all
 	select t.*, 1 as tier, (select count(*) from den_tasks.task_dependencies where task_id = t.id) as dep_count
 	from den_tasks.tasks t
@@ -841,7 +841,7 @@ candidates as (
 	  and t.parent_id is null
 	  and t.status = 'planned'
 	  and t.id in (select id from unblocked)
-	  and ($2::text is null or t.assigned_to = $2)
+	  and ($2::text is null or t.assigned_to is null or t.assigned_to = $2)
 )
 select ` + taskColumns + `
 from candidates

@@ -194,8 +194,10 @@ Service rules:
 - Dependency edges must stay within a project.
 - A task cannot depend on itself.
 - Adding a dependency must reject direct and transitive cycles.
-- `done` and `cancelled` dependencies are terminal and do not block
-  availability.
+- `done`, `cancelled`, and `review` dependencies do not block availability.
+  `review` means the dependency has a stable reviewable handoff point and can
+  unblock safe downstream work while review runs in parallel; it is not final
+  approval.
 - `tags` are JSON arrays of strings. Tag filters use AND semantics and must not
   match substrings.
 - `task_history` records every changed mutable field with old/new values and
@@ -213,16 +215,22 @@ Availability is a projection, not an independently mutable column:
 - `done`: `done`
 - `cancelled`: `cancelled`
 
-Unfinished dependencies are dependencies whose status is not `done` and not
-`cancelled`.
+Unfinished dependencies are dependencies whose status is not `done`, not
+`cancelled`, and not `review`. Dependencies in `review` are treated as
+provisionally satisfied for scheduling so agents can continue with downstream
+work while review runs in parallel.
 
 `next_task` ordering must preserve Core behavior:
 
 1. Candidate tier 1: `planned` or `in_progress` subtasks whose parent is
    `in_progress`.
 2. Candidate tier 2: top-level `planned` tasks.
-3. Exclude tasks with unfinished dependencies.
-4. Optional `assigned_to` filter applies in both tiers.
+3. Exclude tasks with unfinished dependencies. A dependency in `review` is not
+   unfinished for scheduling, but downstream work should treat it as provisional
+   until the dependency is approved or done.
+4. Optional `assigned_to` filter applies in both tiers. When present, it matches
+   tasks assigned to that agent **and** unassigned tasks, so unassigned work can
+   be picked up by any capable worker.
 5. Order by tier, priority ascending, dependency count ascending, then ID
    ascending.
 
@@ -338,15 +346,18 @@ Run against a migrated staging copy before flipping MCP routes:
 4. Create a subtask and verify parent/subtask list behavior.
 5. Add a dependency; verify dependency readback, `waiting_on_dependencies`, and
    `next_task` exclusion.
-6. Complete or cancel the dependency; verify availability becomes `available`
+6. Move the dependency to `review`; verify availability becomes `available` and
+   `next_task` can select the dependent task while the dependency is pending
+   review.
+7. Complete or cancel the dependency; verify availability remains `available`
    and `next_task` can select the task.
-7. Attempt direct and transitive dependency cycles; both must fail.
-8. Update task fields and verify history readback records field, old value, new
+8. Attempt direct and transitive dependency cycles; both must fail.
+9. Update task fields and verify history readback records field, old value, new
    value, actor, and timestamp.
-9. Transition to `blocked` without blocker fields; verify rejection.
-10. Transition to `blocked` with structured blocker fields; verify persistence
+10. Transition to `blocked` without blocker fields; verify rejection.
+11. Transition to `blocked` with structured blocker fields; verify persistence
     and `blocked` availability.
-11. Verify project-scope mismatch rejection for project-scoped aliases.
+12. Verify project-scope mismatch rejection for project-scoped aliases.
 
 ## Cutover Sequence
 

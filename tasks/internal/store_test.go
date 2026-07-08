@@ -75,6 +75,13 @@ func TestStoreLifecycleSmoke(t *testing.T) {
 	if next == nil || next.ID() != dependency.ID() {
 		t.Fatalf("next = %+v, want dependency %d", next, dependency.ID())
 	}
+	next, err = store.NextTask(ctx, projectID, "codex")
+	if err != nil {
+		t.Fatalf("NextTask(assigned) error = %v", err)
+	}
+	if next == nil || next.ID() != dependency.ID() {
+		t.Fatalf("next assigned should include unassigned task = %+v, want dependency %d", next, dependency.ID())
+	}
 
 	review := StatusReview
 	updated, err := store.UpdateTask(ctx, dependency.ID(), TaskPatch{Status: &review}, "store-test", now.Add(time.Minute))
