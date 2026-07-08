@@ -251,7 +251,7 @@ func (s *memoryStore) NextTask(_ context.Context, projectID string, assignedTo s
 		}
 		if parentID := task.ParentID(); parentID != nil {
 			parent := s.tasks[*parentID]
-			if parent != nil && parent.Status() == StatusInProgress && (task.Status() == StatusPlanned || task.Status() == StatusInProgress) {
+			if parent != nil && (parent.Status() == StatusInProgress || parent.Status() == StatusReview) && (task.Status() == StatusPlanned || task.Status() == StatusInProgress) {
 				candidates = append(candidates, struct {
 					task *Task
 					tier int

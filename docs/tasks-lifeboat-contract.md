@@ -223,7 +223,7 @@ work while review runs in parallel.
 `next_task` ordering must preserve Core behavior:
 
 1. Candidate tier 1: `planned` or `in_progress` subtasks whose parent is
-   `in_progress`.
+   `in_progress` or `review`.
 2. Candidate tier 2: top-level `planned` tasks.
 3. Exclude tasks with unfinished dependencies. A dependency in `review` is not
    unfinished for scheduling, but downstream work should treat it as provisional

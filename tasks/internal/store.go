@@ -829,7 +829,7 @@ with unblocked as (
 candidates as (
 	select t.*, 0 as tier, (select count(*) from den_tasks.task_dependencies where task_id = t.id) as dep_count
 	from den_tasks.tasks t
-	join den_tasks.tasks parent on parent.id = t.parent_id and parent.status = 'in_progress'
+	join den_tasks.tasks parent on parent.id = t.parent_id and parent.status in ('in_progress', 'review')
 	where t.project_id = $1
 	  and t.status in ('planned', 'in_progress')
 	  and t.id in (select id from unblocked)

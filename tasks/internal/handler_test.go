@@ -108,6 +108,56 @@ func TestHTTPTasksLifecycle(t *testing.T) {
 	}
 }
 
+func TestHTTPNextTaskIncludesUnassignedSubtasksOfReviewParents(t *testing.T) {
+	server := testServer(t)
+
+	createParent := authedJSONRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{
+		"title": "Parent design",
+		"priority": 3
+	}`)
+	parentResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(parentResponse, createParent)
+	if parentResponse.Code != http.StatusCreated {
+		t.Fatalf("create parent status = %d body = %s", parentResponse.Code, parentResponse.Body.String())
+	}
+	var parent TaskResponse
+	decodeJSON(t, parentResponse.Body, &parent)
+
+	patchParent := authedJSONRequest(http.MethodPatch, "/v1/tasks/"+int64String(&parent.ID), `{
+		"agent": "tester",
+		"status": "review"
+	}`)
+	patchResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(patchResponse, patchParent)
+	if patchResponse.Code != http.StatusOK {
+		t.Fatalf("patch parent status = %d body = %s", patchResponse.Code, patchResponse.Body.String())
+	}
+
+	createChild := authedJSONRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{
+		"title": "Follow-on implementation",
+		"priority": 1,
+		"parent_id": `+int64String(&parent.ID)+`
+	}`)
+	childResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(childResponse, createChild)
+	if childResponse.Code != http.StatusCreated {
+		t.Fatalf("create child status = %d body = %s", childResponse.Code, childResponse.Body.String())
+	}
+	var child TaskResponse
+	decodeJSON(t, childResponse.Body, &child)
+
+	nextResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(nextResponse, authedJSONRequest(http.MethodGet, "/v1/projects/den-services/tasks/next?assigned_to=codex", ""))
+	if nextResponse.Code != http.StatusOK {
+		t.Fatalf("next assigned status = %d body = %s", nextResponse.Code, nextResponse.Body.String())
+	}
+	var next TaskResponse
+	decodeJSON(t, nextResponse.Body, &next)
+	if next.ID != child.ID {
+		t.Fatalf("next assigned should include unassigned child of review parent = %+v, want child %+v", next, child)
+	}
+}
+
 func TestHTTPRequiresAuth(t *testing.T) {
 	server := testServer(t)
 	request := httptest.NewRequest(http.MethodGet, "/v1/projects/den-services/tasks", nil)
