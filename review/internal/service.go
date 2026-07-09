@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	defaultGitHubCheckPollInterval = 2 * time.Minute
+	defaultGitHubCheckPollInterval = 30 * time.Second
 	defaultGitHubHTTPErrorBackoff  = 15 * time.Minute
 )
 
