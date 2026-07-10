@@ -199,8 +199,11 @@ append_mcp_route_if_missing() {
   backup_config_file "${routes_target}" "routes.yaml"
 
   local route_indent
-  route_indent="$(awk '/^[[:space:]]*- operation:/{ match($0, /^[[:space:]]*/); print substr($0, RSTART, RLENGTH); exit }' "${routes_target}")"
-  if [[ -z "${route_indent}" ]]; then
+  route_indent="$(awk '
+    /^[[:space:]]*- operation:/ { match($0, /^[[:space:]]*/); print substr($0, RSTART, RLENGTH); found=1; exit }
+    END { if (!found) print "__missing__" }
+  ' "${routes_target}")"
+  if [[ "${route_indent}" == "__missing__" ]]; then
     route_indent="  "
   fi
 
