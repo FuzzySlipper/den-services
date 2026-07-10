@@ -38,6 +38,9 @@ func TestTerminalGateWritesAtomicallyInsertIdempotentEvents(t *testing.T) {
 			if !strings.Contains(query, "insert into den_review.github_check_gate_terminal_events") || !strings.Contains(query, "on conflict(gate_id) do nothing") {
 				t.Fatalf("query lacks atomic idempotent terminal event insert:\n%s", query)
 			}
+			if !strings.Contains(query, "coalesce(check_runs, '[]'::jsonb)") {
+				t.Fatalf("terminal event check runs are not normalized to a non-null JSON array:\n%s", query)
+			}
 		})
 	}
 }

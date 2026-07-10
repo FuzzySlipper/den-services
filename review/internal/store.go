@@ -321,7 +321,7 @@ func (s *Store) CompleteGitHubCheckGate(ctx context.Context, id int64, status st
 		nextPollAt = checkedAt.Add(time.Duration(current.PollIntervalSeconds) * time.Second)
 	}
 	gate, err := scanGitHubCheckGate(s.pool.QueryRow(ctx, completeGitHubCheckGateSQL, id, status, emptyToNil(result.Summary),
-		jsonOrNil(result.CheckRuns), emptyToNil(result.FailureSummary), emptyToNil(result.TerminalReason),
+		jsonArray(result.CheckRuns), emptyToNil(result.FailureSummary), emptyToNil(result.TerminalReason),
 		jsonOrNil(result.MissingRequiredChecks), jsonOrNil(result.ObservedCheckRuns), checkedAt, nextPollAt))
 	if errors.Is(err, pgx.ErrNoRows) {
 		current, getErr := s.getGitHubCheckGateByID(ctx, id)
@@ -338,7 +338,7 @@ func (s *Store) CompleteGitHubCheckGate(ctx context.Context, id int64, status st
 
 func (s *Store) DelayGitHubCheckGate(ctx context.Context, id int64, result GitHubCheckResult, nextPollAt time.Time, checkedAt time.Time) (*GitHubCheckGate, bool, error) {
 	gate, err := scanGitHubCheckGate(s.pool.QueryRow(ctx, delayGitHubCheckGateSQL, id, emptyToNil(result.Summary),
-		jsonOrNil(result.CheckRuns), emptyToNil(result.FailureSummary), emptyToNil(result.TerminalReason),
+		jsonArray(result.CheckRuns), emptyToNil(result.FailureSummary), emptyToNil(result.TerminalReason),
 		jsonOrNil(result.MissingRequiredChecks), jsonOrNil(result.ObservedCheckRuns), checkedAt, nextPollAt))
 	if errors.Is(err, pgx.ErrNoRows) {
 		current, getErr := s.getGitHubCheckGateByID(ctx, id)
@@ -601,6 +601,17 @@ func jsonOrNil(value any) any {
 	return data
 }
 
+// jsonArray normalizes slice-backed JSON fields that cross the durable gate
+// boundary. Terminal event arrays are not nullable, and an empty observation
+// is a meaningful fact rather than missing data.
+func jsonArray(value any) []byte {
+	data, err := json.Marshal(value)
+	if err != nil || string(data) == "null" {
+		return []byte("[]")
+	}
+	return data
+}
+
 func emptyToNil(value string) any {
 	if value == "" {
 		return nil
@@ -706,7 +717,7 @@ with updated as (
 		required_checks, check_runs, observed_check_runs, missing_required_checks, summary, failure_summary,
 		requested_by, agent_profile, agent_instance_id, session_key, gate_created_at, completed_at, created_at)
 	select id, project_id, task_id, repository, commit_sha, ref, status, terminal_reason,
-		required_checks, check_runs, observed_check_runs, missing_required_checks, summary, failure_summary,
+		required_checks, coalesce(check_runs, '[]'::jsonb), observed_check_runs, missing_required_checks, summary, failure_summary,
 		requested_by, agent_profile, agent_instance_id, session_key, created_at, completed_at, $4
 	from updated
 	on conflict(gate_id) do nothing
@@ -759,7 +770,7 @@ returning *
 		required_checks, check_runs, observed_check_runs, missing_required_checks, summary, failure_summary,
 		requested_by, agent_profile, agent_instance_id, session_key, gate_created_at, completed_at, created_at)
 	select id, project_id, task_id, repository, commit_sha, ref, status, terminal_reason,
-		required_checks, check_runs, observed_check_runs, missing_required_checks, summary, failure_summary,
+		required_checks, coalesce(check_runs, '[]'::jsonb), observed_check_runs, missing_required_checks, summary, failure_summary,
 		requested_by, agent_profile, agent_instance_id, session_key, created_at, completed_at, $9
 	from updated where status in ('passed','failed','timed_out','superseded')
 	on conflict(gate_id) do nothing

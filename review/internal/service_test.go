@@ -518,6 +518,60 @@ func TestRegisterGitHubCheckGateSupersedesOlderPendingSHA(t *testing.T) {
 	}
 }
 
+func TestRegisterGitHubCheckGateSupersedesNoCommit422WithNormalizedTerminalRuns(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	invalidSHA := "0123456789abcdef0123456789abcdef01234567"
+	correctedSHA := "abcdef0123456789abcdef0123456789abcdef01"
+	github := &fakeGitHubChecks{errorsBySHA: map[string]error{
+		invalidSHA: &GitHubHTTPError{Status: "422 Unprocessable Entity", StatusCode: http.StatusUnprocessableEntity, Message: "No commit found for SHA"},
+	}}
+	service := newTestService(store, messages, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+	}})
+	service.ConfigureGitHubChecks(github, GitHubCheckOptions{DefaultTimeout: time.Hour, MaxTimeout: 2 * time.Hour, PollInterval: time.Minute})
+
+	first, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: invalidSHA, Ref: "main", RequiredChecks: []string{"Verify"}, RequestedBy: "codex",
+	})
+	if err != nil {
+		t.Fatalf("invalid-SHA RegisterGitHubCheckGate() error = %v", err)
+	}
+	if err := service.PollGitHubCheckGates(ctx, 10); err != nil {
+		t.Fatalf("PollGitHubCheckGates() error = %v", err)
+	}
+	if stored := store.githubCheckGates[first.ID]; stored.CheckRuns == nil {
+		t.Fatalf("422 retry left nullable check runs: %+v", stored)
+	}
+
+	if _, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: correctedSHA, Ref: "main", RequiredChecks: []string{"Verify"}, RequestedBy: "codex",
+	}); err != nil {
+		t.Fatalf("corrected-SHA RegisterGitHubCheckGate() error = %v", err)
+	}
+	if old := store.githubCheckGates[first.ID]; old.Status != GitHubCheckGateStatusSuperseded {
+		t.Fatalf("invalid SHA gate was not superseded: %+v", old)
+	}
+	page, err := service.WaitGitHubCheckGateEvents(ctx, ListGitHubCheckGateEventsQuery{ProjectID: "den-services", TaskID: 42}, 0)
+	if err != nil || len(page.Events) != 1 {
+		t.Fatalf("supersession events = %+v err=%v", page, err)
+	}
+	if page.Events[0].CheckRuns == nil || len(page.Events[0].CheckRuns) != 0 {
+		t.Fatalf("supersession terminal event check runs = %#v, want non-nil empty array", page.Events[0].CheckRuns)
+	}
+	foundSupersessionEvidence := false
+	for _, message := range messages.appended {
+		if message.Intent == "github_checks_superseded" {
+			foundSupersessionEvidence = true
+			break
+		}
+	}
+	if !foundSupersessionEvidence {
+		t.Fatalf("supersession evidence was not posted: %+v", messages.appended)
+	}
+}
+
 func TestRegisterGitHubCheckGateClampsShortPollInterval(t *testing.T) {
 	ctx := context.Background()
 	service := newTestService(newMemoryStore(), &fakeMessages{}, &fakeTasks{tasks: map[int64]TaskContext{

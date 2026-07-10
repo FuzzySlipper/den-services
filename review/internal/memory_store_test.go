@@ -347,7 +347,7 @@ func (s *memoryStore) CompleteGitHubCheckGate(_ context.Context, id int64, statu
 	gate.Status = status
 	gate.Summary = result.Summary
 	gate.FailureSummary = result.FailureSummary
-	gate.CheckRuns = result.CheckRuns
+	gate.CheckRuns = normalizedGitHubCheckRuns(result.CheckRuns)
 	gate.ObservedCheckRuns = result.ObservedCheckRuns
 	gate.MissingRequiredChecks = result.MissingRequiredChecks
 	gate.TerminalReason = result.TerminalReason
@@ -380,13 +380,20 @@ func (s *memoryStore) recordGitHubCheckGateEvent(gate *GitHubCheckGate, createdA
 		SchemaVersion: GitHubCheckGateTerminalEventSchemaVersion, GateID: gate.ID,
 		ProjectID: gate.ProjectID, TaskID: gate.TaskID, Repository: gate.Repository, CommitSHA: gate.CommitSHA,
 		Ref: gate.Ref, Status: gate.Status, TerminalReason: gate.TerminalReason, RequiredChecks: gate.RequiredChecks,
-		CheckRuns: gate.CheckRuns, ObservedCheckRuns: gate.ObservedCheckRuns, MissingRequiredChecks: gate.MissingRequiredChecks,
+		CheckRuns: normalizedGitHubCheckRuns(gate.CheckRuns), ObservedCheckRuns: gate.ObservedCheckRuns, MissingRequiredChecks: gate.MissingRequiredChecks,
 		Summary: gate.Summary, FailureSummary: gate.FailureSummary, RequestedBy: gate.RequestedBy,
 		AgentProfile: gate.AgentProfile, AgentInstanceID: gate.AgentInstanceID, SessionKey: gate.SessionKey,
 		GateCreatedAt: gate.CreatedAt, CompletedAt: completedAt, CreatedAt: createdAt,
 	}
 	s.nextGitHubCheckGateEventID++
 	s.githubCheckGateEvents[event.ID] = event
+}
+
+func normalizedGitHubCheckRuns(runs []GitHubCheckRun) []GitHubCheckRun {
+	if runs == nil {
+		return []GitHubCheckRun{}
+	}
+	return runs
 }
 
 func (s *memoryStore) DelayGitHubCheckGate(_ context.Context, id int64, result GitHubCheckResult, nextPollAt time.Time, checkedAt time.Time) (*GitHubCheckGate, bool, error) {
@@ -400,7 +407,7 @@ func (s *memoryStore) DelayGitHubCheckGate(_ context.Context, id int64, result G
 	}
 	gate.Summary = result.Summary
 	gate.FailureSummary = result.FailureSummary
-	gate.CheckRuns = result.CheckRuns
+	gate.CheckRuns = normalizedGitHubCheckRuns(result.CheckRuns)
 	gate.ObservedCheckRuns = result.ObservedCheckRuns
 	gate.MissingRequiredChecks = result.MissingRequiredChecks
 	gate.TerminalReason = result.TerminalReason
