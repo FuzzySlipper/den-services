@@ -21,3 +21,5 @@ github:
   max_timeout: "12h"
   batch_size: 10
   status_url_base: "http://127.0.0.1:8096"
+  event_wait_max: "55s"
+  event_wait_poll_interval: "500ms"

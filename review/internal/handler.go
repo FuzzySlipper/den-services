@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"den-services/shared/api"
 )
@@ -31,6 +33,7 @@ type ReviewUseCases interface {
 	WorkflowSummaryForTask(ctx context.Context, taskID int64) (WorkflowSummary, error)
 	RegisterGitHubCheckGate(ctx context.Context, projectID string, taskID int64, req RegisterGitHubCheckGateRequest) (*GitHubCheckGate, error)
 	GetGitHubCheckGate(ctx context.Context, projectID string, taskID int64, commitSHA string) (*GitHubCheckGate, error)
+	WaitGitHubCheckGateEvents(ctx context.Context, query ListGitHubCheckGateEventsQuery, wait time.Duration) (GitHubCheckGateEventPage, error)
 }
 
 type Handler struct {
@@ -53,6 +56,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/packets", h.postPacket)
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates", h.registerGitHubCheckGate)
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}", h.getGitHubCheckGate)
+	mux.HandleFunc("GET /v1/projects/{project_id}/review/github-check-gate-events", h.waitGitHubCheckGateEvents)
 	mux.HandleFunc("POST /v1/tasks/{task_id}/review/rounds", h.createRoundForTask)
 	mux.HandleFunc("GET /v1/tasks/{task_id}/review/rounds", h.listRoundsForTask)
 	mux.HandleFunc("GET /v1/tasks/{task_id}/review/findings", h.listFindingsForTask)
@@ -366,6 +370,48 @@ func (h *Handler) getGitHubCheckGate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.WriteJSON(w, http.StatusOK, toGitHubCheckGateResponse(gate))
+}
+
+func (h *Handler) waitGitHubCheckGateEvents(w http.ResponseWriter, r *http.Request) {
+	query := ListGitHubCheckGateEventsQuery{ProjectID: r.PathValue("project_id")}
+	var err error
+	if query.AfterID, err = optionalQueryInt64(r, "after_id"); err != nil {
+		writeReviewError(w, badRequest(err))
+		return
+	}
+	if query.TaskID, err = optionalQueryInt64(r, "task_id"); err != nil {
+		writeReviewError(w, badRequest(err))
+		return
+	}
+	limit, err := optionalQueryInt64(r, "limit")
+	if err != nil {
+		writeReviewError(w, badRequest(err))
+		return
+	}
+	query.Limit = int(limit)
+	waitMS, err := optionalQueryInt64(r, "wait_ms")
+	if err != nil {
+		writeReviewError(w, badRequest(err))
+		return
+	}
+	page, err := h.service.WaitGitHubCheckGateEvents(r.Context(), query, time.Duration(waitMS)*time.Millisecond)
+	if err != nil {
+		writeReviewError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, page)
+}
+
+func optionalQueryInt64(r *http.Request, name string) (int64, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return 0, nil
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value < 0 {
+		return 0, fmt.Errorf("%s must be a non-negative integer", name)
+	}
+	return value, nil
 }
 
 func (h *Handler) taskID(w http.ResponseWriter, r *http.Request) (int64, bool) {

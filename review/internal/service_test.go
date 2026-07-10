@@ -389,6 +389,61 @@ func TestRegisterGitHubCheckGateRecordsPassEvidence(t *testing.T) {
 	}
 }
 
+func TestTerminalGitHubCheckGateEventIsIdempotentAndResumable(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	service := newTestService(store, &fakeMessages{}, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+	}})
+	service.ConfigureGitHubChecks(&fakeGitHubChecks{result: GitHubCheckResult{
+		Status: GitHubCheckGateStatusPassed, Summary: "passed", TerminalReason: GitHubCheckTerminalReasonChecksPassed,
+		ObservedCheckRuns: []GitHubCheckRun{{Name: "go test", Status: "completed", Conclusion: "success", DetailsURL: "https://github.test/check/1"}},
+	}}, GitHubCheckOptions{DefaultTimeout: time.Hour, MaxTimeout: 2 * time.Hour, PollInterval: time.Minute})
+
+	gate, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Ref: "main",
+		RequiredChecks: []string{"go test"}, RequestedBy: "codex", AgentProfile: "codex-cli",
+		AgentInstanceID: "agent-1", SessionKey: "session-1",
+	})
+	if err != nil {
+		t.Fatalf("RegisterGitHubCheckGate() error = %v", err)
+	}
+	if _, changed, err := store.CompleteGitHubCheckGate(ctx, gate.ID, GitHubCheckGateStatusPassed, GitHubCheckResult{}, fixedReviewTestTime()); err != nil || changed {
+		t.Fatalf("duplicate completion changed=%v err=%v", changed, err)
+	}
+	page, err := service.WaitGitHubCheckGateEvents(ctx, ListGitHubCheckGateEventsQuery{ProjectID: "den-services", TaskID: 42}, 0)
+	if err != nil {
+		t.Fatalf("WaitGitHubCheckGateEvents() error = %v", err)
+	}
+	if len(page.Events) != 1 || page.Events[0].GateID != gate.ID || page.Events[0].SchemaVersion != 1 || page.Events[0].SessionKey != "session-1" {
+		t.Fatalf("terminal event = %+v", page)
+	}
+	if got := page.Events[0].ObservedCheckRuns[0].DetailsURL; got != "https://github.test/check/1" {
+		t.Fatalf("observed check URL = %q", got)
+	}
+	resumed, err := service.WaitGitHubCheckGateEvents(ctx, ListGitHubCheckGateEventsQuery{
+		ProjectID: "den-services", AfterID: page.NextCursor,
+	}, 0)
+	if err != nil || len(resumed.Events) != 0 || resumed.NextCursor != page.NextCursor {
+		t.Fatalf("resumed page = %+v err=%v", resumed, err)
+	}
+}
+
+func TestWaitGitHubCheckGateEventsHasBoundedEmptyWait(t *testing.T) {
+	service := newTestService(newMemoryStore(), &fakeMessages{}, &fakeTasks{})
+	service.ConfigureGitHubChecks(nil, GitHubCheckOptions{EventWaitMax: 20 * time.Millisecond, EventWaitPoll: time.Millisecond})
+	started := time.Now()
+	page, err := service.WaitGitHubCheckGateEvents(context.Background(), ListGitHubCheckGateEventsQuery{
+		ProjectID: "den-services", AfterID: 9,
+	}, time.Second)
+	if err != nil {
+		t.Fatalf("WaitGitHubCheckGateEvents() error = %v", err)
+	}
+	if !page.TimedOut || page.NextCursor != 9 || time.Since(started) > 250*time.Millisecond {
+		t.Fatalf("bounded page = %+v elapsed=%s", page, time.Since(started))
+	}
+}
+
 func TestRegisterGitHubCheckGateSupersedesOlderPendingSHA(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()
@@ -423,6 +478,10 @@ func TestRegisterGitHubCheckGateSupersedesOlderPendingSHA(t *testing.T) {
 	}
 	if old.EvidenceMessageStatus != GitHubCheckEvidenceStatusPosted {
 		t.Fatalf("superseded evidence was not marked posted: %+v", old)
+	}
+	page, err := service.WaitGitHubCheckGateEvents(ctx, ListGitHubCheckGateEventsQuery{ProjectID: "den-services", TaskID: 42}, 0)
+	if err != nil || len(page.Events) != 1 || page.Events[0].GateID != first.ID || page.Events[0].TerminalReason != GitHubCheckTerminalReasonSuperseded {
+		t.Fatalf("supersession event = %+v err=%v", page, err)
 	}
 }
 

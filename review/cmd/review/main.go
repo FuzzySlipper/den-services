@@ -55,6 +55,8 @@ func main() {
 			PollInterval:      cfg.GitHub.PollInterval,
 			MissingCheckGrace: cfg.GitHub.MissingCheckGrace,
 			StatusURLBase:     cfg.GitHub.StatusURLBase,
+			EventWaitMax:      cfg.GitHub.EventWaitMax,
+			EventWaitPoll:     cfg.GitHub.EventWaitPoll,
 		})
 		go review.NewGitHubCheckWatcher(service, cfg.GitHub.PollInterval, cfg.GitHub.BatchSize, slog.Default()).Run(ctx)
 	}

@@ -3,26 +3,30 @@ package review
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
 
 type memoryStore struct {
-	nextRoundID           int64
-	nextFindingID         int64
-	nextPacketID          int64
-	nextGitHubCheckGateID int64
-	rounds                map[int64]*ReviewRound
-	findings              map[int64]*ReviewFinding
-	packets               map[int64]*ReviewPacket
-	githubCheckGates      map[int64]*GitHubCheckGate
+	nextRoundID                int64
+	nextFindingID              int64
+	nextPacketID               int64
+	nextGitHubCheckGateID      int64
+	nextGitHubCheckGateEventID int64
+	rounds                     map[int64]*ReviewRound
+	findings                   map[int64]*ReviewFinding
+	packets                    map[int64]*ReviewPacket
+	githubCheckGates           map[int64]*GitHubCheckGate
+	githubCheckGateEvents      map[int64]*GitHubCheckGateTerminalEvent
 }
 
 func newMemoryStore() *memoryStore {
 	return &memoryStore{
-		nextRoundID: 1, nextFindingID: 1, nextPacketID: 1, nextGitHubCheckGateID: 1,
+		nextRoundID: 1, nextFindingID: 1, nextPacketID: 1, nextGitHubCheckGateID: 1, nextGitHubCheckGateEventID: 1,
 		rounds: map[int64]*ReviewRound{}, findings: map[int64]*ReviewFinding{}, packets: map[int64]*ReviewPacket{},
-		githubCheckGates: map[int64]*GitHubCheckGate{},
+		githubCheckGates:      map[int64]*GitHubCheckGate{},
+		githubCheckGateEvents: map[int64]*GitHubCheckGateTerminalEvent{},
 	}
 }
 
@@ -239,6 +243,7 @@ func (s *memoryStore) RegisterGitHubCheckGate(_ context.Context, gate *GitHubChe
 			existing.EvidenceMessageStatus = GitHubCheckEvidenceStatusPending
 			existing.EvidenceMessageError = ""
 			existing.UpdatedAt = now
+			s.recordGitHubCheckGateEvent(existing, now)
 			copied := *existing
 			superseded = append(superseded, &copied)
 		}
@@ -278,6 +283,27 @@ func (s *memoryStore) GetGitHubCheckGate(_ context.Context, projectID string, ta
 		}
 	}
 	return nil, notFound(fmt.Errorf("github check gate not found for task %d commit %s", taskID, commitSHA), "github_check_gate_not_found")
+}
+
+func (s *memoryStore) ListGitHubCheckGateEvents(_ context.Context, query ListGitHubCheckGateEventsQuery) ([]*GitHubCheckGateTerminalEvent, error) {
+	ids := make([]int, 0, len(s.githubCheckGateEvents))
+	for id := range s.githubCheckGateEvents {
+		ids = append(ids, int(id))
+	}
+	sort.Ints(ids)
+	events := make([]*GitHubCheckGateTerminalEvent, 0)
+	for _, rawID := range ids {
+		event := s.githubCheckGateEvents[int64(rawID)]
+		if event.ProjectID != query.ProjectID || event.ID <= query.AfterID || (query.TaskID != 0 && event.TaskID != query.TaskID) {
+			continue
+		}
+		copied := *event
+		events = append(events, &copied)
+		if len(events) == query.Limit {
+			break
+		}
+	}
+	return events, nil
 }
 
 func (s *memoryStore) ListPendingGitHubCheckGates(_ context.Context, now time.Time, limit int) ([]*GitHubCheckGate, error) {
@@ -330,12 +356,37 @@ func (s *memoryStore) CompleteGitHubCheckGate(_ context.Context, id int64, statu
 		gate.CompletedAt = &checkedAt
 		gate.EvidenceMessageStatus = GitHubCheckEvidenceStatusPending
 		gate.EvidenceMessageError = ""
+		s.recordGitHubCheckGateEvent(gate, checkedAt)
 	} else {
 		gate.NextPollAt = checkedAt.Add(time.Duration(gate.PollIntervalSeconds) * time.Second)
 	}
 	gate.UpdatedAt = checkedAt
 	copied := *gate
 	return &copied, true, nil
+}
+
+func (s *memoryStore) recordGitHubCheckGateEvent(gate *GitHubCheckGate, createdAt time.Time) {
+	for _, event := range s.githubCheckGateEvents {
+		if event.GateID == gate.ID {
+			return
+		}
+	}
+	completedAt := createdAt
+	if gate.CompletedAt != nil {
+		completedAt = *gate.CompletedAt
+	}
+	event := &GitHubCheckGateTerminalEvent{
+		ID: s.nextGitHubCheckGateEventID, Schema: GitHubCheckGateTerminalEventSchema,
+		SchemaVersion: GitHubCheckGateTerminalEventSchemaVersion, GateID: gate.ID,
+		ProjectID: gate.ProjectID, TaskID: gate.TaskID, Repository: gate.Repository, CommitSHA: gate.CommitSHA,
+		Ref: gate.Ref, Status: gate.Status, TerminalReason: gate.TerminalReason, RequiredChecks: gate.RequiredChecks,
+		CheckRuns: gate.CheckRuns, ObservedCheckRuns: gate.ObservedCheckRuns, MissingRequiredChecks: gate.MissingRequiredChecks,
+		Summary: gate.Summary, FailureSummary: gate.FailureSummary, RequestedBy: gate.RequestedBy,
+		AgentProfile: gate.AgentProfile, AgentInstanceID: gate.AgentInstanceID, SessionKey: gate.SessionKey,
+		GateCreatedAt: gate.CreatedAt, CompletedAt: completedAt, CreatedAt: createdAt,
+	}
+	s.nextGitHubCheckGateEventID++
+	s.githubCheckGateEvents[event.ID] = event
 }
 
 func (s *memoryStore) DelayGitHubCheckGate(_ context.Context, id int64, result GitHubCheckResult, nextPollAt time.Time, checkedAt time.Time) (*GitHubCheckGate, bool, error) {

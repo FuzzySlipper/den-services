@@ -1,6 +1,7 @@
 package review
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,6 +19,35 @@ func TestReviewServerProtectsAPIByDefault(t *testing.T) {
 
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestReviewServerExposesTerminalGateEventCursor(t *testing.T) {
+	store := newMemoryStore()
+	completedAt := time.Now().UTC()
+	store.recordGitHubCheckGateEvent(&GitHubCheckGate{
+		ID: 7, ProjectID: "den-services", TaskID: 42, Repository: "owner/repo", CommitSHA: "abc", Ref: "main",
+		Status: GitHubCheckGateStatusSuperseded, TerminalReason: GitHubCheckTerminalReasonSuperseded,
+		RequestedBy: "codex", CreatedAt: completedAt.Add(-time.Minute), CompletedAt: &completedAt,
+	}, completedAt)
+	service := newTestService(store, &fakeMessages{}, &fakeTasks{})
+	info, _ := health.NewBuildInfo("review", "0.1.0", "testcommit", completedAt)
+	server, err := NewHTTPServer(&Config{
+		BindAddr: "127.0.0.1:0", ServiceToken: "token", AllowUnauthenticatedLocalDev: true,
+		HTTP: HTTPConfig{ReadHeaderTimeout: 5 * time.Second},
+	}, info, service)
+	if err != nil {
+		t.Fatalf("NewHTTPServer() error = %v", err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/projects/den-services/review/github-check-gate-events?after_id=0&task_id=42", nil)
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+	var page GitHubCheckGateEventPage
+	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, response.Body.String())
+	}
+	if response.Code != http.StatusOK || len(page.Events) != 1 || page.Events[0].GateID != 7 || page.NextCursor != 1 {
+		t.Fatalf("response code=%d page=%+v", response.Code, page)
 	}
 }
 

@@ -49,6 +49,9 @@ const (
 	GitHubCheckTerminalReasonTimedOut              = "timeout"
 	GitHubCheckTerminalReasonSuperseded            = "superseded"
 
+	GitHubCheckGateTerminalEventSchema        = "den_review.github_check_gate_terminal_event"
+	GitHubCheckGateTerminalEventSchemaVersion = 1
+
 	GitHubCheckEvidenceStatusNotRequired = "not_required"
 	GitHubCheckEvidenceStatusPending     = "pending"
 	GitHubCheckEvidenceStatusPosted      = "posted"
@@ -274,6 +277,48 @@ type GitHubCheckResult struct {
 	ObservedCheckRuns         []GitHubCheckRun
 	MissingRequiredChecks     []string
 	AllObservedChecksTerminal bool
+}
+
+// GitHubCheckGateTerminalEvent is the immutable machine wake fact emitted once
+// for each gate that leaves pending. Its ID is the durable consumption cursor.
+type GitHubCheckGateTerminalEvent struct {
+	ID                    int64            `json:"id"`
+	Schema                string           `json:"schema"`
+	SchemaVersion         int              `json:"schema_version"`
+	GateID                int64            `json:"gate_id"`
+	ProjectID             string           `json:"project_id"`
+	TaskID                int64            `json:"task_id"`
+	Repository            string           `json:"repository"`
+	CommitSHA             string           `json:"commit_sha"`
+	Ref                   string           `json:"ref"`
+	Status                string           `json:"status"`
+	TerminalReason        string           `json:"terminal_reason"`
+	RequiredChecks        []string         `json:"required_checks"`
+	CheckRuns             []GitHubCheckRun `json:"check_runs"`
+	ObservedCheckRuns     []GitHubCheckRun `json:"observed_check_runs"`
+	MissingRequiredChecks []string         `json:"missing_required_checks"`
+	Summary               string           `json:"summary,omitempty"`
+	FailureSummary        string           `json:"failure_summary,omitempty"`
+	RequestedBy           string           `json:"requested_by"`
+	AgentProfile          string           `json:"agent_profile,omitempty"`
+	AgentInstanceID       string           `json:"agent_instance_id,omitempty"`
+	SessionKey            string           `json:"session_key,omitempty"`
+	GateCreatedAt         time.Time        `json:"gate_created_at"`
+	CompletedAt           time.Time        `json:"completed_at"`
+	CreatedAt             time.Time        `json:"created_at"`
+}
+
+type ListGitHubCheckGateEventsQuery struct {
+	ProjectID string
+	TaskID    int64
+	AfterID   int64
+	Limit     int
+}
+
+type GitHubCheckGateEventPage struct {
+	Events     []*GitHubCheckGateTerminalEvent `json:"events"`
+	NextCursor int64                           `json:"next_cursor"`
+	TimedOut   bool                            `json:"timed_out"`
 }
 
 func validGitHubCheckGateStatus(status string) bool {

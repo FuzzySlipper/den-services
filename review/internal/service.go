@@ -14,6 +14,8 @@ const (
 	defaultGitHubCheckPollInterval = 30 * time.Second
 	defaultGitHubMissingCheckGrace = 2 * time.Minute
 	defaultGitHubHTTPErrorBackoff  = 15 * time.Minute
+	defaultGitHubEventWaitMax      = 55 * time.Second
+	defaultGitHubEventWaitPoll     = 500 * time.Millisecond
 )
 
 type ProjectValidator interface {
@@ -58,6 +60,7 @@ type ReviewStore interface {
 	TimeoutGitHubCheckGate(ctx context.Context, id int64, checkedAt time.Time) (*GitHubCheckGate, bool, error)
 	MarkGitHubCheckGateEvidencePosted(ctx context.Context, id int64, messageID int64, at time.Time) (*GitHubCheckGate, error)
 	RecordGitHubCheckGateEvidenceError(ctx context.Context, id int64, messageError string, at time.Time) (*GitHubCheckGate, error)
+	ListGitHubCheckGateEvents(ctx context.Context, query ListGitHubCheckGateEventsQuery) ([]*GitHubCheckGateTerminalEvent, error)
 }
 
 type ListFindingsQuery struct {
@@ -160,6 +163,8 @@ type GitHubCheckOptions struct {
 	PollInterval      time.Duration
 	MissingCheckGrace time.Duration
 	StatusURLBase     string
+	EventWaitMax      time.Duration
+	EventWaitPoll     time.Duration
 }
 
 func DefaultGitHubCheckOptions() GitHubCheckOptions {
@@ -168,6 +173,8 @@ func DefaultGitHubCheckOptions() GitHubCheckOptions {
 		MaxTimeout:        12 * time.Hour,
 		PollInterval:      defaultGitHubCheckPollInterval,
 		MissingCheckGrace: defaultGitHubMissingCheckGrace,
+		EventWaitMax:      defaultGitHubEventWaitMax,
+		EventWaitPoll:     defaultGitHubEventWaitPoll,
 	}
 }
 
@@ -187,8 +194,62 @@ func (s *Service) ConfigureGitHubChecks(provider GitHubCheckProvider, options Gi
 	if options.MissingCheckGrace <= 0 {
 		options.MissingCheckGrace = DefaultGitHubCheckOptions().MissingCheckGrace
 	}
+	if options.EventWaitMax <= 0 {
+		options.EventWaitMax = DefaultGitHubCheckOptions().EventWaitMax
+	}
+	if options.EventWaitPoll <= 0 {
+		options.EventWaitPoll = DefaultGitHubCheckOptions().EventWaitPoll
+	}
 	s.githubChecks = provider
 	s.githubOptions = options
+}
+
+func (s *Service) WaitGitHubCheckGateEvents(ctx context.Context, query ListGitHubCheckGateEventsQuery, wait time.Duration) (GitHubCheckGateEventPage, error) {
+	query.ProjectID = strings.TrimSpace(query.ProjectID)
+	if query.ProjectID == "" {
+		return GitHubCheckGateEventPage{}, badRequest(ErrMissingProjectID)
+	}
+	if query.TaskID < 0 || query.AfterID < 0 || query.Limit < 0 || wait < 0 {
+		return GitHubCheckGateEventPage{}, badRequest(errors.New("task_id, after_id, limit, and wait must not be negative"))
+	}
+	if query.Limit == 0 {
+		query.Limit = 50
+	}
+	if query.Limit > 100 {
+		query.Limit = 100
+	}
+	if wait > s.githubOptions.EventWaitMax {
+		wait = s.githubOptions.EventWaitMax
+	}
+	var timeout <-chan time.Time
+	var timeoutTimer *time.Timer
+	if wait > 0 {
+		timeoutTimer = time.NewTimer(wait)
+		defer timeoutTimer.Stop()
+		timeout = timeoutTimer.C
+	}
+	for {
+		events, err := s.store.ListGitHubCheckGateEvents(ctx, query)
+		if err != nil {
+			return GitHubCheckGateEventPage{}, err
+		}
+		if len(events) > 0 {
+			return GitHubCheckGateEventPage{Events: events, NextCursor: events[len(events)-1].ID}, nil
+		}
+		if wait == 0 {
+			return GitHubCheckGateEventPage{Events: []*GitHubCheckGateTerminalEvent{}, NextCursor: query.AfterID}, nil
+		}
+		timer := time.NewTimer(s.githubOptions.EventWaitPoll)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return GitHubCheckGateEventPage{}, ctx.Err()
+		case <-timeout:
+			timer.Stop()
+			return GitHubCheckGateEventPage{Events: []*GitHubCheckGateTerminalEvent{}, NextCursor: query.AfterID, TimedOut: true}, nil
+		case <-timer.C:
+		}
+	}
 }
 
 func (s *Service) CheckStore(ctx context.Context) error {

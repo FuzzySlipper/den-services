@@ -42,6 +42,8 @@ type GitHubConfig struct {
 	MaxTimeout        time.Duration
 	BatchSize         int
 	StatusURLBase     string
+	EventWaitMax      time.Duration
+	EventWaitPoll     time.Duration
 }
 
 type configFile struct {
@@ -74,6 +76,8 @@ type githubConfigFile struct {
 	MaxTimeout        string `yaml:"max_timeout"`
 	BatchSize         int    `yaml:"batch_size"`
 	StatusURLBase     string `yaml:"status_url_base"`
+	EventWaitMax      string `yaml:"event_wait_max"`
+	EventWaitPoll     string `yaml:"event_wait_poll_interval"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -175,6 +179,14 @@ func (f githubConfigFile) toConfig(values sharedconfig.Values) (GitHubConfig, er
 	if err != nil {
 		return GitHubConfig{}, err
 	}
+	eventWaitMax, err := parseOptionalDuration("github.event_wait_max", f.EventWaitMax, defaultGitHubEventWaitMax)
+	if err != nil {
+		return GitHubConfig{}, err
+	}
+	eventWaitPoll, err := parseOptionalDuration("github.event_wait_poll_interval", f.EventWaitPoll, defaultGitHubEventWaitPoll)
+	if err != nil {
+		return GitHubConfig{}, err
+	}
 	tokenEnv := strings.TrimSpace(f.TokenEnv)
 	apiBaseURL := strings.TrimRight(strings.TrimSpace(f.APIBaseURL), "/")
 	if apiBaseURL == "" {
@@ -189,6 +201,7 @@ func (f githubConfigFile) toConfig(values sharedconfig.Values) (GitHubConfig, er
 		Token: values.String(tokenEnv, ""), PollInterval: pollInterval, MissingCheckGrace: missingCheckGrace, RequestTimeout: requestTimeout,
 		DefaultTimeout: defaultTimeout, MaxTimeout: maxTimeout, BatchSize: batchSize,
 		StatusURLBase: strings.TrimRight(strings.TrimSpace(f.StatusURLBase), "/"),
+		EventWaitMax:  eventWaitMax, EventWaitPoll: eventWaitPoll,
 	}, nil
 }
 
@@ -216,6 +229,9 @@ func (c GitHubConfig) validate() error {
 	}
 	if c.BatchSize <= 0 {
 		return errors.New("github.batch_size must be positive")
+	}
+	if c.EventWaitMax <= 0 || c.EventWaitPoll <= 0 || c.EventWaitPoll > c.EventWaitMax {
+		return errors.New("github event wait durations must be positive and poll interval must not exceed max")
 	}
 	return nil
 }
