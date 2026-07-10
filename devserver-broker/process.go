@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -41,13 +44,13 @@ func StopProcessGroup(pid int, timeout time.Duration) error {
 	if pid <= 0 {
 		return nil
 	}
-	if !processAlive(pid) {
+	if !processGroupAlive(pid) {
 		return nil
 	}
 	_ = syscall.Kill(-pid, syscall.SIGTERM)
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if !processAlive(pid) {
+		if !processGroupAlive(pid) {
 			return nil
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -63,7 +66,83 @@ func processAlive(pid int) bool {
 		return false
 	}
 	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
+	if err != nil && !errors.Is(err, syscall.EPERM) {
+		return false
+	}
+	return !processZombie(pid)
+}
+
+func processZombie(pid int) bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return false
+	}
+	closing := strings.LastIndex(string(data), ")")
+	if closing < 0 {
+		return false
+	}
+	fields := strings.Fields(string(data)[closing+1:])
+	return len(fields) > 0 && fields[0] == "Z"
+}
+
+// processGroupAlive reports whether a broker-owned process group still has a
+// member. A shell or npm launcher can exit after it starts a long-lived Node
+// host, while that host remains in the launcher's process group. Broker
+// sessions are therefore owned by the group ID established at start, not just
+// the original launcher PID.
+func processGroupAlive(pgid int) bool {
+	if pgid <= 0 {
+		return false
+	}
+	err := syscall.Kill(-pgid, 0)
+	if err != nil && !errors.Is(err, syscall.EPERM) {
+		return false
+	}
+	if runtime.GOOS != "linux" {
+		return true
+	}
+	return linuxProcessGroupAlive(pgid)
+}
+
+func linuxProcessGroupAlive(pgid int) bool {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return true
+	}
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || pid <= 0 {
+			continue
+		}
+		state, groupID, ok := linuxProcessStateAndGroup(pid)
+		if ok && state != "Z" && groupID == pgid {
+			return true
+		}
+	}
+	return false
+}
+
+func linuxProcessStateAndGroup(pid int) (string, int, bool) {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return "", 0, false
+	}
+	closing := strings.LastIndex(string(data), ")")
+	if closing < 0 {
+		return "", 0, false
+	}
+	fields := strings.Fields(string(data)[closing+1:])
+	if len(fields) < 3 {
+		return "", 0, false
+	}
+	groupID, err := strconv.Atoi(fields[2])
+	if err != nil {
+		return "", 0, false
+	}
+	return fields[0], groupID, true
 }
 
 func mergeEnv(base []string, values map[string]string) []string {

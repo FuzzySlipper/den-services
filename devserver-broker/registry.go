@@ -163,7 +163,7 @@ func (r *LeaseRegistry) Save(leases []LeaseRecord) error {
 func pruneDeadLeases(leases []LeaseRecord) []LeaseRecord {
 	filtered := leases[:0]
 	for _, lease := range leases {
-		if processAlive(lease.PID) {
+		if processGroupAlive(lease.PID) {
 			filtered = append(filtered, lease)
 		}
 	}

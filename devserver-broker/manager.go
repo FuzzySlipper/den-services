@@ -275,7 +275,7 @@ func (m *Manager) Stop(ctx context.Context, options StopOptions) (StopResult, er
 
 func (m *Manager) reusableCurrentSession(ctx context.Context, store *SessionStore, manifest *ServeManifest, sessionKey string) (SessionState, bool) {
 	session, err := store.ReadCurrentByKey(sessionKey)
-	if err != nil || session.PID <= 0 || session.Ownership != "broker_owned" || !processAlive(session.PID) {
+	if err != nil || session.PID <= 0 || session.Ownership != "broker_owned" || !processGroupAlive(session.PID) {
 		return SessionState{}, false
 	}
 	health := checkHealth(ctx, m.httpClient, manifest, session.Port)
@@ -304,7 +304,7 @@ func (m *Manager) refreshSession(ctx context.Context, store *SessionStore, sessi
 	session.Health = health
 	session.LastCheckedAt = m.clock()
 	switch {
-	case session.PID > 0 && !processAlive(session.PID):
+	case session.PID > 0 && !processGroupAlive(session.PID):
 		session.Status = "stopped"
 	case health.Matched:
 		session.Status = "running"
@@ -324,7 +324,7 @@ func (m *Manager) refreshSession(ctx context.Context, store *SessionStore, sessi
 func (m *Manager) selectPortOrReuse(ctx context.Context, manifest *ServeManifest, leases []LeaseRecord) (int, bool, string, HealthResult, error) {
 	blocked := make(map[int]bool)
 	for _, lease := range leases {
-		if lease.ProbeHost == manifest.ProbeHost && processAlive(lease.PID) {
+		if lease.ProbeHost == manifest.ProbeHost && processGroupAlive(lease.PID) {
 			blocked[lease.Port] = true
 		}
 	}
@@ -334,7 +334,7 @@ func (m *Manager) selectPortOrReuse(ctx context.Context, manifest *ServeManifest
 			health := checkHealth(ctx, m.httpClient, manifest, port)
 			lease := findLeaseForPort(leases, manifest.ProbeHost, port)
 			if health.Matched && manifest.ReusePolicy != ReusePolicyNever {
-				if lease != nil && processAlive(lease.PID) && lease.Project == manifest.Project && lease.RepoRoot == manifest.RepoRoot {
+				if lease != nil && processGroupAlive(lease.PID) && lease.Project == manifest.Project && lease.RepoRoot == manifest.RepoRoot {
 					return port, true, "broker_owned", health, nil
 				}
 				if manifest.ReusePolicy == ReusePolicyExplicit {

@@ -81,6 +81,58 @@ func TestUpBindsLanFacingProbesLoopbackAndReusesBrokerOwnedSession(t *testing.T)
 	}
 }
 
+func TestNodeNpmHostStaysBrokerOwnedAfterLauncherExits(t *testing.T) {
+	cfg := testConfig(t)
+	manager := newTestManager(t, cfg)
+	repoRoot := t.TempDir()
+	writeNpmDetachedHost(t, repoRoot)
+	writeServeManifest(t, repoRoot, "node-host", map[string]any{
+		"command":   "npm run dev -- --host {bind_host} --port {port} &",
+		"healthUrl": "/health",
+		"readyText": "node-host-ready",
+	})
+
+	result, err := manager.Up(t.Context(), UpOptions{Project: "node-host", RepoRoot: repoRoot})
+	if err != nil {
+		t.Fatalf("Up() error = %v", err)
+	}
+	defer func() {
+		_ = StopProcessGroup(result.Session.PID, time.Second)
+	}()
+	if !waitForCondition(time.Second, func() bool { return !processAlive(result.Session.PID) }) {
+		t.Fatalf("npm launcher pid %d did not exit", result.Session.PID)
+	}
+	if !processGroupAlive(result.Session.PID) {
+		t.Fatalf("process group %d stopped with the npm launcher", result.Session.PID)
+	}
+
+	status, err := manager.Status(t.Context(), StatusOptions{Project: "node-host", RepoRoot: repoRoot})
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	if status.Status != "running" || status.PID != result.Session.PID || !status.Health.Matched {
+		t.Fatalf("Status() = status=%q pid=%d health=%+v, want running current broker group", status.Status, status.PID, status.Health)
+	}
+	reused, err := manager.Up(t.Context(), UpOptions{Project: "node-host", RepoRoot: repoRoot})
+	if err != nil {
+		t.Fatalf("second Up() error = %v", err)
+	}
+	if !reused.Reused || reused.Session.PID != result.Session.PID {
+		t.Fatalf("second Up() = reused=%v pid=%d, want broker-owned group reuse", reused.Reused, reused.Session.PID)
+	}
+
+	stopped, err := manager.Stop(t.Context(), StopOptions{Project: "node-host", RepoRoot: repoRoot})
+	if err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if !stopped.Stopped || stopped.Session.Status != "stopped" {
+		t.Fatalf("Stop() = stopped=%v status=%q, want stopped", stopped.Stopped, stopped.Session.Status)
+	}
+	if !waitForCondition(time.Second, func() bool { return !processGroupAlive(result.Session.PID) }) {
+		t.Fatalf("broker-owned process group %d remained alive after Stop()", result.Session.PID)
+	}
+}
+
 func TestUpFallsBackWhenPreferredPortHasWrongIdentity(t *testing.T) {
 	wrongServer, wrongURL, wrongPort := startHTTPServer(t, "wrong-ready", "wrong")
 	defer wrongServer.Close()
@@ -255,6 +307,42 @@ func writeManifestFile(t *testing.T, path string, manifest map[string]any) {
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
+}
+
+func writeNpmDetachedHost(t *testing.T, repoRoot string) {
+	t.Helper()
+	packageJSON := `{"private":true,"scripts":{"dev":"node server.js"}}`
+	serverJS := `
+const http = require("node:http");
+const args = process.argv.slice(2);
+const valueAfter = (flag, fallback) => {
+  const index = args.indexOf(flag);
+  return index >= 0 && args[index + 1] ? args[index + 1] : fallback;
+};
+const host = valueAfter("--host", process.env.HOST || "127.0.0.1");
+const port = Number(valueAfter("--port", process.env.PORT || "0"));
+http.createServer((_, response) => {
+  response.writeHead(200, {"content-type":"text/plain"});
+  response.end("node-host-ready");
+}).listen(port, host);
+`
+	if err := os.WriteFile(filepath.Join(repoRoot, "package.json"), []byte(packageJSON), 0o600); err != nil {
+		t.Fatalf("writing package.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "server.js"), []byte(serverJS), 0o600); err != nil {
+		t.Fatalf("writing server.js: %v", err)
+	}
+}
+
+func waitForCondition(timeout time.Duration, condition func() bool) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return condition()
 }
 
 func helperCommand(mode string) string {
