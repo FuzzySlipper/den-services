@@ -161,6 +161,15 @@ func evaluateGitHubCheckRuns(runs []githubCheckRunResponse, requiredChecks []str
 	var pending []string
 	var failed []string
 	var resultRuns []GitHubCheckRun
+	observedRuns := make([]GitHubCheckRun, 0, len(latestByName))
+	allObservedTerminal := len(latestByName) > 0
+	for _, run := range latestByName {
+		observedRuns = append(observedRuns, convertGitHubCheckRun(run))
+		if run.Status != "completed" {
+			allObservedTerminal = false
+		}
+	}
+	sort.Slice(observedRuns, func(i int, j int) bool { return observedRuns[i].Name < observedRuns[j].Name })
 	for _, name := range trimSlice(requiredChecks) {
 		run, ok := latestByName[name]
 		if !ok {
@@ -168,10 +177,7 @@ func evaluateGitHubCheckRuns(runs []githubCheckRunResponse, requiredChecks []str
 			resultRuns = append(resultRuns, GitHubCheckRun{Name: name, Status: GitHubCheckGateStatusPending})
 			continue
 		}
-		converted := GitHubCheckRun{
-			Name: run.Name, Status: run.Status, Conclusion: run.Conclusion,
-			URL: run.HTMLURL, DetailsURL: run.DetailsURL, Summary: firstNonEmpty(run.Output.Title, run.Output.Summary),
-		}
+		converted := convertGitHubCheckRun(run)
 		resultRuns = append(resultRuns, converted)
 		if run.Status != "completed" {
 			pending = append(pending, name)
@@ -185,21 +191,37 @@ func evaluateGitHubCheckRuns(runs []githubCheckRunResponse, requiredChecks []str
 	if len(failed) > 0 {
 		return GitHubCheckResult{
 			Status: GitHubCheckGateStatusFailed, CheckRuns: resultRuns,
-			Summary:        "One or more required GitHub checks failed.",
-			FailureSummary: "Failed checks: " + strings.Join(failed, ", "),
+			Summary:           "One or more required GitHub checks failed.",
+			FailureSummary:    "Failed checks: " + strings.Join(failed, ", "),
+			TerminalReason:    GitHubCheckTerminalReasonChecksFailed,
+			ObservedCheckRuns: observedRuns, MissingRequiredChecks: missing,
+			AllObservedChecksTerminal: allObservedTerminal,
 		}
 	}
 	if len(missing) > 0 || len(pending) > 0 {
 		waiting := append([]string{}, missing...)
 		waiting = append(waiting, pending...)
+		summary := "Waiting for required checks: " + strings.Join(waiting, ", ")
+		if len(missing) > 0 && len(observedRuns) > 0 {
+			summary += ". Observed check runs: " + strings.Join(githubCheckRunNames(observedRuns), ", ")
+		}
 		return GitHubCheckResult{
 			Status: GitHubCheckGateStatusPending, CheckRuns: resultRuns,
-			Summary: "Waiting for required checks: " + strings.Join(waiting, ", "),
+			Summary: summary, ObservedCheckRuns: observedRuns, MissingRequiredChecks: missing,
+			AllObservedChecksTerminal: allObservedTerminal,
 		}
 	}
 	return GitHubCheckResult{
 		Status: GitHubCheckGateStatusPassed, CheckRuns: resultRuns,
-		Summary: "All required GitHub checks passed.",
+		Summary: "All required GitHub checks passed.", TerminalReason: GitHubCheckTerminalReasonChecksPassed,
+		ObservedCheckRuns: observedRuns, AllObservedChecksTerminal: allObservedTerminal,
+	}
+}
+
+func convertGitHubCheckRun(run githubCheckRunResponse) GitHubCheckRun {
+	return GitHubCheckRun{
+		Name: run.Name, Status: run.Status, Conclusion: run.Conclusion,
+		URL: run.HTMLURL, DetailsURL: run.DetailsURL, Summary: firstNonEmpty(run.Output.Title, run.Output.Summary),
 	}
 }
 
@@ -254,10 +276,13 @@ func (w *GitHubCheckWatcher) poll(ctx context.Context) {
 
 func renderGitHubCheckGateEvidence(gate *GitHubCheckGate) (string, string) {
 	result := GitHubCheckResult{
-		Status:         gate.Status,
-		Summary:        gate.Summary,
-		FailureSummary: gate.FailureSummary,
-		CheckRuns:      gate.CheckRuns,
+		Status:                gate.Status,
+		Summary:               gate.Summary,
+		FailureSummary:        gate.FailureSummary,
+		CheckRuns:             gate.CheckRuns,
+		ObservedCheckRuns:     gate.ObservedCheckRuns,
+		MissingRequiredChecks: gate.MissingRequiredChecks,
+		TerminalReason:        gate.TerminalReason,
 	}
 	switch gate.Status {
 	case GitHubCheckGateStatusPassed:
@@ -292,7 +317,17 @@ func renderGitHubCheckGateMessage(gate *GitHubCheckGate, result GitHubCheckResul
 	} else if result.Summary != "" {
 		fmt.Fprintf(&b, "%s\n\n", result.Summary)
 	}
+	if result.TerminalReason != "" {
+		fmt.Fprintf(&b, "Reason: `%s`\n\n", result.TerminalReason)
+	}
+	if len(result.MissingRequiredChecks) > 0 {
+		fmt.Fprintf(&b, "Missing required checks: %s\n\n", strings.Join(result.MissingRequiredChecks, ", "))
+	}
 	appendCheckRunLinks(&b, result.CheckRuns)
+	if len(result.MissingRequiredChecks) > 0 && len(result.ObservedCheckRuns) > 0 {
+		b.WriteString("\nObserved check runs:\n")
+		appendNamedCheckRunLinks(&b, result.ObservedCheckRuns)
+	}
 	return strings.TrimSpace(b.String())
 }
 
@@ -301,6 +336,21 @@ func appendCheckRunLinks(b *strings.Builder, runs []GitHubCheckRun) {
 		return
 	}
 	b.WriteString("Check runs:\n")
+	for _, run := range runs {
+		link := firstNonEmpty(run.URL, run.DetailsURL)
+		state := strings.TrimSpace(run.Status)
+		if run.Conclusion != "" {
+			state += "/" + run.Conclusion
+		}
+		if link != "" {
+			fmt.Fprintf(b, "- %s: %s (%s)\n", run.Name, state, link)
+		} else {
+			fmt.Fprintf(b, "- %s: %s\n", run.Name, state)
+		}
+	}
+}
+
+func appendNamedCheckRunLinks(b *strings.Builder, runs []GitHubCheckRun) {
 	for _, run := range runs {
 		link := firstNonEmpty(run.URL, run.DetailsURL)
 		state := strings.TrimSpace(run.Status)

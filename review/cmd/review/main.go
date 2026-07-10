@@ -50,10 +50,11 @@ func main() {
 	if cfg.GitHub.Enabled {
 		githubClient := review.NewGitHubClient(cfg.GitHub.APIBaseURL, cfg.GitHub.Token, cfg.GitHub.RequestTimeout)
 		service.ConfigureGitHubChecks(githubClient, review.GitHubCheckOptions{
-			DefaultTimeout: cfg.GitHub.DefaultTimeout,
-			MaxTimeout:     cfg.GitHub.MaxTimeout,
-			PollInterval:   cfg.GitHub.PollInterval,
-			StatusURLBase:  cfg.GitHub.StatusURLBase,
+			DefaultTimeout:    cfg.GitHub.DefaultTimeout,
+			MaxTimeout:        cfg.GitHub.MaxTimeout,
+			PollInterval:      cfg.GitHub.PollInterval,
+			MissingCheckGrace: cfg.GitHub.MissingCheckGrace,
+			StatusURLBase:     cfg.GitHub.StatusURLBase,
 		})
 		go review.NewGitHubCheckWatcher(service, cfg.GitHub.PollInterval, cfg.GitHub.BatchSize, slog.Default()).Run(ctx)
 	}

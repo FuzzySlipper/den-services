@@ -43,6 +43,12 @@ const (
 	GitHubCheckGateStatusTimedOut   = "timed_out"
 	GitHubCheckGateStatusSuperseded = "superseded"
 
+	GitHubCheckTerminalReasonChecksPassed          = "checks_passed"
+	GitHubCheckTerminalReasonChecksFailed          = "checks_failed"
+	GitHubCheckTerminalReasonRequiredChecksMissing = "required_checks_missing"
+	GitHubCheckTerminalReasonTimedOut              = "timeout"
+	GitHubCheckTerminalReasonSuperseded            = "superseded"
+
 	GitHubCheckEvidenceStatusNotRequired = "not_required"
 	GitHubCheckEvidenceStatusPending     = "pending"
 	GitHubCheckEvidenceStatusPosted      = "posted"
@@ -238,6 +244,9 @@ type GitHubCheckGate struct {
 	StatusURL                  string
 	Summary                    string
 	CheckRuns                  []GitHubCheckRun
+	ObservedCheckRuns          []GitHubCheckRun
+	MissingRequiredChecks      []string
+	TerminalReason             string
 	FailureSummary             string
 	EvidenceMessageStatus      string
 	EvidenceMessageID          *int64
@@ -257,10 +266,14 @@ type GitHubCheckRun struct {
 }
 
 type GitHubCheckResult struct {
-	Status         string
-	Summary        string
-	FailureSummary string
-	CheckRuns      []GitHubCheckRun
+	Status                    string
+	Summary                   string
+	FailureSummary            string
+	TerminalReason            string
+	CheckRuns                 []GitHubCheckRun
+	ObservedCheckRuns         []GitHubCheckRun
+	MissingRequiredChecks     []string
+	AllObservedChecksTerminal bool
 }
 
 func validGitHubCheckGateStatus(status string) bool {

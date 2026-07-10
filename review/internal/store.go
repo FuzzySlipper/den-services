@@ -304,7 +304,8 @@ func (s *Store) CompleteGitHubCheckGate(ctx context.Context, id int64, status st
 		nextPollAt = checkedAt.Add(time.Duration(current.PollIntervalSeconds) * time.Second)
 	}
 	gate, err := scanGitHubCheckGate(s.pool.QueryRow(ctx, completeGitHubCheckGateSQL, id, status, emptyToNil(result.Summary),
-		jsonOrNil(result.CheckRuns), emptyToNil(result.FailureSummary), checkedAt, nextPollAt))
+		jsonOrNil(result.CheckRuns), emptyToNil(result.FailureSummary), emptyToNil(result.TerminalReason),
+		jsonOrNil(result.MissingRequiredChecks), jsonOrNil(result.ObservedCheckRuns), checkedAt, nextPollAt))
 	if errors.Is(err, pgx.ErrNoRows) {
 		current, getErr := s.getGitHubCheckGateByID(ctx, id)
 		if getErr != nil {
@@ -320,7 +321,8 @@ func (s *Store) CompleteGitHubCheckGate(ctx context.Context, id int64, status st
 
 func (s *Store) DelayGitHubCheckGate(ctx context.Context, id int64, result GitHubCheckResult, nextPollAt time.Time, checkedAt time.Time) (*GitHubCheckGate, bool, error) {
 	gate, err := scanGitHubCheckGate(s.pool.QueryRow(ctx, delayGitHubCheckGateSQL, id, emptyToNil(result.Summary),
-		jsonOrNil(result.CheckRuns), emptyToNil(result.FailureSummary), checkedAt, nextPollAt))
+		jsonOrNil(result.CheckRuns), emptyToNil(result.FailureSummary), emptyToNil(result.TerminalReason),
+		jsonOrNil(result.MissingRequiredChecks), jsonOrNil(result.ObservedCheckRuns), checkedAt, nextPollAt))
 	if errors.Is(err, pgx.ErrNoRows) {
 		current, getErr := s.getGitHubCheckGateByID(ctx, id)
 		if getErr != nil {
@@ -357,7 +359,15 @@ func (s *Store) RecordGitHubCheckGateEvidenceError(ctx context.Context, id int64
 }
 
 func (s *Store) TimeoutGitHubCheckGate(ctx context.Context, id int64, checkedAt time.Time) (*GitHubCheckGate, bool, error) {
-	result := GitHubCheckResult{Status: GitHubCheckGateStatusTimedOut, Summary: "GitHub check gate timed out before all required checks passed."}
+	current, err := s.getGitHubCheckGateByID(ctx, id)
+	if err != nil {
+		return nil, false, err
+	}
+	result := GitHubCheckResult{
+		Status: GitHubCheckGateStatusTimedOut, Summary: "GitHub check gate timed out before all required checks passed.",
+		TerminalReason: GitHubCheckTerminalReasonTimedOut, CheckRuns: current.CheckRuns,
+		ObservedCheckRuns: current.ObservedCheckRuns, MissingRequiredChecks: current.MissingRequiredChecks,
+	}
 	return s.CompleteGitHubCheckGate(ctx, id, GitHubCheckGateStatusTimedOut, result, checkedAt)
 }
 
@@ -524,16 +534,21 @@ func scanGitHubCheckGate(row rowScanner) (*GitHubCheckGate, error) {
 	var gate GitHubCheckGate
 	var requiredChecks []byte
 	var checkRuns []byte
+	var missingRequiredChecks []byte
+	var observedCheckRuns []byte
 	err := row.Scan(&gate.ID, &gate.ProjectID, &gate.TaskID, &gate.Repository, &gate.CommitSHA, &gate.Ref,
 		&requiredChecks, &gate.Status, &gate.RequestedBy, &gate.AgentProfile, &gate.AgentInstanceID,
 		&gate.SessionKey, &gate.TimeoutAt, &gate.PollIntervalSeconds, &gate.NextPollAt, &gate.LastCheckedAt,
-		&gate.CompletedAt, &gate.StatusURL, &gate.Summary, &checkRuns, &gate.FailureSummary, &gate.EvidenceMessageStatus,
+		&gate.CompletedAt, &gate.StatusURL, &gate.Summary, &checkRuns, &gate.FailureSummary, &gate.TerminalReason,
+		&missingRequiredChecks, &observedCheckRuns, &gate.EvidenceMessageStatus,
 		&gate.EvidenceMessageID, &gate.EvidenceMessageError, &gate.EvidenceMessageAttemptedAt, &gate.CreatedAt, &gate.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	_ = json.Unmarshal(requiredChecks, &gate.RequiredChecks)
 	_ = json.Unmarshal(checkRuns, &gate.CheckRuns)
+	_ = json.Unmarshal(missingRequiredChecks, &gate.MissingRequiredChecks)
+	_ = json.Unmarshal(observedCheckRuns, &gate.ObservedCheckRuns)
 	return &gate, nil
 }
 
@@ -562,7 +577,7 @@ const (
 	roundColumns           = `id, project_id, task_id, round_number, requested_by, branch, base_branch, base_commit, head_commit, coalesce(last_reviewed_head_commit, ''), commits_since_last_review, coalesce(tests_run, '[]'::jsonb), coalesce(notes, ''), coalesce(preferred_diff_base_ref, ''), coalesce(preferred_diff_base_commit, ''), coalesce(preferred_diff_head_ref, ''), coalesce(preferred_diff_head_commit, ''), coalesce(alternate_diff_base_ref, ''), coalesce(alternate_diff_base_commit, ''), coalesce(alternate_diff_head_ref, ''), coalesce(alternate_diff_head_commit, ''), coalesce(delta_base_commit, ''), inherited_commit_count, task_local_commit_count, coalesce(verdict, ''), coalesce(verdict_by, ''), coalesce(verdict_notes, ''), requested_at, verdict_at, created_at, updated_at`
 	findingColumns         = `f.id, f.project_id, f.finding_key, f.task_id, f.review_round_id, r.round_number, f.finding_number, f.created_by, f.category, f.summary, coalesce(f.notes, ''), coalesce(f.file_references, '[]'::jsonb), coalesce(f.test_commands, '[]'::jsonb), f.status, coalesce(f.status_updated_by, ''), coalesce(f.status_notes, ''), f.status_updated_at, coalesce(f.response_by, ''), coalesce(f.response_notes, ''), f.response_at, f.follow_up_task_id, coalesce(f.run_id, ''), coalesce(f.subagent_role, ''), f.created_at, f.updated_at`
 	packetColumns          = `id, project_id, task_id, review_round_id, packet_kind, sender, message_id, front_matter, typed_envelope, markdown_body, source_markdown, validation_status, coalesce(validation_errors, '[]'::jsonb), coalesce(idempotency_key, ''), created_at, accepted_at`
-	githubCheckGateColumns = `id, project_id, task_id, repository, commit_sha, ref, coalesce(required_checks, '[]'::jsonb), status, requested_by, coalesce(agent_profile, ''), coalesce(agent_instance_id, ''), coalesce(session_key, ''), timeout_at, poll_interval_seconds, next_poll_at, last_checked_at, completed_at, coalesce(status_url, ''), coalesce(summary, ''), coalesce(check_runs, '[]'::jsonb), coalesce(failure_summary, ''), evidence_message_status, evidence_message_id, coalesce(evidence_message_error, ''), evidence_message_attempted_at, created_at, updated_at`
+	githubCheckGateColumns = `id, project_id, task_id, repository, commit_sha, ref, coalesce(required_checks, '[]'::jsonb), status, requested_by, coalesce(agent_profile, ''), coalesce(agent_instance_id, ''), coalesce(session_key, ''), timeout_at, poll_interval_seconds, next_poll_at, last_checked_at, completed_at, coalesce(status_url, ''), coalesce(summary, ''), coalesce(check_runs, '[]'::jsonb), coalesce(failure_summary, ''), coalesce(terminal_reason, ''), coalesce(missing_required_checks, '[]'::jsonb), coalesce(observed_check_runs, '[]'::jsonb), evidence_message_status, evidence_message_id, coalesce(evidence_message_error, ''), evidence_message_attempted_at, created_at, updated_at`
 )
 
 const (
@@ -640,6 +655,7 @@ with updated as (
 	set status = 'superseded',
 	    completed_at = $4,
 	    summary = 'Superseded by newer commit ' || $3,
+	    terminal_reason = 'superseded',
 	    evidence_message_status = 'pending',
 	    evidence_message_error = null,
 	    updated_at = $4
@@ -661,7 +677,7 @@ set repository = excluded.repository,
     agent_profile = excluded.agent_profile,
     agent_instance_id = excluded.agent_instance_id,
     session_key = excluded.session_key,
-    timeout_at = case when den_review.github_check_gates.status = 'pending' then excluded.timeout_at else den_review.github_check_gates.timeout_at end,
+    timeout_at = den_review.github_check_gates.timeout_at,
     poll_interval_seconds = case when den_review.github_check_gates.status = 'pending' then excluded.poll_interval_seconds else den_review.github_check_gates.poll_interval_seconds end,
     next_poll_at = case when den_review.github_check_gates.status = 'pending' then excluded.next_poll_at else den_review.github_check_gates.next_poll_at end,
     status_url = excluded.status_url,
@@ -677,12 +693,15 @@ set status = $2,
     summary = $3,
     check_runs = $4,
     failure_summary = $5,
-    last_checked_at = $6,
-    completed_at = case when $2 in ('passed','failed','timed_out','superseded') then $6 else completed_at end,
-    next_poll_at = $7,
+    terminal_reason = $6,
+    missing_required_checks = coalesce($7, '[]'::jsonb),
+    observed_check_runs = coalesce($8, '[]'::jsonb),
+    last_checked_at = $9,
+    completed_at = case when $2 in ('passed','failed','timed_out','superseded') then $9 else completed_at end,
+    next_poll_at = $10,
     evidence_message_status = case when $2 in ('passed','failed','timed_out','superseded') then 'pending' else evidence_message_status end,
     evidence_message_error = case when $2 in ('passed','failed','timed_out','superseded') then null else evidence_message_error end,
-    updated_at = $6
+    updated_at = $9
 where id = $1
   and status = 'pending'
 returning ` + githubCheckGateColumns
@@ -691,9 +710,12 @@ update den_review.github_check_gates
 set summary = $2,
     check_runs = $3,
     failure_summary = $4,
-    last_checked_at = $5,
-    next_poll_at = $6,
-    updated_at = $5
+    terminal_reason = $5,
+    missing_required_checks = coalesce($6, '[]'::jsonb),
+    observed_check_runs = coalesce($7, '[]'::jsonb),
+    last_checked_at = $8,
+    next_poll_at = $9,
+    updated_at = $8
 where id = $1
   and status = 'pending'
 returning ` + githubCheckGateColumns

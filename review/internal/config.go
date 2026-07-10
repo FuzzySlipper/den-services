@@ -32,15 +32,16 @@ type HTTPConfig struct {
 }
 
 type GitHubConfig struct {
-	Enabled        bool
-	APIBaseURL     string
-	Token          string
-	PollInterval   time.Duration
-	RequestTimeout time.Duration
-	DefaultTimeout time.Duration
-	MaxTimeout     time.Duration
-	BatchSize      int
-	StatusURLBase  string
+	Enabled           bool
+	APIBaseURL        string
+	Token             string
+	PollInterval      time.Duration
+	MissingCheckGrace time.Duration
+	RequestTimeout    time.Duration
+	DefaultTimeout    time.Duration
+	MaxTimeout        time.Duration
+	BatchSize         int
+	StatusURLBase     string
 }
 
 type configFile struct {
@@ -63,15 +64,16 @@ type httpConfigFile struct {
 }
 
 type githubConfigFile struct {
-	Enabled        bool   `yaml:"enabled"`
-	APIBaseURL     string `yaml:"api_base_url"`
-	TokenEnv       string `yaml:"token_env"`
-	PollInterval   string `yaml:"poll_interval"`
-	RequestTimeout string `yaml:"request_timeout"`
-	DefaultTimeout string `yaml:"default_timeout"`
-	MaxTimeout     string `yaml:"max_timeout"`
-	BatchSize      int    `yaml:"batch_size"`
-	StatusURLBase  string `yaml:"status_url_base"`
+	Enabled           bool   `yaml:"enabled"`
+	APIBaseURL        string `yaml:"api_base_url"`
+	TokenEnv          string `yaml:"token_env"`
+	PollInterval      string `yaml:"poll_interval"`
+	MissingCheckGrace string `yaml:"missing_check_grace"`
+	RequestTimeout    string `yaml:"request_timeout"`
+	DefaultTimeout    string `yaml:"default_timeout"`
+	MaxTimeout        string `yaml:"max_timeout"`
+	BatchSize         int    `yaml:"batch_size"`
+	StatusURLBase     string `yaml:"status_url_base"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -157,6 +159,10 @@ func (f githubConfigFile) toConfig(values sharedconfig.Values) (GitHubConfig, er
 	if err != nil {
 		return GitHubConfig{}, err
 	}
+	missingCheckGrace, err := parseOptionalDuration("github.missing_check_grace", f.MissingCheckGrace, defaultGitHubMissingCheckGrace)
+	if err != nil {
+		return GitHubConfig{}, err
+	}
 	requestTimeout, err := parseOptionalDuration("github.request_timeout", f.RequestTimeout, 10*time.Second)
 	if err != nil {
 		return GitHubConfig{}, err
@@ -180,7 +186,7 @@ func (f githubConfigFile) toConfig(values sharedconfig.Values) (GitHubConfig, er
 	}
 	return GitHubConfig{
 		Enabled: f.Enabled, APIBaseURL: apiBaseURL,
-		Token: values.String(tokenEnv, ""), PollInterval: pollInterval, RequestTimeout: requestTimeout,
+		Token: values.String(tokenEnv, ""), PollInterval: pollInterval, MissingCheckGrace: missingCheckGrace, RequestTimeout: requestTimeout,
 		DefaultTimeout: defaultTimeout, MaxTimeout: maxTimeout, BatchSize: batchSize,
 		StatusURLBase: strings.TrimRight(strings.TrimSpace(f.StatusURLBase), "/"),
 	}, nil
@@ -195,6 +201,9 @@ func (c GitHubConfig) validate() error {
 	}
 	if c.PollInterval <= 0 {
 		return errors.New("github.poll_interval must be positive")
+	}
+	if c.MissingCheckGrace <= 0 {
+		return errors.New("github.missing_check_grace must be positive")
 	}
 	if c.RequestTimeout <= 0 {
 		return errors.New("github.request_timeout must be positive")

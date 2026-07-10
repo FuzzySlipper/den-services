@@ -235,6 +235,7 @@ func (s *memoryStore) RegisterGitHubCheckGate(_ context.Context, gate *GitHubChe
 			existing.Status = GitHubCheckGateStatusSuperseded
 			existing.CompletedAt = &now
 			existing.Summary = "Superseded by newer commit " + gate.CommitSHA
+			existing.TerminalReason = GitHubCheckTerminalReasonSuperseded
 			existing.EvidenceMessageStatus = GitHubCheckEvidenceStatusPending
 			existing.EvidenceMessageError = ""
 			existing.UpdatedAt = now
@@ -248,7 +249,6 @@ func (s *memoryStore) RegisterGitHubCheckGate(_ context.Context, gate *GitHubChe
 				existing.Repository = gate.Repository
 				existing.Ref = gate.Ref
 				existing.RequiredChecks = gate.RequiredChecks
-				existing.TimeoutAt = gate.TimeoutAt
 				existing.PollIntervalSeconds = gate.PollIntervalSeconds
 				existing.NextPollAt = gate.NextPollAt
 			}
@@ -322,6 +322,9 @@ func (s *memoryStore) CompleteGitHubCheckGate(_ context.Context, id int64, statu
 	gate.Summary = result.Summary
 	gate.FailureSummary = result.FailureSummary
 	gate.CheckRuns = result.CheckRuns
+	gate.ObservedCheckRuns = result.ObservedCheckRuns
+	gate.MissingRequiredChecks = result.MissingRequiredChecks
+	gate.TerminalReason = result.TerminalReason
 	gate.LastCheckedAt = &checkedAt
 	if terminalGitHubCheckGateStatus(status) {
 		gate.CompletedAt = &checkedAt
@@ -347,6 +350,9 @@ func (s *memoryStore) DelayGitHubCheckGate(_ context.Context, id int64, result G
 	gate.Summary = result.Summary
 	gate.FailureSummary = result.FailureSummary
 	gate.CheckRuns = result.CheckRuns
+	gate.ObservedCheckRuns = result.ObservedCheckRuns
+	gate.MissingRequiredChecks = result.MissingRequiredChecks
+	gate.TerminalReason = result.TerminalReason
 	gate.LastCheckedAt = &checkedAt
 	gate.NextPollAt = nextPollAt
 	gate.UpdatedAt = checkedAt
@@ -382,9 +388,14 @@ func (s *memoryStore) RecordGitHubCheckGateEvidenceError(_ context.Context, id i
 }
 
 func (s *memoryStore) TimeoutGitHubCheckGate(ctx context.Context, id int64, checkedAt time.Time) (*GitHubCheckGate, bool, error) {
+	gate, ok := s.githubCheckGates[id]
+	if !ok {
+		return nil, false, notFound(fmt.Errorf("github check gate not found: %d", id), "github_check_gate_not_found")
+	}
 	return s.CompleteGitHubCheckGate(ctx, id, GitHubCheckGateStatusTimedOut, GitHubCheckResult{
-		Status:  GitHubCheckGateStatusTimedOut,
-		Summary: "GitHub check gate timed out before all required checks passed.",
+		Status: GitHubCheckGateStatusTimedOut, Summary: "GitHub check gate timed out before all required checks passed.",
+		TerminalReason: GitHubCheckTerminalReasonTimedOut, CheckRuns: gate.CheckRuns,
+		ObservedCheckRuns: gate.ObservedCheckRuns, MissingRequiredChecks: gate.MissingRequiredChecks,
 	}, checkedAt)
 }
 

@@ -33,3 +33,19 @@ func TestReviewMigrationDiscovered(t *testing.T) {
 		}
 	}
 }
+
+func TestReviewGitHubDiagnosticsMigrationDiscovered(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	for i := range migrations {
+		if migrations[i].Schema == "den_review" && migrations[i].Version == 3 {
+			if !strings.Contains(migrations[i].SQL, "missing_required_checks") || !strings.Contains(migrations[i].SQL, "observed_check_runs") {
+				t.Fatalf("unexpected migration SQL: %s", migrations[i].SQL)
+			}
+			return
+		}
+	}
+	t.Fatal("den_review version 3 migration not discovered")
+}

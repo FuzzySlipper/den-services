@@ -507,6 +507,130 @@ func TestRegisterGitHubCheckGateRecordsFailureEvidence(t *testing.T) {
 	}
 }
 
+func TestPollGitHubCheckGateFailsInvalidRequiredNamesAfterGrace(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	now := fixedReviewTestTime()
+	service := NewService(store, NoopProjectValidator{}, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+	}}, messages, func() time.Time { return now })
+	github := &fakeGitHubChecks{result: GitHubCheckResult{
+		Status:    GitHubCheckGateStatusPending,
+		Summary:   "Waiting for required checks: CI. Observed check runs: Verify Offline, Verify Postgres Backend",
+		CheckRuns: []GitHubCheckRun{{Name: "CI", Status: GitHubCheckGateStatusPending}},
+		ObservedCheckRuns: []GitHubCheckRun{
+			{Name: "Verify Offline", Status: "completed", Conclusion: "success", URL: "https://github.test/offline"},
+			{Name: "Verify Postgres Backend", Status: "completed", Conclusion: "success", URL: "https://github.test/postgres"},
+		},
+		MissingRequiredChecks: []string{"CI"}, AllObservedChecksTerminal: true,
+	}}
+	service.ConfigureGitHubChecks(github, GitHubCheckOptions{
+		DefaultTimeout: time.Hour, MaxTimeout: 2 * time.Hour,
+		PollInterval: 30 * time.Second, MissingCheckGrace: 2 * time.Minute,
+	})
+
+	gate, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Ref: "main",
+		RequiredChecks: []string{"CI"}, RequestedBy: "codex",
+	})
+	if err != nil {
+		t.Fatalf("RegisterGitHubCheckGate() error = %v", err)
+	}
+	if gate.Status != GitHubCheckGateStatusPending {
+		t.Fatalf("initial gate = %+v", gate)
+	}
+
+	now = now.Add(3 * time.Minute)
+	if err := service.PollGitHubCheckGates(ctx, 10); err != nil {
+		t.Fatalf("PollGitHubCheckGates() error = %v", err)
+	}
+	updated := store.githubCheckGates[gate.ID]
+	if updated.Status != GitHubCheckGateStatusFailed || updated.TerminalReason != GitHubCheckTerminalReasonRequiredChecksMissing {
+		t.Fatalf("updated gate = %+v", updated)
+	}
+	if len(updated.ObservedCheckRuns) != 2 || len(updated.MissingRequiredChecks) != 1 {
+		t.Fatalf("diagnostics missing: %+v", updated)
+	}
+	if len(messages.appended) != 1 || !strings.Contains(messages.appended[0].Content, "Verify Offline") ||
+		!strings.Contains(messages.appended[0].Content, GitHubCheckTerminalReasonRequiredChecksMissing) {
+		t.Fatalf("evidence = %+v", messages.appended)
+	}
+}
+
+func TestRegisterGitHubCheckGateRetryDoesNotExtendTimeout(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	now := fixedReviewTestTime()
+	service := NewService(store, NoopProjectValidator{}, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+	}}, &fakeMessages{}, func() time.Time { return now })
+	shortTimeout := 600
+	longTimeout := 3600
+	req := RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Ref: "main",
+		RequiredChecks: []string{"go test"}, RequestedBy: "codex", TimeoutSeconds: &shortTimeout,
+	}
+	first, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Minute)
+	req.TimeoutSeconds = &longTimeout
+	second, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !second.TimeoutAt.Equal(first.TimeoutAt) || !second.CreatedAt.Equal(first.CreatedAt) {
+		t.Fatalf("retry reset durable timing: first=%+v second=%+v", first, second)
+	}
+}
+
+func TestPollGitHubCheckGateAcceptsRequiredCheckThatRegistersLate(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	now := fixedReviewTestTime()
+	github := &fakeGitHubChecks{result: GitHubCheckResult{
+		Status: GitHubCheckGateStatusPending, Summary: "Waiting for required checks: Verify Offline",
+		CheckRuns:             []GitHubCheckRun{{Name: "Verify Offline", Status: GitHubCheckGateStatusPending}},
+		ObservedCheckRuns:     []GitHubCheckRun{{Name: "setup", Status: "completed", Conclusion: "success"}},
+		MissingRequiredChecks: []string{"Verify Offline"}, AllObservedChecksTerminal: true,
+	}}
+	service := NewService(store, NoopProjectValidator{}, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+	}}, messages, func() time.Time { return now })
+	service.ConfigureGitHubChecks(github, GitHubCheckOptions{
+		DefaultTimeout: time.Hour, MaxTimeout: 2 * time.Hour,
+		PollInterval: 30 * time.Second, MissingCheckGrace: 2 * time.Minute,
+	})
+
+	gate, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Ref: "main",
+		RequiredChecks: []string{"Verify Offline"}, RequestedBy: "codex",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Minute)
+	github.result = GitHubCheckResult{
+		Status: GitHubCheckGateStatusPassed, Summary: "All required GitHub checks passed.",
+		TerminalReason: GitHubCheckTerminalReasonChecksPassed,
+		CheckRuns:      []GitHubCheckRun{{Name: "Verify Offline", Status: "completed", Conclusion: "success"}},
+		ObservedCheckRuns: []GitHubCheckRun{
+			{Name: "setup", Status: "completed", Conclusion: "success"},
+			{Name: "Verify Offline", Status: "completed", Conclusion: "success"},
+		},
+	}
+	if err := service.PollGitHubCheckGates(ctx, 10); err != nil {
+		t.Fatal(err)
+	}
+	updated := store.githubCheckGates[gate.ID]
+	if updated.Status != GitHubCheckGateStatusPassed || len(updated.MissingRequiredChecks) != 0 {
+		t.Fatalf("late check did not pass: %+v", updated)
+	}
+}
+
 func TestPollGitHubCheckGatesRecordsTimeoutEvidence(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()
@@ -669,7 +793,7 @@ type fakeGitHubChecks struct {
 	err    error
 }
 
-func (f fakeGitHubChecks) CheckCommit(context.Context, string, string, []string) (GitHubCheckResult, error) {
+func (f *fakeGitHubChecks) CheckCommit(context.Context, string, string, []string) (GitHubCheckResult, error) {
 	return f.result, f.err
 }
 

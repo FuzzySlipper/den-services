@@ -26,6 +26,7 @@ github:
   api_base_url: "https://api.github.com"
   token_env: "DEN_REVIEW_GITHUB_TOKEN"
   poll_interval: "30s"
+  missing_check_grace: "2m"
   request_timeout: "10s"
   default_timeout: "2h"
   max_timeout: "12h"
@@ -58,5 +59,8 @@ github:
 	}
 	if !cfg.GitHub.Enabled || cfg.GitHub.APIBaseURL != "https://api.github.com" || cfg.GitHub.DefaultTimeout.String() != "2h0m0s" || cfg.GitHub.MaxTimeout.String() != "12h0m0s" {
 		t.Fatalf("github config not loaded: %#v", cfg.GitHub)
+	}
+	if cfg.GitHub.MissingCheckGrace.String() != "2m0s" {
+		t.Fatalf("MissingCheckGrace = %s", cfg.GitHub.MissingCheckGrace)
 	}
 }

@@ -202,6 +202,9 @@ type GitHubCheckGateResponse struct {
 	StatusURL                  string           `json:"status_url,omitempty"`
 	Summary                    string           `json:"summary,omitempty"`
 	CheckRuns                  []GitHubCheckRun `json:"check_runs,omitempty"`
+	ObservedCheckRuns          []GitHubCheckRun `json:"observed_check_runs,omitempty"`
+	MissingRequiredChecks      []string         `json:"missing_required_checks,omitempty"`
+	TerminalReason             string           `json:"terminal_reason,omitempty"`
 	FailureSummary             string           `json:"failure_summary,omitempty"`
 	EvidenceMessageStatus      string           `json:"evidence_message_status,omitempty"`
 	EvidenceMessageID          *int64           `json:"evidence_message_id,omitempty"`
@@ -261,6 +264,8 @@ func toGitHubCheckGateResponse(gate *GitHubCheckGate) GitHubCheckGateResponse {
 		SessionKey: gate.SessionKey, TimeoutAt: gate.TimeoutAt, PollIntervalSeconds: gate.PollIntervalSeconds,
 		NextPollAt: gate.NextPollAt, LastCheckedAt: gate.LastCheckedAt, CompletedAt: gate.CompletedAt,
 		StatusURL: gate.StatusURL, Summary: gate.Summary, CheckRuns: gate.CheckRuns,
+		ObservedCheckRuns: gate.ObservedCheckRuns, MissingRequiredChecks: gate.MissingRequiredChecks,
+		TerminalReason: gate.TerminalReason,
 		FailureSummary: gate.FailureSummary, EvidenceMessageStatus: gate.EvidenceMessageStatus,
 		EvidenceMessageID: gate.EvidenceMessageID, EvidenceMessageError: gate.EvidenceMessageError,
 		EvidenceMessageAttemptedAt: gate.EvidenceMessageAttemptedAt, CreatedAt: gate.CreatedAt, UpdatedAt: gate.UpdatedAt,

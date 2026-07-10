@@ -29,13 +29,18 @@ Use `await_github_checks` after pushing:
 }
 ```
 
-`required_checks` may be a JSON array or comma-separated list through the MCP facade. `commit_sha` must be the full 40-character SHA. Den tracks that exact SHA, not the current branch head.
+`required_checks` may be a JSON array or comma-separated list through the MCP facade. These values are exact GitHub **check-run/job names**, not workflow display names. For example, a workflow named `ASHA Studio CI` may expose the required check run as `Verify ASHA Studio`. `commit_sha` must be the full 40-character SHA. Den tracks that exact SHA, not the current branch head.
+
+Review records every check-run name observed for the exact SHA. When requested names are missing, the response includes `missing_required_checks`, `observed_check_runs`, and candidate names in `summary`. If GitHub has exposed terminal runs but the requested names still do not appear after the configured grace period, the gate fails with `terminal_reason=required_checks_missing` instead of consuming the full gate timeout. Matching remains exact; Review does not guess or fuzzy-match workflow labels.
 
 The response is the current gate record:
 
 - `status`: `pending`, `passed`, `failed`, `timed_out`, or `superseded`.
 - `status_url`: Review readback URL when configured.
 - `check_runs`: required check run names, states, and URLs seen so far.
+- `observed_check_runs`: all latest-by-name check runs GitHub exposed for the SHA, including unrequested runs.
+- `missing_required_checks`: requested names that GitHub has not exposed.
+- `terminal_reason`: stable machine reason for terminal status, including `required_checks_missing`.
 - `failure_summary`: compact failed-check summary when available.
 - `evidence_message_status`: `not_required`, `pending`, `posted`, or `error`.
 

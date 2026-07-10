@@ -12,6 +12,7 @@ import (
 
 const (
 	defaultGitHubCheckPollInterval = 30 * time.Second
+	defaultGitHubMissingCheckGrace = 2 * time.Minute
 	defaultGitHubHTTPErrorBackoff  = 15 * time.Minute
 )
 
@@ -154,17 +155,19 @@ func NewService(store ReviewStore, projects ProjectValidator, tasks TaskClient, 
 }
 
 type GitHubCheckOptions struct {
-	DefaultTimeout time.Duration
-	MaxTimeout     time.Duration
-	PollInterval   time.Duration
-	StatusURLBase  string
+	DefaultTimeout    time.Duration
+	MaxTimeout        time.Duration
+	PollInterval      time.Duration
+	MissingCheckGrace time.Duration
+	StatusURLBase     string
 }
 
 func DefaultGitHubCheckOptions() GitHubCheckOptions {
 	return GitHubCheckOptions{
-		DefaultTimeout: 2 * time.Hour,
-		MaxTimeout:     12 * time.Hour,
-		PollInterval:   defaultGitHubCheckPollInterval,
+		DefaultTimeout:    2 * time.Hour,
+		MaxTimeout:        12 * time.Hour,
+		PollInterval:      defaultGitHubCheckPollInterval,
+		MissingCheckGrace: defaultGitHubMissingCheckGrace,
 	}
 }
 
@@ -180,6 +183,9 @@ func (s *Service) ConfigureGitHubChecks(provider GitHubCheckProvider, options Gi
 	}
 	if options.PollInterval < defaultGitHubCheckPollInterval {
 		options.PollInterval = defaultGitHubCheckPollInterval
+	}
+	if options.MissingCheckGrace <= 0 {
+		options.MissingCheckGrace = DefaultGitHubCheckOptions().MissingCheckGrace
 	}
 	s.githubChecks = provider
 	s.githubOptions = options
@@ -561,8 +567,17 @@ func (s *Service) evaluateGitHubCheckGate(ctx context.Context, gate *GitHubCheck
 		}
 		return nil, fmt.Errorf("checking github commit %s: %w", gate.CommitSHA, err)
 	}
+	if result.Status == GitHubCheckGateStatusPending && missingRequiredChecksAreInvalid(gate, result, now, s.githubOptions.MissingCheckGrace) {
+		result.Status = GitHubCheckGateStatusFailed
+		result.TerminalReason = GitHubCheckTerminalReasonRequiredChecksMissing
+		result.Summary = "Required GitHub check names did not match the check runs observed for this commit."
+		result.FailureSummary = "Missing required checks: " + strings.Join(result.MissingRequiredChecks, ", ") + ". Observed check runs: " + strings.Join(githubCheckRunNames(result.ObservedCheckRuns), ", ") + "."
+	}
 	if result.Status == GitHubCheckGateStatusPending {
-		pending := GitHubCheckResult{Status: GitHubCheckGateStatusPending, Summary: result.Summary, CheckRuns: result.CheckRuns}
+		pending := GitHubCheckResult{
+			Status: GitHubCheckGateStatusPending, Summary: result.Summary, CheckRuns: result.CheckRuns,
+			ObservedCheckRuns: result.ObservedCheckRuns, MissingRequiredChecks: result.MissingRequiredChecks,
+		}
 		updated, _, err := s.store.CompleteGitHubCheckGate(ctx, gate.ID, GitHubCheckGateStatusPending, pending, now)
 		return updated, err
 	}
@@ -580,6 +595,19 @@ func (s *Service) evaluateGitHubCheckGate(ctx context.Context, gate *GitHubCheck
 		}
 	}
 	return updated, nil
+}
+
+func missingRequiredChecksAreInvalid(gate *GitHubCheckGate, result GitHubCheckResult, now time.Time, grace time.Duration) bool {
+	return len(result.MissingRequiredChecks) > 0 && len(result.ObservedCheckRuns) > 0 && result.AllObservedChecksTerminal &&
+		!now.Before(gate.CreatedAt.Add(grace))
+}
+
+func githubCheckRunNames(runs []GitHubCheckRun) []string {
+	names := make([]string, 0, len(runs))
+	for _, run := range runs {
+		names = append(names, run.Name)
+	}
+	return names
 }
 
 func (s *Service) delayGitHubCheckGateAfterGitHubHTTPError(ctx context.Context, gate *GitHubCheckGate, githubErr *GitHubHTTPError, checkedAt time.Time) (*GitHubCheckGate, error) {
@@ -653,16 +681,19 @@ func (s *Service) deliverGitHubCheckGateEvidence(ctx context.Context, gate *GitH
 		Content: content,
 		Intent:  intent,
 		Metadata: map[string]any{
-			"type":              "github_check_gate",
-			"gate_id":           gate.ID,
-			"status":            gate.Status,
-			"repository":        gate.Repository,
-			"commit_sha":        gate.CommitSHA,
-			"ref":               gate.Ref,
-			"required_checks":   gate.RequiredChecks,
-			"agent_profile":     gate.AgentProfile,
-			"agent_instance_id": gate.AgentInstanceID,
-			"session_key":       gate.SessionKey,
+			"type":                    "github_check_gate",
+			"gate_id":                 gate.ID,
+			"status":                  gate.Status,
+			"repository":              gate.Repository,
+			"commit_sha":              gate.CommitSHA,
+			"ref":                     gate.Ref,
+			"required_checks":         gate.RequiredChecks,
+			"observed_check_runs":     gate.ObservedCheckRuns,
+			"missing_required_checks": gate.MissingRequiredChecks,
+			"terminal_reason":         gate.TerminalReason,
+			"agent_profile":           gate.AgentProfile,
+			"agent_instance_id":       gate.AgentInstanceID,
+			"session_key":             gate.SessionKey,
 		},
 	})
 	now := s.clock().UTC()
