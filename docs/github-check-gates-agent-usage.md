@@ -67,6 +67,10 @@ configured for MCP/backend callers.
 
 ## Evidence Behavior
 
+Review scans its database for due gates on `github.scan_interval` (5 seconds by default). Each gate retains its own `next_poll_at` and `poll_interval_seconds` (at least 30 seconds), so faster local scans reduce timer-alignment delay without increasing GitHub API frequency. Due gates are drained across batches; a transport failure is recorded on that gate with a future retry and does not stop unrelated gates.
+
+GitHub evaluation completes before task-message evidence retries run. A Messages outage can delay the human projection but cannot block polling or terminal event creation for other gates. Structured logs report scan backlog/duration, API results, throttling and retry reasons, check queue/run time, Review detection lag, and evidence lag.
+
 Terminal gates append task-thread messages with one of these intents:
 
 - `github_checks_passed`

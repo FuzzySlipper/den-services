@@ -58,7 +58,7 @@ func main() {
 			EventWaitMax:      cfg.GitHub.EventWaitMax,
 			EventWaitPoll:     cfg.GitHub.EventWaitPoll,
 		})
-		go review.NewGitHubCheckWatcher(service, cfg.GitHub.PollInterval, cfg.GitHub.BatchSize, slog.Default()).Run(ctx)
+		go review.NewGitHubCheckWatcher(service, cfg.GitHub.ScanInterval, cfg.GitHub.BatchSize, slog.Default()).Run(ctx)
 	}
 	server, err := review.NewHTTPServer(cfg, info, service)
 	if err != nil {

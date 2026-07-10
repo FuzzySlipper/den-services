@@ -260,12 +260,15 @@ type GitHubCheckGate struct {
 }
 
 type GitHubCheckRun struct {
-	Name       string `json:"name"`
-	Status     string `json:"status"`
-	Conclusion string `json:"conclusion,omitempty"`
-	URL        string `json:"url,omitempty"`
-	DetailsURL string `json:"details_url,omitempty"`
-	Summary    string `json:"summary,omitempty"`
+	Name        string     `json:"name"`
+	Status      string     `json:"status"`
+	Conclusion  string     `json:"conclusion,omitempty"`
+	URL         string     `json:"url,omitempty"`
+	DetailsURL  string     `json:"details_url,omitempty"`
+	Summary     string     `json:"summary,omitempty"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
 
 type GitHubCheckResult struct {

@@ -36,6 +36,7 @@ type GitHubConfig struct {
 	APIBaseURL        string
 	Token             string
 	PollInterval      time.Duration
+	ScanInterval      time.Duration
 	MissingCheckGrace time.Duration
 	RequestTimeout    time.Duration
 	DefaultTimeout    time.Duration
@@ -70,6 +71,7 @@ type githubConfigFile struct {
 	APIBaseURL        string `yaml:"api_base_url"`
 	TokenEnv          string `yaml:"token_env"`
 	PollInterval      string `yaml:"poll_interval"`
+	ScanInterval      string `yaml:"scan_interval"`
 	MissingCheckGrace string `yaml:"missing_check_grace"`
 	RequestTimeout    string `yaml:"request_timeout"`
 	DefaultTimeout    string `yaml:"default_timeout"`
@@ -163,6 +165,10 @@ func (f githubConfigFile) toConfig(values sharedconfig.Values) (GitHubConfig, er
 	if err != nil {
 		return GitHubConfig{}, err
 	}
+	scanInterval, err := parseOptionalDuration("github.scan_interval", f.ScanInterval, 5*time.Second)
+	if err != nil {
+		return GitHubConfig{}, err
+	}
 	missingCheckGrace, err := parseOptionalDuration("github.missing_check_grace", f.MissingCheckGrace, defaultGitHubMissingCheckGrace)
 	if err != nil {
 		return GitHubConfig{}, err
@@ -198,7 +204,7 @@ func (f githubConfigFile) toConfig(values sharedconfig.Values) (GitHubConfig, er
 	}
 	return GitHubConfig{
 		Enabled: f.Enabled, APIBaseURL: apiBaseURL,
-		Token: values.String(tokenEnv, ""), PollInterval: pollInterval, MissingCheckGrace: missingCheckGrace, RequestTimeout: requestTimeout,
+		Token: values.String(tokenEnv, ""), PollInterval: pollInterval, ScanInterval: scanInterval, MissingCheckGrace: missingCheckGrace, RequestTimeout: requestTimeout,
 		DefaultTimeout: defaultTimeout, MaxTimeout: maxTimeout, BatchSize: batchSize,
 		StatusURLBase: strings.TrimRight(strings.TrimSpace(f.StatusURLBase), "/"),
 		EventWaitMax:  eventWaitMax, EventWaitPoll: eventWaitPoll,
@@ -214,6 +220,9 @@ func (c GitHubConfig) validate() error {
 	}
 	if c.PollInterval <= 0 {
 		return errors.New("github.poll_interval must be positive")
+	}
+	if c.ScanInterval <= 0 {
+		return errors.New("github.scan_interval must be positive")
 	}
 	if c.MissingCheckGrace <= 0 {
 		return errors.New("github.missing_check_grace must be positive")

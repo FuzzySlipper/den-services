@@ -137,13 +137,16 @@ type githubCheckRunsResponse struct {
 }
 
 type githubCheckRunResponse struct {
-	ID         int64  `json:"id"`
-	Name       string `json:"name"`
-	Status     string `json:"status"`
-	Conclusion string `json:"conclusion"`
-	HTMLURL    string `json:"html_url"`
-	DetailsURL string `json:"details_url"`
-	Output     struct {
+	ID          int64      `json:"id"`
+	Name        string     `json:"name"`
+	Status      string     `json:"status"`
+	Conclusion  string     `json:"conclusion"`
+	HTMLURL     string     `json:"html_url"`
+	DetailsURL  string     `json:"details_url"`
+	CreatedAt   *time.Time `json:"created_at"`
+	StartedAt   *time.Time `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at"`
+	Output      struct {
 		Title   string `json:"title"`
 		Summary string `json:"summary"`
 	} `json:"output"`
@@ -222,6 +225,7 @@ func convertGitHubCheckRun(run githubCheckRunResponse) GitHubCheckRun {
 	return GitHubCheckRun{
 		Name: run.Name, Status: run.Status, Conclusion: run.Conclusion,
 		URL: run.HTMLURL, DetailsURL: run.DetailsURL, Summary: firstNonEmpty(run.Output.Title, run.Output.Summary),
+		CreatedAt: run.CreatedAt, StartedAt: run.StartedAt, CompletedAt: run.CompletedAt,
 	}
 }
 
@@ -236,14 +240,14 @@ func successfulGitHubConclusion(conclusion string) bool {
 
 type GitHubCheckWatcher struct {
 	service      *Service
-	pollInterval time.Duration
+	scanInterval time.Duration
 	batchSize    int
 	logger       *slog.Logger
 }
 
-func NewGitHubCheckWatcher(service *Service, pollInterval time.Duration, batchSize int, logger *slog.Logger) *GitHubCheckWatcher {
-	if pollInterval <= 0 {
-		pollInterval = 30 * time.Second
+func NewGitHubCheckWatcher(service *Service, scanInterval time.Duration, batchSize int, logger *slog.Logger) *GitHubCheckWatcher {
+	if scanInterval <= 0 {
+		scanInterval = 5 * time.Second
 	}
 	if batchSize <= 0 {
 		batchSize = 10
@@ -251,11 +255,11 @@ func NewGitHubCheckWatcher(service *Service, pollInterval time.Duration, batchSi
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &GitHubCheckWatcher{service: service, pollInterval: pollInterval, batchSize: batchSize, logger: logger}
+	return &GitHubCheckWatcher{service: service, scanInterval: scanInterval, batchSize: batchSize, logger: logger}
 }
 
 func (w *GitHubCheckWatcher) Run(ctx context.Context) {
-	ticker := time.NewTicker(w.pollInterval)
+	ticker := time.NewTicker(w.scanInterval)
 	defer ticker.Stop()
 	w.poll(ctx)
 	for {

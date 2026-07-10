@@ -15,6 +15,7 @@ github:
   api_base_url: "https://api.github.com"
   token_env: "DEN_REVIEW_GITHUB_TOKEN"
   poll_interval: "30s"
+  scan_interval: "5s"
   missing_check_grace: "2m"
   request_timeout: "10s"
   default_timeout: "2h"

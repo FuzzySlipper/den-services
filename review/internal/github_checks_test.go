@@ -3,12 +3,20 @@ package review
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestGitHubCheckWatcherUsesIndependentScanInterval(t *testing.T) {
+	watcher := NewGitHubCheckWatcher(nil, 5*time.Second, 10, slog.Default())
+	if watcher.scanInterval != 5*time.Second {
+		t.Fatalf("scan interval = %s", watcher.scanInterval)
+	}
+}
 
 func TestGitHubClientReturnsHTTPErrorDetails(t *testing.T) {
 	resetAt := time.Date(2026, 7, 6, 12, 30, 0, 0, time.UTC)
@@ -101,5 +109,25 @@ func TestEvaluateGitHubCheckRunsKeepsLatestRerunByName(t *testing.T) {
 
 	if result.Status != GitHubCheckGateStatusPassed || len(result.CheckRuns) != 1 || result.CheckRuns[0].Conclusion != "success" {
 		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestEvaluateGitHubCheckRunsPreservesQueueAndRunTimestamps(t *testing.T) {
+	createdAt := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+	startedAt := createdAt.Add(20 * time.Second)
+	completedAt := startedAt.Add(40 * time.Second)
+	result := evaluateGitHubCheckRuns([]githubCheckRunResponse{{
+		ID: 10, Name: "Verify", Status: "completed", Conclusion: "success",
+		CreatedAt: &createdAt, StartedAt: &startedAt, CompletedAt: &completedAt,
+	}}, []string{"Verify"})
+	if len(result.CheckRuns) != 1 || result.CheckRuns[0].CreatedAt == nil || result.CheckRuns[0].StartedAt == nil || result.CheckRuns[0].CompletedAt == nil {
+		t.Fatalf("timestamps missing: %+v", result.CheckRuns)
+	}
+	if got := githubCheckDetectionLag(completedAt.Add(5*time.Second), result.CheckRuns); got != 5*time.Second {
+		t.Fatalf("detection lag = %s", got)
+	}
+	queueTime, runTime := githubCheckQueueAndRunTime(result.CheckRuns)
+	if queueTime != 20*time.Second || runTime != 40*time.Second {
+		t.Fatalf("queue=%s run=%s", queueTime, runTime)
 	}
 }

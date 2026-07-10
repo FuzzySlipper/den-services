@@ -769,6 +769,77 @@ func TestPollGitHubCheckGatesBacksOffGitHubRateLimit(t *testing.T) {
 	}
 }
 
+func TestFrequentWatcherScansPreservePerGateGitHubPollCadence(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	github := &fakeGitHubChecks{result: GitHubCheckResult{Status: GitHubCheckGateStatusPending}}
+	service := newTestService(store, &fakeMessages{}, &fakeTasks{})
+	service.ConfigureGitHubChecks(github, GitHubCheckOptions{DefaultTimeout: time.Hour, MaxTimeout: 2 * time.Hour, PollInterval: 30 * time.Second})
+	gate, _, err := store.RegisterGitHubCheckGate(ctx, &GitHubCheckGate{
+		ProjectID: "den-services", TaskID: 42, Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567",
+		Ref: "main", RequiredChecks: []string{"go test"}, Status: GitHubCheckGateStatusPending, RequestedBy: "codex",
+		TimeoutAt: fixedReviewTestTime().Add(time.Hour), PollIntervalSeconds: 30, NextPollAt: fixedReviewTestTime(),
+		CreatedAt: fixedReviewTestTime(), UpdatedAt: fixedReviewTestTime(),
+	}, fixedReviewTestTime())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.PollGitHubCheckGates(ctx, 10); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.PollGitHubCheckGates(ctx, 10); err != nil {
+		t.Fatal(err)
+	}
+	if github.calls != 1 || !store.githubCheckGates[gate.ID].NextPollAt.Equal(fixedReviewTestTime().Add(30*time.Second)) {
+		t.Fatalf("calls=%d gate=%+v", github.calls, store.githubCheckGates[gate.ID])
+	}
+}
+
+func TestPollGitHubCheckGatesDrainsMultipleBatchesAndIsolatesTransportFailure(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	failedSHA := "1111111111111111111111111111111111111111"
+	github := &fakeGitHubChecks{
+		result:      GitHubCheckResult{Status: GitHubCheckGateStatusPassed, TerminalReason: GitHubCheckTerminalReasonChecksPassed},
+		errorsBySHA: map[string]error{failedSHA: errors.New("temporary transport failure")},
+	}
+	service := newTestService(store, &fakeMessages{}, &fakeTasks{})
+	service.ConfigureGitHubChecks(github, GitHubCheckOptions{DefaultTimeout: time.Hour, MaxTimeout: 2 * time.Hour, PollInterval: 30 * time.Second})
+	shas := []string{failedSHA, "2222222222222222222222222222222222222222", "3333333333333333333333333333333333333333"}
+	for i, sha := range shas {
+		_, _, err := store.RegisterGitHubCheckGate(ctx, &GitHubCheckGate{
+			ProjectID: "den-services", TaskID: int64(100 + i), Repository: "owner/repo", CommitSHA: sha,
+			Ref: "main", RequiredChecks: []string{"go test"}, Status: GitHubCheckGateStatusPending, RequestedBy: "codex",
+			TimeoutAt: fixedReviewTestTime().Add(time.Hour), PollIntervalSeconds: 30, NextPollAt: fixedReviewTestTime(),
+			CreatedAt: fixedReviewTestTime(), UpdatedAt: fixedReviewTestTime(),
+		}, fixedReviewTestTime())
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := service.PollGitHubCheckGates(ctx, 2); err != nil {
+		t.Fatalf("PollGitHubCheckGates() error = %v", err)
+	}
+	if github.calls != 3 {
+		t.Fatalf("GitHub calls = %d, want 3", github.calls)
+	}
+	var passed, pending int
+	for _, gate := range store.githubCheckGates {
+		switch gate.Status {
+		case GitHubCheckGateStatusPassed:
+			passed++
+		case GitHubCheckGateStatusPending:
+			pending++
+			if !strings.Contains(gate.Summary, "temporary transport failure") || !gate.NextPollAt.After(fixedReviewTestTime()) {
+				t.Fatalf("transport failure was not durably delayed: %+v", gate)
+			}
+		}
+	}
+	if passed != 2 || pending != 1 {
+		t.Fatalf("passed=%d pending=%d gates=%+v", passed, pending, store.githubCheckGates)
+	}
+}
+
 func TestGitHubCheckGateEvidenceAppendFailureIsDurableAndRetried(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()
@@ -848,11 +919,21 @@ type fakeMessages struct {
 }
 
 type fakeGitHubChecks struct {
-	result GitHubCheckResult
-	err    error
+	result       GitHubCheckResult
+	err          error
+	resultsBySHA map[string]GitHubCheckResult
+	errorsBySHA  map[string]error
+	calls        int
 }
 
-func (f *fakeGitHubChecks) CheckCommit(context.Context, string, string, []string) (GitHubCheckResult, error) {
+func (f *fakeGitHubChecks) CheckCommit(_ context.Context, _ string, commitSHA string, _ []string) (GitHubCheckResult, error) {
+	f.calls++
+	if err := f.errorsBySHA[commitSHA]; err != nil {
+		return GitHubCheckResult{}, err
+	}
+	if result, ok := f.resultsBySHA[commitSHA]; ok {
+		return result, nil
+	}
 	return f.result, f.err
 }
 

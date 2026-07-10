@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -564,7 +565,7 @@ func (s *Service) RegisterGitHubCheckGate(ctx context.Context, projectID string,
 	if terminalGitHubCheckGateStatus(stored.Status) || s.githubChecks == nil {
 		return stored, nil
 	}
-	return s.evaluateGitHubCheckGate(ctx, stored)
+	return s.evaluateGitHubCheckGate(ctx, stored, true)
 }
 
 func (s *Service) GetGitHubCheckGate(ctx context.Context, projectID string, taskID int64, commitSHA string) (*GitHubCheckGate, error) {
@@ -580,36 +581,51 @@ func (s *Service) GetGitHubCheckGate(ctx context.Context, projectID string, task
 }
 
 func (s *Service) PollGitHubCheckGates(ctx context.Context, limit int) error {
-	if err := s.retryGitHubCheckGateEvidence(ctx, limit); err != nil {
-		return err
-	}
 	if s.githubChecks == nil {
 		return NewServiceError(ErrGitHubChecksUnset, "github_checks_unconfigured", 500)
 	}
 	if limit <= 0 {
 		limit = 10
 	}
-	now := s.clock().UTC()
-	gates, err := s.store.ListPendingGitHubCheckGates(ctx, now, limit)
-	if err != nil {
-		return err
-	}
-	for _, gate := range gates {
-		if _, err := s.evaluateGitHubCheckGate(ctx, gate); err != nil {
-			return err
+	started := time.Now()
+	processed := 0
+	var pollErrors []error
+	for {
+		now := s.clock().UTC()
+		gates, err := s.store.ListPendingGitHubCheckGates(ctx, now, limit)
+		if err != nil {
+			return errors.Join(append(pollErrors, err)...)
+		}
+		if len(gates) == 0 {
+			break
+		}
+		for _, gate := range gates {
+			processed++
+			if _, err := s.evaluateGitHubCheckGate(ctx, gate, false); err != nil {
+				pollErrors = append(pollErrors, err)
+				slog.Warn("github check gate evaluation failed", "gate_id", gate.ID, "commit_sha", gate.CommitSHA, "error", err)
+			}
+		}
+		if len(gates) < limit {
+			break
 		}
 	}
-	return nil
+	slog.Info("github check gate scan completed", "processed_gates", processed, "batch_size", limit,
+		"duration_ms", time.Since(started).Milliseconds(), "errors", len(pollErrors))
+	if err := s.RetryGitHubCheckGateEvidence(ctx, limit); err != nil {
+		pollErrors = append(pollErrors, err)
+	}
+	return errors.Join(pollErrors...)
 }
 
-func (s *Service) evaluateGitHubCheckGate(ctx context.Context, gate *GitHubCheckGate) (*GitHubCheckGate, error) {
+func (s *Service) evaluateGitHubCheckGate(ctx context.Context, gate *GitHubCheckGate, deliverEvidence bool) (*GitHubCheckGate, error) {
 	now := s.clock().UTC()
 	if !now.Before(gate.TimeoutAt) {
 		updated, changed, err := s.store.TimeoutGitHubCheckGate(ctx, gate.ID, now)
 		if err != nil {
 			return nil, err
 		}
-		if changed {
+		if changed && deliverEvidence {
 			if err := s.deliverGitHubCheckGateEvidence(ctx, updated); err != nil {
 				return updated, err
 			}
@@ -620,14 +636,24 @@ func (s *Service) evaluateGitHubCheckGate(ctx context.Context, gate *GitHubCheck
 		}
 		return updated, nil
 	}
+	requestStarted := time.Now()
 	result, err := s.githubChecks.CheckCommit(ctx, gate.Repository, gate.CommitSHA, gate.RequiredChecks)
+	requestDuration := time.Since(requestStarted)
 	if err != nil {
 		var githubErr *GitHubHTTPError
 		if errors.As(err, &githubErr) && delayableGitHubHTTPStatus(githubErr.StatusCode) {
+			slog.Warn("github check gate throttled", "gate_id", gate.ID, "status_code", githubErr.StatusCode,
+				"request_id", githubErr.RequestID, "api_duration_ms", requestDuration.Milliseconds())
 			return s.delayGitHubCheckGateAfterGitHubHTTPError(ctx, gate, githubErr, now)
 		}
-		return nil, fmt.Errorf("checking github commit %s: %w", gate.CommitSHA, err)
+		slog.Warn("github check gate transport failed", "gate_id", gate.ID, "api_duration_ms", requestDuration.Milliseconds(), "error", err)
+		return s.delayGitHubCheckGateAfterError(ctx, gate, err, now)
 	}
+	queueTime, runTime := githubCheckQueueAndRunTime(result.ObservedCheckRuns)
+	slog.Info("github check gate API result", "gate_id", gate.ID, "status", result.Status,
+		"api_duration_ms", requestDuration.Milliseconds(), "observed_checks", len(result.ObservedCheckRuns),
+		"queue_time_ms", queueTime.Milliseconds(), "run_time_ms", runTime.Milliseconds(),
+		"detection_lag_ms", githubCheckDetectionLag(now, result.ObservedCheckRuns).Milliseconds())
 	if result.Status == GitHubCheckGateStatusPending && missingRequiredChecksAreInvalid(gate, result, now, s.githubOptions.MissingCheckGrace) {
 		result.Status = GitHubCheckGateStatusFailed
 		result.TerminalReason = GitHubCheckTerminalReasonRequiredChecksMissing
@@ -646,7 +672,7 @@ func (s *Service) evaluateGitHubCheckGate(ctx context.Context, gate *GitHubCheck
 	if err != nil {
 		return nil, err
 	}
-	if changed {
+	if changed && deliverEvidence {
 		if err := s.deliverGitHubCheckGateEvidence(ctx, updated); err != nil {
 			return updated, err
 		}
@@ -656,6 +682,46 @@ func (s *Service) evaluateGitHubCheckGate(ctx context.Context, gate *GitHubCheck
 		}
 	}
 	return updated, nil
+}
+
+func (s *Service) delayGitHubCheckGateAfterError(ctx context.Context, gate *GitHubCheckGate, checkErr error, checkedAt time.Time) (*GitHubCheckGate, error) {
+	nextPollAt := checkedAt.Add(time.Duration(gate.PollIntervalSeconds) * time.Second)
+	if nextPollAt.After(gate.TimeoutAt) {
+		nextPollAt = gate.TimeoutAt
+	}
+	result := GitHubCheckResult{Status: GitHubCheckGateStatusPending,
+		Summary: "GitHub check polling will retry after a request error: " + checkErr.Error()}
+	updated, _, err := s.store.DelayGitHubCheckGate(ctx, gate.ID, result, nextPollAt, checkedAt)
+	if err != nil {
+		return nil, fmt.Errorf("checking github commit %s: %w; recording retry: %v", gate.CommitSHA, checkErr, err)
+	}
+	return updated, nil
+}
+
+func githubCheckDetectionLag(now time.Time, runs []GitHubCheckRun) time.Duration {
+	var latest time.Time
+	for _, run := range runs {
+		if run.CompletedAt != nil && run.CompletedAt.After(latest) {
+			latest = *run.CompletedAt
+		}
+	}
+	if latest.IsZero() || latest.After(now) {
+		return 0
+	}
+	return now.Sub(latest)
+}
+
+func githubCheckQueueAndRunTime(runs []GitHubCheckRun) (time.Duration, time.Duration) {
+	var queueTime, runTime time.Duration
+	for _, run := range runs {
+		if run.CreatedAt != nil && run.StartedAt != nil && !run.StartedAt.Before(*run.CreatedAt) {
+			queueTime = max(queueTime, run.StartedAt.Sub(*run.CreatedAt))
+		}
+		if run.StartedAt != nil && run.CompletedAt != nil && !run.CompletedAt.Before(*run.StartedAt) {
+			runTime = max(runTime, run.CompletedAt.Sub(*run.StartedAt))
+		}
+	}
+	return queueTime, runTime
 }
 
 func missingRequiredChecksAreInvalid(gate *GitHubCheckGate, result GitHubCheckResult, now time.Time, grace time.Duration) bool {
@@ -715,7 +781,7 @@ func githubHTTPErrorSummary(githubErr *GitHubHTTPError, nextPollAt time.Time) st
 	return summary
 }
 
-func (s *Service) retryGitHubCheckGateEvidence(ctx context.Context, limit int) error {
+func (s *Service) RetryGitHubCheckGateEvidence(ctx context.Context, limit int) error {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -723,12 +789,22 @@ func (s *Service) retryGitHubCheckGateEvidence(ctx context.Context, limit int) e
 	if err != nil {
 		return err
 	}
+	var evidenceErrors []error
 	for _, gate := range gates {
+		started := time.Now()
 		if err := s.deliverGitHubCheckGateEvidence(ctx, gate); err != nil {
-			return err
+			evidenceErrors = append(evidenceErrors, err)
+			slog.Warn("github check gate evidence delivery failed", "gate_id", gate.ID, "error", err)
+			continue
 		}
+		completedAt := gate.UpdatedAt
+		if gate.CompletedAt != nil {
+			completedAt = *gate.CompletedAt
+		}
+		slog.Info("github check gate evidence delivered", "gate_id", gate.ID,
+			"attempt_duration_ms", time.Since(started).Milliseconds(), "evidence_lag_ms", s.clock().UTC().Sub(completedAt).Milliseconds())
 	}
-	return nil
+	return errors.Join(evidenceErrors...)
 }
 
 func (s *Service) deliverGitHubCheckGateEvidence(ctx context.Context, gate *GitHubCheckGate) error {
