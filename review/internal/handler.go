@@ -34,6 +34,7 @@ type ReviewUseCases interface {
 	RegisterGitHubCheckGate(ctx context.Context, projectID string, taskID int64, req RegisterGitHubCheckGateRequest) (*GitHubCheckGate, error)
 	GetGitHubCheckGate(ctx context.Context, projectID string, taskID int64, commitSHA string) (*GitHubCheckGate, error)
 	WaitGitHubCheckGateEvents(ctx context.Context, query ListGitHubCheckGateEventsQuery, wait time.Duration) (GitHubCheckGateEventPage, error)
+	WaitForGitHubCheckGate(ctx context.Context, projectID string, taskID int64, commitSHA string, afterID int64, wait time.Duration) (GitHubCheckGateWaitReceipt, error)
 }
 
 type Handler struct {
@@ -56,6 +57,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/packets", h.postPacket)
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates", h.registerGitHubCheckGate)
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}", h.getGitHubCheckGate)
+	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}/wait", h.waitForGitHubCheckGate)
 	mux.HandleFunc("GET /v1/projects/{project_id}/review/github-check-gate-events", h.waitGitHubCheckGateEvents)
 	mux.HandleFunc("POST /v1/tasks/{task_id}/review/rounds", h.createRoundForTask)
 	mux.HandleFunc("GET /v1/tasks/{task_id}/review/rounds", h.listRoundsForTask)
@@ -370,6 +372,38 @@ func (h *Handler) getGitHubCheckGate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.WriteJSON(w, http.StatusOK, toGitHubCheckGateResponse(gate))
+}
+
+func (h *Handler) waitForGitHubCheckGate(w http.ResponseWriter, r *http.Request) {
+	taskID, ok := h.taskID(w, r)
+	if !ok {
+		return
+	}
+	afterID, err := optionalQueryInt64(r, "after_id")
+	if err != nil {
+		writeReviewError(w, badRequest(err))
+		return
+	}
+	waitMS, err := optionalQueryInt64(r, "wait_ms")
+	if err != nil {
+		writeReviewError(w, badRequest(err))
+		return
+	}
+	receipt, err := h.service.WaitForGitHubCheckGate(r.Context(), r.PathValue("project_id"), taskID,
+		r.PathValue("commit_sha"), afterID, time.Duration(waitMS)*time.Millisecond)
+	if err != nil {
+		writeReviewError(w, err)
+		return
+	}
+	response := struct {
+		Gate       GitHubCheckGateResponse       `json:"gate"`
+		Event      *GitHubCheckGateTerminalEvent `json:"event,omitempty"`
+		NextCursor int64                         `json:"next_cursor"`
+		Terminal   bool                          `json:"terminal"`
+		TimedOut   bool                          `json:"timed_out"`
+	}{Gate: toGitHubCheckGateResponse(receipt.Gate), Event: receipt.Event, NextCursor: receipt.NextCursor,
+		Terminal: receipt.Terminal, TimedOut: receipt.TimedOut}
+	api.WriteJSON(w, http.StatusOK, response)
 }
 
 func (h *Handler) waitGitHubCheckGateEvents(w http.ResponseWriter, r *http.Request) {

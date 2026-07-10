@@ -8,9 +8,9 @@ commit -> push -> register gate -> resume only on failure or completion evidence
 
 Den does not run CI. GitHub Actions remains the CI runner. The Review service records a durable gate for an exact commit SHA, polls GitHub check runs for that SHA, and appends task-thread evidence when the gate passes, fails, times out, or is superseded.
 
-## MCP Tool
+## MCP tools
 
-Use `await_github_checks` after pushing:
+Use `watch_github_checks` after pushing:
 
 ```json
 {
@@ -28,6 +28,16 @@ Use `await_github_checks` after pushing:
   "session_key": "optional-session"
 }
 ```
+
+`watch_github_checks` is intentionally non-blocking. It registers the durable exact-SHA gate and returns the deferral handle/current state. `await_github_checks` remains available for compatibility through the migration window, but is deprecated because it historically returned immediately despite its name.
+
+Read the existing gate without changing its timeout, grace window, polling interval, or `next_poll_at`:
+
+```json
+{"project_id":"den-services","task_id":4245,"commit_sha":"0123456789abcdef0123456789abcdef01234567"}
+```
+
+Use that payload with `get_github_check_gate`, or add `after_id` and `wait_ms` for `wait_for_github_checks`. The bounded wait is capped at 50 seconds and returns either terminal gate/event state or a typed progress receipt with `timed_out: true` and a reusable `next_cursor`. A direct Codex CLI session may issue another bounded wait using that cursor; it must not hot-loop or call the watch operation again. Managed runtimes should consume the project terminal-event cursor directly.
 
 `required_checks` may be a JSON array or comma-separated list through the MCP facade. These values are exact GitHub **check-run/job names**, not workflow display names. For example, a workflow named `ASHA Studio CI` may expose the required check run as `Verify ASHA Studio`. `commit_sha` must be the full 40-character SHA. Den tracks that exact SHA, not the current branch head.
 
@@ -58,6 +68,12 @@ Read current status:
 GET /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}
 ```
 
+Bounded wait on an existing task/commit gate:
+
+```http
+GET /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}/wait?after_id=41&wait_ms=45000
+```
+
 Both endpoints require the Review service token.
 
 For the current high-trust local deployment, Review may be configured with
@@ -78,6 +94,6 @@ Terminal gates append task-thread messages with one of these intents:
 - `github_checks_timeout`
 - `github_checks_superseded`
 
-Failure messages include the failed check names and check run URLs. If the messages service is unavailable, Review keeps the terminal gate state durable and marks `evidence_message_status=error`; the watcher retries pending/error evidence before polling GitHub again.
+Failure messages include the failed check names and check run URLs. They are authored by `den-review`; the requester and agent/session correlation remain typed metadata so the projection is not self-authored. If the messages service is unavailable, Review keeps the terminal gate state durable and marks `evidence_message_status=error`; the watcher evaluates all due GitHub gates before running the isolated evidence-retry phase.
 
 Registering a newer pending SHA for the same project/task supersedes older pending gates. Terminal gates remain historical evidence.

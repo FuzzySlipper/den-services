@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -954,6 +955,46 @@ func TestClientCallsReviewRESTAwaitGitHubChecks(t *testing.T) {
 	}
 	if sawBody.Repository != "owner/repo" || sawBody.CommitSHA == "" || len(sawBody.RequiredChecks) != 2 || *sawBody.TimeoutSeconds != 1800 {
 		t.Fatalf("body = %#v", sawBody)
+	}
+}
+
+func TestClientCallsReviewRESTReadAndBoundedWaitGitHubChecks(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.RequestURI())
+		if strings.HasSuffix(r.URL.Path, "/wait") {
+			time.Sleep(30 * time.Millisecond)
+			_, _ = w.Write([]byte(`{"gate":{"id":9,"status":"pending"},"next_cursor":7,"terminal":false,"timed_out":true}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":9,"status":"pending"}`))
+	}))
+	defer server.Close()
+	client := NewClient(server.Client())
+	backend := testBackend("review", server.URL)
+	backend.Timeout = 10 * time.Millisecond
+	sha := "0123456789abcdef0123456789abcdef01234567"
+	arguments := json.RawMessage(`{"project_id":"den-services","task_id":3726,"commit_sha":"` + sha + `"}`)
+	for _, tt := range []struct {
+		operation string
+		path      string
+		timeout   time.Duration
+		arguments json.RawMessage
+	}{
+		{operation: "get_github_check_gate", path: "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}", arguments: arguments},
+		{operation: "wait_for_github_checks", path: "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}/wait", timeout: 100 * time.Millisecond,
+			arguments: json.RawMessage(`{"project_id":"den-services","task_id":3726,"commit_sha":"` + sha + `","after_id":7,"wait_ms":50}`)},
+	} {
+		route := reviewRouteForTest(tt.operation, http.MethodGet, tt.path)
+		route.Timeout = tt.timeout
+		_, failure, err := client.Call(context.Background(), backend, route, ToolCall{ToolName: tt.operation, Operation: tt.operation, Arguments: tt.arguments})
+		if err != nil || failure != nil {
+			t.Fatalf("%s err=%v failure=%+v", tt.operation, err, failure)
+		}
+	}
+	if len(paths) != 2 || paths[0] != "/v1/projects/den-services/tasks/3726/review/github-check-gates/"+sha ||
+		paths[1] != "/v1/projects/den-services/tasks/3726/review/github-check-gates/"+sha+"/wait?after_id=7&wait_ms=50" {
+		t.Fatalf("paths = %#v", paths)
 	}
 }
 

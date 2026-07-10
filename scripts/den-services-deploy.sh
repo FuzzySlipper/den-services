@@ -190,6 +190,7 @@ append_mcp_route_if_missing() {
   local path="$5"
   local request_adapter="$6"
   local response_adapter="$7"
+  local timeout="${8:-}"
 
   if route_operation_exists "${routes_target}" "${operation}"; then
     return 0
@@ -212,6 +213,9 @@ append_mcp_route_if_missing() {
     printf '%spath: "%s"\n' "${child_indent}" "${path}"
     printf '%srequest_adapter: "%s"\n' "${child_indent}" "${request_adapter}"
     printf '%sresponse_adapter: "%s"\n' "${child_indent}" "${response_adapter}"
+    if [[ -n "${timeout}" ]]; then
+      printf '%stimeout: "%s"\n' "${child_indent}" "${timeout}"
+    fi
   } >> "${routes_target}"
 }
 
@@ -239,6 +243,12 @@ install_mcp_routes() {
     "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates" \
     "mcp_review_rest" \
     "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "watch_github_checks" "review" "POST" \
+    "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates" "mcp_review_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "get_github_check_gate" "review" "GET" \
+    "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}" "mcp_review_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "wait_for_github_checks" "review" "GET" \
+    "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}/wait" "mcp_review_rest" "mcp_tool_result_json" "55s"
 }
 
 cd "${repo_root}"

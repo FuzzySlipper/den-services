@@ -75,6 +75,8 @@ type reviewToolArguments struct {
 	AgentProfile            string          `json:"agent_profile"`
 	AgentInstanceID         string          `json:"agent_instance_id"`
 	SessionKey              string          `json:"session_key"`
+	AfterID                 int64           `json:"after_id"`
+	WaitMS                  *int            `json:"wait_ms"`
 }
 
 type reviewRoundBody struct {
@@ -175,6 +177,9 @@ type githubCheckGateBody struct {
 }
 
 func (c *Client) callReviewREST(ctx context.Context, backend config.BackendConfig, route Route, call ToolCall) (Result, *Failure, error) {
+	if route.Timeout > 0 {
+		backend.Timeout = route.Timeout
+	}
 	request, err := buildReviewRESTRequest(ctx, backend, route, call)
 	if err != nil {
 		return Result{}, nil, err
@@ -310,7 +315,7 @@ func reviewRESTRequestBody(operation string, arguments reviewToolArguments) ([]b
 			FollowUpParentTaskID: arguments.FollowUpParentTaskID, FollowUpPriority: priority, FollowUpAssignedTo: strings.TrimSpace(arguments.FollowUpAssignedTo),
 			FollowUpTags: followUpTags, OverrideBlocking: arguments.OverrideBlocking, IdempotencyKey: strings.TrimSpace(arguments.IdempotencyKey),
 		})
-	case "await_github_checks":
+	case "await_github_checks", "watch_github_checks":
 		requiredChecks, err := parseStringList(arguments.RequiredChecks)
 		if err != nil {
 			return nil, err
@@ -322,7 +327,7 @@ func reviewRESTRequestBody(operation string, arguments reviewToolArguments) ([]b
 			AgentProfile: strings.TrimSpace(arguments.AgentProfile), AgentInstanceID: strings.TrimSpace(arguments.AgentInstanceID),
 			SessionKey: strings.TrimSpace(arguments.SessionKey),
 		})
-	case "list_review_rounds", "list_review_findings":
+	case "list_review_rounds", "list_review_findings", "get_github_check_gate", "wait_for_github_checks":
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("%w: review operation %s", ErrUnsupportedAdapter, operation)
@@ -345,6 +350,14 @@ func reviewRESTURL(baseURL string, route Route, arguments reviewToolArguments) (
 		}
 		setStringValueQuery(query, "status", arguments.Status)
 		setBoolQuery(query, "resolved", arguments.Resolved)
+	}
+	if route.Operation == "wait_for_github_checks" {
+		if arguments.AfterID > 0 {
+			query.Set("after_id", strconv.FormatInt(arguments.AfterID, 10))
+		}
+		if arguments.WaitMS != nil {
+			query.Set("wait_ms", strconv.Itoa(*arguments.WaitMS))
+		}
 	}
 	parsedURL.RawQuery = query.Encode()
 	return parsedURL.String(), nil
@@ -375,6 +388,12 @@ func expandReviewPath(path string, arguments reviewToolArguments) (string, error
 			return "", fmt.Errorf("review route requires review_finding_id")
 		}
 		result = strings.ReplaceAll(result, "{finding_id}", strconv.FormatInt(arguments.ReviewFindingID, 10))
+	}
+	if strings.Contains(result, "{commit_sha}") {
+		if strings.TrimSpace(arguments.CommitSHA) == "" {
+			return "", fmt.Errorf("review route requires commit_sha")
+		}
+		result = strings.ReplaceAll(result, "{commit_sha}", url.PathEscape(strings.TrimSpace(arguments.CommitSHA)))
 	}
 	return result, nil
 }

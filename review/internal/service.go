@@ -17,6 +17,7 @@ const (
 	defaultGitHubHTTPErrorBackoff  = 15 * time.Minute
 	defaultGitHubEventWaitMax      = 55 * time.Second
 	defaultGitHubEventWaitPoll     = 500 * time.Millisecond
+	defaultGitHubToolWaitMax       = 50 * time.Second
 )
 
 type ProjectValidator interface {
@@ -580,6 +581,49 @@ func (s *Service) GetGitHubCheckGate(ctx context.Context, projectID string, task
 	return s.store.GetGitHubCheckGate(ctx, task.ProjectID, taskID, commitSHA)
 }
 
+func (s *Service) WaitForGitHubCheckGate(ctx context.Context, projectID string, taskID int64, commitSHA string, afterID int64, wait time.Duration) (GitHubCheckGateWaitReceipt, error) {
+	if afterID < 0 || wait < 0 {
+		return GitHubCheckGateWaitReceipt{}, badRequest(errors.New("after_id and wait must not be negative"))
+	}
+	if wait > defaultGitHubToolWaitMax {
+		wait = defaultGitHubToolWaitMax
+	}
+	gate, err := s.GetGitHubCheckGate(ctx, projectID, taskID, commitSHA)
+	if err != nil {
+		return GitHubCheckGateWaitReceipt{}, err
+	}
+	if terminalGitHubCheckGateStatus(gate.Status) {
+		return GitHubCheckGateWaitReceipt{Gate: gate, NextCursor: afterID, Terminal: true}, nil
+	}
+	deadline := time.Now().Add(wait)
+	cursor := afterID
+	for {
+		remaining := time.Until(deadline)
+		if wait == 0 || remaining <= 0 {
+			return GitHubCheckGateWaitReceipt{Gate: gate, NextCursor: cursor, TimedOut: wait > 0}, nil
+		}
+		page, waitErr := s.WaitGitHubCheckGateEvents(ctx, ListGitHubCheckGateEventsQuery{
+			ProjectID: gate.ProjectID, TaskID: gate.TaskID, AfterID: cursor, Limit: 50,
+		}, remaining)
+		if waitErr != nil {
+			return GitHubCheckGateWaitReceipt{}, waitErr
+		}
+		cursor = page.NextCursor
+		for _, event := range page.Events {
+			if event.GateID == gate.ID {
+				terminalGate, getErr := s.store.GetGitHubCheckGate(ctx, gate.ProjectID, gate.TaskID, gate.CommitSHA)
+				if getErr != nil {
+					return GitHubCheckGateWaitReceipt{}, getErr
+				}
+				return GitHubCheckGateWaitReceipt{Gate: terminalGate, Event: event, NextCursor: cursor, Terminal: true}, nil
+			}
+		}
+		if page.TimedOut {
+			return GitHubCheckGateWaitReceipt{Gate: gate, NextCursor: cursor, TimedOut: true}, nil
+		}
+	}
+}
+
 func (s *Service) PollGitHubCheckGates(ctx context.Context, limit int) error {
 	if s.githubChecks == nil {
 		return NewServiceError(ErrGitHubChecksUnset, "github_checks_unconfigured", 500)
@@ -814,7 +858,7 @@ func (s *Service) deliverGitHubCheckGateEvidence(ctx context.Context, gate *GitH
 	content, intent := renderGitHubCheckGateEvidence(gate)
 	message, err := s.messages.AppendTaskMessage(ctx, gate.ProjectID, AppendMessageRequest{
 		TaskID:  gate.TaskID,
-		Sender:  firstNonEmpty(gate.RequestedBy, "den-review"),
+		Sender:  "den-review",
 		Content: content,
 		Intent:  intent,
 		Metadata: map[string]any{
@@ -831,6 +875,7 @@ func (s *Service) deliverGitHubCheckGateEvidence(ctx context.Context, gate *GitH
 			"agent_profile":           gate.AgentProfile,
 			"agent_instance_id":       gate.AgentInstanceID,
 			"session_key":             gate.SessionKey,
+			"requested_by":            gate.RequestedBy,
 		},
 	})
 	now := s.clock().UTC()

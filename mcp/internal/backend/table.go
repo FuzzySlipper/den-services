@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -25,6 +26,7 @@ type routeFile struct {
 	Path            string `yaml:"path"`
 	RequestAdapter  string `yaml:"request_adapter"`
 	ResponseAdapter string `yaml:"response_adapter"`
+	Timeout         string `yaml:"timeout"`
 }
 
 func LoadRouteTable(path string) (*RouteTable, error) {
@@ -36,7 +38,11 @@ func LoadRouteTable(path string) (*RouteTable, error) {
 	if err := yaml.Unmarshal(data, &file); err != nil {
 		return nil, fmt.Errorf("parsing mcp route table %s: %w", path, err)
 	}
-	return NewRouteTable(file.toRoutes())
+	routes, err := file.toRoutes()
+	if err != nil {
+		return nil, err
+	}
+	return NewRouteTable(routes)
 }
 
 func NewRouteTable(routes []Route) (*RouteTable, error) {
@@ -65,9 +71,17 @@ func (t *RouteTable) Resolve(operation string) (Route, error) {
 	return route, nil
 }
 
-func (f routeTableFile) toRoutes() []Route {
+func (f routeTableFile) toRoutes() ([]Route, error) {
 	routes := make([]Route, 0, len(f.Routes))
 	for _, route := range f.Routes {
+		var timeout time.Duration
+		if strings.TrimSpace(route.Timeout) != "" {
+			parsed, err := time.ParseDuration(route.Timeout)
+			if err != nil || parsed <= 0 {
+				return nil, fmt.Errorf("parsing route %s timeout: must be a positive duration", route.Operation)
+			}
+			timeout = parsed
+		}
 		routes = append(routes, Route{
 			Operation:       route.Operation,
 			Backend:         route.Backend,
@@ -75,9 +89,10 @@ func (f routeTableFile) toRoutes() []Route {
 			Path:            route.Path,
 			RequestAdapter:  route.RequestAdapter,
 			ResponseAdapter: route.ResponseAdapter,
+			Timeout:         timeout,
 		})
 	}
-	return routes
+	return routes, nil
 }
 
 func normalizeRoute(route Route) Route {

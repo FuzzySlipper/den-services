@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"den-services/mcp/internal/registry"
 )
@@ -23,6 +24,20 @@ func TestRouteTableResolvesOperation(t *testing.T) {
 	}
 	if route.Path != "/mcp" {
 		t.Fatalf("Path = %q, want /mcp", route.Path)
+	}
+}
+
+func TestRoutesExampleUsesNarrowGitHubWaitTimeout(t *testing.T) {
+	table, err := LoadRouteTable(filepath.Join("..", "..", "routes.example.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := table.Resolve("wait_for_github_checks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if route.Timeout != 55*time.Second {
+		t.Fatalf("route timeout = %s", route.Timeout)
 	}
 }
 
@@ -446,7 +461,10 @@ func reviewRoute(operation string) bool {
 		"set_review_verdict",
 		"respond_to_review_finding",
 		"set_review_finding_status",
-		"await_github_checks":
+		"await_github_checks",
+		"watch_github_checks",
+		"get_github_check_gate",
+		"wait_for_github_checks":
 		return true
 	default:
 		return false

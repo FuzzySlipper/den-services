@@ -384,6 +384,9 @@ func TestRegisterGitHubCheckGateRecordsPassEvidence(t *testing.T) {
 	if len(messages.appended) != 1 || messages.appended[0].Intent != "github_checks_passed" {
 		t.Fatalf("pass evidence message not appended: %+v", messages.appended)
 	}
+	if messages.appended[0].Sender != "den-review" || messages.appended[0].Metadata["requested_by"] != "codex" {
+		t.Fatalf("evidence authorship/metadata = %+v", messages.appended[0])
+	}
 	if !strings.Contains(messages.appended[0].Content, "https://github.test/run/1") {
 		t.Fatalf("message missing check run URL: %s", messages.appended[0].Content)
 	}
@@ -441,6 +444,36 @@ func TestWaitGitHubCheckGateEventsHasBoundedEmptyWait(t *testing.T) {
 	}
 	if !page.TimedOut || page.NextCursor != 9 || time.Since(started) > 250*time.Millisecond {
 		t.Fatalf("bounded page = %+v elapsed=%s", page, time.Since(started))
+	}
+}
+
+func TestWaitForGitHubCheckGateReturnsProgressWithoutMutatingGate(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	service := newTestService(store, &fakeMessages{}, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Status: TaskStatusInProgress},
+	}})
+	sha := "0123456789abcdef0123456789abcdef01234567"
+	nextPollAt := fixedReviewTestTime().Add(30 * time.Second)
+	gate, _, err := store.RegisterGitHubCheckGate(ctx, &GitHubCheckGate{
+		ProjectID: "den-services", TaskID: 42, Repository: "owner/repo", CommitSHA: sha, Ref: "main",
+		RequiredChecks: []string{"Verify"}, Status: GitHubCheckGateStatusPending, RequestedBy: "codex",
+		TimeoutAt: fixedReviewTestTime().Add(time.Hour), PollIntervalSeconds: 30, NextPollAt: nextPollAt,
+		CreatedAt: fixedReviewTestTime(), UpdatedAt: fixedReviewTestTime(),
+	}, fixedReviewTestTime())
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := service.WaitForGitHubCheckGate(ctx, "den-services", 42, sha, 17, 5*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Terminal || !receipt.TimedOut || receipt.NextCursor != 17 || receipt.Gate.ID != gate.ID {
+		t.Fatalf("receipt = %+v", receipt)
+	}
+	stored := store.githubCheckGates[gate.ID]
+	if !stored.NextPollAt.Equal(nextPollAt) || !stored.TimeoutAt.Equal(gate.TimeoutAt) || stored.PollIntervalSeconds != 30 {
+		t.Fatalf("bounded wait mutated gate: %+v", stored)
 	}
 }
 

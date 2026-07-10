@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 )
 
 const (
@@ -33,6 +34,7 @@ type Route struct {
 	Path            string
 	RequestAdapter  string
 	ResponseAdapter string
+	Timeout         time.Duration
 }
 
 type ToolCall struct {

@@ -324,6 +324,14 @@ type GitHubCheckGateEventPage struct {
 	TimedOut   bool                            `json:"timed_out"`
 }
 
+type GitHubCheckGateWaitReceipt struct {
+	Gate       *GitHubCheckGate              `json:"-"`
+	Event      *GitHubCheckGateTerminalEvent `json:"event,omitempty"`
+	NextCursor int64                         `json:"next_cursor"`
+	Terminal   bool                          `json:"terminal"`
+	TimedOut   bool                          `json:"timed_out"`
+}
+
 func validGitHubCheckGateStatus(status string) bool {
 	switch status {
 	case GitHubCheckGateStatusPending, GitHubCheckGateStatusPassed, GitHubCheckGateStatusFailed,
