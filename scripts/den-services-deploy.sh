@@ -205,6 +205,13 @@ append_mcp_route_if_missing() {
   fi
 
   local child_indent="${route_indent}  "
+  local write_target="${routes_target}"
+  local staged_routes=""
+  if [[ ! -w "${routes_target}" ]]; then
+    staged_routes="$(mktemp /tmp/den-mcp-routes.XXXXXX)"
+    cp "${routes_target}" "${staged_routes}"
+    write_target="${staged_routes}"
+  fi
   {
     printf '\n'
     printf '%s- operation: "%s"\n' "${route_indent}" "${operation}"
@@ -216,7 +223,11 @@ append_mcp_route_if_missing() {
     if [[ -n "${timeout}" ]]; then
       printf '%stimeout: "%s"\n' "${child_indent}" "${timeout}"
     fi
-  } >> "${routes_target}"
+  } >> "${write_target}"
+  if [[ -n "${staged_routes}" ]]; then
+    run_systemctl install -m 0644 "${staged_routes}" "${routes_target}"
+    rm -f "${staged_routes}"
+  fi
 }
 
 install_mcp_routes() {
