@@ -27,7 +27,14 @@ func checkHealth(ctx context.Context, client *http.Client, manifest *ServeManife
 	}
 	headerMatched := true
 	if strings.TrimSpace(manifest.IdentityHeader) != "" {
-		headerMatched = resp.Header.Get(manifest.IdentityHeader) == manifest.Project
+		// Identity headers identify the host implementation, not necessarily the
+		// Den project. For example, ASHA's native browser host reports
+		// X-ASHA-Browser-Host: browser-host.v0 while its health body identifies
+		// the asha-demo project. The manifest's ready text supplies the project
+		// identity; requiring the configured host header to be present and
+		// non-empty verifies the requested host contract without conflating the
+		// two identities.
+		headerMatched = strings.TrimSpace(resp.Header.Get(manifest.IdentityHeader)) != ""
 	}
 	matched := resp.StatusCode >= 200 && resp.StatusCode < 300 && readyTextFound && headerMatched
 	return HealthResult{

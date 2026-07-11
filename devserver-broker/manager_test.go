@@ -133,6 +133,40 @@ func TestNodeNpmHostStaysBrokerOwnedAfterLauncherExits(t *testing.T) {
 	}
 }
 
+func TestUpWaitsForDelayedNativeBrowserHostAndAcceptsContractHeader(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Timeouts.HealthInterval = 25 * time.Millisecond
+	manager := newTestManager(t, cfg)
+	repoRoot := t.TempDir()
+	const startupDelay = 150 * time.Millisecond
+	writeServeManifest(t, repoRoot, "browser-host", map[string]any{
+		"command":        "DEN_SERVE_TEST_START_DELAY=" + shellQuote(startupDelay.String()) + " " + helperCommand("delayed-native-browser-host"),
+		"healthUrl":      "/health",
+		"readyText":      `"project": "browser-host"`,
+		"identityHeader": "X-ASHA-Browser-Host",
+	})
+
+	startedAt := time.Now()
+	result, err := manager.Up(t.Context(), UpOptions{Project: "browser-host", RepoRoot: repoRoot})
+	if err != nil {
+		t.Fatalf("Up() error = %v", err)
+	}
+	defer stopSession(t, manager, result.Session)
+	if elapsed := time.Since(startedAt); elapsed < startupDelay {
+		t.Fatalf("Up() returned after %s, want at least delayed readiness %s", elapsed, startupDelay)
+	}
+	if !result.Started || !result.Session.Health.Matched || !result.Session.Health.HeaderMatched {
+		t.Fatalf("Up() = started=%v health=%+v, want running native browser host", result.Started, result.Session.Health)
+	}
+	status, err := manager.Status(t.Context(), StatusOptions{Project: "browser-host", RepoRoot: repoRoot})
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	if status.Status != "running" || !status.Health.Matched {
+		t.Fatalf("Status() = status=%q health=%+v, want running native browser host", status.Status, status.Health)
+	}
+}
+
 func TestUpFallsBackWhenPreferredPortHasWrongIdentity(t *testing.T) {
 	wrongServer, wrongURL, wrongPort := startHTTPServer(t, "wrong-ready", "wrong")
 	defer wrongServer.Close()
@@ -245,6 +279,28 @@ func TestHelperProcess(t *testing.T) {
 		mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("X-Den-Project", project)
 			_, _ = fmt.Fprint(w, ready)
+		})
+		if err := http.ListenAndServe(net.JoinHostPort(host, port), mux); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	case "delayed-native-browser-host":
+		delay, err := time.ParseDuration(os.Getenv("DEN_SERVE_TEST_START_DELAY"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		time.Sleep(delay)
+		host := os.Getenv("HOST")
+		if host == "" {
+			host = DefaultProbeHost
+		}
+		port := os.Getenv("PORT")
+		project := os.Getenv("DEN_SERVE_TEST_PROJECT")
+		mux := http.NewServeMux()
+		mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-ASHA-Browser-Host", "browser-host.v0")
+			_, _ = fmt.Fprintf(w, `{ "ok": true, "project": %q }`, project)
 		})
 		if err := http.ListenAndServe(net.JoinHostPort(host, port), mux); err != nil {
 			fmt.Fprintln(os.Stderr, err)
