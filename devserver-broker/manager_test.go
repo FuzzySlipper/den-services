@@ -140,10 +140,11 @@ func TestUpWaitsForDelayedNativeBrowserHostAndAcceptsContractHeader(t *testing.T
 	repoRoot := t.TempDir()
 	const startupDelay = 150 * time.Millisecond
 	writeServeManifest(t, repoRoot, "browser-host", map[string]any{
-		"command":        "DEN_SERVE_TEST_START_DELAY=" + shellQuote(startupDelay.String()) + " " + helperCommand("delayed-native-browser-host"),
-		"healthUrl":      "/health",
-		"readyText":      `"project": "browser-host"`,
-		"identityHeader": "X-ASHA-Browser-Host",
+		"command":             "DEN_SERVE_TEST_START_DELAY=" + shellQuote(startupDelay.String()) + " " + helperCommand("delayed-native-browser-host"),
+		"healthUrl":           "/health",
+		"readyText":           `"project": "browser-host"`,
+		"identityHeader":      "X-ASHA-Browser-Host",
+		"identityHeaderValue": "browser-host.v0",
 	})
 
 	startedAt := time.Now()
@@ -167,8 +168,8 @@ func TestUpWaitsForDelayedNativeBrowserHostAndAcceptsContractHeader(t *testing.T
 	}
 }
 
-func TestUpFallsBackWhenPreferredPortHasWrongIdentity(t *testing.T) {
-	wrongServer, wrongURL, wrongPort := startHTTPServer(t, "wrong-ready", "wrong")
+func TestUpFallsBackWhenPreferredPortHasExpectedBodyButWrongHeaderValue(t *testing.T) {
+	wrongServer, wrongURL, wrongPort := startHTTPServer(t, "beta-ready", "wrong")
 	defer wrongServer.Close()
 	cfg := testConfig(t)
 	cfg.PortRange = PortRange{Start: wrongPort + 1, End: wrongPort + 40}
@@ -188,9 +189,9 @@ func TestUpFallsBackWhenPreferredPortHasWrongIdentity(t *testing.T) {
 	}
 	defer stopSession(t, manager, result.Session)
 	if result.Session.Port == wrongPort {
-		t.Fatalf("reused wrong identity port %d", wrongPort)
+		t.Fatalf("reused port %d with an incorrect identity header value", wrongPort)
 	}
-	assertHTTPBody(t, wrongURL, "wrong-ready")
+	assertHTTPBody(t, wrongURL, "beta-ready")
 }
 
 func TestStopLeavesExplicitUnownedReuseRunning(t *testing.T) {

@@ -66,6 +66,11 @@ Minimal manifest:
 }
 ```
 
+`identityHeader` must return the project ID by default. Set
+`identityHeaderValue` when a host contract uses a different stable value, such
+as `"browser-host.v0"` for `X-ASHA-Browser-Host`; pair that host identity with
+`readyText` when it must independently identify the project.
+
 `den-serve` does not require a Playwright `tests` block when reading `.den-playwright.json`.
 
 Template variables available in serve commands and manifest env values:

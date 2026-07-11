@@ -17,20 +17,21 @@ type manifestFile struct {
 }
 
 type serveManifestFile struct {
-	Command        string            `json:"command"`
-	Host           string            `json:"host"`
-	BindHost       string            `json:"bindHost"`
-	ProbeHost      string            `json:"probeHost"`
-	PublicHost     string            `json:"publicHost"`
-	PreferredPort  int               `json:"preferredPort"`
-	PortRange      *portRangeFile    `json:"portRange"`
-	HealthURL      string            `json:"healthUrl"`
-	ReadyText      string            `json:"readyText"`
-	IdentityHeader string            `json:"identityHeader"`
-	ReusePolicy    string            `json:"reusePolicy"`
-	StartupTimeout string            `json:"startupTimeout"`
-	HealthInterval string            `json:"healthInterval"`
-	Environment    map[string]string `json:"env"`
+	Command             string            `json:"command"`
+	Host                string            `json:"host"`
+	BindHost            string            `json:"bindHost"`
+	ProbeHost           string            `json:"probeHost"`
+	PublicHost          string            `json:"publicHost"`
+	PreferredPort       int               `json:"preferredPort"`
+	PortRange           *portRangeFile    `json:"portRange"`
+	HealthURL           string            `json:"healthUrl"`
+	ReadyText           string            `json:"readyText"`
+	IdentityHeader      string            `json:"identityHeader"`
+	IdentityHeaderValue string            `json:"identityHeaderValue"`
+	ReusePolicy         string            `json:"reusePolicy"`
+	StartupTimeout      string            `json:"startupTimeout"`
+	HealthInterval      string            `json:"healthInterval"`
+	Environment         map[string]string `json:"env"`
 }
 
 type portRangeFile struct {
@@ -125,19 +126,20 @@ func (f serveManifestFile) toManifest(cfg ManagerConfig) (ServeManifest, error) 
 	}
 	bindHost := valueOrDefault(f.BindHost, valueOrDefault(f.Host, cfg.BindHost))
 	return ServeManifest{
-		Command:        strings.TrimSpace(f.Command),
-		BindHost:       bindHost,
-		ProbeHost:      valueOrDefault(f.ProbeHost, cfg.ProbeHost),
-		PublicHost:     valueOrDefault(f.PublicHost, cfg.PublicHost),
-		PreferredPort:  f.PreferredPort,
-		PortRange:      portRange,
-		HealthPath:     valueOrDefault(f.HealthURL, "/"),
-		ReadyText:      f.ReadyText,
-		IdentityHeader: f.IdentityHeader,
-		ReusePolicy:    ReusePolicy(valueOrDefault(f.ReusePolicy, string(ReusePolicyBrokerOwned))),
-		StartupTimeout: startupTimeout,
-		HealthInterval: healthInterval,
-		Environment:    copyMap(f.Environment),
+		Command:             strings.TrimSpace(f.Command),
+		BindHost:            bindHost,
+		ProbeHost:           valueOrDefault(f.ProbeHost, cfg.ProbeHost),
+		PublicHost:          valueOrDefault(f.PublicHost, cfg.PublicHost),
+		PreferredPort:       f.PreferredPort,
+		PortRange:           portRange,
+		HealthPath:          valueOrDefault(f.HealthURL, "/"),
+		ReadyText:           f.ReadyText,
+		IdentityHeader:      f.IdentityHeader,
+		IdentityHeaderValue: strings.TrimSpace(f.IdentityHeaderValue),
+		ReusePolicy:         ReusePolicy(valueOrDefault(f.ReusePolicy, string(ReusePolicyBrokerOwned))),
+		StartupTimeout:      startupTimeout,
+		HealthInterval:      healthInterval,
+		Environment:         copyMap(f.Environment),
 	}, nil
 }
 
@@ -168,6 +170,9 @@ func (m *ServeManifest) validate() error {
 	}
 	if strings.TrimSpace(m.ReadyText) == "" && strings.TrimSpace(m.IdentityHeader) == "" {
 		return fmt.Errorf("%w: serve.readyText or serve.identityHeader is required", ErrInvalidManifest)
+	}
+	if strings.TrimSpace(m.IdentityHeaderValue) != "" && strings.TrimSpace(m.IdentityHeader) == "" {
+		return fmt.Errorf("%w: serve.identityHeaderValue requires serve.identityHeader", ErrInvalidManifest)
 	}
 	if m.StartupTimeout <= 0 || m.HealthInterval <= 0 {
 		return fmt.Errorf("%w: serve timeouts must be positive", ErrInvalidManifest)

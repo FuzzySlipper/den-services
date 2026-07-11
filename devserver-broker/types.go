@@ -38,23 +38,34 @@ type TimeoutConfig struct {
 }
 
 type ServeManifest struct {
-	Project        string
-	RepoRoot       string
-	ManifestPath   string
-	Target         string
-	Command        string
-	BindHost       string
-	ProbeHost      string
-	PublicHost     string
-	PreferredPort  int
-	PortRange      *PortRange
-	HealthPath     string
-	ReadyText      string
-	IdentityHeader string
-	ReusePolicy    ReusePolicy
-	StartupTimeout time.Duration
-	HealthInterval time.Duration
-	Environment    map[string]string
+	Project             string
+	RepoRoot            string
+	ManifestPath        string
+	Target              string
+	Command             string
+	BindHost            string
+	ProbeHost           string
+	PublicHost          string
+	PreferredPort       int
+	PortRange           *PortRange
+	HealthPath          string
+	ReadyText           string
+	IdentityHeader      string
+	IdentityHeaderValue string
+	ReusePolicy         ReusePolicy
+	StartupTimeout      time.Duration
+	HealthInterval      time.Duration
+	Environment         map[string]string
+}
+
+// ExpectedIdentityHeaderValue returns the configured host identity value. The
+// project remains the backwards-compatible default for manifests whose server
+// identifies itself with its Den project ID.
+func (m ServeManifest) ExpectedIdentityHeaderValue() string {
+	if m.IdentityHeaderValue != "" {
+		return m.IdentityHeaderValue
+	}
+	return m.Project
 }
 
 type ReusePolicy string
