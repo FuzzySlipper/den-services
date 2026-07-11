@@ -4,6 +4,33 @@
 surface. It exposes the same static tool discovery shape while proxying tool
 execution to the configured Den backend.
 
+## Task-context briefing
+
+`get_task_context(project_id, task_id)` is the bounded, read-only startup
+composition for an agent beginning, resuming, investigating, or reviewing a
+Den task. It is additive: use `get_task`, `get_task_workflow_summary`,
+`get_agent_guidance`, `query_librarian`, and `get_messages` when a source
+handle needs deeper follow-up.
+
+The result is versioned (`schema_version`) and contains the canonical task,
+bounded dependencies/subtasks and recent task-thread messages, review state,
+guidance document handles, librarian references/recommendations, deterministic
+`search_hints`, `limits`/`truncated` markers, and per-source `source_status`.
+It does not copy guidance document bodies or introduce a cache/projection.
+
+The canonical task is fail-closed: a missing task, malformed task response, or
+project/task mismatch is a tool error. Workflow, task-thread, guidance, and
+librarian reads are optional context sources. Their failure returns a partial
+packet only with a `source_status` entry whose state is `partial` or
+`unavailable`, plus an error code and retryability. An empty source with `ok`
+status is not an unavailable source.
+
+The facade adds no caller impersonation, credentials, or visibility bypass:
+every source read uses the existing configured backend route and its normal
+access behavior. Do not treat this ergonomic composition as a security
+boundary. Follow document/message handles on demand and stop under the
+project's Den-connectivity policy when the packet cannot be read.
+
 ## Hermes Stability Smoke
 
 Run the local smoke harness before MCP cutover work:
@@ -22,7 +49,7 @@ Expected output contains these checkpoints:
 
 ```text
 ok: local initialize
-ok: local tools/list returned 61 tools
+ok: local tools/list returned 65 tools
 ok: local read tool proxied through backend
 ok: local non-representative tool proxied through backend
 ok: local get_agent_guidance returned MCP-compatible successor shape
@@ -83,7 +110,7 @@ Expected live output includes:
 
 ```text
 ok: live initialize
-ok: live tools/list returned 61 tools
+ok: live tools/list returned 65 tools
 ok: live read tool proxied to tasks successor
 ok: live non-representative tool proxied to documents successor
 ok: live get_agent_guidance returned MCP-compatible successor shape

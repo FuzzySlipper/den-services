@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 
-EXPECTED_TOOL_COUNT = 60
+EXPECTED_TOOL_COUNT = 65
 MCP_PATH = "/mcp"
 DEN_CORE_TOKEN_ENV = "DEN_CORE_SERVICE_TOKEN"
 SMOKE_BACKENDS = (
@@ -714,6 +714,11 @@ def document_from_result(result: dict[str, Any]) -> dict[str, Any]:
 def json_from_result(result: dict[str, Any], label: str) -> Any:
     structured = result.get("structuredContent")
     if structured is not None:
+        # MCP structuredContent is required to be an object, so a legacy raw
+        # array is represented there as {"items": [...]}; the text content
+        # remains the canonical raw array compatibility shape.
+        if isinstance(structured, dict) and set(structured) == {"items"} and isinstance(structured["items"], list):
+            return structured["items"]
         return structured
     for item in result.get("content") or []:
         if item.get("type") != "text":

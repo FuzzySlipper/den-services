@@ -2,6 +2,7 @@ package backend
 
 import (
 	"errors"
+	"net/http"
 	"path/filepath"
 	"testing"
 	"time"
@@ -88,6 +89,9 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 			wantBackend = "projects"
 		}
 		if taskWorkflowSummaryComposeRoute(tool.Name) {
+			wantBackend = "tasks"
+		}
+		if taskContextComposeRoute(tool.Name) {
 			wantBackend = "tasks"
 		}
 		if tasksRoute(tool.Name) {
@@ -269,6 +273,20 @@ func TestRouteTableAllowsTaskWorkflowSummaryComposeAdapter(t *testing.T) {
 	}
 }
 
+func TestRouteTableAllowsTaskContextComposeAdapter(t *testing.T) {
+	route := Route{
+		Operation:       "get_task_context",
+		Backend:         "tasks",
+		Method:          http.MethodGet,
+		Path:            "/v1/tasks/{task_id}/context",
+		RequestAdapter:  RequestAdapterMCPTaskContextCompose,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}
+	if _, err := NewRouteTable([]Route{route}); err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+}
+
 func TestRouteTableAllowsMessagesRESTAdapter(t *testing.T) {
 	route := Route{
 		Operation:       "send_message",
@@ -392,6 +410,10 @@ func taskWorkflowSummaryComposeRoute(operation string) bool {
 	default:
 		return false
 	}
+}
+
+func taskContextComposeRoute(operation string) bool {
+	return operation == "get_task_context"
 }
 
 func tasksRoute(operation string) bool {

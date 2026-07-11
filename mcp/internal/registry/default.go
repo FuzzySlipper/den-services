@@ -70,7 +70,20 @@ func DefaultTools() ([]ToolDefinition, error) {
 		tools = append(tools, definition)
 	}
 	tools = append(tools, githubCheckGateTools()...)
+	tools = append(tools, taskContextTools()...)
 	return tools, nil
+}
+
+func taskContextTools() []ToolDefinition {
+	return []ToolDefinition{{
+		Name:        "get_task_context",
+		Description: "Compose a bounded, read-only Den task briefing from canonical task, workflow, guidance, librarian, and task-thread authorities. A missing canonical task is an error; degraded optional sources are labelled in source_status.",
+		Backend:     "tasks", Operation: "get_task_context",
+		InputSchema: ObjectSchema(map[string]Schema{
+			"project_id": StringSchema("Project ID expected to own the canonical task."),
+			"task_id":    IntegerSchema("Canonical task ID to brief."),
+		}, "project_id", "task_id"),
+	}}
 }
 
 func githubCheckGateTools() []ToolDefinition {
