@@ -31,6 +31,8 @@ Use `watch_github_checks` after pushing:
 
 `watch_github_checks` is intentionally non-blocking. It registers the durable exact-SHA gate and returns the deferral handle/current state. `await_github_checks` remains available for compatibility through the migration window, but is deprecated because it historically returned immediately despite its name.
 
+Registering a gate promotes the referenced task to `review` in the Tasks service before the gate is stored. Agents do not need a separate status-update call, and registration intentionally works from every current task status. When this moves a `blocked` task to review, Tasks clears the stale blocker context so `blocked` remains a truthful statement about an active impediment.
+
 Read the existing gate without changing its timeout, grace window, polling interval, or `next_poll_at`:
 
 ```json

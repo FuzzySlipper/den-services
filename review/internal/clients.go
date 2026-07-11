@@ -126,6 +126,44 @@ func (c *HTTPTaskClient) GetTask(ctx context.Context, taskID int64) (TaskContext
 	return task, nil
 }
 
+func (c *HTTPTaskClient) SetTaskStatus(ctx context.Context, projectID string, taskID int64, agent string, status string) (TaskContext, error) {
+	if c.baseURL == "" {
+		return TaskContext{}, NewServiceError(ErrTaskClientUnset, "task_client_unconfigured", http.StatusInternalServerError)
+	}
+	body := struct {
+		Agent  string `json:"agent"`
+		Status string `json:"status"`
+	}{Agent: strings.TrimSpace(agent), Status: strings.TrimSpace(status)}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return TaskContext{}, fmt.Errorf("encoding task status update: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, fmt.Sprintf("%s/v1/projects/%s/tasks/%d", c.baseURL, url.PathEscape(projectID), taskID), bytes.NewReader(data))
+	if err != nil {
+		return TaskContext{}, fmt.Errorf("building task status update request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return TaskContext{}, fmt.Errorf("updating task status: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return TaskContext{}, fmt.Errorf("task status update failed: %s", errorMessage(resp))
+	}
+	task, err := decodeTaskContext(resp.Body)
+	if err != nil {
+		return TaskContext{}, err
+	}
+	if task.ProjectID != projectID {
+		return TaskContext{}, validationError(fmt.Errorf("task %d is not in project %s", taskID, projectID), "project_mismatch", "task_id", "common.task_id")
+	}
+	return task, nil
+}
+
 func (c *HTTPTaskClient) CreateFollowUpTask(ctx context.Context, projectID string, req CreateFollowUpTaskRequest) (CreatedTask, error) {
 	if c.baseURL == "" {
 		return CreatedTask{}, NewServiceError(ErrTaskClientUnset, "task_client_unconfigured", http.StatusInternalServerError)

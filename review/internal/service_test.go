@@ -392,6 +392,36 @@ func TestRegisterGitHubCheckGateRecordsPassEvidence(t *testing.T) {
 	}
 }
 
+func TestRegisterGitHubCheckGatePromotesTaskToReviewRegardlessOfCurrentStatus(t *testing.T) {
+	statuses := []string{"planned", "in_progress", "review", "blocked", "done", "cancelled"}
+	for _, status := range statuses {
+		t.Run(status, func(t *testing.T) {
+			ctx := context.Background()
+			tasks := &fakeTasks{tasks: map[int64]TaskContext{
+				42: {ID: 42, ProjectID: "den-services", Title: "GitHub gate", Status: status, Priority: 1},
+			}}
+			service := newTestService(newMemoryStore(), &fakeMessages{}, tasks)
+
+			if _, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, RegisterGitHubCheckGateRequest{
+				Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Ref: "main",
+				RequiredChecks: []string{"go test"}, RequestedBy: "codex",
+			}); err != nil {
+				t.Fatalf("RegisterGitHubCheckGate() error = %v", err)
+			}
+			if got := tasks.tasks[42].Status; got != TaskStatusReview {
+				t.Fatalf("task status = %q, want %q", got, TaskStatusReview)
+			}
+			if status == TaskStatusReview {
+				if len(tasks.statusUpdates) != 0 {
+					t.Fatalf("status updates = %+v, want no redundant review transition", tasks.statusUpdates)
+				}
+			} else if len(tasks.statusUpdates) != 1 || tasks.statusUpdates[0].Agent != "codex" {
+				t.Fatalf("status updates = %+v, want one codex-authored review transition", tasks.statusUpdates)
+			}
+		})
+	}
+}
+
 func TestTerminalGitHubCheckGateEventIsIdempotentAndResumable(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()
@@ -977,8 +1007,14 @@ func fixedReviewTestTime() time.Time {
 }
 
 type fakeTasks struct {
-	tasks   map[int64]TaskContext
-	created []CreateFollowUpTaskRequest
+	tasks         map[int64]TaskContext
+	created       []CreateFollowUpTaskRequest
+	statusUpdates []fakeTaskStatusUpdate
+}
+
+type fakeTaskStatusUpdate struct {
+	Agent  string
+	Status string
 }
 
 func (f fakeTasks) GetTask(_ context.Context, taskID int64) (TaskContext, error) {
@@ -993,6 +1029,17 @@ func (f fakeTasks) GetTaskContext(_ context.Context, projectID string, taskID in
 		return task, nil
 	}
 	return TaskContext{}, validationError(errors.New("task not found"), "task_not_found", "task_id", "common.task_id")
+}
+
+func (f *fakeTasks) SetTaskStatus(_ context.Context, projectID string, taskID int64, agent string, status string) (TaskContext, error) {
+	task, ok := f.tasks[taskID]
+	if !ok || task.ProjectID != projectID {
+		return TaskContext{}, validationError(errors.New("task not found"), "task_not_found", "task_id", "common.task_id")
+	}
+	task.Status = status
+	f.tasks[taskID] = task
+	f.statusUpdates = append(f.statusUpdates, fakeTaskStatusUpdate{Agent: agent, Status: status})
+	return task, nil
 }
 
 func (f *fakeTasks) CreateFollowUpTask(_ context.Context, projectID string, req CreateFollowUpTaskRequest) (CreatedTask, error) {

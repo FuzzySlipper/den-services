@@ -139,6 +139,15 @@ func TestServiceBlockedInvariantAndHistory(t *testing.T) {
 	assertHistoryField(t, history, "blocker_summary", "", summary)
 	assertHistoryField(t, history, "blocker_reason", "", reason)
 	assertHistoryField(t, history, "blocker_requires_human_input", "false", "true")
+
+	review := StatusReview
+	updated, err = service.UpdateTask(ctx, task.ID(), UpdateTaskRequest{Agent: "tester", Status: &review})
+	if err != nil {
+		t.Fatalf("UpdateTask(review) error = %v", err)
+	}
+	if updated.Status() != StatusReview || updated.BlockerSummary() != "" || updated.BlockerReason() != "" || updated.BlockerRequiresHumanInput() {
+		t.Fatalf("updated review task retained blocker context: %+v", updated)
+	}
 }
 
 func TestServiceTaskChangesIncludeSummaryForDependentAvailability(t *testing.T) {

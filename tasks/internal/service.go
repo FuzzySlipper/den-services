@@ -215,6 +215,15 @@ func buildPatch(current *Task, req UpdateTaskRequest) (TaskPatch, error) {
 				return TaskPatch{}, ErrBlockedContextMissing
 			}
 		}
+		if status != StatusBlocked && current.Status() == StatusBlocked {
+			empty := ""
+			falseValue := false
+			patch.BlockerSummary = &empty
+			patch.BlockerReason = &empty
+			patch.BlockerAttemptedRemedies = &empty
+			patch.BlockerSuggestedNextStep = &empty
+			patch.BlockerRequiresHumanInput = &falseValue
+		}
 	}
 	if patch.Title != nil && *patch.Title == "" {
 		return TaskPatch{}, ErrMissingTitle

@@ -27,6 +27,7 @@ type ProjectValidator interface {
 type TaskClient interface {
 	GetTask(ctx context.Context, taskID int64) (TaskContext, error)
 	GetTaskContext(ctx context.Context, projectID string, taskID int64) (TaskContext, error)
+	SetTaskStatus(ctx context.Context, projectID string, taskID int64, agent string, status string) (TaskContext, error)
 	CreateFollowUpTask(ctx context.Context, projectID string, req CreateFollowUpTaskRequest) (CreatedTask, error)
 }
 
@@ -546,13 +547,19 @@ func (s *Service) WorkflowSummaryForTask(ctx context.Context, taskID int64) (Wor
 }
 
 func (s *Service) RegisterGitHubCheckGate(ctx context.Context, projectID string, taskID int64, req RegisterGitHubCheckGateRequest) (*GitHubCheckGate, error) {
-	task, err := s.validateTask(ctx, projectID, taskID, TaskStatusInProgress, TaskStatusReview)
+	task, err := s.validateTask(ctx, projectID, taskID)
 	if err != nil {
 		return nil, err
 	}
 	gate, err := s.githubGateFromRequest(task.ProjectID, taskID, req)
 	if err != nil {
 		return nil, err
+	}
+	if task.Status != TaskStatusReview {
+		task, err = s.tasks.SetTaskStatus(ctx, task.ProjectID, taskID, req.RequestedBy, TaskStatusReview)
+		if err != nil {
+			return nil, err
+		}
 	}
 	stored, superseded, err := s.store.RegisterGitHubCheckGate(ctx, gate, s.clock().UTC())
 	if err != nil {
