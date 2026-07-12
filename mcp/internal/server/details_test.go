@@ -79,13 +79,40 @@ func TestConciseReadDetailReferenceExpandsAndExpires(t *testing.T) {
 	}
 
 	logText := logs.String()
-	for _, want := range []string{`"msg":"mcp_tool_call"`, `"tool":"get_task"`, `"tool":"get_details"`, `"outcome":"success"`, `"outcome":"invalid_detail_ref"`} {
+	for _, want := range []string{`"msg":"mcp_tool_call"`, `"requested_tool":"get_task"`, `"canonical_tool":"get_task"`, `"requested_tool":"get_details"`, `"canonical_tool":"get_details"`, `"outcome":"success"`, `"outcome":"invalid_detail_ref"`} {
 		if !strings.Contains(logText, want) {
 			t.Fatalf("logs missing %s: %s", want, logText)
 		}
 	}
 	if strings.Contains(logText, detailRef) || strings.Contains(logText, "full detail") {
 		t.Fatalf("logs leaked arguments or content: %s", logText)
+	}
+}
+
+func TestToolCallLogDistinguishesRequestedAliasFromCanonicalTool(t *testing.T) {
+	toolRegistry, err := registry.New([]registry.ToolDefinition{{
+		Name:             "get_task",
+		Description:      "Get a task.",
+		Backend:          "tasks",
+		Operation:        "get_task",
+		InputSchema:      registry.ObjectSchema(nil),
+		TombstoneMessage: "retired for test",
+		Aliases:          []registry.ToolAlias{{Name: "task_get"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	handler := NewMCPHandlerWithOptions(toolRegistry, health.BuildInfo{}, nil, HandlerOptions{
+		Logger: slog.New(slog.NewJSONHandler(&logs, nil)),
+	})
+
+	invokeToolForTest(t, handler, "task_get", map[string]any{})
+	logText := logs.String()
+	for _, want := range []string{`"requested_tool":"task_get"`, `"canonical_tool":"get_task"`} {
+		if !strings.Contains(logText, want) {
+			t.Fatalf("logs missing %s: %s", want, logText)
+		}
 	}
 }
 

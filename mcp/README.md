@@ -48,8 +48,10 @@ it is hidden from discovery and new callers should use `get_details`.
 ## Tool usage reports
 
 The facade emits one privacy-safe `mcp_tool_call` JSON log event per call with
-tool name, backend, outcome, retryability, and duration. Arguments, response
-content, tokens, and backend error bodies are never logged.
+the requested tool name, canonical tool name, backend, outcome, retryability,
+and duration. Keeping requested and canonical names separate makes alias usage
+visible without logging arguments. Arguments, response content, tokens, and
+backend error bodies are never logged.
 
 On a host with journal access, summarize usage over a bounded window with:
 

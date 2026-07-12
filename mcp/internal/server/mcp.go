@@ -251,12 +251,14 @@ func (h *Handler) initialize(rawParams json.RawMessage) initializeResult {
 func (h *Handler) toolsCall(ctx context.Context, request rpcRequest) (response rpcResponse) {
 	startedAt := h.clock()
 	requestedTool := ""
+	canonicalTool := ""
 	backendName := ""
 	outcome := "invalid_params"
 	retryable := false
 	defer func() {
 		h.logger.Info("mcp_tool_call",
-			"tool", requestedTool,
+			"requested_tool", requestedTool,
+			"canonical_tool", canonicalTool,
 			"backend", backendName,
 			"outcome", outcome,
 			"retryable", retryable,
@@ -278,6 +280,7 @@ func (h *Handler) toolsCall(ctx context.Context, request rpcRequest) (response r
 		outcome = "registry_error"
 		return rpcErrorResponse(request.ID, errorInternal, err.Error())
 	}
+	canonicalTool = tool.Name
 	backendName = tool.Backend
 	if tool.Operation == "get_details" {
 		return h.getDetails(ctx, request, params, &outcome, &backendName, &retryable)

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"den-services/mcp/internal/config"
@@ -104,8 +105,10 @@ func TestTaskContextFailsClosedForMissingTask(t *testing.T) {
 }
 
 func TestTaskContextRejectsRemovedProjectIDArgument(t *testing.T) {
+	var backendRequests atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("task backend should not be called for invalid arguments")
+		backendRequests.Add(1)
+		http.Error(w, "unexpected request", http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
@@ -113,6 +116,9 @@ func TestTaskContextRejectsRemovedProjectIDArgument(t *testing.T) {
 	_, failure, err := locator.Call(context.Background(), ToolCall{ToolName: "get_task_context", Operation: "get_task_context", RequestID: json.RawMessage(`1`), Arguments: json.RawMessage(`{"task_id":5591,"project_id":"den-services"}`)})
 	if err == nil || failure != nil || !strings.Contains(err.Error(), "unknown field \"project_id\"") {
 		t.Fatalf("Call() = %v, %#v", err, failure)
+	}
+	if got := backendRequests.Load(); got != 0 {
+		t.Fatalf("backend requests = %d, want 0", got)
 	}
 }
 

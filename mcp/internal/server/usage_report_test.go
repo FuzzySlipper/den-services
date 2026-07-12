@@ -11,8 +11,8 @@ import (
 func TestToolUsageReportCountsStructuredEvents(t *testing.T) {
 	journalctl := filepath.Join(t.TempDir(), "journalctl")
 	fixture := `#!/usr/bin/env bash
-echo '{"msg":"mcp_tool_call","tool":"get_task","backend":"tasks","outcome":"success","retryable":false}'
-echo '{"msg":"mcp_tool_call","tool":"get_task","backend":"tasks","outcome":"success","retryable":false}'
+echo '{"msg":"mcp_tool_call","requested_tool":"task_get","canonical_tool":"get_task","backend":"tasks","outcome":"success","retryable":false}'
+echo '{"msg":"mcp_tool_call","requested_tool":"task_get","canonical_tool":"get_task","backend":"tasks","outcome":"success","retryable":false}'
 echo '{"msg":"unrelated"}'
 `
 	if err := os.WriteFile(journalctl, []byte(fixture), 0o700); err != nil {
@@ -24,7 +24,7 @@ echo '{"msg":"unrelated"}'
 	if err != nil {
 		t.Fatalf("tool_usage_report.sh error = %v\n%s", err, output)
 	}
-	if !strings.Contains(string(output), "2\tget_task\ttasks\tsuccess\tfalse") {
+	if !strings.Contains(string(output), "2\ttask_get\tget_task\ttasks\tsuccess\tfalse") {
 		t.Fatalf("report output = %s", output)
 	}
 }

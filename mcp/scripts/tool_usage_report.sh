@@ -37,11 +37,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 {
-  echo $'count\ttool\tbackend\toutcome\tretryable'
+  echo $'count\trequested_tool\tcanonical_tool\tbackend\toutcome\tretryable'
   "${journalctl_bin}" --unit "${unit}" --since "${since}" --until "${until}" --output cat --no-pager |
-    "${jq_bin}" -Rr 'fromjson? | select(.msg == "mcp_tool_call") | [.tool, .backend, .outcome, (.retryable | tostring)] | @tsv' |
+    "${jq_bin}" -Rr 'fromjson? | select(.msg == "mcp_tool_call") | [.requested_tool, .canonical_tool, .backend, .outcome, (.retryable | tostring)] | @tsv' |
     awk -F '\t' '
-      { counts[$1 FS $2 FS $3 FS $4]++ }
+      { counts[$1 FS $2 FS $3 FS $4 FS $5]++ }
       END {
         for (key in counts) {
           print counts[key] "\t" key

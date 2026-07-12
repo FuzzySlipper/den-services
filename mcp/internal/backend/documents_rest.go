@@ -40,7 +40,6 @@ type documentsToolArguments struct {
 	Status            *string         `json:"status"`
 	ResolutionSummary *string         `json:"resolution_summary"`
 	IncludeComments   *bool           `json:"include_comments"`
-	CreateIfMissing   *bool           `json:"create_if_missing"`
 	IncludeResolved   *bool           `json:"include_resolved"`
 	Limit             *int            `json:"limit"`
 	Verbose           *bool           `json:"verbose"`
@@ -105,6 +104,9 @@ func (c *Client) callDocumentsREST(ctx context.Context, backend config.BackendCo
 }
 
 func buildDocumentsRESTRequest(ctx context.Context, backend config.BackendConfig, route Route, call ToolCall) (*http.Request, error) {
+	if err := rejectRemovedDocumentsArguments(route.Operation, call.Arguments); err != nil {
+		return nil, err
+	}
 	arguments, err := decodeDocumentsToolArguments(call.Arguments)
 	if err != nil {
 		return nil, err
@@ -129,6 +131,20 @@ func buildDocumentsRESTRequest(ctx context.Context, backend config.BackendConfig
 		request.Header.Set("Authorization", "Bearer "+backend.ServiceToken)
 	}
 	return request, nil
+}
+
+func rejectRemovedDocumentsArguments(operation string, raw json.RawMessage) error {
+	if operation != "get_document_discussion" || len(raw) == 0 {
+		return nil
+	}
+	var arguments map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &arguments); err != nil {
+		return fmt.Errorf("decoding documents tool arguments: %w", err)
+	}
+	if _, exists := arguments["create_if_missing"]; exists {
+		return fmt.Errorf("decoding documents tool arguments: unknown field %q", "create_if_missing")
+	}
+	return nil
 }
 
 func decodeDocumentsToolArguments(raw json.RawMessage) (documentsToolArguments, error) {
@@ -239,7 +255,6 @@ func documentsRESTURL(baseURL string, route Route, arguments documentsToolArgume
 		setStringValueQuery(query, "doc_type", arguments.DocType)
 		setStringValueQuery(query, "tags", stringFromRaw(arguments.Tags))
 	case "get_document_discussion":
-		setBoolQuery(query, "create_if_missing", arguments.CreateIfMissing)
 		setBoolQuery(query, "include_resolved", arguments.IncludeResolved)
 		setStringValueQuery(query, "anchor", arguments.Anchor)
 		setBoolQuery(query, "verbose", arguments.Verbose)

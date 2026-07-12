@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"den-services/mcp/internal/config"
@@ -115,5 +116,37 @@ func TestEnsureDocumentDiscussionIsTheOnlyCreatingRead(t *testing.T) {
 	}
 	if strings.Contains(readURL, "create_if_missing") || !strings.HasSuffix(ensureURL, "/discussion/ensure") {
 		t.Fatalf("readURL = %s, ensureURL = %s", readURL, ensureURL)
+	}
+}
+
+func TestGetDocumentDiscussionRejectsRemovedCreateIfMissingBeforeDispatch(t *testing.T) {
+	var backendRequests atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backendRequests.Add(1)
+		http.Error(w, "unexpected request", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	table, err := NewRouteTable([]Route{{
+		Operation: "get_document_discussion", Backend: "documents", Method: http.MethodGet,
+		Path:           "/v1/projects/{project_id}/documents/{slug}/discussion",
+		RequestAdapter: RequestAdapterMCPDocumentsREST, ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	locator, err := NewLocator([]config.BackendConfig{testBackend("documents", server.URL)}, table, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, failure, err := locator.Call(context.Background(), ToolCall{
+		ToolName: "get_document_discussion", Operation: "get_document_discussion",
+		Arguments: json.RawMessage(`{"project_id":"den-services","slug":"spec","create_if_missing":true}`),
+	})
+	if err == nil || failure != nil || !strings.Contains(err.Error(), `unknown field "create_if_missing"`) {
+		t.Fatalf("Call() = %v, %#v", err, failure)
+	}
+	if got := backendRequests.Load(); got != 0 {
+		t.Fatalf("backend requests = %d, want 0", got)
 	}
 }
