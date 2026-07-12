@@ -4,6 +4,8 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 )
 
 const denCoreBackend = "den-core"
@@ -50,10 +52,10 @@ func DefaultTools() ([]ToolDefinition, error) {
 	for _, tool := range snapshot.Tools {
 		definition := ToolDefinition{
 			Name:        tool.Name,
-			Description: tool.Description,
+			Description: modernizeDescription(tool.Name, tool.Description),
 			Backend:     denCoreBackend,
 			Operation:   tool.Name,
-			InputSchema: tool.InputSchema,
+			InputSchema: modernizeInputSchema(tool.Name, tool.InputSchema),
 			Execution:   tool.Execution,
 		}
 		if policy, ok := retiredToolPolicies[tool.Name]; ok {
@@ -71,24 +73,103 @@ func DefaultTools() ([]ToolDefinition, error) {
 	}
 	tools = append(tools, githubCheckGateTools()...)
 	tools = append(tools, taskContextTools()...)
+	tools = append(tools, contractErgonomicsTools()...)
 	return tools, nil
+}
+
+func modernizeInputSchema(name string, schema Schema) Schema {
+	var object map[string]any
+	if err := json.Unmarshal(schema, &object); err != nil {
+		return schema
+	}
+	properties, ok := object["properties"].(map[string]any)
+	if !ok {
+		return schema
+	}
+	changed := false
+	if _, exists := properties["verbose"]; exists {
+		delete(properties, "verbose")
+		changed = true
+	}
+	if taskDerivesProject(name) {
+		if _, exists := properties["project_id"]; exists {
+			delete(properties, "project_id")
+			changed = true
+		}
+	}
+	switch name {
+	case "mark_notifications_read":
+		delete(properties, "mark_all")
+		delete(properties, "scope_project_id")
+		delete(properties, "scope_task_id")
+		properties["notification_ids"] = map[string]any{
+			"type":        "string",
+			"description": "Comma-separated notification IDs to mark as read.",
+		}
+		changed = true
+	case "get_document_discussion":
+		delete(properties, "create_if_missing")
+		changed = true
+	}
+	if !changed {
+		return schema
+	}
+	required, _ := object["required"].([]any)
+	filtered := make([]any, 0, len(required)+1)
+	for _, value := range required {
+		field, _ := value.(string)
+		if field == "verbose" || (field == "project_id" && taskDerivesProject(name)) {
+			continue
+		}
+		filtered = append(filtered, value)
+	}
+	if name == "mark_notifications_read" && !containsRequired(filtered, "notification_ids") {
+		filtered = append(filtered, "notification_ids")
+	}
+	if len(filtered) == 0 {
+		delete(object, "required")
+	} else {
+		object["required"] = filtered
+	}
+	return mustSchema(object)
+}
+
+func modernizeDescription(name, description string) string {
+	verboseSentence := regexp.MustCompile(`(?i)(;\s*)?use verbose=true[^.]*\.`)
+	description = strings.TrimSpace(verboseSentence.ReplaceAllString(description, "."))
+	description = strings.ReplaceAll(description, "..", ".")
+	switch name {
+	case "mark_notifications_read":
+		return "Mark explicit user notification IDs as read for an agent identity. For scoped operations, use mark_project_notifications_read or mark_task_notifications_read."
+	case "get_document_discussion":
+		return "Read discussion threads and comments for a document without creating state. Use ensure_document_discussion only when a default thread must exist."
+	default:
+		return description
+	}
+}
+
+func containsRequired(required []any, field string) bool {
+	for _, value := range required {
+		if value == field {
+			return true
+		}
+	}
+	return false
 }
 
 func taskContextTools() []ToolDefinition {
 	return []ToolDefinition{{
 		Name:        "get_task_context",
-		Description: "Compose a bounded, read-only Den task briefing from canonical task, workflow, guidance, librarian, and task-thread authorities. A missing canonical task is an error; degraded optional sources are labelled in source_status.",
+		Description: "Compose a bounded, read-only Den task briefing from canonical task, workflow, guidance, librarian, and task-thread authorities. The canonical task supplies project scope. A missing canonical task is an error; degraded optional sources are labelled in source_status.",
 		Backend:     "tasks", Operation: "get_task_context",
 		InputSchema: ObjectSchema(map[string]Schema{
-			"project_id": StringSchema("Project ID expected to own the canonical task."),
-			"task_id":    IntegerSchema("Canonical task ID to brief."),
-		}, "project_id", "task_id"),
+			"task_id": IntegerSchema("Canonical task ID to brief."),
+		}, "task_id"),
 	}}
 }
 
 func githubCheckGateTools() []ToolDefinition {
 	watchSchema := ObjectSchema(map[string]Schema{
-		"project_id":            StringSchema("Project ID that owns the task."),
 		"task_id":               IntegerSchema("Task ID to gate."),
 		"repository":            StringSchema("GitHub repository as owner/name."),
 		"commit_sha":            StringSchema("Full 40-character commit SHA to watch. Den tracks this exact SHA, not latest branch head."),
@@ -100,19 +181,17 @@ func githubCheckGateTools() []ToolDefinition {
 		"agent_profile":         NullableStringSchema("Optional logical agent profile for correlation."),
 		"agent_instance_id":     NullableStringSchema("Optional runtime instance ID for correlation."),
 		"session_key":           NullableStringSchema("Optional session key for correlation."),
-	}, "project_id", "task_id", "repository", "commit_sha", "ref", "required_checks", "requested_by")
+	}, "task_id", "repository", "commit_sha", "ref", "required_checks", "requested_by")
 	readSchema := ObjectSchema(map[string]Schema{
-		"project_id": StringSchema("Project ID that owns the task."),
 		"task_id":    IntegerSchema("Task ID that owns the existing gate."),
 		"commit_sha": StringSchema("Exact 40-character commit SHA of the existing gate."),
-	}, "project_id", "task_id", "commit_sha")
+	}, "task_id", "commit_sha")
 	waitSchema := ObjectSchema(map[string]Schema{
-		"project_id": StringSchema("Project ID that owns the task."),
 		"task_id":    IntegerSchema("Task ID that owns the existing gate."),
 		"commit_sha": StringSchema("Exact 40-character commit SHA of the existing gate."),
 		"after_id":   NullableIntegerSchema("Last terminal-event cursor already handled. Defaults to 0."),
 		"wait_ms":    NullableIntegerSchema("Bounded server wait in milliseconds. Defaults to no wait and is capped at 50000."),
-	}, "project_id", "task_id", "commit_sha")
+	}, "task_id", "commit_sha")
 	return []ToolDefinition{{
 		Name:        "watch_github_checks",
 		Description: "Register or read the durable exact-SHA GitHub check gate and return its deferral handle/current status immediately.",
@@ -129,6 +208,50 @@ func githubCheckGateTools() []ToolDefinition {
 		Backend: "review", Operation: "await_github_checks", InputSchema: watchSchema, Deprecated: true,
 		DeprecationMessage: "Use watch_github_checks, then get_github_check_gate or bounded wait_for_github_checks. await_github_checks historically returned immediately.",
 	}}
+}
+
+func contractErgonomicsTools() []ToolDefinition {
+	return []ToolDefinition{
+		{
+			Name:        "get_details",
+			Description: "Intentionally expand one concise read result using its opaque detail_ref. Detail reads are allowlisted, read-only, and preserve the original backend authorization path.",
+			Backend:     "mcp-facade",
+			Operation:   "get_details",
+			InputSchema: ObjectSchema(map[string]Schema{
+				"detail_ref": StringSchema("Opaque detail reference returned by a concise read tool."),
+			}, "detail_ref"),
+		},
+		{
+			Name:        "mark_project_notifications_read",
+			Description: "Mark all notifications in one project as read for an agent identity.",
+			Backend:     "messages",
+			Operation:   "mark_project_notifications_read",
+			InputSchema: ObjectSchema(map[string]Schema{
+				"agent":      StringSchema("Agent identity to mark read for."),
+				"project_id": StringSchema("Project whose notifications should be marked read."),
+			}, "agent", "project_id"),
+		},
+		{
+			Name:        "mark_task_notifications_read",
+			Description: "Mark all notifications on one canonical task as read for an agent identity. Project scope is derived from the task.",
+			Backend:     "messages",
+			Operation:   "mark_task_notifications_read",
+			InputSchema: ObjectSchema(map[string]Schema{
+				"agent":   StringSchema("Agent identity to mark read for."),
+				"task_id": IntegerSchema("Canonical task whose notifications should be marked read."),
+			}, "agent", "task_id"),
+		},
+		{
+			Name:        "ensure_document_discussion",
+			Description: "Ensure a document has a default discussion thread and return it. Use get_document_discussion for read-only lookup.",
+			Backend:     "documents",
+			Operation:   "ensure_document_discussion",
+			InputSchema: ObjectSchema(map[string]Schema{
+				"project_id": StringSchema("Project or space ID."),
+				"slug":       StringSchema("Document slug."),
+			}, "project_id", "slug"),
+		},
+	}
 }
 
 var hiddenAdminToolPolicies = map[string]hiddenToolPolicy{

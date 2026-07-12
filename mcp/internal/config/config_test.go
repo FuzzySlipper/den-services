@@ -29,6 +29,9 @@ func TestLoadFromPathWithValues(t *testing.T) {
 	if cfg.Server.ReadHeaderTimeout != 5*time.Second {
 		t.Fatalf("Server.ReadHeaderTimeout = %s", cfg.Server.ReadHeaderTimeout)
 	}
+	if cfg.Details.ReferenceTTL != 15*time.Minute {
+		t.Fatalf("Details.ReferenceTTL = %s", cfg.Details.ReferenceTTL)
+	}
 	if cfg.Security.ServiceToken != "mcp-token" {
 		t.Fatalf("Security.ServiceToken = %q", cfg.Security.ServiceToken)
 	}
@@ -75,6 +78,8 @@ security:
   allow_unauthenticated_local_dev: true
 routes:
   table_path: ""
+details:
+  reference_ttl: "15m"
 backends:
   - name: "den-core"
     base_url: "http://127.0.0.1:5299/"
@@ -113,6 +118,8 @@ security:
   allow_unauthenticated_local_dev: ` + boolString(allowUnauthenticatedLocalDev) + `
 routes:
   table_path: "routes.example.yaml"
+details:
+  reference_ttl: "15m"
 backends:
   - name: "den-core"
     base_url: "http://127.0.0.1:5299/"

@@ -218,6 +218,10 @@ func tasksRESTURL(baseURL string, route Route, arguments tasksToolArguments) (st
 	}
 	query := parsedURL.Query()
 	switch route.Operation {
+	case "get_task":
+		if arguments.IncludeVerboseCompatibility {
+			query.Set("verbose", "true")
+		}
 	case "list_tasks":
 		setStringQuery(query, "assigned_to", arguments.AssignedToFilter)
 		setStringQuery(query, "status", arguments.StatusFilter)

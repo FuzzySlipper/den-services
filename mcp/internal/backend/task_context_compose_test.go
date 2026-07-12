@@ -47,7 +47,7 @@ func TestLocatorComposesBoundedTaskContext(t *testing.T) {
 	defer server.Close()
 
 	locator := newTaskContextTestLocator(t, server, true)
-	result, failure, err := locator.Call(context.Background(), ToolCall{ToolName: "get_task_context", Operation: "get_task_context", RequestID: json.RawMessage(`1`), Arguments: json.RawMessage(`{"project_id":"den-services","task_id":5591}`)})
+	result, failure, err := locator.Call(context.Background(), ToolCall{ToolName: "get_task_context", Operation: "get_task_context", RequestID: json.RawMessage(`1`), Arguments: json.RawMessage(`{"task_id":5591}`)})
 	if err != nil || failure != nil {
 		t.Fatalf("Call() = %v, %#v", err, failure)
 	}
@@ -57,7 +57,7 @@ func TestLocatorComposesBoundedTaskContext(t *testing.T) {
 	}
 	text := toolResult.Content[0].Text
 	for _, want := range []string{
-		`"schema_version":"1"`, `"unresolved_finding_count":1`, `"document_slug":"den-connectivity-policy"`, `"source":"librarian","state":"ok"`, `"messages:44"`, `"den-services/go-codestyle"`,
+		`"schema_version":"1"`, `"project_id":"den-services"`, `"unresolved_finding_count":1`, `"document_slug":"den-connectivity-policy"`, `"source":"librarian","state":"ok"`, `"messages:44"`, `"den-services/go-codestyle"`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("task context missing %s: %s", want, text)
@@ -84,7 +84,7 @@ func TestTaskContextReturnsPartialPacketWhenOptionalSourceUnavailable(t *testing
 	defer server.Close()
 
 	locator := newTaskContextTestLocator(t, server, false)
-	result, failure, err := locator.Call(context.Background(), ToolCall{ToolName: "get_task_context", Operation: "get_task_context", RequestID: json.RawMessage(`1`), Arguments: json.RawMessage(`{"project_id":"den-services","task_id":5591}`)})
+	result, failure, err := locator.Call(context.Background(), ToolCall{ToolName: "get_task_context", Operation: "get_task_context", RequestID: json.RawMessage(`1`), Arguments: json.RawMessage(`{"task_id":5591}`)})
 	if err != nil || failure != nil {
 		t.Fatalf("Call() = %v, %#v", err, failure)
 	}
@@ -97,8 +97,21 @@ func TestTaskContextFailsClosedForMissingTask(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "task not found", http.StatusNotFound) }))
 	defer server.Close()
 	locator := newTaskContextTestLocator(t, server, false)
-	_, failure, err := locator.Call(context.Background(), ToolCall{ToolName: "get_task_context", Operation: "get_task_context", RequestID: json.RawMessage(`1`), Arguments: json.RawMessage(`{"project_id":"den-services","task_id":404}`)})
+	_, failure, err := locator.Call(context.Background(), ToolCall{ToolName: "get_task_context", Operation: "get_task_context", RequestID: json.RawMessage(`1`), Arguments: json.RawMessage(`{"task_id":404}`)})
 	if err != nil || failure == nil || failure.StatusCode == nil || *failure.StatusCode != http.StatusNotFound {
+		t.Fatalf("Call() = %v, %#v", err, failure)
+	}
+}
+
+func TestTaskContextRejectsRemovedProjectIDArgument(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("task backend should not be called for invalid arguments")
+	}))
+	defer server.Close()
+
+	locator := newTaskContextTestLocator(t, server, false)
+	_, failure, err := locator.Call(context.Background(), ToolCall{ToolName: "get_task_context", Operation: "get_task_context", RequestID: json.RawMessage(`1`), Arguments: json.RawMessage(`{"task_id":5591,"project_id":"den-services"}`)})
+	if err == nil || failure != nil || !strings.Contains(err.Error(), "unknown field \"project_id\"") {
 		t.Fatalf("Call() = %v, %#v", err, failure)
 	}
 }

@@ -107,6 +107,13 @@ func TestServiceDiscussionGreenPathReplyAndResolve(t *testing.T) {
 	if detail.DefaultThread != nil || len(detail.Comments) != 0 {
 		t.Fatalf("no-create detail = %#v", detail)
 	}
+	ensured, err := service.EnsureDocumentDiscussion(ctx, "den-services", "doc")
+	if err != nil {
+		t.Fatalf("EnsureDocumentDiscussion() error = %v", err)
+	}
+	if ensured.DefaultThread == nil || ensured.DefaultThread.ThreadKey != DefaultThreadKey {
+		t.Fatalf("ensured detail = %#v", ensured)
+	}
 	root, thread, err := service.CommentOnDocument(ctx, "den-services", "doc", CommentOnDocumentRequest{
 		AuthorIdentity: "pi",
 		BodyMarkdown:   "Looks good",

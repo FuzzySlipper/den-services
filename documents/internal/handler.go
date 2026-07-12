@@ -19,6 +19,7 @@ type DocumentUseCases interface {
 	UpdateVisibility(ctx context.Context, projectID string, slug string, visibility string) (*Document, error)
 	ArchivePreflight(ctx context.Context, projectID string, slug string) (ArchivePreflightResult, error)
 	GetDocumentDiscussion(ctx context.Context, projectID string, slug string, createIfMissing bool, includeResolved bool, anchor string) (DiscussionDetail, error)
+	EnsureDocumentDiscussion(ctx context.Context, projectID string, slug string) (DiscussionDetail, error)
 	CommentOnDocument(ctx context.Context, projectID string, slug string, req CommentOnDocumentRequest) (*DiscussionComment, *DiscussionThread, error)
 	CreateDiscussionComment(ctx context.Context, threadID int64, req CreateCommentRequest) (*DiscussionComment, error)
 	CreateDiscussionThread(ctx context.Context, req CreateThreadRequest) (*DiscussionThread, error)
@@ -46,6 +47,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /v1/projects/{project_id}/documents/{slug}/visibility", h.updateVisibility)
 	mux.HandleFunc("POST /v1/projects/{project_id}/documents/{slug}/archive-preflight", h.archivePreflight)
 	mux.HandleFunc("GET /v1/projects/{project_id}/documents/{slug}/discussion", h.getDocumentDiscussion)
+	mux.HandleFunc("POST /v1/projects/{project_id}/documents/{slug}/discussion/ensure", h.ensureDocumentDiscussion)
 	mux.HandleFunc("POST /v1/projects/{project_id}/documents/{slug}/discussion/comments", h.commentOnDocument)
 	mux.HandleFunc("GET /v1/projects/{project_id}/documents/{slug}/discussion/threads", h.listDocumentThreads)
 
@@ -211,6 +213,15 @@ func (h *Handler) getDocumentDiscussion(w http.ResponseWriter, r *http.Request) 
 		boolQuery(r, "include_resolved"),
 		query.Get("anchor"),
 	)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, toDiscussionDetailResponse(detail))
+}
+
+func (h *Handler) ensureDocumentDiscussion(w http.ResponseWriter, r *http.Request) {
+	detail, err := h.service.EnsureDocumentDiscussion(r.Context(), r.PathValue("project_id"), r.PathValue("slug"))
 	if err != nil {
 		api.WriteServiceError(w, err)
 		return

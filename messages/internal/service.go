@@ -192,16 +192,42 @@ func (s *Service) MarkNotificationsRead(ctx context.Context, req MarkNotificatio
 		return validationFailed(ErrInvalidReadMode)
 	}
 	if req.MarkAll {
-		projectID := strings.TrimSpace(req.ScopeProjectID)
-		if projectID == "" {
-			return validationFailed(ErrMissingProjectID)
+		if req.ScopeTaskID != nil {
+			return s.MarkTaskNotificationsRead(ctx, agent, req.ScopeProjectID, *req.ScopeTaskID)
 		}
-		return s.store.MarkAllNotificationsRead(ctx, agent, projectID, req.ScopeTaskID)
+		return s.MarkProjectNotificationsRead(ctx, agent, req.ScopeProjectID)
 	}
 	if !hasIDs {
 		return validationFailed(ErrInvalidReadMode)
 	}
 	return s.store.MarkNotificationsRead(ctx, agent, req.NotificationIDs)
+}
+
+func (s *Service) MarkProjectNotificationsRead(ctx context.Context, agent string, projectID string) error {
+	agent = strings.TrimSpace(agent)
+	projectID = strings.TrimSpace(projectID)
+	if agent == "" {
+		return validationFailed(ErrMissingAgent)
+	}
+	if projectID == "" {
+		return validationFailed(ErrMissingProjectID)
+	}
+	return s.store.MarkAllNotificationsRead(ctx, agent, projectID, nil)
+}
+
+func (s *Service) MarkTaskNotificationsRead(ctx context.Context, agent string, projectID string, taskID int64) error {
+	agent = strings.TrimSpace(agent)
+	projectID = strings.TrimSpace(projectID)
+	if agent == "" {
+		return validationFailed(ErrMissingAgent)
+	}
+	if projectID == "" {
+		return validationFailed(ErrMissingProjectID)
+	}
+	if taskID <= 0 {
+		return validationFailed(ErrMissingTaskID)
+	}
+	return s.store.MarkAllNotificationsRead(ctx, agent, projectID, &taskID)
 }
 
 func (s *Service) CreateContextPacket(ctx context.Context, projectID string, taskID int64, req CreateContextPacketRequest) (*Message, error) {

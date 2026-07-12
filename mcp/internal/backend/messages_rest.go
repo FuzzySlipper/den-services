@@ -42,9 +42,6 @@ type messagesToolArguments struct {
 	ReadForAgent            string          `json:"read_for_agent"`
 	IsRead                  *bool           `json:"is_read"`
 	Offset                  *int            `json:"offset"`
-	MarkAll                 json.RawMessage `json:"mark_all"`
-	ScopeProjectID          string          `json:"scope_project_id"`
-	ScopeTaskID             *int64          `json:"scope_task_id"`
 }
 
 type sendMessageBody struct {
@@ -72,9 +69,10 @@ type sendNotificationBody struct {
 type markNotificationsReadBody struct {
 	Agent           string  `json:"agent"`
 	NotificationIDs []int64 `json:"notification_ids,omitempty"`
-	MarkAll         bool    `json:"mark_all,omitempty"`
-	ScopeProjectID  string  `json:"scope_project_id,omitempty"`
-	ScopeTaskID     *int64  `json:"scope_task_id,omitempty"`
+}
+
+type markScopedNotificationsReadBody struct {
+	Agent string `json:"agent"`
 }
 
 func (c *Client) callMessagesREST(ctx context.Context, backend config.BackendConfig, route Route, call ToolCall) (Result, *Failure, error) {
@@ -175,17 +173,14 @@ func messagesRESTRequestBody(operation string, arguments messagesToolArguments) 
 		if err != nil {
 			return nil, err
 		}
-		markAll, err := parseOptionalBool(arguments.MarkAll)
-		if err != nil {
-			return nil, err
-		}
 		return json.Marshal(markNotificationsReadBody{
 			Agent:           strings.TrimSpace(arguments.Agent),
 			NotificationIDs: notificationIDs,
-			MarkAll:         markAll,
-			ScopeProjectID:  strings.TrimSpace(arguments.ScopeProjectID),
-			ScopeTaskID:     arguments.ScopeTaskID,
 		})
+	case "mark_project_notifications_read":
+		return json.Marshal(markScopedNotificationsReadBody{Agent: strings.TrimSpace(arguments.Agent)})
+	case "mark_task_notifications_read":
+		return json.Marshal(markScopedNotificationsReadBody{Agent: strings.TrimSpace(arguments.Agent)})
 	case "get_messages", "wait_for_messages", "get_thread", "get_user_notifications", "get_latest_task_packet", "render_worker_prompt", "get_latest_worker_completion":
 		return nil, nil
 	default:
@@ -230,6 +225,7 @@ func messagesRESTURL(baseURL string, route Route, arguments messagesToolArgument
 	case "get_latest_task_packet":
 		setStringValueQuery(query, "packet_type", arguments.PacketType)
 		setStringValueQuery(query, "role", arguments.Role)
+		setBoolQuery(query, "verbose", arguments.Verbose)
 	case "get_thread":
 		setBoolQuery(query, "verbose", arguments.Verbose)
 	case "render_worker_prompt":
@@ -295,29 +291,6 @@ func parseObject(raw json.RawMessage) (map[string]any, error) {
 		return nil, fmt.Errorf("decoding JSON-encoded object: %w", err)
 	}
 	return object, nil
-}
-
-func parseOptionalBool(raw json.RawMessage) (bool, error) {
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
-		return false, nil
-	}
-	var direct bool
-	if err := json.Unmarshal(trimmed, &direct); err == nil {
-		return direct, nil
-	}
-	var encoded string
-	if err := json.Unmarshal(trimmed, &encoded); err != nil {
-		return false, fmt.Errorf("decoding bool: %w", err)
-	}
-	if strings.TrimSpace(encoded) == "" {
-		return false, nil
-	}
-	parsed, err := strconv.ParseBool(strings.TrimSpace(encoded))
-	if err != nil {
-		return false, fmt.Errorf("parsing bool %q: %w", encoded, err)
-	}
-	return parsed, nil
 }
 
 func setStringValueQuery(query url.Values, key string, value string) {

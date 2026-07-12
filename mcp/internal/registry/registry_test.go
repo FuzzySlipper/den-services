@@ -17,8 +17,8 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 65 {
-		t.Fatalf("tool count = %d, want 65", len(names))
+	if len(names) != 69 {
+		t.Fatalf("tool count = %d, want 69", len(names))
 	}
 	for _, name := range []string{
 		"search_documents",
@@ -31,6 +31,10 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		"get_github_check_gate",
 		"wait_for_github_checks",
 		"get_task_context",
+		"get_details",
+		"mark_project_notifications_read",
+		"mark_task_notifications_read",
+		"ensure_document_discussion",
 	} {
 		if !containsName(names, name) {
 			t.Fatalf("visible tools missing %s", name)
@@ -61,6 +65,31 @@ func TestDefaultRegistryResolvesToolsWithoutBackendLiveness(t *testing.T) {
 	}
 	if tool.Backend != denCoreBackend {
 		t.Fatalf("Backend = %q, want %q", tool.Backend, denCoreBackend)
+	}
+}
+
+func TestTaskContextToolAcceptsOnlyCanonicalTaskID(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry() error = %v", err)
+	}
+	tool, err := registry.Resolve("get_task_context")
+	if err != nil {
+		t.Fatalf("Resolve(get_task_context) error = %v", err)
+	}
+
+	var schema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []string                   `json:"required"`
+	}
+	if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+		t.Fatalf("Unmarshal(input schema) error = %v", err)
+	}
+	if len(schema.Properties) != 1 || schema.Properties["task_id"] == nil {
+		t.Fatalf("properties = %#v, want only task_id", schema.Properties)
+	}
+	if len(schema.Required) != 1 || schema.Required[0] != "task_id" {
+		t.Fatalf("required = %#v, want [task_id]", schema.Required)
 	}
 }
 
@@ -128,10 +157,10 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 		if listed[visibleIndex].Name != snapshotTool.Name {
 			t.Fatalf("visible tool[%d].Name = %q, want %q", visibleIndex, listed[visibleIndex].Name, snapshotTool.Name)
 		}
-		if listed[visibleIndex].Description != snapshotTool.Description {
+		if listed[visibleIndex].Description != modernizeDescription(snapshotTool.Name, snapshotTool.Description) {
 			t.Fatalf("visible tool[%d].Description differs for %s", visibleIndex, listed[visibleIndex].Name)
 		}
-		if string(listed[visibleIndex].InputSchema) != string(snapshotTool.InputSchema) {
+		if string(listed[visibleIndex].InputSchema) != string(modernizeInputSchema(snapshotTool.Name, snapshotTool.InputSchema)) {
 			t.Fatalf("visible tool[%d].InputSchema differs for %s", visibleIndex, listed[visibleIndex].Name)
 		}
 		if string(listed[visibleIndex].Execution) != string(snapshotTool.Execution) {
@@ -144,8 +173,53 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 	}
 	for _, tool := range listed[visibleIndex:] {
 		if tool.Name != "await_github_checks" && tool.Name != "watch_github_checks" &&
-			tool.Name != "get_github_check_gate" && tool.Name != "wait_for_github_checks" && tool.Name != "get_task_context" {
+			tool.Name != "get_github_check_gate" && tool.Name != "wait_for_github_checks" && tool.Name != "get_task_context" &&
+			tool.Name != "get_details" && tool.Name != "mark_project_notifications_read" &&
+			tool.Name != "mark_task_notifications_read" && tool.Name != "ensure_document_discussion" {
 			t.Fatalf("unexpected non-snapshot tool %q", tool.Name)
+		}
+	}
+}
+
+func TestVisibleToolSchemasHideVerbose(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range registry.Tools() {
+		var schema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+			t.Fatalf("Unmarshal(%s) error = %v", tool.Name, err)
+		}
+		if _, exists := schema.Properties["verbose"]; exists {
+			t.Fatalf("tool %s still exposes verbose", tool.Name)
+		}
+	}
+}
+
+func TestTaskScopedSchemasDeriveProject(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{
+		"get_latest_task_packet", "post_review_findings", "request_review", "split_review_findings_to_follow_up",
+		"await_github_checks", "watch_github_checks", "get_github_check_gate", "wait_for_github_checks", "mark_task_notifications_read",
+	} {
+		tool, err := registry.Resolve(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var schema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+			t.Fatal(err)
+		}
+		if _, exists := schema.Properties["project_id"]; exists {
+			t.Fatalf("tool %s still exposes project_id", name)
 		}
 	}
 }

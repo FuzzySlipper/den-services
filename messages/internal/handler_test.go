@@ -52,3 +52,21 @@ func TestHandlerSendMessageAndLatestPacket(t *testing.T) {
 		t.Fatalf("latest metadata = %#v", latest.Metadata)
 	}
 }
+
+func TestHandlerScopedNotificationReadRoutes(t *testing.T) {
+	service := NewService(newMemoryStore(), NoopProjectValidator{}, NoopTaskReader{}, time.Now)
+	mux := http.NewServeMux()
+	NewHandler(service).RegisterRoutes(mux)
+
+	for _, path := range []string{
+		"/v1/projects/den-services/user-notifications/read",
+		"/v1/projects/den-services/tasks/7/user-notifications/read",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(`{"agent":"root"}`))
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("POST %s status = %d body=%s", path, rec.Code, rec.Body.String())
+		}
+	}
+}

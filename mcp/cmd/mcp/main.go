@@ -19,6 +19,7 @@ var (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
 		fmt.Printf("mcp %s %s %s\n", version, commit, builtAt)
 		return

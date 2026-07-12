@@ -13,10 +13,13 @@ import (
 	sharedconfig "den-services/shared/config"
 )
 
+const defaultDetailReferenceTTL = 15 * time.Minute
+
 type Config struct {
 	Server   ServerConfig
 	Security SecurityConfig
 	Routes   RouteConfig
+	Details  DetailConfig
 	Backends []BackendConfig
 }
 
@@ -36,6 +39,10 @@ type RouteConfig struct {
 	TablePath string
 }
 
+type DetailConfig struct {
+	ReferenceTTL time.Duration
+}
+
 type BackendConfig struct {
 	Name            string
 	BaseURL         string
@@ -49,6 +56,7 @@ type configFile struct {
 	Server   serverConfigFile    `yaml:"server"`
 	Security securityConfigFile  `yaml:"security"`
 	Routes   routeConfigFile     `yaml:"routes"`
+	Details  detailConfigFile    `yaml:"details"`
 	Backends []backendConfigFile `yaml:"backends"`
 }
 
@@ -65,6 +73,10 @@ type securityConfigFile struct {
 
 type routeConfigFile struct {
 	TablePath string `yaml:"table_path"`
+}
+
+type detailConfigFile struct {
+	ReferenceTTL string `yaml:"reference_ttl"`
 }
 
 type backendConfigFile struct {
@@ -115,6 +127,13 @@ func (c configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	referenceTTL := defaultDetailReferenceTTL
+	if strings.TrimSpace(c.Details.ReferenceTTL) != "" {
+		referenceTTL, err = parseRequiredDuration("details.reference_ttl", c.Details.ReferenceTTL)
+		if err != nil {
+			return nil, err
+		}
+	}
 	serviceTokenEnv := strings.TrimSpace(c.Security.ServiceTokenEnv)
 	return &Config{
 		Server: serverConfig,
@@ -126,6 +145,7 @@ func (c configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 		Routes: RouteConfig{
 			TablePath: strings.TrimSpace(c.Routes.TablePath),
 		},
+		Details:  DetailConfig{ReferenceTTL: referenceTTL},
 		Backends: backends,
 	}, nil
 }
@@ -188,6 +208,9 @@ func (c *Config) validate() error {
 	}
 	if c.Routes.TablePath == "" {
 		return errors.New("routes.table_path is required")
+	}
+	if c.Details.ReferenceTTL <= 0 {
+		return errors.New("details.reference_ttl must be positive")
 	}
 	if len(c.Backends) == 0 {
 		return errors.New("at least one backend is required")

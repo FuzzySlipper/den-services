@@ -196,6 +196,12 @@ func TestServiceNotificationsAndPackets(t *testing.T) {
 	if err := service.MarkNotificationsRead(ctx, MarkNotificationsReadRequest{Agent: "agent-2", MarkAll: true, ScopeProjectID: "den-services", ScopeTaskID: &taskID}); err != nil {
 		t.Fatalf("MarkNotificationsRead(mark all) error = %v", err)
 	}
+	if err := service.MarkProjectNotificationsRead(ctx, "agent-3", "den-services"); err != nil {
+		t.Fatalf("MarkProjectNotificationsRead() error = %v", err)
+	}
+	if err := service.MarkTaskNotificationsRead(ctx, "agent-4", "den-services", taskID); err != nil {
+		t.Fatalf("MarkTaskNotificationsRead() error = %v", err)
+	}
 	items, err = service.ListNotifications(ctx, NotificationQuery{ProjectID: "den-services", ReadForAgent: "agent-2", HasReadFilter: true, IsRead: true})
 	if err != nil {
 		t.Fatalf("ListNotifications(mark all read) error = %v", err)

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"den-services/mcp/internal/config"
+	"den-services/mcp/internal/registry"
 )
 
 type Locator struct {
@@ -66,6 +67,12 @@ func (l *Locator) Call(ctx context.Context, call ToolCall) (Result, *Failure, er
 	}
 	var result Result
 	var failure *Failure
+	if registry.TaskDerivesProject(call.Operation) {
+		call, failure, err = l.client.withCanonicalTaskProject(ctx, backends, call)
+		if failure != nil || err != nil {
+			return result, failure, err
+		}
+	}
 	switch route.RequestAdapter {
 	case RequestAdapterMCPProjectSummaryCompose:
 		result, failure, err = l.client.callProjectSummaryCompose(ctx, backends, route, call)

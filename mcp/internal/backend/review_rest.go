@@ -77,6 +77,7 @@ type reviewToolArguments struct {
 	SessionKey              string          `json:"session_key"`
 	AfterID                 int64           `json:"after_id"`
 	WaitMS                  *int            `json:"wait_ms"`
+	Verbose                 *bool           `json:"verbose"`
 }
 
 type reviewRoundBody struct {
@@ -350,6 +351,10 @@ func reviewRESTURL(baseURL string, route Route, arguments reviewToolArguments) (
 		}
 		setStringValueQuery(query, "status", arguments.Status)
 		setBoolQuery(query, "resolved", arguments.Resolved)
+		setBoolQuery(query, "verbose", arguments.Verbose)
+	}
+	if route.Operation == "list_review_rounds" {
+		setBoolQuery(query, "verbose", arguments.Verbose)
 	}
 	if route.Operation == "wait_for_github_checks" {
 		if arguments.AfterID > 0 {

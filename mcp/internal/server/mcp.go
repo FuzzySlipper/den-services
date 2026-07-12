@@ -3,11 +3,16 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"strings"
+	"time"
 
 	"den-services/shared/api"
 	"den-services/shared/health"
@@ -31,9 +36,20 @@ const (
 )
 
 type Handler struct {
-	registry  *registry.Registry
-	buildInfo health.BuildInfo
-	locator   *backend.Locator
+	registry           *registry.Registry
+	buildInfo          health.BuildInfo
+	locator            *backend.Locator
+	logger             *slog.Logger
+	clock              func() time.Time
+	detailReferenceTTL time.Duration
+	detailReferenceKey []byte
+}
+
+type HandlerOptions struct {
+	Logger             *slog.Logger
+	Clock              func() time.Time
+	DetailReferenceTTL time.Duration
+	DetailReferenceKey []byte
 }
 
 type rpcRequest struct {
@@ -101,10 +117,35 @@ type textContent struct {
 }
 
 func NewMCPHandler(registry *registry.Registry, buildInfo health.BuildInfo, locator *backend.Locator) *Handler {
+	return NewMCPHandlerWithOptions(registry, buildInfo, locator, HandlerOptions{})
+}
+
+func NewMCPHandlerWithOptions(registry *registry.Registry, buildInfo health.BuildInfo, locator *backend.Locator, options HandlerOptions) *Handler {
+	if options.Logger == nil {
+		options.Logger = slog.Default()
+	}
+	if options.Clock == nil {
+		options.Clock = time.Now
+	}
+	if options.DetailReferenceTTL <= 0 {
+		options.DetailReferenceTTL = 15 * time.Minute
+	}
+	if len(options.DetailReferenceKey) == 0 {
+		options.DetailReferenceKey = make([]byte, 32)
+		if _, err := rand.Read(options.DetailReferenceKey); err != nil {
+			options.Logger.Error("generating detail reference key", "error", err)
+			fallback := sha256.Sum256([]byte(options.Clock().UTC().Format(time.RFC3339Nano)))
+			options.DetailReferenceKey = fallback[:]
+		}
+	}
 	return &Handler{
-		registry:  registry,
-		buildInfo: buildInfo,
-		locator:   locator,
+		registry:           registry,
+		buildInfo:          buildInfo,
+		locator:            locator,
+		logger:             options.Logger,
+		clock:              options.Clock,
+		detailReferenceTTL: options.DetailReferenceTTL,
+		detailReferenceKey: append([]byte(nil), options.DetailReferenceKey...),
 	}
 }
 
@@ -207,23 +248,50 @@ func (h *Handler) initialize(rawParams json.RawMessage) initializeResult {
 	}
 }
 
-func (h *Handler) toolsCall(ctx context.Context, request rpcRequest) rpcResponse {
+func (h *Handler) toolsCall(ctx context.Context, request rpcRequest) (response rpcResponse) {
+	startedAt := h.clock()
+	requestedTool := ""
+	backendName := ""
+	outcome := "invalid_params"
+	retryable := false
+	defer func() {
+		h.logger.Info("mcp_tool_call",
+			"tool", requestedTool,
+			"backend", backendName,
+			"outcome", outcome,
+			"retryable", retryable,
+			"duration_ms", h.clock().Sub(startedAt).Milliseconds(),
+		)
+	}()
+
 	params := toolsCallParams{}
 	if err := json.Unmarshal(request.Params, &params); err != nil {
 		return rpcErrorResponse(request.ID, errorInvalidParams, "invalid tools/call params")
 	}
+	requestedTool = params.Name
 	tool, err := h.registry.Resolve(params.Name)
 	if err != nil {
 		if errors.Is(err, registry.ErrUnknownTool) {
+			outcome = "unknown_tool"
 			return rpcErrorResponse(request.ID, errorInvalidParams, err.Error())
 		}
+		outcome = "registry_error"
 		return rpcErrorResponse(request.ID, errorInternal, err.Error())
 	}
+	backendName = tool.Backend
+	if tool.Operation == "get_details" {
+		return h.getDetails(ctx, request, params, &outcome, &backendName, &retryable)
+	}
 	if tool.TombstoneMessage != "" {
+		outcome = "retired"
 		return rpcResultResponse(request.ID, retiredToolResult(tool))
 	}
 	if h.locator == nil {
+		outcome = "unavailable"
 		return rpcResultResponse(request.ID, errorToolResult(fmt.Sprintf("Tool %s is registered for backend %s, but backend proxy execution is not implemented yet.", tool.Name, tool.Backend), nil))
+	}
+	if _, routedBackend, resolveErr := h.locator.Resolve(tool.Operation); resolveErr == nil {
+		backendName = routedBackend.Name
 	}
 	result, failure, err := h.locator.Call(ctx, backend.ToolCall{
 		ToolName:  tool.Name,
@@ -232,12 +300,61 @@ func (h *Handler) toolsCall(ctx context.Context, request rpcRequest) rpcResponse
 		RequestID: request.ID,
 	})
 	if err != nil {
+		outcome = "rpc_error"
 		return rpcErrorResponse(request.ID, errorInternal, err.Error())
 	}
 	if failure != nil {
+		outcome = "tool_error"
+		retryable = failure.Retryable
 		failureJSON := json.RawMessage(failure.Text())
 		return rpcResultResponse(request.ID, errorToolResult(failure.Text(), failureJSON))
 	}
+	result.Value, err = h.attachDetailReference(tool.Name, params.Arguments, result.Value)
+	if err != nil {
+		outcome = "rpc_error"
+		return rpcErrorResponse(request.ID, errorInternal, err.Error())
+	}
+	outcome = "success"
+	return rpcResultResponse(request.ID, json.RawMessage(result.Value))
+}
+
+func (h *Handler) getDetails(ctx context.Context, request rpcRequest, params toolsCallParams, outcome, backendName *string, retryable *bool) rpcResponse {
+	var arguments getDetailsArguments
+	if err := json.Unmarshal(params.Arguments, &arguments); err != nil || strings.TrimSpace(arguments.DetailRef) == "" {
+		*outcome = "invalid_params"
+		return rpcErrorResponse(request.ID, errorInvalidParams, "get_details requires detail_ref")
+	}
+	call, err := h.resolveDetailReference(strings.TrimSpace(arguments.DetailRef))
+	if err != nil {
+		*outcome = "invalid_detail_ref"
+		return rpcResultResponse(request.ID, errorToolResult(err.Error(), nil))
+	}
+	tool, err := h.registry.Resolve(call.ToolName)
+	if err != nil {
+		*outcome = "registry_error"
+		return rpcErrorResponse(request.ID, errorInternal, err.Error())
+	}
+	*backendName = tool.Backend
+	if h.locator == nil {
+		*outcome = "unavailable"
+		return rpcResultResponse(request.ID, errorToolResult("Detail backend proxy execution is unavailable.", nil))
+	}
+	if _, routedBackend, resolveErr := h.locator.Resolve(tool.Operation); resolveErr == nil {
+		*backendName = routedBackend.Name
+	}
+	call.RequestID = request.ID
+	result, failure, err := h.locator.Call(ctx, call)
+	if err != nil {
+		*outcome = "rpc_error"
+		return rpcErrorResponse(request.ID, errorInternal, err.Error())
+	}
+	if failure != nil {
+		*outcome = "tool_error"
+		*retryable = failure.Retryable
+		failureJSON := json.RawMessage(failure.Text())
+		return rpcResultResponse(request.ID, errorToolResult(failure.Text(), failureJSON))
+	}
+	*outcome = "success"
 	return rpcResultResponse(request.ID, json.RawMessage(result.Value))
 }
 

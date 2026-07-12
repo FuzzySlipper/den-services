@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -39,6 +40,19 @@ func TestHandlerStoreSearchAndComment(t *testing.T) {
 	}
 	if len(results) != 1 || results[0].Slug != "doc" {
 		t.Fatalf("results = %#v", results)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/v1/projects/den-services/documents/doc/discussion", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), `"default_thread"`) {
+		t.Fatalf("read-only discussion status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPost, "/v1/projects/den-services/documents/doc/discussion/ensure", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"default_thread"`) {
+		t.Fatalf("ensure discussion status = %d body=%s", rec.Code, rec.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/v1/projects/den-services/documents/doc/discussion/comments", bytes.NewBufferString(`{"author_identity":"pi","body_markdown":"hello"}`))

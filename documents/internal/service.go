@@ -58,6 +58,10 @@ func (s *Service) CheckStore(ctx context.Context) error {
 	return s.store.Ping(ctx)
 }
 
+func (s *Service) EnsureDocumentDiscussion(ctx context.Context, projectID string, slug string) (DiscussionDetail, error) {
+	return s.GetDocumentDiscussion(ctx, projectID, slug, true, false, "")
+}
+
 func (s *Service) StoreDocument(ctx context.Context, projectID string, req StoreDocumentRequest) (*Document, error) {
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {

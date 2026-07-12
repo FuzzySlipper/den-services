@@ -14,6 +14,9 @@ security:
 routes:
   table_path: "routes.example.yaml"
 
+details:
+  reference_ttl: "15m" # Maximum age of an opaque read-only detail reference.
+
 backends:
   - name: "den-core"
     base_url: "http://127.0.0.1:5299"

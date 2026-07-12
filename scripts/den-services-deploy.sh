@@ -265,6 +265,12 @@ install_mcp_routes() {
     "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}/wait" "mcp_review_rest" "mcp_tool_result_json" "55s"
   append_mcp_route_if_missing "${routes_target}" "get_task_context" "tasks" "GET" \
     "/v1/tasks/{task_id}/context" "mcp_task_context_compose" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "ensure_document_discussion" "documents" "POST" \
+    "/v1/projects/{project_id}/documents/{slug}/discussion/ensure" "mcp_documents_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "mark_project_notifications_read" "messages" "POST" \
+    "/v1/projects/{project_id}/user-notifications/read" "mcp_messages_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "mark_task_notifications_read" "messages" "POST" \
+    "/v1/projects/{project_id}/tasks/{task_id}/user-notifications/read" "mcp_messages_rest" "mcp_tool_result_json"
 }
 
 cd "${repo_root}"

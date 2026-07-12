@@ -32,6 +32,10 @@ type MarkNotificationsReadRequest struct {
 	ScopeTaskID     *int64  `json:"scope_task_id,omitempty"`
 }
 
+type MarkScopedNotificationsReadRequest struct {
+	Agent string `json:"agent"`
+}
+
 type CreateContextPacketRequest struct {
 	PacketType              string         `json:"packet_type"`
 	Role                    string         `json:"role"`

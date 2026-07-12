@@ -51,7 +51,7 @@ func protectedMCPHandler(cfg *config.Config, buildInfo health.BuildInfo, handler
 		if err != nil {
 			return nil, err
 		}
-		handler = NewMCPHandler(defaultRegistry, buildInfo, locator)
+		handler = NewMCPHandlerWithOptions(defaultRegistry, buildInfo, locator, HandlerOptions{DetailReferenceTTL: cfg.Details.ReferenceTTL})
 	}
 	if cfg.Security.AllowUnauthenticatedLocalDev {
 		return handler, nil

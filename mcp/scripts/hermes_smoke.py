@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 
-EXPECTED_TOOL_COUNT = 65
+EXPECTED_TOOL_COUNT = 69
 MCP_PATH = "/mcp"
 DEN_CORE_TOKEN_ENV = "DEN_CORE_SERVICE_TOKEN"
 SMOKE_BACKENDS = (
@@ -393,10 +393,18 @@ def run_local_smoke(repo_root: Path, startup_timeout: float) -> None:
         healthy_tools = tools_list(mcp_url)
         assert_tool_count(healthy_tools, "local")
         print(f"ok: local tools/list returned {len(healthy_tools)} tools")
+        assert_ergonomic_tool_schemas(healthy_tools, "local")
+        print("ok: local tool schemas hide verbose and redundant task project scope")
 
         read = tools_call(mcp_url, "get_task", {"task_id": 3446})
         assert_tool_success(read, "local read tool")
+        detail_ref = json_from_result(read, "get_task").get("detail_ref")
+        if not isinstance(detail_ref, str) or not detail_ref:
+            raise SmokeError("local concise get_task did not return detail_ref")
+        detail = tools_call(mcp_url, "get_details", {"detail_ref": detail_ref})
+        assert_tool_success(detail, "local get_details tool")
         print("ok: local read tool proxied through backend")
+        print("ok: local get_details expanded an intentional concise read")
 
         search = tools_call(mcp_url, "search_documents", {"project_id": "den-services", "query": "mcp", "verbose": False})
         assert_tool_success(search, "local search_documents tool")
@@ -437,6 +445,19 @@ def run_local_smoke(repo_root: Path, startup_timeout: float) -> None:
         if "content" in packets["coder"]:
             raise SmokeError("get_task_workflow_summary leaked packet body content")
         print("ok: local get_task_workflow_summary composed successor task/review/message data")
+
+        latest_packet = tools_call(mcp_url, "get_latest_task_packet", {"task_id": 3446, "role": "coder"})
+        assert_tool_success(latest_packet, "local task-scoped get_latest_task_packet tool")
+        if json_from_result(latest_packet, "get_latest_task_packet").get("project_id") != "den-services":
+            raise SmokeError("get_latest_task_packet did not derive canonical project scope")
+        print("ok: local task-scoped packet read derived canonical project scope")
+
+        task_context = tools_call(mcp_url, "get_task_context", {"task_id": 3446})
+        assert_tool_success(task_context, "local get_task_context tool")
+        task_context_payload = json_from_result(task_context, "get_task_context")
+        if task_context_payload.get("task_id") != 3446 or task_context_payload.get("project_id") != "den-services":
+            raise SmokeError("get_task_context did not derive project scope from the canonical task")
+        print("ok: local get_task_context derived canonical project scope")
 
         original = tools_call(
             mcp_url,
@@ -496,10 +517,17 @@ def run_live_smoke(repo_root: Path, args: argparse.Namespace) -> None:
         live_tools = tools_list(mcp_url)
         assert_tool_count(live_tools, "live")
         print(f"ok: live tools/list returned {len(live_tools)} tools")
+        assert_ergonomic_tool_schemas(live_tools, "live")
+        print("ok: live tool schemas hide verbose and redundant task project scope")
 
-        read = tools_call(mcp_url, "get_task", {"task_id": args.read_task_id, "verbose": False})
+        read = tools_call(mcp_url, "get_task", {"task_id": args.read_task_id})
         assert_tool_success(read, "live read tool")
+        detail_ref = json_from_result(read, "get_task").get("detail_ref")
+        if not isinstance(detail_ref, str) or not detail_ref:
+            raise SmokeError("live concise get_task did not return detail_ref")
+        assert_tool_success(tools_call(mcp_url, "get_details", {"detail_ref": detail_ref}), "live get_details tool")
         print("ok: live read tool proxied to tasks successor")
+        print("ok: live get_details expanded an intentional concise read")
 
         search = tools_call(mcp_url, "search_documents", {"project_id": "den-services", "query": "mcp", "verbose": False})
         assert_tool_success(search, "live search_documents tool")
@@ -531,6 +559,22 @@ def run_live_smoke(repo_root: Path, args: argparse.Namespace) -> None:
         if workflow_payload.get("task_id") != args.read_task_id or "review_round_count" not in workflow_payload:
             raise SmokeError("live get_task_workflow_summary did not return composed successor summary")
         print("ok: live get_task_workflow_summary composed successor task/review/message data")
+
+        latest_packet = tools_call(mcp_url, "get_latest_task_packet", {"task_id": args.read_task_id, "role": "coder"})
+        if latest_packet.get("isError"):
+            structured = latest_packet.get("structuredContent") or {}
+            if structured.get("backend") != "messages" or structured.get("status_code") != 404:
+                raise SmokeError(f"live task-scoped packet read failed before canonical backend dispatch: {latest_packet}")
+        elif json_from_result(latest_packet, "get_latest_task_packet").get("project_id") != "den-services":
+            raise SmokeError("live get_latest_task_packet did not derive canonical project scope")
+        print("ok: live task-scoped packet read derived canonical project scope")
+
+        task_context = tools_call(mcp_url, "get_task_context", {"task_id": args.read_task_id})
+        assert_tool_success(task_context, "live get_task_context tool")
+        task_context_payload = json_from_result(task_context, "get_task_context")
+        if task_context_payload.get("task_id") != args.read_task_id or not task_context_payload.get("project_id"):
+            raise SmokeError("live get_task_context did not derive project scope from the canonical task")
+        print("ok: live get_task_context derived canonical project scope")
 
         if args.write_project and args.write_slug:
             run_live_write_restore(mcp_url, args.write_project, args.write_slug)
@@ -609,6 +653,9 @@ def mcp_process(repo_root: Path, mcp_port: int, backend_urls: dict[str, str], st
             "",
             "routes:",
             f'  table_path: "{routes_path}"',
+            "",
+            "details:",
+            '  reference_ttl: "15m"',
             "",
             "backends:",
         ]
@@ -731,6 +778,21 @@ def json_from_result(result: dict[str, Any], label: str) -> Any:
 def assert_tool_count(tools: list[dict[str, Any]], label: str) -> None:
     if len(tools) != EXPECTED_TOOL_COUNT:
         raise SmokeError(f"{label} tools/list returned {len(tools)} tools, want {EXPECTED_TOOL_COUNT}")
+
+
+def assert_ergonomic_tool_schemas(tools: list[dict[str, Any]], label: str) -> None:
+    by_name = {tool.get("name"): tool for tool in tools}
+    for name, tool in by_name.items():
+        properties = (tool.get("inputSchema") or {}).get("properties") or {}
+        if "verbose" in properties:
+            raise SmokeError(f"{label} tool {name} still exposes verbose")
+    for name in ("get_latest_task_packet", "post_review_findings", "request_review", "watch_github_checks"):
+        properties = ((by_name.get(name) or {}).get("inputSchema") or {}).get("properties") or {}
+        if "project_id" in properties:
+            raise SmokeError(f"{label} task-scoped tool {name} still exposes project_id")
+    for name in ("get_details", "mark_project_notifications_read", "mark_task_notifications_read", "ensure_document_discussion"):
+        if name not in by_name:
+            raise SmokeError(f"{label} tools/list missing {name}")
 
 
 def assert_tool_success(result: dict[str, Any], label: str) -> None:

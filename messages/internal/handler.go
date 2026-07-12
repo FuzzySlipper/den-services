@@ -21,6 +21,8 @@ type MessageUseCases interface {
 	SendNotification(ctx context.Context, projectID string, req SendNotificationRequest) (*Message, error)
 	ListNotifications(ctx context.Context, query NotificationQuery) ([]NotificationItem, error)
 	MarkNotificationsRead(ctx context.Context, req MarkNotificationsReadRequest) error
+	MarkProjectNotificationsRead(ctx context.Context, agent string, projectID string) error
+	MarkTaskNotificationsRead(ctx context.Context, agent string, projectID string, taskID int64) error
 	CreateContextPacket(ctx context.Context, projectID string, taskID int64, req CreateContextPacketRequest) (*Message, error)
 	LatestTaskPacket(ctx context.Context, projectID string, taskID int64, packetType string, role string) (*Message, error)
 	RenderWorkerPrompt(ctx context.Context, projectID string, messageID int64, mode string) (WorkerPromptResponse, error)
@@ -56,6 +58,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/messages/read", h.markRead)
 	mux.HandleFunc("GET /v1/user-notifications", h.listNotifications)
 	mux.HandleFunc("POST /v1/user-notifications/read", h.markNotificationsRead)
+	mux.HandleFunc("POST /v1/projects/{project_id}/user-notifications/read", h.markProjectNotificationsRead)
+	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/user-notifications/read", h.markTaskNotificationsRead)
 }
 
 func (h *Handler) sendMessage(w http.ResponseWriter, r *http.Request) {
@@ -231,6 +235,37 @@ func (h *Handler) markNotificationsRead(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	api.WriteJSON(w, http.StatusOK, SimpleMessageResponse{Message: "Notifications marked read."})
+}
+
+func (h *Handler) markProjectNotificationsRead(w http.ResponseWriter, r *http.Request) {
+	var req MarkScopedNotificationsReadRequest
+	if err := api.DecodeJSON(r, &req); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	if err := h.service.MarkProjectNotificationsRead(r.Context(), req.Agent, r.PathValue("project_id")); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, SimpleMessageResponse{Message: "Project notifications marked read."})
+}
+
+func (h *Handler) markTaskNotificationsRead(w http.ResponseWriter, r *http.Request) {
+	taskID, err := pathInt64(r, "task_id")
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	var req MarkScopedNotificationsReadRequest
+	if err := api.DecodeJSON(r, &req); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	if err := h.service.MarkTaskNotificationsRead(r.Context(), req.Agent, r.PathValue("project_id"), taskID); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, SimpleMessageResponse{Message: "Task notifications marked read."})
 }
 
 func (h *Handler) createContextPacket(w http.ResponseWriter, r *http.Request) {

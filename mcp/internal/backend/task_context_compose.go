@@ -28,8 +28,7 @@ const (
 )
 
 type taskContextArguments struct {
-	ProjectID string `json:"project_id"`
-	TaskID    int64  `json:"task_id"`
+	TaskID int64 `json:"task_id"`
 }
 
 type taskContextTaskDetail struct {
@@ -185,14 +184,12 @@ func (c *Client) callTaskContextCompose(ctx context.Context, backends map[string
 	if taskDetail.Task.ID != arguments.TaskID || strings.TrimSpace(taskDetail.Task.ProjectID) == "" {
 		return Result{}, nil, fmt.Errorf("task context task detail missing canonical task identity")
 	}
-	if taskDetail.Task.ProjectID != arguments.ProjectID {
-		return Result{}, nil, fmt.Errorf("task context project_id does not match canonical task project")
-	}
+	projectID := strings.TrimSpace(taskDetail.Task.ProjectID)
 
 	response := taskContextResponse{
 		SchemaVersion:  taskContextSchemaVersion,
 		GeneratedAt:    time.Now().UTC().Format(time.RFC3339Nano),
-		ProjectID:      arguments.ProjectID,
+		ProjectID:      projectID,
 		TaskID:         arguments.TaskID,
 		Task:           taskDetail.Task,
 		Dependencies:   sortRawMessages(taskDetail.Dependencies, taskContextItemLimit),
@@ -202,7 +199,7 @@ func (c *Client) callTaskContextCompose(ctx context.Context, backends map[string
 			OpenFindings:  []json.RawMessage{},
 			LatestPackets: make(map[string]*taskWorkflowPacketHeader, taskContextPacketLimit),
 		},
-		Guidance:  taskContextGuidance{ProjectID: arguments.ProjectID, Sources: []taskContextDocHandle{}},
+		Guidance:  taskContextGuidance{ProjectID: projectID, Sources: []taskContextDocHandle{}},
 		Librarian: taskContextLibrarian{RelevantItems: []json.RawMessage{}, Recommendations: []string{}},
 		Limits: taskContextLimits{
 			RecentMessages: taskContextMessageLimit,
@@ -229,7 +226,7 @@ func (c *Client) callTaskContextCompose(ctx context.Context, backends map[string
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			handle := "/v1/projects/" + url.PathEscape(arguments.ProjectID) + "/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/review/workflow-summary"
+			handle := "/v1/projects/" + url.PathEscape(projectID) + "/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/review/workflow-summary"
 			body, downstreamFailure, downstreamErr := c.taskContextGET(ctx, backend, handle, call)
 			if downstreamErr != nil || downstreamFailure != nil {
 				addStatus(taskContextStatus("workflow", handle, downstreamFailure, downstreamErr))
@@ -249,7 +246,7 @@ func (c *Client) callTaskContextCompose(ctx context.Context, backends map[string
 				LatestPackets:          make(map[string]*taskWorkflowPacketHeader, taskContextPacketLimit),
 			}
 			if messagesBackend, exists := backends[taskWorkflowMessagesBackend]; exists {
-				workflow.LatestPackets, workflow.PacketWarnings = c.taskWorkflowLatestPackets(ctx, messagesBackend, arguments.ProjectID, arguments.TaskID, call)
+				workflow.LatestPackets, workflow.PacketWarnings = c.taskWorkflowLatestPackets(ctx, messagesBackend, projectID, arguments.TaskID, call)
 			}
 			sourceMu.Lock()
 			response.Workflow = workflow
@@ -265,7 +262,7 @@ func (c *Client) callTaskContextCompose(ctx context.Context, backends map[string
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			handle := "/v1/projects/" + url.PathEscape(arguments.ProjectID) + "/messages?task_id=" + strconv.FormatInt(arguments.TaskID, 10) + "&limit=" + strconv.Itoa(taskContextMessageLimit) + "&verbose=true"
+			handle := "/v1/projects/" + url.PathEscape(projectID) + "/messages?task_id=" + strconv.FormatInt(arguments.TaskID, 10) + "&limit=" + strconv.Itoa(taskContextMessageLimit) + "&verbose=true"
 			body, downstreamFailure, downstreamErr := c.taskContextGET(ctx, backend, handle, call)
 			if downstreamErr != nil || downstreamFailure != nil {
 				addStatus(taskContextStatus("task_thread", handle, downstreamFailure, downstreamErr))
@@ -304,7 +301,7 @@ func (c *Client) callTaskContextCompose(ctx context.Context, backends map[string
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			handle := "/v1/projects/" + url.PathEscape(arguments.ProjectID) + "/agent-guidance"
+			handle := "/v1/projects/" + url.PathEscape(projectID) + "/agent-guidance"
 			body, downstreamFailure, downstreamErr := c.taskContextGET(ctx, backend, handle, call)
 			if downstreamErr != nil || downstreamFailure != nil {
 				addStatus(taskContextStatus("guidance", handle, downstreamFailure, downstreamErr))
@@ -347,7 +344,7 @@ func (c *Client) callTaskContextCompose(ctx context.Context, backends map[string
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			handle := "/v1/projects/" + url.PathEscape(arguments.ProjectID) + "/librarian/query"
+			handle := "/v1/projects/" + url.PathEscape(projectID) + "/librarian/query"
 			body, downstreamFailure, downstreamErr := c.taskContextPOST(ctx, backend, handle, librarianQueryBody{Query: librarianQuery, TaskID: &arguments.TaskID, IncludeGlobal: boolPointer(true)}, call)
 			if downstreamErr != nil || downstreamFailure != nil {
 				addStatus(taskContextStatus("librarian", handle, downstreamFailure, downstreamErr))
@@ -388,12 +385,13 @@ func (c *Client) callTaskContextCompose(ctx context.Context, backends map[string
 
 func decodeTaskContextArguments(raw json.RawMessage) (taskContextArguments, error) {
 	var arguments taskContextArguments
-	if err := json.Unmarshal(raw, &arguments); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&arguments); err != nil {
 		return taskContextArguments{}, fmt.Errorf("decoding task context arguments: %w", err)
 	}
-	arguments.ProjectID = strings.TrimSpace(arguments.ProjectID)
-	if arguments.ProjectID == "" {
-		return taskContextArguments{}, fmt.Errorf("task context route requires project_id")
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return taskContextArguments{}, fmt.Errorf("decoding task context arguments: unexpected trailing JSON")
 	}
 	if arguments.TaskID <= 0 {
 		return taskContextArguments{}, fmt.Errorf("task context route requires task_id")

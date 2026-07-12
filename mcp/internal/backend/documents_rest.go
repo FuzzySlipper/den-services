@@ -43,6 +43,7 @@ type documentsToolArguments struct {
 	CreateIfMissing   *bool           `json:"create_if_missing"`
 	IncludeResolved   *bool           `json:"include_resolved"`
 	Limit             *int            `json:"limit"`
+	Verbose           *bool           `json:"verbose"`
 	Metadata          json.RawMessage `json:"metadata"`
 }
 
@@ -185,7 +186,7 @@ func documentsRESTRequestBody(operation string, arguments documentsToolArguments
 			ResolutionSummary: arguments.ResolutionSummary,
 			Metadata:          compactRaw(arguments.Metadata),
 		})
-	case "get_document", "list_documents", "search_documents", "delete_document", "archive_document_preflight", "query_archived_documents", "get_document_discussion", "list_discussion_threads", "get_discussion_thread":
+	case "get_document", "list_documents", "search_documents", "delete_document", "archive_document_preflight", "query_archived_documents", "get_document_discussion", "ensure_document_discussion", "list_discussion_threads", "get_discussion_thread":
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("%w: documents operation %s", ErrUnsupportedAdapter, operation)
@@ -220,14 +221,18 @@ func documentsRESTURL(baseURL string, route Route, arguments documentsToolArgume
 	}
 	query := parsedURL.Query()
 	switch route.Operation {
+	case "get_document":
+		setBoolQuery(query, "verbose", arguments.Verbose)
 	case "list_documents":
 		setStringValueQuery(query, "project_id", arguments.ProjectID)
 		setStringValueQuery(query, "doc_type", arguments.DocType)
 		setStringValueQuery(query, "tags", stringFromRaw(arguments.Tags))
 		setStringValueQuery(query, "visibility", arguments.Visibility)
+		setBoolQuery(query, "verbose", arguments.Verbose)
 	case "search_documents":
 		setStringValueQuery(query, "query", arguments.Query)
 		setStringValueQuery(query, "project_id", arguments.ProjectID)
+		setBoolQuery(query, "verbose", arguments.Verbose)
 	case "query_archived_documents":
 		setStringValueQuery(query, "query", arguments.Query)
 		setStringValueQuery(query, "project_id", arguments.ProjectID)
@@ -237,6 +242,7 @@ func documentsRESTURL(baseURL string, route Route, arguments documentsToolArgume
 		setBoolQuery(query, "create_if_missing", arguments.CreateIfMissing)
 		setBoolQuery(query, "include_resolved", arguments.IncludeResolved)
 		setStringValueQuery(query, "anchor", arguments.Anchor)
+		setBoolQuery(query, "verbose", arguments.Verbose)
 	case "list_discussion_threads":
 		setStringValueQuery(query, "target_type", arguments.TargetType)
 		setStringValueQuery(query, "target_project_id", arguments.TargetProjectID)
@@ -245,8 +251,10 @@ func documentsRESTURL(baseURL string, route Route, arguments documentsToolArgume
 			setStringQuery(query, "status", arguments.Status)
 		}
 		setIntQuery(query, "limit", arguments.Limit)
+		setBoolQuery(query, "verbose", arguments.Verbose)
 	case "get_discussion_thread":
 		setBoolQuery(query, "include_comments", arguments.IncludeComments)
+		setBoolQuery(query, "verbose", arguments.Verbose)
 	}
 	parsedURL.RawQuery = query.Encode()
 	return parsedURL.String(), nil
