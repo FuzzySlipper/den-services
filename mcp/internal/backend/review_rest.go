@@ -178,9 +178,6 @@ type githubCheckGateBody struct {
 }
 
 func (c *Client) callReviewREST(ctx context.Context, backend config.BackendConfig, route Route, call ToolCall) (Result, *Failure, error) {
-	if route.Timeout > 0 {
-		backend.Timeout = route.Timeout
-	}
 	request, err := buildReviewRESTRequest(ctx, backend, route, call)
 	if err != nil {
 		return Result{}, nil, err

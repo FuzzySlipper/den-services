@@ -483,6 +483,34 @@ func TestClientCallsTasksRESTRemoveDependencyPath(t *testing.T) {
 	}
 }
 
+func TestClientAppliesRouteTimeoutToMessagesREST(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/projects/den-services/messages/wait" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		time.Sleep(30 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"messages":[],"timed_out":true}`))
+	}))
+	defer server.Close()
+
+	backend := testBackend("messages", server.URL)
+	backend.Timeout = 10 * time.Millisecond
+	route := messagesRouteForTest("wait_for_messages", http.MethodGet, "/v1/projects/{project_id}/messages/wait")
+	route.Timeout = 100 * time.Millisecond
+
+	result, failure, err := NewClient(server.Client()).Call(context.Background(), backend, route, ToolCall{
+		ToolName:  "wait_for_messages",
+		Operation: "wait_for_messages",
+		Arguments: json.RawMessage(`{"project_id":"den-services","unread_for":"planner","timeout_ms":50}`),
+	})
+	if err != nil || failure != nil {
+		t.Fatalf("Call() err=%v failure=%+v", err, failure)
+	}
+	if !strings.Contains(string(result.Value), `"timed_out":true`) {
+		t.Fatalf("result = %s", result.Value)
+	}
+}
+
 func TestClientCallsMessagesRESTSendMessage(t *testing.T) {
 	var sawToken string
 	var sawPath string
