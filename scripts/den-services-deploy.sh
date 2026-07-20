@@ -233,6 +233,73 @@ append_mcp_route_if_missing() {
   fi
 }
 
+set_mcp_route_timeout() {
+  local routes_target="$1"
+  local operation="$2"
+  local timeout="$3"
+  local write_target
+  local staged_routes
+
+  staged_routes="$(mktemp /tmp/den-mcp-routes.XXXXXX)"
+  cp "${routes_target}" "${staged_routes}"
+  write_target="${staged_routes}"
+
+  if ! python3 - "${write_target}" "${operation}" "${timeout}" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+operation = sys.argv[2]
+timeout = sys.argv[3]
+lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+operation_pattern = re.compile(r"^(?P<indent>\s*)-\s+operation:\s*['\"]?" + re.escape(operation) + r"['\"]?\s*$")
+route_start = None
+route_indent = ""
+for index, line in enumerate(lines):
+    match = operation_pattern.match(line.rstrip("\r\n"))
+    if match:
+        route_start = index
+        route_indent = match.group("indent")
+        break
+if route_start is None:
+    raise SystemExit(f"missing MCP route {operation}")
+
+route_end = len(lines)
+next_route_pattern = re.compile(r"^" + re.escape(route_indent) + r"-\s+operation:")
+for index in range(route_start + 1, len(lines)):
+    if next_route_pattern.match(lines[index]):
+        route_end = index
+        break
+
+child_indent = route_indent + "  "
+timeout_pattern = re.compile(r"^" + re.escape(child_indent) + r"timeout:\s*")
+new_line = f'{child_indent}timeout: "{timeout}"\n'
+for index in range(route_start + 1, route_end):
+    if timeout_pattern.match(lines[index]):
+        if lines[index] == new_line:
+            raise SystemExit(0)
+        lines[index] = new_line
+        path.write_text("".join(lines), encoding="utf-8")
+        raise SystemExit(0)
+
+lines.insert(route_end, new_line)
+path.write_text("".join(lines), encoding="utf-8")
+PY
+  then
+    rm -f "${staged_routes}"
+    return 1
+  fi
+
+  if [[ -n "${staged_routes}" ]]; then
+    if ! cmp -s "${staged_routes}" "${routes_target}"; then
+      backup_config_file "${routes_target}" "routes.yaml"
+      run_systemctl install -m 0644 "${staged_routes}" "${routes_target}"
+    fi
+    rm -f "${staged_routes}"
+  fi
+}
+
 install_mcp_routes() {
   local routes_target="${service_root}/config/routes.yaml"
 
@@ -263,6 +330,10 @@ install_mcp_routes() {
     "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}" "mcp_review_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "wait_for_github_checks" "review" "GET" \
     "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}/wait" "mcp_review_rest" "mcp_tool_result_json" "55s"
+  append_mcp_route_if_missing "${routes_target}" "wait_for_messages" "messages" "GET" \
+    "/v1/projects/{project_id}/messages/wait" "mcp_messages_rest" "mcp_tool_result_json" "65s"
+  set_mcp_route_timeout "${routes_target}" "wait_for_github_checks" "55s"
+  set_mcp_route_timeout "${routes_target}" "wait_for_messages" "65s"
   append_mcp_route_if_missing "${routes_target}" "get_task_context" "tasks" "GET" \
     "/v1/tasks/{task_id}/context" "mcp_task_context_compose" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "ensure_document_discussion" "documents" "POST" \

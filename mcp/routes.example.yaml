@@ -411,6 +411,8 @@ routes:
     path: "/v1/projects/{project_id}/messages/wait"
     request_adapter: "mcp_messages_rest"
     response_adapter: "mcp_tool_result_json"
+    # Messages permits a bounded 60-second long poll; leave margin for response delivery.
+    timeout: "65s"
   - operation: "append_topic_clip"
     backend: "den-core"
     method: "POST"

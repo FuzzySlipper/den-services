@@ -42,6 +42,20 @@ func TestRoutesExampleUsesNarrowGitHubWaitTimeout(t *testing.T) {
 	}
 }
 
+func TestRoutesExampleUsesMessageLongPollTimeout(t *testing.T) {
+	table, err := LoadRouteTable(filepath.Join("..", "..", "routes.example.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := table.Resolve("wait_for_messages")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if route.Timeout != 65*time.Second {
+		t.Fatalf("route timeout = %s", route.Timeout)
+	}
+}
+
 func TestRouteTableRejectsUnsupportedAdapter(t *testing.T) {
 	route := testRoute("get_task", "den-core")
 	route.RequestAdapter = "unknown"
