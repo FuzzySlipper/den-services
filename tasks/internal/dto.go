@@ -84,9 +84,10 @@ type TaskDetailResponse struct {
 }
 
 type DependencyInfoResponse struct {
-	TaskID int64  `json:"task_id"`
-	Title  string `json:"title"`
-	Status string `json:"status"`
+	TaskID    int64  `json:"task_id"`
+	ProjectID string `json:"project_id"`
+	Title     string `json:"title"`
+	Status    string `json:"status"`
 }
 
 type TaskHistoryEntryResponse struct {
@@ -171,7 +172,12 @@ func toTaskDetailResponse(detail TaskDetail) TaskDetailResponse {
 func toDependencyResponses(dependencies []DependencyInfo) []DependencyInfoResponse {
 	responses := make([]DependencyInfoResponse, 0, len(dependencies))
 	for _, dependency := range dependencies {
-		responses = append(responses, DependencyInfoResponse(dependency))
+		responses = append(responses, DependencyInfoResponse{
+			TaskID:    dependency.TaskID,
+			ProjectID: dependency.ProjectID,
+			Title:     dependency.Title,
+			Status:    dependency.Status,
+		})
 	}
 	return responses
 }

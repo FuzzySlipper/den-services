@@ -321,9 +321,6 @@ func (s *memoryStore) addDependencyLocked(taskID int64, dependsOn int64) error {
 	if taskID == dependsOn {
 		return validationFailed(ErrDependencyCycle)
 	}
-	if task.ProjectID() != dep.ProjectID() {
-		return validationFailed(ErrDependencyProjectMismatch)
-	}
 	if s.dependencyCycleLocked(taskID, dependsOn) {
 		return conflict(ErrDependencyCycle, "dependency_cycle")
 	}
@@ -428,7 +425,7 @@ func (s *memoryStore) dependenciesLocked(taskID int64) []DependencyInfo {
 	for depID := range s.dependencies[taskID] {
 		dep := s.tasks[depID]
 		if dep != nil {
-			dependencies = append(dependencies, DependencyInfo{TaskID: dep.ID(), Title: dep.Title(), Status: dep.Status()})
+			dependencies = append(dependencies, DependencyInfo{TaskID: dep.ID(), ProjectID: dep.ProjectID(), Title: dep.Title(), Status: dep.Status()})
 		}
 	}
 	sort.Slice(dependencies, func(left int, right int) bool {

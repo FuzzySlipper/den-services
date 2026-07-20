@@ -108,6 +108,65 @@ func TestHTTPTasksLifecycle(t *testing.T) {
 	}
 }
 
+func TestHTTPCrossProjectDependencyBlocksAndProjectsOwner(t *testing.T) {
+	server := testServer(t)
+
+	upstreamResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(upstreamResponse, authedJSONRequest(http.MethodPost, "/v1/projects/upstream/tasks", `{"title":"Upstream"}`))
+	if upstreamResponse.Code != http.StatusCreated {
+		t.Fatalf("create upstream status = %d body = %s", upstreamResponse.Code, upstreamResponse.Body.String())
+	}
+	var upstream TaskResponse
+	decodeJSON(t, upstreamResponse.Body, &upstream)
+
+	downstreamResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(downstreamResponse, authedJSONRequest(http.MethodPost, "/v1/projects/downstream/tasks", `{"title":"Downstream"}`))
+	if downstreamResponse.Code != http.StatusCreated {
+		t.Fatalf("create downstream status = %d body = %s", downstreamResponse.Code, downstreamResponse.Body.String())
+	}
+	var downstream TaskResponse
+	decodeJSON(t, downstreamResponse.Body, &downstream)
+
+	addResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(addResponse, authedJSONRequest(http.MethodPost, "/v1/tasks/"+int64String(&downstream.ID)+"/dependencies", `{"depends_on":`+int64String(&upstream.ID)+`}`))
+	if addResponse.Code != http.StatusOK {
+		t.Fatalf("add cross-project dependency status = %d body = %s", addResponse.Code, addResponse.Body.String())
+	}
+
+	detailResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(detailResponse, authedJSONRequest(http.MethodGet, "/v1/tasks/"+int64String(&downstream.ID), ""))
+	if detailResponse.Code != http.StatusOK {
+		t.Fatalf("detail status = %d body = %s", detailResponse.Code, detailResponse.Body.String())
+	}
+	var detail TaskDetailResponse
+	decodeJSON(t, detailResponse.Body, &detail)
+	if len(detail.Dependencies) != 1 || detail.Dependencies[0].TaskID != upstream.ID || detail.Dependencies[0].ProjectID != "upstream" {
+		t.Fatalf("detail dependencies = %+v", detail.Dependencies)
+	}
+
+	nextResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(nextResponse, authedJSONRequest(http.MethodGet, "/v1/projects/downstream/tasks/next", ""))
+	if nextResponse.Code != http.StatusOK || !strings.Contains(nextResponse.Body.String(), "No unblocked tasks available.") {
+		t.Fatalf("next while cross-project dependency unfinished = %d body = %s", nextResponse.Code, nextResponse.Body.String())
+	}
+
+	completeResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(completeResponse, authedJSONRequest(http.MethodPatch, "/v1/tasks/"+int64String(&upstream.ID), `{"agent":"tester","status":"review"}`))
+	if completeResponse.Code != http.StatusOK {
+		t.Fatalf("complete upstream status = %d body = %s", completeResponse.Code, completeResponse.Body.String())
+	}
+	nextResponse = httptest.NewRecorder()
+	server.Handler.ServeHTTP(nextResponse, authedJSONRequest(http.MethodGet, "/v1/projects/downstream/tasks/next", ""))
+	if nextResponse.Code != http.StatusOK {
+		t.Fatalf("next after cross-project dependency completion = %d body = %s", nextResponse.Code, nextResponse.Body.String())
+	}
+	var next TaskResponse
+	decodeJSON(t, nextResponse.Body, &next)
+	if next.ID != downstream.ID {
+		t.Fatalf("next = %+v, want downstream %+v", next, downstream)
+	}
+}
+
 func TestHTTPNextTaskIncludesUnassignedSubtasksOfReviewParents(t *testing.T) {
 	server := testServer(t)
 

@@ -64,7 +64,7 @@ func TestServiceNextTaskDependenciesAndCycles(t *testing.T) {
 	service := newTestService()
 	ctx := context.Background()
 
-	dependency, err := service.CreateTask(ctx, "den-services", CreateTaskRequest{Title: "Dependency", Priority: 2})
+	dependency, err := service.CreateTask(ctx, "upstream-services", CreateTaskRequest{Title: "Upstream dependency", Priority: 2})
 	if err != nil {
 		t.Fatalf("CreateTask(dependency) error = %v", err)
 	}
@@ -77,8 +77,15 @@ func TestServiceNextTaskDependenciesAndCycles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NextTask() error = %v", err)
 	}
-	if next == nil || next.ID() != dependency.ID() {
-		t.Fatalf("next before dependency completion = %+v", next)
+	if next != nil {
+		t.Fatalf("next before cross-project dependency completion = %+v", next)
+	}
+	detail, err := service.GetTask(ctx, waiting.ID())
+	if err != nil {
+		t.Fatalf("GetTask(waiting) error = %v", err)
+	}
+	if len(detail.Dependencies) != 1 || detail.Dependencies[0].ProjectID != "upstream-services" {
+		t.Fatalf("cross-project dependencies = %+v", detail.Dependencies)
 	}
 
 	review := StatusReview
