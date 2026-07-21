@@ -235,10 +235,25 @@ func (s *Service) CommentOnDocument(ctx context.Context, projectID string, slug 
 	if err := s.projects.AssertWritable(ctx, doc.ProjectID()); err != nil {
 		return nil, nil, err
 	}
-	threadKey := threadKeyForAnchor(req.Anchor)
-	thread, err := s.store.GetOrCreateThread(ctx, doc.ProjectID(), doc.Slug(), threadKey, threadTitle(doc.Slug(), threadKey), req.AuthorIdentity, strings.TrimSpace(req.Anchor), s.clock().UTC())
-	if err != nil {
-		return nil, nil, err
+	var thread *DiscussionThread
+	if req.ParentCommentID != nil {
+		parent, err := s.store.GetComment(ctx, *req.ParentCommentID)
+		if err != nil {
+			return nil, nil, err
+		}
+		thread, err = s.store.GetThread(ctx, parent.ThreadID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if thread.TargetType != TargetTypeDocument || thread.TargetProjectID != doc.ProjectID() || thread.TargetSlug != doc.Slug() {
+			return nil, nil, validationFailed(ErrParentDocumentMismatch)
+		}
+	} else {
+		threadKey := threadKeyForAnchor(req.Anchor)
+		thread, err = s.store.GetOrCreateThread(ctx, doc.ProjectID(), doc.Slug(), threadKey, threadTitle(doc.Slug(), threadKey), req.AuthorIdentity, strings.TrimSpace(req.Anchor), s.clock().UTC())
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 	comment, err := s.createComment(ctx, thread.ID, req.ParentCommentID, req.AuthorIdentity, req.BodyMarkdown, req.CommentKind, req.Mentions, req.SourceRefs, nil)
 	return comment, thread, err

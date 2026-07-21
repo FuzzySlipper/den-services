@@ -44,25 +44,26 @@ const (
 )
 
 var (
-	ErrDocumentNotFound     = errors.New("document not found")                            //nolint:gochecknoglobals
-	ErrThreadNotFound       = errors.New("discussion thread not found")                   //nolint:gochecknoglobals
-	ErrCommentNotFound      = errors.New("discussion comment not found")                  //nolint:gochecknoglobals
-	ErrMissingProjectID     = errors.New("project_id is required")                        //nolint:gochecknoglobals
-	ErrMissingSlug          = errors.New("slug is required")                              //nolint:gochecknoglobals
-	ErrMissingTitle         = errors.New("title is required")                             //nolint:gochecknoglobals
-	ErrMissingContent       = errors.New("content is required")                           //nolint:gochecknoglobals
-	ErrMissingAuthor        = errors.New("author_identity is required")                   //nolint:gochecknoglobals
-	ErrMissingBody          = errors.New("body_markdown is required")                     //nolint:gochecknoglobals
-	ErrInvalidDocType       = errors.New("invalid document type")                         //nolint:gochecknoglobals
-	ErrInvalidVisibility    = errors.New("invalid document visibility")                   //nolint:gochecknoglobals
-	ErrInvalidTargetType    = errors.New("target_type must be document")                  //nolint:gochecknoglobals
-	ErrInvalidThreadStatus  = errors.New("invalid discussion thread status")              //nolint:gochecknoglobals
-	ErrInvalidCommentKind   = errors.New("invalid discussion comment kind")               //nolint:gochecknoglobals
-	ErrInvalidCommentStatus = errors.New("invalid discussion comment status")             //nolint:gochecknoglobals
-	ErrParentThreadMismatch = errors.New("parent comment must belong to the same thread") //nolint:gochecknoglobals
-	ErrInvalidJSON          = errors.New("json payload is invalid")                       //nolint:gochecknoglobals
-	ErrSearchQueryEmpty     = errors.New("search query is required")                      //nolint:gochecknoglobals
-	ErrProjectClientUnset   = errors.New("projects scope client is not configured")       //nolint:gochecknoglobals
+	ErrDocumentNotFound       = errors.New("document not found")                              //nolint:gochecknoglobals
+	ErrThreadNotFound         = errors.New("discussion thread not found")                     //nolint:gochecknoglobals
+	ErrCommentNotFound        = errors.New("discussion comment not found")                    //nolint:gochecknoglobals
+	ErrMissingProjectID       = errors.New("project_id is required")                          //nolint:gochecknoglobals
+	ErrMissingSlug            = errors.New("slug is required")                                //nolint:gochecknoglobals
+	ErrMissingTitle           = errors.New("title is required")                               //nolint:gochecknoglobals
+	ErrMissingContent         = errors.New("content is required")                             //nolint:gochecknoglobals
+	ErrMissingAuthor          = errors.New("author_identity is required")                     //nolint:gochecknoglobals
+	ErrMissingBody            = errors.New("body_markdown is required")                       //nolint:gochecknoglobals
+	ErrInvalidDocType         = errors.New("invalid document type")                           //nolint:gochecknoglobals
+	ErrInvalidVisibility      = errors.New("invalid document visibility")                     //nolint:gochecknoglobals
+	ErrInvalidTargetType      = errors.New("target_type must be document")                    //nolint:gochecknoglobals
+	ErrInvalidThreadStatus    = errors.New("invalid discussion thread status")                //nolint:gochecknoglobals
+	ErrInvalidCommentKind     = errors.New("invalid discussion comment kind")                 //nolint:gochecknoglobals
+	ErrInvalidCommentStatus   = errors.New("invalid discussion comment status")               //nolint:gochecknoglobals
+	ErrParentThreadMismatch   = errors.New("parent comment must belong to the same thread")   //nolint:gochecknoglobals
+	ErrParentDocumentMismatch = errors.New("parent comment must belong to the same document") //nolint:gochecknoglobals
+	ErrInvalidJSON            = errors.New("json payload is invalid")                         //nolint:gochecknoglobals
+	ErrSearchQueryEmpty       = errors.New("search query is required")                        //nolint:gochecknoglobals
+	ErrProjectClientUnset     = errors.New("projects scope client is not configured")         //nolint:gochecknoglobals
 )
 
 type ServiceError struct {
