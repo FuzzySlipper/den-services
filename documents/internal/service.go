@@ -199,7 +199,7 @@ func (s *Service) GetDocumentDiscussion(ctx context.Context, projectID string, s
 			}
 		}
 	}
-	if selected == nil {
+	if selected == nil && anchor != "" {
 		return DiscussionDetail{DocumentID: doc.ID(), ProjectID: doc.ProjectID(), Slug: doc.Slug()}, nil
 	}
 	threads, err := s.store.ListThreads(ctx, ListThreadsQuery{TargetType: TargetTypeDocument, TargetProjectID: doc.ProjectID(), TargetSlug: doc.Slug()})
@@ -216,9 +216,13 @@ func (s *Service) GetDocumentDiscussion(ctx context.Context, projectID string, s
 		}
 		filtered = append(filtered, thread)
 	}
-	comments, err := s.store.ListComments(ctx, selected.ID)
-	if err != nil {
-		return DiscussionDetail{}, err
+	comments := make([]DiscussionComment, 0)
+	for _, thread := range filtered {
+		threadComments, err := s.store.ListComments(ctx, thread.ID)
+		if err != nil {
+			return DiscussionDetail{}, err
+		}
+		comments = append(comments, threadComments...)
 	}
 	return DiscussionDetail{DocumentID: doc.ID(), ProjectID: doc.ProjectID(), Slug: doc.Slug(), Threads: filtered, DefaultThread: selected, Comments: comments}, nil
 }

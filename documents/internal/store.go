@@ -178,7 +178,8 @@ func (s *Store) GetThread(ctx context.Context, id int64) (*DiscussionThread, err
 }
 
 func (s *Store) ListThreads(ctx context.Context, query ListThreadsQuery) ([]DiscussionThread, error) {
-	rows, err := s.pool.Query(ctx, listThreadsSQL, query.TargetType, query.TargetProjectID, query.TargetSlug, emptyToNil(query.Status), query.Limit)
+	limit := normalizeDiscussionThreadLimit(query.Limit)
+	rows, err := s.pool.Query(ctx, listThreadsSQL, query.TargetType, query.TargetProjectID, query.TargetSlug, emptyToNil(query.Status), limit)
 	if err != nil {
 		return nil, fmt.Errorf("listing discussion threads: %w", err)
 	}

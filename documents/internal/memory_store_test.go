@@ -247,8 +247,9 @@ func (s *memoryStore) ListThreads(_ context.Context, query ListThreadsQuery) ([]
 		}
 		threads = append(threads, thread)
 	}
-	if query.Limit > 0 && len(threads) > query.Limit {
-		threads = threads[:query.Limit]
+	limit := normalizeDiscussionThreadLimit(query.Limit)
+	if len(threads) > limit {
+		threads = threads[:limit]
 	}
 	return threads, nil
 }

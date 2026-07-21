@@ -23,6 +23,8 @@ const (
 
 	TargetTypeDocument = "document"
 
+	DefaultDiscussionThreadLimit = 50
+
 	ThreadStatusOpen     = "open"
 	ThreadStatusResolved = "resolved"
 	ThreadStatusArchived = "archived"
@@ -297,6 +299,13 @@ type ListThreadsQuery struct {
 	TargetSlug      string
 	Status          string
 	Limit           int
+}
+
+func normalizeDiscussionThreadLimit(limit int) int {
+	if limit <= 0 {
+		return DefaultDiscussionThreadLimit
+	}
+	return limit
 }
 
 func validDocType(value string) bool {

@@ -93,6 +93,45 @@ func TestServiceDocumentVisibilitySearchArchiveAndDelete(t *testing.T) {
 	}
 }
 
+func TestServiceDocumentDiscussionReturnsAnchoredThreadWithoutDefaultThread(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	service := NewService(store, NoopProjectValidator{}, StaticGuidanceReader{Ready: true}, fixedClock())
+	if _, err := service.StoreDocument(ctx, "den-services", StoreDocumentRequest{Slug: "anchored", Title: "Anchored", Content: "Body"}); err != nil {
+		t.Fatalf("StoreDocument() error = %v", err)
+	}
+	comment, thread, err := service.CommentOnDocument(ctx, "den-services", "anchored", CommentOnDocumentRequest{
+		AuthorIdentity: "reviewer",
+		BodyMarkdown:   "Anchored feedback",
+		Anchor:         "Scope",
+	})
+	if err != nil {
+		t.Fatalf("CommentOnDocument(anchor) error = %v", err)
+	}
+	if thread.ThreadKey != "section:Scope" {
+		t.Fatalf("thread key = %q", thread.ThreadKey)
+	}
+	detail, err := service.GetDocumentDiscussion(ctx, "den-services", "anchored", false, false, "")
+	if err != nil {
+		t.Fatalf("GetDocumentDiscussion() error = %v", err)
+	}
+	if detail.DefaultThread != nil || len(detail.Threads) != 1 || len(detail.Comments) != 1 || detail.Comments[0].ID != comment.ID {
+		t.Fatalf("discussion detail = %#v", detail)
+	}
+}
+
+func TestNormalizeDiscussionThreadLimit(t *testing.T) {
+	if got := normalizeDiscussionThreadLimit(0); got != DefaultDiscussionThreadLimit {
+		t.Fatalf("zero limit = %d, want %d", got, DefaultDiscussionThreadLimit)
+	}
+	if got := normalizeDiscussionThreadLimit(-1); got != DefaultDiscussionThreadLimit {
+		t.Fatalf("negative limit = %d, want %d", got, DefaultDiscussionThreadLimit)
+	}
+	if got := normalizeDiscussionThreadLimit(7); got != 7 {
+		t.Fatalf("explicit limit = %d, want 7", got)
+	}
+}
+
 func TestServiceDiscussionGreenPathReplyAndResolve(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()

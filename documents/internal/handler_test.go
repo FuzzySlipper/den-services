@@ -68,4 +68,17 @@ func TestHandlerStoreSearchAndComment(t *testing.T) {
 	if comment.ThreadID == 0 || comment.AuthorIdentity != "pi" {
 		t.Fatalf("comment = %#v", comment)
 	}
+
+	req = httptest.NewRequest(http.MethodPost, "/v1/projects/den-services/documents/doc/discussion/comments", bytes.NewBufferString(`{"author_identity":"reviewer","body_markdown":"anchored","anchor":"Scope"}`))
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("anchored comment status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodGet, "/v1/projects/den-services/documents/doc/discussion", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"body_markdown":"hello"`) || !strings.Contains(rec.Body.String(), `"body_markdown":"anchored"`) {
+		t.Fatalf("document discussion response = %d body=%s", rec.Code, rec.Body.String())
+	}
 }
