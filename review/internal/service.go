@@ -380,11 +380,27 @@ func (s *Service) SetVerdict(ctx context.Context, roundID int64, req SetReviewVe
 	if err != nil {
 		return nil, err
 	}
+	if taskStatus := taskStatusForVerdict(verdict); taskStatus != "" {
+		if _, err := s.tasks.SetTaskStatus(ctx, updated.ProjectID, updated.TaskID, actor, taskStatus); err != nil {
+			return nil, fmt.Errorf("updating task status for review verdict: %w", err)
+		}
+	}
 	_, err = s.messages.AppendTaskMessage(ctx, updated.ProjectID, AppendMessageRequest{
 		TaskID: updated.TaskID, Sender: actor, Content: renderVerdictPacket(updated),
 		Intent: intentForVerdict(verdict), Metadata: metadataForRound(updated, packetKindForVerdict(verdict), verdictType(verdict), verdict),
 	})
 	return updated, err
+}
+
+func taskStatusForVerdict(verdict string) string {
+	switch verdict {
+	case VerdictLooksGood:
+		return TaskStatusDone
+	case VerdictChangesRequested:
+		return TaskStatusInProgress
+	default:
+		return ""
+	}
 }
 
 func (s *Service) RespondToFinding(ctx context.Context, findingID int64, req RespondToFindingRequest) (*ReviewFinding, error) {

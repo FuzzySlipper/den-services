@@ -14,9 +14,10 @@ func TestServiceReviewRoundFindingVerdictAndResponse(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()
 	messages := &fakeMessages{}
-	service := newTestService(store, messages, &fakeTasks{tasks: map[int64]TaskContext{
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
 		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusReview, Priority: 1},
-	}})
+	}}
+	service := newTestService(store, messages, tasks)
 
 	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
 		RequestedBy: "pi", Branch: "task/3696-review-service", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
@@ -56,12 +57,62 @@ func TestServiceReviewRoundFindingVerdictAndResponse(t *testing.T) {
 	if verdict.Verdict != VerdictChangesRequested {
 		t.Fatalf("verdict not stored: %+v", verdict)
 	}
+	if tasks.tasks[42].Status != TaskStatusInProgress || len(tasks.statusUpdates) != 1 || tasks.statusUpdates[0] != (fakeTaskStatusUpdate{Agent: "pi-reviewer", Status: TaskStatusInProgress}) {
+		t.Fatalf("changes-requested verdict did not return task to implementation: %+v updates=%+v", tasks.tasks[42], tasks.statusUpdates)
+	}
 	if len(messages.appended) != 1 || messages.appended[0].Intent != "review_feedback" {
 		t.Fatalf("verdict message not appended as review feedback: %+v", messages.appended)
 	}
 	metadata := messages.appended[0].Metadata
 	if metadata["type"] != "review_feedback" || metadata["packet_kind"] != PacketKindReviewFindings {
 		t.Fatalf("verdict metadata did not separate type/packet_kind: %#v", metadata)
+	}
+}
+
+func TestServiceSetVerdictTransitionsTaskStatus(t *testing.T) {
+	for _, testCase := range []struct {
+		name       string
+		verdict    string
+		wantStatus string
+	}{
+		{name: "looks good completes task", verdict: VerdictLooksGood, wantStatus: TaskStatusDone},
+		{name: "changes requested resumes task", verdict: VerdictChangesRequested, wantStatus: TaskStatusInProgress},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := context.Background()
+			tasks := &fakeTasks{tasks: map[int64]TaskContext{42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview}}}
+			service := newTestService(newMemoryStore(), &fakeMessages{}, tasks)
+			round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{RequestedBy: "pi", Branch: "task/verdict", BaseBranch: "main", BaseCommit: "base", HeadCommit: testCase.verdict})
+			if err != nil {
+				t.Fatalf("CreateRound() error = %v", err)
+			}
+			if _, err := service.SetVerdict(ctx, round.ID, SetReviewVerdictRequest{Verdict: testCase.verdict, DecidedBy: "pi-reviewer"}); err != nil {
+				t.Fatalf("SetVerdict() error = %v", err)
+			}
+			if task := tasks.tasks[42]; task.Status != testCase.wantStatus {
+				t.Fatalf("task status = %q, want %q", task.Status, testCase.wantStatus)
+			}
+			if updates := tasks.statusUpdates; len(updates) != 1 || updates[0] != (fakeTaskStatusUpdate{Agent: "pi-reviewer", Status: testCase.wantStatus}) {
+				t.Fatalf("task status updates = %+v", updates)
+			}
+		})
+	}
+}
+
+func TestServiceSetVerdictReturnsTaskStatusUpdateFailure(t *testing.T) {
+	ctx := context.Background()
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview}}, failStatusUpdate: errors.New("tasks unavailable")}
+	messages := &fakeMessages{}
+	service := newTestService(newMemoryStore(), messages, tasks)
+	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{RequestedBy: "pi", Branch: "task/verdict", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head"})
+	if err != nil {
+		t.Fatalf("CreateRound() error = %v", err)
+	}
+	if _, err := service.SetVerdict(ctx, round.ID, SetReviewVerdictRequest{Verdict: VerdictLooksGood, DecidedBy: "pi-reviewer"}); err == nil || !strings.Contains(err.Error(), "tasks unavailable") {
+		t.Fatalf("SetVerdict() error = %v, want task status update failure", err)
+	}
+	if tasks.tasks[42].Status != TaskStatusReview || len(messages.appended) != 0 {
+		t.Fatalf("failed task transition must not claim completion: task=%+v messages=%+v", tasks.tasks[42], messages.appended)
 	}
 }
 
@@ -106,10 +157,6 @@ func TestPostReviewFindingsAppendsCompatiblePacket(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.SetVerdict(ctx, round.ID, SetReviewVerdictRequest{Verdict: VerdictChangesRequested, DecidedBy: "pi-reviewer"}); err != nil {
-		t.Fatal(err)
-	}
-	messages.appended = nil
 
 	packet, err := service.PostReviewFindings(ctx, "den-services", 42, PostReviewFindingsRequest{
 		ReviewRoundID: round.ID, Sender: "pi-reviewer", Notes: "Review complete", RunID: "run-1",
@@ -1007,9 +1054,10 @@ func fixedReviewTestTime() time.Time {
 }
 
 type fakeTasks struct {
-	tasks         map[int64]TaskContext
-	created       []CreateFollowUpTaskRequest
-	statusUpdates []fakeTaskStatusUpdate
+	tasks            map[int64]TaskContext
+	created          []CreateFollowUpTaskRequest
+	statusUpdates    []fakeTaskStatusUpdate
+	failStatusUpdate error
 }
 
 type fakeTaskStatusUpdate struct {
@@ -1032,6 +1080,9 @@ func (f fakeTasks) GetTaskContext(_ context.Context, projectID string, taskID in
 }
 
 func (f *fakeTasks) SetTaskStatus(_ context.Context, projectID string, taskID int64, agent string, status string) (TaskContext, error) {
+	if f.failStatusUpdate != nil {
+		return TaskContext{}, f.failStatusUpdate
+	}
 	task, ok := f.tasks[taskID]
 	if !ok || task.ProjectID != projectID {
 		return TaskContext{}, validationError(errors.New("task not found"), "task_not_found", "task_id", "common.task_id")
