@@ -3,11 +3,21 @@ package messages
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"den-services/shared/postgres"
 )
+
+func TestReviewPacketIdempotencyPreservesAppendOnlyRole(t *testing.T) {
+	if !strings.Contains(createMessageSQL, "do nothing") || strings.Contains(createMessageSQL, "do update") {
+		t.Fatalf("review packet conflict handling must not require table UPDATE: %s", createMessageSQL)
+	}
+	if !strings.Contains(getMessageByReviewPacketSQL, "review_packet_id") {
+		t.Fatalf("review packet conflict readback is missing: %s", getMessageByReviewPacketSQL)
+	}
+}
 
 func TestStorePostgresRepresentativeFlow(t *testing.T) {
 	databaseURL := os.Getenv("DEN_MESSAGES_TEST_DATABASE_URL")

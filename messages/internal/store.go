@@ -26,6 +26,7 @@ func (s *Store) Ping(ctx context.Context) error {
 }
 
 func (s *Store) CreateMessage(ctx context.Context, message *Message) (*Message, error) {
+	metadata := jsonOrNil(message.Metadata())
 	created, err := scanMessage(s.pool.QueryRow(ctx, createMessageSQL,
 		message.ProjectID(),
 		message.TaskID(),
@@ -33,9 +34,12 @@ func (s *Store) CreateMessage(ctx context.Context, message *Message) (*Message, 
 		message.Sender(),
 		message.Content(),
 		message.Intent(),
-		jsonOrNil(message.Metadata()),
+		metadata,
 		message.CreatedAt(),
 	))
+	if errors.Is(err, pgx.ErrNoRows) && metadata != nil {
+		created, err = scanMessage(s.pool.QueryRow(ctx, getMessageByReviewPacketSQL, message.ProjectID(), metadata))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("creating message: %w", err)
 	}
@@ -268,10 +272,13 @@ insert into den_messages.messages(project_id, task_id, thread_id, sender, conten
 values ($1, $2, $3, $4, $5, $6, $7, $8)
 on conflict (project_id, (metadata->>'review_packet_id'))
 where metadata->>'review_packet_id' is not null
-do update set project_id = excluded.project_id
+do nothing
 returning ` + messageColumns
 
-const getMessageSQL = `select ` + messageColumns + ` from den_messages.messages where id = $1`
+const (
+	getMessageSQL               = `select ` + messageColumns + ` from den_messages.messages where id = $1`
+	getMessageByReviewPacketSQL = `select ` + messageColumns + ` from den_messages.messages where project_id = $1 and metadata->>'review_packet_id' = ($2::jsonb->>'review_packet_id')`
+)
 
 const listMessagesSQL = `
 select ` + messageColumns + `
