@@ -15,9 +15,10 @@ func TestServiceReviewRoundFindingVerdictAndResponse(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()
 	messages := &fakeMessages{}
-	service := newTestService(store, messages, &fakeTasks{tasks: map[int64]TaskContext{
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
 		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusReview, Priority: 1},
-	}})
+	}}
+	service := newTestService(store, messages, tasks)
 
 	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
 		RequestedBy: "pi", Branch: "task/3696-review-service", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
@@ -63,6 +64,28 @@ func TestServiceReviewRoundFindingVerdictAndResponse(t *testing.T) {
 	metadata := messages.appended[0].Metadata
 	if metadata["type"] != "review_feedback" || metadata["packet_kind"] != PacketKindReviewFindings {
 		t.Fatalf("verdict metadata did not separate type/packet_kind: %#v", metadata)
+	}
+}
+
+func TestServiceSetVerdictRejectsGreenPathVerdicts(t *testing.T) {
+	for _, verdict := range []string{VerdictLooksGood, VerdictChangesRequested} {
+		t.Run(verdict, func(t *testing.T) {
+			ctx := context.Background()
+			service := newTestService(newMemoryStore(), &fakeMessages{}, &fakeTasks{tasks: map[int64]TaskContext{
+				42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
+			}})
+			round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
+				RequestedBy: "pi", Branch: "task/verdict", BaseBranch: "main", BaseCommit: "base", HeadCommit: verdict,
+			})
+			if err != nil {
+				t.Fatalf("CreateRound() error = %v", err)
+			}
+			if _, err := service.SetVerdict(ctx, round.ID, SetReviewVerdictRequest{
+				Verdict: verdict, DecidedBy: "pi-reviewer",
+			}); err == nil || !errors.Is(err, ErrInvalidVerdict) {
+				t.Fatalf("SetVerdict() error = %v, want ErrInvalidVerdict", err)
+			}
+		})
 	}
 }
 

@@ -305,7 +305,7 @@ func (s *Store) dependencies(ctx context.Context, taskID int64) ([]DependencyInf
 	var dependencies []DependencyInfo
 	for rows.Next() {
 		var dependency DependencyInfo
-		if err := rows.Scan(&dependency.TaskID, &dependency.Title, &dependency.Status); err != nil {
+		if err := rows.Scan(&dependency.TaskID, &dependency.ProjectID, &dependency.Title, &dependency.Status); err != nil {
 			return nil, err
 		}
 		dependencies = append(dependencies, dependency)
@@ -320,21 +320,16 @@ func addDependencyTx(ctx context.Context, tx pgx.Tx, taskID int64, dependsOn int
 	if taskID == dependsOn {
 		return validationFailed(ErrDependencyCycle)
 	}
-	task, err := getTaskTx(ctx, tx, taskID)
-	if err != nil {
+	if _, err := getTaskTx(ctx, tx, taskID); err != nil {
 		return err
 	}
-	dep, err := getTaskTx(ctx, tx, dependsOn)
-	if err != nil {
+	if _, err := getTaskTx(ctx, tx, dependsOn); err != nil {
 		return err
-	}
-	if task.ProjectID() != dep.ProjectID() {
-		return validationFailed(ErrDependencyProjectMismatch)
 	}
 	if createsDependencyCycle(ctx, tx, taskID, dependsOn) {
 		return conflict(fmt.Errorf("%w: %d depends on %d", ErrDependencyCycle, taskID, dependsOn), "dependency_cycle")
 	}
-	_, err = tx.Exec(ctx, addDependencySQL, taskID, dependsOn)
+	_, err := tx.Exec(ctx, addDependencySQL, taskID, dependsOn)
 	if err != nil {
 		return fmt.Errorf("adding dependency %d -> %d: %w", taskID, dependsOn, err)
 	}
@@ -779,7 +774,7 @@ const (
 )
 
 const dependenciesSQL = `
-select t.id, t.title, t.status
+select t.id, t.project_id, t.title, t.status
 from den_tasks.task_dependencies td
 join den_tasks.tasks t on t.id = td.depends_on
 where td.task_id = $1

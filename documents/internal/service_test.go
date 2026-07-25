@@ -93,6 +93,70 @@ func TestServiceDocumentVisibilitySearchArchiveAndDelete(t *testing.T) {
 	}
 }
 
+func TestServiceDocumentDiscussionReturnsAnchoredThreadWithoutDefaultThread(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	service := NewService(store, NoopProjectValidator{}, StaticGuidanceReader{Ready: true}, fixedClock())
+	if _, err := service.StoreDocument(ctx, "den-services", StoreDocumentRequest{Slug: "anchored", Title: "Anchored", Content: "Body"}); err != nil {
+		t.Fatalf("StoreDocument() error = %v", err)
+	}
+	comment, thread, err := service.CommentOnDocument(ctx, "den-services", "anchored", CommentOnDocumentRequest{
+		AuthorIdentity: "reviewer",
+		BodyMarkdown:   "Anchored feedback",
+		Anchor:         "Scope",
+	})
+	if err != nil {
+		t.Fatalf("CommentOnDocument(anchor) error = %v", err)
+	}
+	if thread.ThreadKey != "section:Scope" {
+		t.Fatalf("thread key = %q", thread.ThreadKey)
+	}
+	detail, err := service.GetDocumentDiscussion(ctx, "den-services", "anchored", false, false, "")
+	if err != nil {
+		t.Fatalf("GetDocumentDiscussion() error = %v", err)
+	}
+	if detail.DefaultThread != nil || len(detail.Threads) != 1 || len(detail.Comments) != 1 || detail.Comments[0].ID != comment.ID {
+		t.Fatalf("discussion detail = %#v", detail)
+	}
+}
+
+func TestNormalizeDiscussionThreadLimit(t *testing.T) {
+	if got := normalizeDiscussionThreadLimit(0); got != DefaultDiscussionThreadLimit {
+		t.Fatalf("zero limit = %d, want %d", got, DefaultDiscussionThreadLimit)
+	}
+	if got := normalizeDiscussionThreadLimit(-1); got != DefaultDiscussionThreadLimit {
+		t.Fatalf("negative limit = %d, want %d", got, DefaultDiscussionThreadLimit)
+	}
+	if got := normalizeDiscussionThreadLimit(7); got != 7 {
+		t.Fatalf("explicit limit = %d, want 7", got)
+	}
+}
+
+func TestServiceCommentOnDocumentRejectsParentFromAnotherDocument(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	service := NewService(store, NoopProjectValidator{}, StaticGuidanceReader{Ready: true}, fixedClock())
+	for _, slug := range []string{"source", "target"} {
+		if _, err := service.StoreDocument(ctx, "den-services", StoreDocumentRequest{Slug: slug, Title: slug, Content: "Body"}); err != nil {
+			t.Fatalf("StoreDocument(%s) error = %v", slug, err)
+		}
+	}
+	parent, _, err := service.CommentOnDocument(ctx, "den-services", "source", CommentOnDocumentRequest{AuthorIdentity: "reviewer", BodyMarkdown: "Source", Anchor: "Scope"})
+	if err != nil {
+		t.Fatalf("CommentOnDocument(source) error = %v", err)
+	}
+	if _, _, err := service.CommentOnDocument(ctx, "den-services", "target", CommentOnDocumentRequest{AuthorIdentity: "reviewer", BodyMarkdown: "Wrong target", ParentCommentID: &parent.ID}); !errors.Is(err, ErrParentDocumentMismatch) {
+		t.Fatalf("cross-document parent error = %v", err)
+	}
+	threads, err := store.ListThreads(ctx, ListThreadsQuery{TargetType: TargetTypeDocument, TargetProjectID: "den-services", TargetSlug: "target"})
+	if err != nil {
+		t.Fatalf("ListThreads(target) error = %v", err)
+	}
+	if len(threads) != 0 {
+		t.Fatalf("cross-document reply created stray target thread: %#v", threads)
+	}
+}
+
 func TestServiceDiscussionGreenPathReplyAndResolve(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()
@@ -145,6 +209,17 @@ func TestServiceDiscussionGreenPathReplyAndResolve(t *testing.T) {
 	}
 	if anchorThread.ThreadKey != "section:section-1" || anchorComment.ThreadID == thread.ID {
 		t.Fatalf("anchor thread/comment = %#v %#v", anchorThread, anchorComment)
+	}
+	anchoredReply, replyThread, err := service.CommentOnDocument(ctx, "den-services", "doc", CommentOnDocumentRequest{
+		AuthorIdentity:  "coder",
+		BodyMarkdown:    "Anchored reply",
+		ParentCommentID: &anchorComment.ID,
+	})
+	if err != nil {
+		t.Fatalf("CommentOnDocument(anchored reply) error = %v", err)
+	}
+	if replyThread.ID != anchorThread.ID || anchoredReply.ThreadID != anchorThread.ID || anchoredReply.ParentCommentID == nil || *anchoredReply.ParentCommentID != anchorComment.ID {
+		t.Fatalf("anchored reply/thread = %#v %#v", anchoredReply, replyThread)
 	}
 	if _, err := service.CreateDiscussionComment(ctx, anchorThread.ID, CreateCommentRequest{AuthorIdentity: "bad", BodyMarkdown: "bad", ParentCommentID: &root.ID}); !errors.Is(err, ErrParentThreadMismatch) {
 		t.Fatalf("cross-thread parent error = %v", err)

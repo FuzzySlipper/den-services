@@ -70,6 +70,10 @@ func NewClient(httpClient *http.Client) *Client {
 }
 
 func (c *Client) Call(ctx context.Context, backend config.BackendConfig, route Route, call ToolCall) (Result, *Failure, error) {
+	if route.Timeout > 0 {
+		backend.Timeout = route.Timeout
+	}
+
 	switch {
 	case route.RequestAdapter == RequestAdapterMCPToolsCall && route.ResponseAdapter == ResponseAdapterMCPJSONRPC:
 		return c.callMCPTool(ctx, backend, route, call)

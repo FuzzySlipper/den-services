@@ -78,7 +78,7 @@ func (c *AgentGuidanceClient) DocumentReferences(ctx context.Context, projectID 
 	if c.baseURL == "" {
 		return nil, false, nil
 	}
-	endpoint := fmt.Sprintf("%s/v1/agent-guidance/document-references?document_project_id=%s&document_slug=%s", c.baseURL, url.QueryEscape(projectID), url.QueryEscape(slug))
+	endpoint := fmt.Sprintf("%s/v1/guidance/document-references?document_project_id=%s&document_slug=%s", c.baseURL, url.QueryEscape(projectID), url.QueryEscape(slug))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, false, fmt.Errorf("building guidance reference request: %w", err)

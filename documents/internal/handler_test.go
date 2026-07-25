@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -67,5 +68,35 @@ func TestHandlerStoreSearchAndComment(t *testing.T) {
 	}
 	if comment.ThreadID == 0 || comment.AuthorIdentity != "pi" {
 		t.Fatalf("comment = %#v", comment)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/v1/projects/den-services/documents/doc/discussion/comments", bytes.NewBufferString(`{"author_identity":"reviewer","body_markdown":"anchored","anchor":"Scope"}`))
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("anchored comment status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var anchored DiscussionCommentResponse
+	if err := json.NewDecoder(rec.Body).Decode(&anchored); err != nil {
+		t.Fatalf("decode anchored comment: %v", err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/v1/projects/den-services/documents/doc/discussion/comments", bytes.NewBufferString(`{"author_identity":"coder","body_markdown":"anchored reply","parent_comment_id":`+strconv.FormatInt(anchored.ID, 10)+`}`))
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("anchored reply status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var anchoredReply DiscussionCommentResponse
+	if err := json.NewDecoder(rec.Body).Decode(&anchoredReply); err != nil {
+		t.Fatalf("decode anchored reply: %v", err)
+	}
+	if anchoredReply.ThreadID != anchored.ThreadID || anchoredReply.ParentCommentID == nil || *anchoredReply.ParentCommentID != anchored.ID {
+		t.Fatalf("anchored reply = %#v parent = %#v", anchoredReply, anchored)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/v1/projects/den-services/documents/doc/discussion", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"body_markdown":"hello"`) || !strings.Contains(rec.Body.String(), `"body_markdown":"anchored"`) {
+		t.Fatalf("document discussion response = %d body=%s", rec.Code, rec.Body.String())
 	}
 }

@@ -21,19 +21,18 @@ const (
 )
 
 var (
-	ErrTaskNotFound              = errors.New("task not found")                                                 //nolint:gochecknoglobals
-	ErrInvalidTask               = errors.New("invalid task")                                                   //nolint:gochecknoglobals
-	ErrMissingProjectID          = errors.New("project_id is required")                                         //nolint:gochecknoglobals
-	ErrMissingTitle              = errors.New("title is required")                                              //nolint:gochecknoglobals
-	ErrInvalidStatus             = errors.New("invalid status")                                                 //nolint:gochecknoglobals
-	ErrInvalidPriority           = errors.New("priority must be 1 through 5")                                   //nolint:gochecknoglobals
-	ErrMissingAgent              = errors.New("agent is required")                                              //nolint:gochecknoglobals
-	ErrEmptyPatch                = errors.New("patch has no mutable fields")                                    //nolint:gochecknoglobals
-	ErrBlockedContextMissing     = errors.New("blocked transition requires blocker_summary and blocker_reason") //nolint:gochecknoglobals
-	ErrParentProjectMismatch     = errors.New("parent task must be in the same project")                        //nolint:gochecknoglobals
-	ErrDependencyProjectMismatch = errors.New("dependency task must be in the same project")                    //nolint:gochecknoglobals
-	ErrDependencyCycle           = errors.New("dependency would create a cycle")                                //nolint:gochecknoglobals
-	ErrParentCycle               = errors.New("parent relationship would create a cycle")                       //nolint:gochecknoglobals
+	ErrTaskNotFound          = errors.New("task not found")                                                 //nolint:gochecknoglobals
+	ErrInvalidTask           = errors.New("invalid task")                                                   //nolint:gochecknoglobals
+	ErrMissingProjectID      = errors.New("project_id is required")                                         //nolint:gochecknoglobals
+	ErrMissingTitle          = errors.New("title is required")                                              //nolint:gochecknoglobals
+	ErrInvalidStatus         = errors.New("invalid status")                                                 //nolint:gochecknoglobals
+	ErrInvalidPriority       = errors.New("priority must be 1 through 5")                                   //nolint:gochecknoglobals
+	ErrMissingAgent          = errors.New("agent is required")                                              //nolint:gochecknoglobals
+	ErrEmptyPatch            = errors.New("patch has no mutable fields")                                    //nolint:gochecknoglobals
+	ErrBlockedContextMissing = errors.New("blocked transition requires blocker_summary and blocker_reason") //nolint:gochecknoglobals
+	ErrParentProjectMismatch = errors.New("parent task must be in the same project")                        //nolint:gochecknoglobals
+	ErrDependencyCycle       = errors.New("dependency would create a cycle")                                //nolint:gochecknoglobals
+	ErrParentCycle           = errors.New("parent relationship would create a cycle")                       //nolint:gochecknoglobals
 )
 
 type ServiceError struct {
@@ -182,9 +181,10 @@ func (t *Task) CreatedAt() time.Time             { return t.createdAt }
 func (t *Task) UpdatedAt() time.Time             { return t.updatedAt }
 
 type DependencyInfo struct {
-	TaskID int64
-	Title  string
-	Status string
+	TaskID    int64
+	ProjectID string
+	Title     string
+	Status    string
 }
 
 type TaskSummary struct {
