@@ -332,6 +332,8 @@ install_mcp_routes() {
     "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}/wait" "mcp_review_rest" "mcp_tool_result_json" "55s"
   append_mcp_route_if_missing "${routes_target}" "wait_for_messages" "messages" "GET" \
     "/v1/projects/{project_id}/messages/wait" "mcp_messages_rest" "mcp_tool_result_json" "65s"
+  append_mcp_route_if_missing "${routes_target}" "finalize_review" "review" "POST" \
+    "/v1/review/finalizations" "mcp_review_rest" "mcp_tool_result_json"
   set_mcp_route_timeout "${routes_target}" "wait_for_github_checks" "55s"
   set_mcp_route_timeout "${routes_target}" "wait_for_messages" "65s"
   append_mcp_route_if_missing "${routes_target}" "get_task_context" "tasks" "GET" \
