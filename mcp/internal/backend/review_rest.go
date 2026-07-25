@@ -133,6 +133,16 @@ type reviewVerdictBody struct {
 	SubagentRole string `json:"subagent_role,omitempty"`
 }
 
+type finalizeReviewBody struct {
+	ReviewRoundID int64  `json:"review_round_id"`
+	Verdict       string `json:"verdict"`
+	DecidedBy     string `json:"decided_by"`
+	Notes         string `json:"notes,omitempty"`
+	ThreadID      *int64 `json:"thread_id,omitempty"`
+	RunID         string `json:"run_id,omitempty"`
+	SubagentRole  string `json:"subagent_role,omitempty"`
+}
+
 type respondReviewFindingBody struct {
 	RespondedBy    string `json:"responded_by"`
 	ResponseNotes  string `json:"response_notes,omitempty"`
@@ -286,6 +296,13 @@ func reviewRESTRequestBody(operation string, arguments reviewToolArguments) ([]b
 		return json.Marshal(reviewVerdictBody{
 			Verdict: strings.TrimSpace(arguments.Verdict), DecidedBy: strings.TrimSpace(arguments.DecidedBy),
 			Notes: strings.TrimSpace(arguments.Notes), RunID: strings.TrimSpace(arguments.RunID), SubagentRole: strings.TrimSpace(arguments.SubagentRole),
+		})
+	case "finalize_review":
+		return json.Marshal(finalizeReviewBody{
+			ReviewRoundID: arguments.ReviewRoundID, Verdict: strings.TrimSpace(arguments.Verdict),
+			DecidedBy: strings.TrimSpace(arguments.DecidedBy), Notes: strings.TrimSpace(arguments.Notes),
+			ThreadID: arguments.ThreadID, RunID: strings.TrimSpace(arguments.RunID),
+			SubagentRole: strings.TrimSpace(arguments.SubagentRole),
 		})
 	case "respond_to_review_finding":
 		return json.Marshal(respondReviewFindingBody{

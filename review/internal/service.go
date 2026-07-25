@@ -53,6 +53,13 @@ type ReviewStore interface {
 	StorePacket(ctx context.Context, packet *ReviewPacket) (*ReviewPacket, error)
 	GetPacket(ctx context.Context, id int64) (*ReviewPacket, error)
 	GetPacketByIdempotency(ctx context.Context, projectID string, idempotencyKey string) (*ReviewPacket, error)
+	GetReviewFindingsPacketForRound(ctx context.Context, roundID int64) (*ReviewPacket, error)
+	GetFinalizationByRound(ctx context.Context, roundID int64) (*ReviewFinalization, error)
+	BeginFinalization(ctx context.Context, finalization *ReviewFinalization, packet *ReviewPacket, decidedAt time.Time) (*ReviewFinalization, *ReviewPacket, *ReviewRound, error)
+	MarkFinalizationPacketPosted(ctx context.Context, id int64, messageID int64, postedAt time.Time) (*ReviewFinalization, *ReviewPacket, error)
+	MarkFinalizationTaskTransitioned(ctx context.Context, id int64, transitionedAt time.Time) (*ReviewFinalization, error)
+	CompleteFinalization(ctx context.Context, id int64, completedAt time.Time) (*ReviewFinalization, error)
+	RecordFinalizationError(ctx context.Context, id int64, step string, message string, attemptedAt time.Time) (*ReviewFinalization, error)
 	WorkflowSummary(ctx context.Context, projectID string, taskID int64) (WorkflowSummary, error)
 	RegisterGitHubCheckGate(ctx context.Context, gate *GitHubCheckGate, now time.Time) (*GitHubCheckGate, []*GitHubCheckGate, error)
 	GetGitHubCheckGate(ctx context.Context, projectID string, taskID int64, commitSHA string) (*GitHubCheckGate, error)
@@ -369,7 +376,7 @@ func (s *Service) SetVerdict(ctx context.Context, roundID int64, req SetReviewVe
 		return nil, err
 	}
 	verdict := strings.TrimSpace(req.Verdict)
-	if !validVerdict(verdict) {
+	if !validCompatibilityVerdict(verdict) {
 		return nil, validationError(fmt.Errorf("%w: %s", ErrInvalidVerdict, verdict), "invalid_verdict", "verdict", "review_findings.verdict")
 	}
 	actor := strings.TrimSpace(req.DecidedBy)
@@ -385,6 +392,182 @@ func (s *Service) SetVerdict(ctx context.Context, roundID int64, req SetReviewVe
 		Intent: intentForVerdict(verdict), Metadata: metadataForRound(updated, packetKindForVerdict(verdict), verdictType(verdict), verdict),
 	})
 	return updated, err
+}
+
+func (s *Service) FinalizeReview(ctx context.Context, req FinalizeReviewRequest) (*ReviewFinalizationReceipt, error) {
+	req.ReviewRoundID = max(req.ReviewRoundID, 0)
+	req.Verdict = strings.TrimSpace(req.Verdict)
+	req.DecidedBy = strings.TrimSpace(req.DecidedBy)
+	req.Notes = strings.TrimSpace(req.Notes)
+	req.RunID = strings.TrimSpace(req.RunID)
+	req.SubagentRole = strings.TrimSpace(req.SubagentRole)
+	if req.ReviewRoundID == 0 {
+		return nil, validationError(ErrMissingRound, "missing_review_round_id", "review_round_id", "review_findings.review_round_id")
+	}
+	if !validFinalizationVerdict(req.Verdict) {
+		return nil, validationError(fmt.Errorf("%w: %s", ErrInvalidVerdict, req.Verdict), "invalid_verdict", "verdict", "review_findings.verdict")
+	}
+	if req.DecidedBy == "" {
+		return nil, validationError(ErrMissingActor, "missing_actor", "decided_by", "review_findings.decided_by")
+	}
+
+	existing, err := s.store.GetFinalizationByRound(ctx, req.ReviewRoundID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		if existing.Verdict != req.Verdict || existing.DecidedBy != req.DecidedBy {
+			return nil, conflict(ErrFinalizationConflict, "review_finalization_conflict")
+		}
+		packet, err := s.store.GetPacket(ctx, existing.PacketID)
+		if err != nil {
+			return nil, err
+		}
+		round, err := s.store.GetRound(ctx, existing.ReviewRoundID)
+		if err != nil {
+			return nil, err
+		}
+		return s.resumeFinalization(ctx, &ReviewFinalizationReceipt{
+			Finalization: existing, Round: round, Packet: packet, TaskStatus: existing.TargetTaskStatus,
+		})
+	}
+
+	round, err := s.store.GetRound(ctx, req.ReviewRoundID)
+	if err != nil {
+		return nil, err
+	}
+	task, err := s.validateTask(ctx, round.ProjectID, round.TaskID, TaskStatusReview)
+	if err != nil {
+		return nil, err
+	}
+	roundFindings, err := s.store.ListFindings(ctx, ListFindingsQuery{
+		ProjectID: round.ProjectID, TaskID: round.TaskID, ReviewRoundID: &round.ID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	allFindings, err := s.store.ListFindings(ctx, ListFindingsQuery{ProjectID: round.ProjectID, TaskID: round.TaskID})
+	if err != nil {
+		return nil, err
+	}
+	if err := validateFinalizationFindings(req.Verdict, roundFindings, allFindings); err != nil {
+		return nil, err
+	}
+
+	now := s.clock().UTC()
+	decidedRound := *round
+	decidedRound.Verdict = req.Verdict
+	decidedRound.VerdictBy = req.DecidedBy
+	decidedRound.VerdictNotes = req.Notes
+	decidedRound.VerdictAt = &now
+	decidedRound.UpdatedAt = now
+	packet := reviewFindingsPacket(&decidedRound, roundFindings, unresolvedFindingSummaries(allFindings), PostReviewFindingsRequest{
+		ReviewRoundID: round.ID, Sender: req.DecidedBy, ThreadID: req.ThreadID, Notes: req.Notes,
+		RunID: req.RunID, SubagentRole: req.SubagentRole,
+	})
+	packet.IdempotencyKey = finalizationPacketKey(round.ID, req.Verdict, req.DecidedBy)
+	finalization := &ReviewFinalization{
+		ProjectID: round.ProjectID, TaskID: round.TaskID, ReviewRoundID: round.ID,
+		Verdict: req.Verdict, DecidedBy: req.DecidedBy, Notes: req.Notes, ThreadID: req.ThreadID,
+		RunID: req.RunID, SubagentRole: req.SubagentRole, TargetTaskStatus: taskStatusForVerdict(req.Verdict),
+		IdempotencyKey:       finalizationKey(round.ID, req.Verdict, req.DecidedBy),
+		PacketIdempotencyKey: packet.IdempotencyKey, State: FinalizationStatePending,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	stored, storedPacket, updatedRound, err := s.store.BeginFinalization(ctx, finalization, packet, now)
+	if err != nil {
+		return nil, err
+	}
+	if stored.Verdict != req.Verdict || stored.DecidedBy != req.DecidedBy {
+		return nil, conflict(ErrFinalizationConflict, "review_finalization_conflict")
+	}
+	return s.resumeFinalization(ctx, &ReviewFinalizationReceipt{
+		Finalization: stored, Round: updatedRound, Packet: storedPacket, TaskStatus: task.Status,
+	})
+}
+
+func (s *Service) resumeFinalization(ctx context.Context, receipt *ReviewFinalizationReceipt) (*ReviewFinalizationReceipt, error) {
+	finalization := receipt.Finalization
+	if finalization.State == FinalizationStateComplete {
+		receipt.TaskStatus = finalization.TargetTaskStatus
+		return receipt, nil
+	}
+	if finalization.PacketPostedAt == nil {
+		if receipt.Packet.MessageID != nil {
+			updated, packet, err := s.store.MarkFinalizationPacketPosted(ctx, finalization.ID, *receipt.Packet.MessageID, s.clock().UTC())
+			if err != nil {
+				return receipt, err
+			}
+			receipt.Finalization, receipt.Packet = updated, packet
+			finalization = updated
+		} else {
+			message, err := s.appendPacketMessage(ctx, receipt.Packet, finalization.ThreadID)
+			if err != nil {
+				return s.finalizationFailure(ctx, receipt, FinalizationStepPacketDelivery, err)
+			}
+			updated, packet, err := s.store.MarkFinalizationPacketPosted(ctx, finalization.ID, message.ID, s.clock().UTC())
+			if err != nil {
+				return receipt, err
+			}
+			receipt.Finalization, receipt.Packet = updated, packet
+			finalization = updated
+		}
+	}
+	if finalization.TaskTransitionedAt == nil {
+		task, err := s.tasks.GetTaskContext(ctx, finalization.ProjectID, finalization.TaskID)
+		if err != nil {
+			return s.finalizationFailure(ctx, receipt, FinalizationStepTaskTransition, err)
+		}
+		if task.Status != finalization.TargetTaskStatus {
+			if task.Status != TaskStatusReview {
+				return s.finalizationFailure(ctx, receipt, FinalizationStepTaskTransition,
+					fmt.Errorf("task status changed to %s before finalization could apply %s", task.Status, finalization.TargetTaskStatus))
+			}
+			task, err = s.tasks.SetTaskStatus(ctx, finalization.ProjectID, finalization.TaskID, finalization.DecidedBy, finalization.TargetTaskStatus)
+			if err != nil {
+				return s.finalizationFailure(ctx, receipt, FinalizationStepTaskTransition, err)
+			}
+			if task.Status != finalization.TargetTaskStatus {
+				return s.finalizationFailure(ctx, receipt, FinalizationStepTaskTransition,
+					fmt.Errorf("tasks returned status %s after requesting %s", task.Status, finalization.TargetTaskStatus))
+			}
+		}
+		updated, err := s.store.MarkFinalizationTaskTransitioned(ctx, finalization.ID, s.clock().UTC())
+		if err != nil {
+			return receipt, err
+		}
+		receipt.Finalization = updated
+		receipt.TaskStatus = task.Status
+		finalization = updated
+	}
+	completed, err := s.store.CompleteFinalization(ctx, finalization.ID, s.clock().UTC())
+	if err != nil {
+		return s.finalizationFailure(ctx, receipt, FinalizationStepCompletion, err)
+	}
+	receipt.Finalization = completed
+	receipt.TaskStatus = completed.TargetTaskStatus
+	return receipt, nil
+}
+
+func (s *Service) finalizationFailure(
+	ctx context.Context,
+	receipt *ReviewFinalizationReceipt,
+	step string,
+	cause error,
+) (*ReviewFinalizationReceipt, error) {
+	updated, recordErr := s.store.RecordFinalizationError(ctx, receipt.Finalization.ID, step, cause.Error(), s.clock().UTC())
+	if recordErr == nil {
+		receipt.Finalization = updated
+	}
+	status := http.StatusBadGateway
+	code := "review_finalization_" + step + "_failed"
+	if step == FinalizationStepCompletion {
+		status = http.StatusInternalServerError
+	}
+	if recordErr != nil {
+		cause = errors.Join(cause, fmt.Errorf("recording finalization error: %w", recordErr))
+	}
+	return receipt, NewServiceError(cause, code, status)
 }
 
 func (s *Service) RespondToFinding(ctx context.Context, findingID int64, req RespondToFindingRequest) (*ReviewFinding, error) {
@@ -483,7 +666,7 @@ func (s *Service) SplitFindingsToFollowUp(ctx context.Context, projectID string,
 }
 
 func (s *Service) PostReviewFindings(ctx context.Context, projectID string, taskID int64, req PostReviewFindingsRequest) (*ReviewPacket, error) {
-	task, err := s.validateTask(ctx, projectID, taskID, TaskStatusReview)
+	task, err := s.validateTask(ctx, projectID, taskID, TaskStatusReview, TaskStatusInProgress, TaskStatusDone)
 	if err != nil {
 		return nil, err
 	}
@@ -497,6 +680,16 @@ func (s *Service) PostReviewFindings(ctx context.Context, projectID string, task
 	if round.ProjectID != task.ProjectID || round.TaskID != taskID {
 		return nil, notFound(fmt.Errorf("%w: %d", ErrMissingRound, req.ReviewRoundID), "round_not_found")
 	}
+	existing, err := s.store.GetReviewFindingsPacketForRound(ctx, round.ID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		if existing.ValidationStatus == PacketStatusAccepted && existing.MessageID != nil {
+			return existing, nil
+		}
+		return s.deliverReservedPacket(ctx, existing, req.ThreadID)
+	}
 	findings, err := s.store.ListFindings(ctx, ListFindingsQuery{ProjectID: task.ProjectID, TaskID: taskID, ReviewRoundID: &round.ID})
 	if err != nil {
 		return nil, err
@@ -506,7 +699,7 @@ func (s *Service) PostReviewFindings(ctx context.Context, projectID string, task
 		return nil, err
 	}
 	packet := reviewFindingsPacket(round, findings, unresolvedFindingSummaries(allFindings), req)
-	packet.IdempotencyKey = fmt.Sprintf("review-findings:%d:%s:%s", round.ID, strings.TrimSpace(req.Sender), strings.TrimSpace(req.RunID))
+	packet.IdempotencyKey = fmt.Sprintf("review-findings:%d", round.ID)
 	return s.acceptPacket(ctx, packet, req.ThreadID)
 }
 
@@ -740,8 +933,10 @@ func (s *Service) delayGitHubCheckGateAfterError(ctx context.Context, gate *GitH
 	if nextPollAt.After(gate.TimeoutAt) {
 		nextPollAt = gate.TimeoutAt
 	}
-	result := GitHubCheckResult{Status: GitHubCheckGateStatusPending,
-		Summary: "GitHub check polling will retry after a request error: " + checkErr.Error()}
+	result := GitHubCheckResult{
+		Status:  GitHubCheckGateStatusPending,
+		Summary: "GitHub check polling will retry after a request error: " + checkErr.Error(),
+	}
 	updated, _, err := s.store.DelayGitHubCheckGate(ctx, gate.ID, result, nextPollAt, checkedAt)
 	if err != nil {
 		return nil, fmt.Errorf("checking github commit %s: %w; recording retry: %v", gate.CommitSHA, checkErr, err)
@@ -966,7 +1161,10 @@ func (s *Service) acceptPacket(ctx context.Context, packet *ReviewPacket, thread
 			return nil, err
 		}
 		if existing != nil {
-			return existing, nil
+			if existing.ValidationStatus == PacketStatusAccepted && existing.MessageID != nil {
+				return existing, nil
+			}
+			return s.deliverReservedPacket(ctx, existing, threadID)
 		}
 	}
 	packet.ValidationStatus = PacketStatusPendingMessageAppend
@@ -976,20 +1174,79 @@ func (s *Service) acceptPacket(ctx context.Context, packet *ReviewPacket, thread
 	if err != nil {
 		return nil, err
 	}
-	message, err := s.messages.AppendTaskMessage(ctx, packet.ProjectID, AppendMessageRequest{
+	return s.deliverReservedPacket(ctx, reserved, threadID)
+}
+
+func (s *Service) appendPacketMessage(ctx context.Context, packet *ReviewPacket, threadID *int64) (AppendedMessage, error) {
+	metadata := cloneStringMap(packet.TypedEnvelope)
+	metadata["review_packet_id"] = packet.ID
+	return s.messages.AppendTaskMessage(ctx, packet.ProjectID, AppendMessageRequest{
 		TaskID: packet.TaskID, ThreadID: threadID, Sender: packet.Sender, Content: packet.SourceMarkdown,
 		Intent:   intentForPacket(packet.PacketKind, stringValue(packet.TypedEnvelope["verdict"])),
-		Metadata: packet.TypedEnvelope,
+		Metadata: metadata,
 	})
+}
+
+func (s *Service) deliverReservedPacket(ctx context.Context, packet *ReviewPacket, threadID *int64) (*ReviewPacket, error) {
+	message, err := s.appendPacketMessage(ctx, packet, threadID)
 	if err != nil {
-		return reserved, err
+		return packet, err
 	}
-	packet.ID = reserved.ID
 	packet.MessageID = &message.ID
 	packet.ValidationStatus = PacketStatusAccepted
 	now := s.clock().UTC()
 	packet.AcceptedAt = &now
 	return s.store.StorePacket(ctx, packet)
+}
+
+func validateFinalizationFindings(verdict string, roundFindings []*ReviewFinding, allFindings []*ReviewFinding) error {
+	switch verdict {
+	case VerdictLooksGood:
+		for _, finding := range allFindings {
+			if !resolvedStatus(finding.Status) {
+				return conflict(ErrUnresolvedFindings, "unresolved_review_findings")
+			}
+		}
+	case VerdictChangesRequested:
+		for _, finding := range roundFindings {
+			if !resolvedStatus(finding.Status) {
+				return nil
+			}
+		}
+		return conflict(ErrActionableFinding, "actionable_review_finding_required")
+	}
+	return nil
+}
+
+func validFinalizationVerdict(verdict string) bool {
+	return verdict == VerdictLooksGood || verdict == VerdictChangesRequested
+}
+
+func validCompatibilityVerdict(verdict string) bool {
+	return verdict == VerdictFollowUpNeeded || verdict == VerdictBlockedByDependency
+}
+
+func taskStatusForVerdict(verdict string) string {
+	if verdict == VerdictLooksGood {
+		return TaskStatusDone
+	}
+	return TaskStatusInProgress
+}
+
+func finalizationPacketKey(roundID int64, verdict string, decidedBy string) string {
+	return "review-finalization-packet:" + finalizationKey(roundID, verdict, decidedBy)
+}
+
+func finalizationKey(roundID int64, verdict string, decidedBy string) string {
+	return fmt.Sprintf("%d:%s:%s", roundID, verdict, decidedBy)
+}
+
+func cloneStringMap(input map[string]any) map[string]any {
+	cloned := make(map[string]any, len(input)+1)
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func (s *Service) validatePacketContext(ctx context.Context, packet *ReviewPacket, projectID string, taskID int64) error {

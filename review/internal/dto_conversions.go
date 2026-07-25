@@ -18,6 +18,23 @@ func toPacketResponse(packet *ReviewPacket) ReviewPacketResponse {
 	}
 }
 
+func toFinalizationResponse(receipt *ReviewFinalizationReceipt) ReviewFinalizationResponse {
+	finalization := receipt.Finalization
+	return ReviewFinalizationResponse{
+		ID: finalization.ID, ProjectID: finalization.ProjectID, TaskID: finalization.TaskID,
+		ReviewRoundID: finalization.ReviewRoundID, Verdict: finalization.Verdict, DecidedBy: finalization.DecidedBy,
+		Notes: finalization.Notes, ThreadID: finalization.ThreadID, RunID: finalization.RunID,
+		SubagentRole: finalization.SubagentRole, TargetTaskStatus: finalization.TargetTaskStatus,
+		IdempotencyKey: finalization.IdempotencyKey, State: finalization.State,
+		Packet: toPacketResponse(receipt.Packet), MessageID: finalization.MessageID,
+		PacketPostedAt: finalization.PacketPostedAt, TaskTransitionedAt: finalization.TaskTransitionedAt,
+		CompletedAt: finalization.CompletedAt, LastErrorStep: finalization.LastErrorStep,
+		LastError: finalization.LastError, MessageAttempts: finalization.MessageAttempts,
+		TaskTransitionAttempts: finalization.TaskTransitionAttempts, ResultingTaskStatus: receipt.TaskStatus,
+		CreatedAt: finalization.CreatedAt, UpdatedAt: finalization.UpdatedAt,
+	}
+}
+
 func toWorkflowSummaryResponse(summary WorkflowSummary) WorkflowSummaryResponse {
 	response := WorkflowSummaryResponse{
 		CurrentVerdict: summary.CurrentVerdict, ReviewRoundCount: summary.ReviewRoundCount,

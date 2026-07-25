@@ -266,6 +266,9 @@ const messageColumns = `id, project_id, task_id, thread_id, sender, content, int
 const createMessageSQL = `
 insert into den_messages.messages(project_id, task_id, thread_id, sender, content, intent, metadata, created_at)
 values ($1, $2, $3, $4, $5, $6, $7, $8)
+on conflict (project_id, (metadata->>'review_packet_id'))
+where metadata->>'review_packet_id' is not null
+do update set project_id = excluded.project_id
 returning ` + messageColumns
 
 const getMessageSQL = `select ` + messageColumns + ` from den_messages.messages where id = $1`

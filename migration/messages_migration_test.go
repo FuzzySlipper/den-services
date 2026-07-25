@@ -31,3 +31,20 @@ func TestMessagesMigrationDiscovered(t *testing.T) {
 		}
 	}
 }
+
+func TestMessagesReviewPacketIdempotencyMigrationDiscovered(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	for i := range migrations {
+		if migrations[i].Schema == "den_messages" && migrations[i].Version == 2 {
+			if !strings.Contains(migrations[i].SQL, "messages_review_packet_idempotency_idx") ||
+				!strings.Contains(migrations[i].SQL, "metadata->>'review_packet_id'") {
+				t.Fatalf("unexpected migration SQL: %s", migrations[i].SQL)
+			}
+			return
+		}
+	}
+	t.Fatal("den_messages version 2 migration not discovered")
+}

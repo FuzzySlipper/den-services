@@ -153,7 +153,7 @@ Current Core MCP tools in scope:
 
 - `create_review_round`
 - `list_review_rounds`
-- `set_review_verdict`
+- `finalize_review`
 - `create_review_finding`
 - `list_review_findings`
 - `respond_to_review_finding`
@@ -176,8 +176,10 @@ Current REST behavior to preserve:
   updates finding status and optional follow-up task link.
 - `POST /api/projects/{projectId}/tasks/{taskId}/review/findings/post` appends
   a standardized review findings packet.
-- Verdict setting is exposed through MCP today and emits review feedback or
-  approval handoff messages.
+- Normal verdict closeout is exposed through `finalize_review`, which emits one
+  canonical findings packet and transitions the task as a durable retryable
+  workflow. `set_review_verdict` is hidden compatibility behavior for
+  exceptional `follow_up_needed` and `blocked_by_dependency` verdicts only.
 
 Known cross-domain dependencies:
 
@@ -395,6 +397,9 @@ review paths:
     and appends a task-thread message through messages.
 - `GET /v1/review/packets/{review_packet_id}`
   - Reads one review packet projection and linked message ID.
+- `POST /v1/review/finalizations`
+  - Finalizes one review round through durable packet-delivery,
+    task-transition, and completion checkpoints.
 
 MCP compatibility can preserve existing tool names by routing to review APIs:
 
@@ -402,13 +407,14 @@ MCP compatibility can preserve existing tool names by routing to review APIs:
 | --- | --- | --- |
 | `create_review_round` | `review` | Low-level round create; no message append. |
 | `list_review_rounds` | `review` | Reads by task. |
-| `set_review_verdict` | `review` | Sets verdict and appends handoff packet. |
+| `finalize_review` | `review` | Green path for `looks_good` and `changes_requested`; posts the canonical packet and transitions the task. |
+| `set_review_verdict` | `review` | Hidden compatibility only for `follow_up_needed` and `blocked_by_dependency`. |
 | `create_review_finding` | `review` | Low-level structured finding create. |
 | `list_review_findings` | `review` | Reads by task or round. |
 | `respond_to_review_finding` | `review` | Stores response and optional status. |
 | `set_review_finding_status` | `review` | Stores status evidence. |
 | `request_review` | `review` | Prefer Markdown packet post path once available. |
-| `post_review_findings` | `review` | Prefer Markdown packet post path once available. |
+| `post_review_findings` | `review` | Advanced repair/repost path; reuses the round's canonical findings packet. |
 | `split_review_findings_to_follow_up` | `review` | Calls tasks; does not write task tables. |
 
 New MCP tools may be added for the Markdown interface:
@@ -751,6 +757,16 @@ executable decisions and state transitions.
    available.
 8. Route split-to-follow-up after tasks create API idempotency is available.
 9. Keep old dispatch mutation paths retired; do not recreate them in review.
+10. Apply Messages packet-idempotency before exposing `finalize_review`, then
+    apply the additive Review finalization migration.
+11. Existing rounds need no eager backfill. Lazily adopt any existing
+    round-scoped findings packet when finalization first runs.
+
+Rollback must restore the prior MCP discovery/routing and service binaries
+before considering schema cleanup. Leave additive finalization rows and the
+Messages idempotency index intact while any finalization is incomplete. Resume
+an incomplete finalization by retrying its original request after the successor
+services return; do not manually duplicate the packet or task transition.
 
 ## Smoke Tests
 
@@ -766,7 +782,12 @@ Required service smokes:
   status evidence.
 - Set finding status to each supported value and reject invalid enum values.
 - Reject `follow_up_task_id` unless status is `split_to_follow_up`.
-- Set verdicts and verify the correct message intent and metadata are appended.
+- Finalize both green-path verdicts and verify the canonical message, task
+  transition, and completion receipt.
+- Inject message, task, and completion checkpoint failures; retry and verify no
+  duplicate packet or task-history evidence.
+- Verify `set_review_verdict` rejects normal green-path verdicts and remains
+  available only for exceptional compatibility verdicts.
 - Split non-blocking findings to a follow-up task and verify idempotent retry.
 - Verify blocking findings are skipped unless `override_blocking=true`.
 - Validate a good Markdown review request packet without persisting it.

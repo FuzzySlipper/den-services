@@ -50,4 +50,31 @@ func TestStorePostgresRepresentativeFlow(t *testing.T) {
 			t.Fatalf("read message returned as unread: %#v", unread)
 		}
 	}
+
+	packetMetadata := map[string]any{"review_packet_id": 987654321}
+	firstPacket, err := NewMessage(NewMessageParams{
+		ProjectID: "store-smoke", TaskID: &taskID, Sender: "reviewer", Content: "canonical packet",
+		Intent: IntentReviewFeedback, Metadata: packetMetadata, CreatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("NewMessage(first packet) error = %v", err)
+	}
+	firstPacket, err = store.CreateMessage(ctx, firstPacket)
+	if err != nil {
+		t.Fatalf("CreateMessage(first packet) error = %v", err)
+	}
+	retryPacket, err := NewMessage(NewMessageParams{
+		ProjectID: "store-smoke", TaskID: &taskID, Sender: "reviewer", Content: "ambiguous-response retry",
+		Intent: IntentReviewFeedback, Metadata: packetMetadata, CreatedAt: now.Add(time.Second),
+	})
+	if err != nil {
+		t.Fatalf("NewMessage(retry packet) error = %v", err)
+	}
+	retryPacket, err = store.CreateMessage(ctx, retryPacket)
+	if err != nil {
+		t.Fatalf("CreateMessage(retry packet) error = %v", err)
+	}
+	if retryPacket.ID() != firstPacket.ID() || retryPacket.Content() != firstPacket.Content() {
+		t.Fatalf("idempotent retry = %#v, first = %#v", retryPacket, firstPacket)
+	}
 }

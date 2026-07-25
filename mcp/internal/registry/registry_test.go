@@ -3,6 +3,7 @@ package registry
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 )
 
@@ -133,6 +134,52 @@ func TestDefaultRegistryResolvesHiddenAdminToolsWithoutTombstone(t *testing.T) {
 	}
 }
 
+func TestDefaultRegistryHidesLowLevelReviewVerdictCompatibilityTool(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry() error = %v", err)
+	}
+	tool, err := registry.Resolve("set_review_verdict")
+	if err != nil {
+		t.Fatalf("Resolve(set_review_verdict) error = %v", err)
+	}
+	if !tool.Hidden || !tool.Deprecated || tool.TombstoneMessage != "" {
+		t.Fatalf("set_review_verdict policy = hidden:%t deprecated:%t tombstone:%q",
+			tool.Hidden, tool.Deprecated, tool.TombstoneMessage)
+	}
+	for _, listed := range registry.Tools() {
+		if listed.Name == "set_review_verdict" {
+			t.Fatal("set_review_verdict remains in normal tool discovery")
+		}
+	}
+}
+
+func TestDefaultRegistryExposesFinalizeReviewGreenPath(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry() error = %v", err)
+	}
+	tool, err := registry.Resolve("finalize_review")
+	if err != nil {
+		t.Fatalf("Resolve(finalize_review) error = %v", err)
+	}
+	var schema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []string                   `json:"required"`
+	}
+	if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if len(schema.Properties) != 7 {
+		t.Fatalf("finalize_review properties = %v", schema.Properties)
+	}
+	for _, required := range []string{"review_round_id", "verdict", "decided_by"} {
+		if !slices.Contains(schema.Required, required) {
+			t.Fatalf("finalize_review required = %v, missing %s", schema.Required, required)
+		}
+	}
+}
+
 func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 	registry, err := DefaultRegistry()
 	if err != nil {
@@ -149,6 +196,9 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 			continue
 		}
 		if _, hiddenAdmin := hiddenAdminToolPolicies[snapshotTool.Name]; hiddenAdmin {
+			continue
+		}
+		if _, hiddenCompatibility := hiddenCompatibilityToolPolicies[snapshotTool.Name]; hiddenCompatibility {
 			continue
 		}
 		if visibleIndex >= len(listed) {
@@ -174,6 +224,7 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 	for _, tool := range listed[visibleIndex:] {
 		if tool.Name != "await_github_checks" && tool.Name != "watch_github_checks" &&
 			tool.Name != "get_github_check_gate" && tool.Name != "wait_for_github_checks" && tool.Name != "get_task_context" &&
+			tool.Name != "finalize_review" &&
 			tool.Name != "get_details" && tool.Name != "mark_project_notifications_read" &&
 			tool.Name != "mark_task_notifications_read" && tool.Name != "ensure_document_discussion" {
 			t.Fatalf("unexpected non-snapshot tool %q", tool.Name)

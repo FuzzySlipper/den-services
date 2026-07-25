@@ -786,10 +786,20 @@ def assert_ergonomic_tool_schemas(tools: list[dict[str, Any]], label: str) -> No
         properties = (tool.get("inputSchema") or {}).get("properties") or {}
         if "verbose" in properties:
             raise SmokeError(f"{label} tool {name} still exposes verbose")
-    for name in ("get_latest_task_packet", "post_review_findings", "request_review", "watch_github_checks"):
+    for name in (
+        "finalize_review",
+        "get_latest_task_packet",
+        "post_review_findings",
+        "request_review",
+        "watch_github_checks",
+    ):
         properties = ((by_name.get(name) or {}).get("inputSchema") or {}).get("properties") or {}
         if "project_id" in properties:
             raise SmokeError(f"{label} task-scoped tool {name} still exposes project_id")
+    if "finalize_review" not in by_name:
+        raise SmokeError(f"{label} tools/list missing finalize_review")
+    if "set_review_verdict" in by_name:
+        raise SmokeError(f"{label} tools/list still exposes set_review_verdict")
     for name in ("get_details", "mark_project_notifications_read", "mark_task_notifications_read", "ensure_document_discussion"):
         if name not in by_name:
             raise SmokeError(f"{label} tools/list missing {name}")

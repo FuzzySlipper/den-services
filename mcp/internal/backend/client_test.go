@@ -829,6 +829,43 @@ func TestClientCallsReviewRESTCreateRoundTaskScoped(t *testing.T) {
 	}
 }
 
+func TestClientCallsReviewRESTFinalizeReview(t *testing.T) {
+	var sawPath string
+	var sawBody finalizeReviewBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.Path
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		_, _ = w.Write([]byte(`{"id":11,"review_round_id":7,"state":"complete","resulting_task_status":"done"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("review", server.URL), reviewRouteForTest("finalize_review", http.MethodPost, "/v1/review/finalizations"), ToolCall{
+		ToolName:  "finalize_review",
+		Operation: "finalize_review",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"review_round_id":7,"verdict":"looks_good","decided_by":"codex","notes":"all good","thread_id":99,"run_id":"run-1","subagent_role":"reviewer"}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawPath != "/v1/review/finalizations" {
+		t.Fatalf("path = %q", sawPath)
+	}
+	if sawBody.ReviewRoundID != 7 || sawBody.Verdict != "looks_good" || sawBody.DecidedBy != "codex" ||
+		sawBody.ThreadID == nil || *sawBody.ThreadID != 99 || sawBody.RunID != "run-1" {
+		t.Fatalf("body = %#v", sawBody)
+	}
+}
+
 func TestClientCallsReviewRESTListFindingsWithFilters(t *testing.T) {
 	var sawRawQuery string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -982,8 +1019,10 @@ func TestClientCallsReviewRESTReadAndBoundedWaitGitHubChecks(t *testing.T) {
 		arguments json.RawMessage
 	}{
 		{operation: "get_github_check_gate", path: "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}", arguments: arguments},
-		{operation: "wait_for_github_checks", path: "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}/wait", timeout: 100 * time.Millisecond,
-			arguments: json.RawMessage(`{"project_id":"den-services","task_id":3726,"commit_sha":"` + sha + `","after_id":7,"wait_ms":50}`)},
+		{
+			operation: "wait_for_github_checks", path: "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}/wait", timeout: 100 * time.Millisecond,
+			arguments: json.RawMessage(`{"project_id":"den-services","task_id":3726,"commit_sha":"` + sha + `","after_id":7,"wait_ms":50}`),
+		},
 	} {
 		route := reviewRouteForTest(tt.operation, http.MethodGet, tt.path)
 		route.Timeout = tt.timeout

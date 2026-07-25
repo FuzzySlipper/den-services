@@ -3,6 +3,7 @@ package review
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -49,11 +50,11 @@ func TestServiceReviewRoundFindingVerdictAndResponse(t *testing.T) {
 		t.Fatalf("response/status fields not preserved separately: %+v", responded)
 	}
 
-	verdict, err := service.SetVerdict(ctx, round.ID, SetReviewVerdictRequest{Verdict: VerdictChangesRequested, DecidedBy: "pi-reviewer", Notes: "One issue"})
+	verdict, err := service.SetVerdict(ctx, round.ID, SetReviewVerdictRequest{Verdict: VerdictBlockedByDependency, DecidedBy: "pi-reviewer", Notes: "One issue"})
 	if err != nil {
 		t.Fatalf("SetVerdict() error = %v", err)
 	}
-	if verdict.Verdict != VerdictChangesRequested {
+	if verdict.Verdict != VerdictBlockedByDependency {
 		t.Fatalf("verdict not stored: %+v", verdict)
 	}
 	if len(messages.appended) != 1 || messages.appended[0].Intent != "review_feedback" {
@@ -106,11 +107,6 @@ func TestPostReviewFindingsAppendsCompatiblePacket(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.SetVerdict(ctx, round.ID, SetReviewVerdictRequest{Verdict: VerdictChangesRequested, DecidedBy: "pi-reviewer"}); err != nil {
-		t.Fatal(err)
-	}
-	messages.appended = nil
-
 	packet, err := service.PostReviewFindings(ctx, "den-services", 42, PostReviewFindingsRequest{
 		ReviewRoundID: round.ID, Sender: "pi-reviewer", Notes: "Review complete", RunID: "run-1",
 	})
@@ -128,6 +124,305 @@ func TestPostReviewFindingsAppendsCompatiblePacket(t *testing.T) {
 	}
 	if len(messages.appended) != 1 || messages.appended[0].Intent != "review_feedback" {
 		t.Fatalf("message not appended as review feedback: %+v", messages.appended)
+	}
+}
+
+func TestFinalizeReviewLooksGoodCompletesAndIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusReview, Priority: 1},
+	}}
+	service := newTestService(store, messages, tasks)
+	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
+		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := FinalizeReviewRequest{
+		ReviewRoundID: round.ID, Verdict: VerdictLooksGood, DecidedBy: "pi-reviewer",
+		Notes: "Acceptance proof is complete.", RunID: "run-1", SubagentRole: "reviewer",
+	}
+	first, err := service.FinalizeReview(ctx, req)
+	if err != nil {
+		t.Fatalf("FinalizeReview() error = %v", err)
+	}
+	second, err := service.FinalizeReview(ctx, req)
+	if err != nil {
+		t.Fatalf("FinalizeReview() retry error = %v", err)
+	}
+	if first.Finalization.ID != second.Finalization.ID || second.Finalization.State != FinalizationStateComplete {
+		t.Fatalf("retry returned different/incomplete finalization: first=%+v second=%+v", first.Finalization, second.Finalization)
+	}
+	if second.TaskStatus != TaskStatusDone || tasks.tasks[42].Status != TaskStatusDone {
+		t.Fatalf("task status = %q/%q, want done", second.TaskStatus, tasks.tasks[42].Status)
+	}
+	if len(messages.appended) != 1 || len(tasks.statusUpdates) != 1 {
+		t.Fatalf("duplicate side effects: messages=%d task_updates=%d", len(messages.appended), len(tasks.statusUpdates))
+	}
+	if messages.appended[0].Metadata["review_packet_id"] != first.Packet.ID {
+		t.Fatalf("message metadata missing canonical packet identity: %#v", messages.appended[0].Metadata)
+	}
+	if first.Packet.MessageID == nil || first.Packet.ValidationStatus != PacketStatusAccepted {
+		t.Fatalf("packet not accepted: %+v", first.Packet)
+	}
+}
+
+func TestFinalizeReviewChangesRequestedRequiresAndPreservesCurrentRoundFinding(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusReview, Priority: 1},
+	}}
+	service := newTestService(store, messages, tasks)
+	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
+		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding, err := service.CreateFinding(ctx, round.ID, CreateReviewFindingRequest{
+		CreatedBy: "pi-reviewer", Category: CategoryAcceptanceGap, Summary: "Live recovery proof is missing.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := service.FinalizeReview(ctx, FinalizeReviewRequest{
+		ReviewRoundID: round.ID, Verdict: VerdictChangesRequested, DecidedBy: "pi-reviewer",
+	})
+	if err != nil {
+		t.Fatalf("FinalizeReview() error = %v", err)
+	}
+	if receipt.Finalization.State != FinalizationStateComplete || receipt.TaskStatus != TaskStatusInProgress {
+		t.Fatalf("unexpected receipt: %+v", receipt)
+	}
+	if !strings.Contains(receipt.Packet.SourceMarkdown, finding.FindingKey) ||
+		!strings.Contains(receipt.Packet.SourceMarkdown, finding.Summary) {
+		t.Fatalf("canonical packet omitted finding: %s", receipt.Packet.SourceMarkdown)
+	}
+}
+
+func TestFinalizeReviewRejectsInconsistentFindings(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name       string
+		verdict    string
+		createOpen bool
+		wantCode   string
+	}{
+		{name: "looks good with unresolved task finding", verdict: VerdictLooksGood, createOpen: true, wantCode: "unresolved_review_findings"},
+		{name: "changes requested without current round finding", verdict: VerdictChangesRequested, wantCode: "actionable_review_finding_required"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := newMemoryStore()
+			service := newTestService(store, &fakeMessages{}, &fakeTasks{tasks: map[int64]TaskContext{
+				42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
+			}})
+			round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
+				RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.createOpen {
+				if _, err := service.CreateFinding(ctx, round.ID, CreateReviewFindingRequest{
+					CreatedBy: "reviewer", Category: CategoryBlockingBug, Summary: "Still open",
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err = service.FinalizeReview(ctx, FinalizeReviewRequest{
+				ReviewRoundID: round.ID, Verdict: test.verdict, DecidedBy: "reviewer",
+			})
+			var serviceErr *ServiceError
+			if !errors.As(err, &serviceErr) || serviceErr.Code() != test.wantCode {
+				t.Fatalf("FinalizeReview() error = %T %v, want code %s", err, err, test.wantCode)
+			}
+		})
+	}
+}
+
+func TestFinalizeReviewResumesMessageFailureAndResponseLoss(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name              string
+		configureMessages func(*fakeMessages)
+		wantFirstMessages int
+	}{
+		{
+			name: "failure before append",
+			configureMessages: func(messages *fakeMessages) {
+				messages.failAppend = true
+			},
+		},
+		{
+			name: "response lost after append",
+			configureMessages: func(messages *fakeMessages) {
+				messages.failAfterAppend = true
+			},
+			wantFirstMessages: 1,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := newMemoryStore()
+			messages := &fakeMessages{}
+			test.configureMessages(messages)
+			tasks := &fakeTasks{tasks: map[int64]TaskContext{
+				42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
+			}}
+			service := newTestService(store, messages, tasks)
+			round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
+				RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := FinalizeReviewRequest{ReviewRoundID: round.ID, Verdict: VerdictLooksGood, DecidedBy: "reviewer"}
+			pending, err := service.FinalizeReview(ctx, req)
+			if err == nil || pending.Finalization.State != FinalizationStateRetryableError ||
+				pending.Finalization.LastErrorStep != FinalizationStepPacketDelivery {
+				t.Fatalf("first FinalizeReview() = receipt %+v error %v", pending, err)
+			}
+			if len(messages.appended) != test.wantFirstMessages || len(tasks.statusUpdates) != 0 {
+				t.Fatalf("unexpected first side effects: messages=%d tasks=%d", len(messages.appended), len(tasks.statusUpdates))
+			}
+			messages.failAppend = false
+			completed, err := service.FinalizeReview(ctx, req)
+			if err != nil {
+				t.Fatalf("retry FinalizeReview() error = %v", err)
+			}
+			if completed.Finalization.ID != pending.Finalization.ID || completed.Finalization.State != FinalizationStateComplete {
+				t.Fatalf("retry did not resume finalization: %+v", completed.Finalization)
+			}
+			if len(messages.appended) != 1 || len(tasks.statusUpdates) != 1 {
+				t.Fatalf("retry duplicated side effects: messages=%d tasks=%d", len(messages.appended), len(tasks.statusUpdates))
+			}
+		})
+	}
+}
+
+func TestFinalizeReviewResumesTaskFailureAndResponseLoss(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name           string
+		configureTasks func(*fakeTasks)
+	}{
+		{
+			name: "failure before task update",
+			configureTasks: func(tasks *fakeTasks) {
+				tasks.failStatusUpdate = true
+			},
+		},
+		{
+			name: "response lost after task update",
+			configureTasks: func(tasks *fakeTasks) {
+				tasks.failAfterStatusUpdate = true
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := newMemoryStore()
+			messages := &fakeMessages{}
+			tasks := &fakeTasks{tasks: map[int64]TaskContext{
+				42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
+			}}
+			test.configureTasks(tasks)
+			service := newTestService(store, messages, tasks)
+			round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
+				RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := FinalizeReviewRequest{ReviewRoundID: round.ID, Verdict: VerdictLooksGood, DecidedBy: "reviewer"}
+			pending, err := service.FinalizeReview(ctx, req)
+			if err == nil || pending.Finalization.PacketPostedAt == nil ||
+				pending.Finalization.LastErrorStep != FinalizationStepTaskTransition {
+				t.Fatalf("first FinalizeReview() = receipt %+v error %v", pending, err)
+			}
+			tasks.failStatusUpdate = false
+			completed, err := service.FinalizeReview(ctx, req)
+			if err != nil {
+				t.Fatalf("retry FinalizeReview() error = %v", err)
+			}
+			if completed.Finalization.State != FinalizationStateComplete || tasks.tasks[42].Status != TaskStatusDone {
+				t.Fatalf("retry did not complete: %+v task=%+v", completed.Finalization, tasks.tasks[42])
+			}
+			if len(messages.appended) != 1 || len(tasks.statusUpdates) != 1 {
+				t.Fatalf("retry duplicated side effects: messages=%d tasks=%d", len(messages.appended), len(tasks.statusUpdates))
+			}
+		})
+	}
+}
+
+func TestFinalizeReviewResumesAfterTaskCheckpointBeforeComplete(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	store.failCompleteOnce = true
+	messages := &fakeMessages{}
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
+	}}
+	service := newTestService(store, messages, tasks)
+	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
+		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := FinalizeReviewRequest{ReviewRoundID: round.ID, Verdict: VerdictLooksGood, DecidedBy: "reviewer"}
+	pending, err := service.FinalizeReview(ctx, req)
+	if err == nil || pending.Finalization.TaskTransitionedAt == nil ||
+		pending.Finalization.LastErrorStep != FinalizationStepCompletion {
+		t.Fatalf("first FinalizeReview() = receipt %+v error %v", pending, err)
+	}
+	completed, err := service.FinalizeReview(ctx, req)
+	if err != nil {
+		t.Fatalf("retry FinalizeReview() error = %v", err)
+	}
+	if completed.Finalization.State != FinalizationStateComplete {
+		t.Fatalf("retry finalization state = %s", completed.Finalization.State)
+	}
+	if len(messages.appended) != 1 || len(tasks.statusUpdates) != 1 {
+		t.Fatalf("completion retry repeated remote work: messages=%d tasks=%d", len(messages.appended), len(tasks.statusUpdates))
+	}
+}
+
+func TestPostReviewFindingsReusesFinalizationPacketAfterTaskTransition(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
+	}}
+	service := newTestService(store, messages, tasks)
+	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
+		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	finalized, err := service.FinalizeReview(ctx, FinalizeReviewRequest{
+		ReviewRoundID: round.ID, Verdict: VerdictLooksGood, DecidedBy: "reviewer",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reposted, err := service.PostReviewFindings(ctx, "den-services", 42, PostReviewFindingsRequest{
+		ReviewRoundID: round.ID, Sender: "repair-operator", RunID: "repair-run",
+	})
+	if err != nil {
+		t.Fatalf("PostReviewFindings() repair error = %v", err)
+	}
+	if reposted.ID != finalized.Packet.ID || len(messages.appended) != 1 {
+		t.Fatalf("repair path created duplicate packet/message: packet=%d want=%d messages=%d",
+			reposted.ID, finalized.Packet.ID, len(messages.appended))
 	}
 }
 
@@ -323,7 +618,7 @@ func TestPostPacketMarkdownIdempotencyDoesNotAppendDuplicateMessages(t *testing.
 	}
 }
 
-func TestPostPacketMarkdownMessageFailureLeavesPendingWithoutRetryDuplicate(t *testing.T) {
+func TestPostPacketMarkdownMessageFailureResumesWithoutDuplicate(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()
 	messages := &fakeMessages{failAppend: true}
@@ -345,13 +640,13 @@ func TestPostPacketMarkdownMessageFailureLeavesPendingWithoutRetryDuplicate(t *t
 	messages.failAppend = false
 	retry, err := service.PostPacketMarkdown(ctx, "den-services", 42, req)
 	if err != nil {
-		t.Fatalf("retry should return pending packet without appending: %v", err)
+		t.Fatalf("retry should resume pending packet: %v", err)
 	}
-	if retry.ID != pending.ID || retry.ValidationStatus != PacketStatusPendingMessageAppend {
+	if retry.ID != pending.ID || retry.ValidationStatus != PacketStatusAccepted || retry.MessageID == nil {
 		t.Fatalf("retry did not return existing pending packet: %+v", retry)
 	}
-	if len(messages.appended) != 0 {
-		t.Fatalf("retry appended duplicate/ambiguous message attempts: %d", len(messages.appended))
+	if len(messages.appended) != 1 {
+		t.Fatalf("retry appended wrong message count: %d", len(messages.appended))
 	}
 }
 
@@ -1007,9 +1302,11 @@ func fixedReviewTestTime() time.Time {
 }
 
 type fakeTasks struct {
-	tasks         map[int64]TaskContext
-	created       []CreateFollowUpTaskRequest
-	statusUpdates []fakeTaskStatusUpdate
+	tasks                 map[int64]TaskContext
+	created               []CreateFollowUpTaskRequest
+	statusUpdates         []fakeTaskStatusUpdate
+	failStatusUpdate      bool
+	failAfterStatusUpdate bool
 }
 
 type fakeTaskStatusUpdate struct {
@@ -1036,9 +1333,16 @@ func (f *fakeTasks) SetTaskStatus(_ context.Context, projectID string, taskID in
 	if !ok || task.ProjectID != projectID {
 		return TaskContext{}, validationError(errors.New("task not found"), "task_not_found", "task_id", "common.task_id")
 	}
+	if f.failStatusUpdate {
+		return TaskContext{}, errors.New("task update failed")
+	}
 	task.Status = status
 	f.tasks[taskID] = task
 	f.statusUpdates = append(f.statusUpdates, fakeTaskStatusUpdate{Agent: agent, Status: status})
+	if f.failAfterStatusUpdate {
+		f.failAfterStatusUpdate = false
+		return TaskContext{}, errors.New("task update response lost")
+	}
 	return task, nil
 }
 
@@ -1048,8 +1352,10 @@ func (f *fakeTasks) CreateFollowUpTask(_ context.Context, projectID string, req 
 }
 
 type fakeMessages struct {
-	appended   []AppendMessageRequest
-	failAppend bool
+	appended         []AppendMessageRequest
+	failAppend       bool
+	failAfterAppend  bool
+	messagesByPacket map[string]AppendedMessage
 }
 
 type fakeGitHubChecks struct {
@@ -1075,8 +1381,25 @@ func (f *fakeMessages) AppendTaskMessage(_ context.Context, projectID string, re
 	if f.failAppend {
 		return AppendedMessage{}, errors.New("append failed")
 	}
+	packetID := fmt.Sprint(req.Metadata["review_packet_id"])
+	if packetID != "<nil>" {
+		if existing, ok := f.messagesByPacket[packetID]; ok {
+			return existing, nil
+		}
+	}
 	f.appended = append(f.appended, req)
-	return AppendedMessage{ID: int64(len(f.appended)), ProjectID: projectID, TaskID: &req.TaskID, Intent: req.Intent}, nil
+	message := AppendedMessage{ID: int64(len(f.appended)), ProjectID: projectID, TaskID: &req.TaskID, Intent: req.Intent}
+	if packetID != "<nil>" {
+		if f.messagesByPacket == nil {
+			f.messagesByPacket = map[string]AppendedMessage{}
+		}
+		f.messagesByPacket[packetID] = message
+	}
+	if f.failAfterAppend {
+		f.failAfterAppend = false
+		return AppendedMessage{}, errors.New("append response lost")
+	}
+	return message, nil
 }
 
 func completionPacketMarkdown(roundID int64) string {

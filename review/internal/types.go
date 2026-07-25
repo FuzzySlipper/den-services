@@ -37,6 +37,16 @@ const (
 	PacketStatusAccepted             = "accepted"
 	PacketStatusPendingMessageAppend = "pending_message_append"
 
+	FinalizationStatePending          = "pending"
+	FinalizationStatePacketPosted     = "packet_posted"
+	FinalizationStateTaskTransitioned = "task_transitioned"
+	FinalizationStateComplete         = "complete"
+	FinalizationStateRetryableError   = "retryable_error"
+
+	FinalizationStepPacketDelivery = "packet_delivery"
+	FinalizationStepTaskTransition = "task_transition"
+	FinalizationStepCompletion     = "completion"
+
 	GitHubCheckGateStatusPending    = "pending"
 	GitHubCheckGateStatusPassed     = "passed"
 	GitHubCheckGateStatusFailed     = "failed"
@@ -81,6 +91,9 @@ var (
 	ErrTaskClientUnset         = errors.New("tasks client is not configured")    //nolint:gochecknoglobals
 	ErrProjectScopeClientUnset = errors.New("projects client is not configured") //nolint:gochecknoglobals
 	ErrGitHubChecksUnset       = errors.New("github check provider is not configured")
+	ErrFinalizationConflict    = errors.New("review round was finalized with different decision identity")
+	ErrUnresolvedFindings      = errors.New("looks_good requires no unresolved findings for the task")
+	ErrActionableFinding       = errors.New("changes_requested requires an actionable finding in the current review round")
 )
 
 type ServiceError struct {
@@ -194,6 +207,41 @@ type ReviewPacket struct {
 	IdempotencyKey   string
 	CreatedAt        time.Time
 	AcceptedAt       *time.Time
+}
+
+type ReviewFinalization struct {
+	ID                     int64
+	ProjectID              string
+	TaskID                 int64
+	ReviewRoundID          int64
+	Verdict                string
+	DecidedBy              string
+	Notes                  string
+	ThreadID               *int64
+	RunID                  string
+	SubagentRole           string
+	TargetTaskStatus       string
+	PacketID               int64
+	IdempotencyKey         string
+	PacketIdempotencyKey   string
+	State                  string
+	MessageID              *int64
+	PacketPostedAt         *time.Time
+	TaskTransitionedAt     *time.Time
+	CompletedAt            *time.Time
+	LastErrorStep          string
+	LastError              string
+	MessageAttempts        int
+	TaskTransitionAttempts int
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+}
+
+type ReviewFinalizationReceipt struct {
+	Finalization *ReviewFinalization
+	Round        *ReviewRound
+	Packet       *ReviewPacket
+	TaskStatus   string
 }
 
 type ValidationIssue struct {

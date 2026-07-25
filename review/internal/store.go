@@ -228,6 +228,179 @@ func (s *Store) GetPacketByIdempotency(ctx context.Context, projectID string, id
 	return packet, nil
 }
 
+func (s *Store) GetReviewFindingsPacketForRound(ctx context.Context, roundID int64) (*ReviewPacket, error) {
+	packet, err := scanPacket(s.pool.QueryRow(ctx, getReviewFindingsPacketForRoundSQL, roundID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting review findings packet for round %d: %w", roundID, err)
+	}
+	return packet, nil
+}
+
+func (s *Store) GetFinalizationByRound(ctx context.Context, roundID int64) (*ReviewFinalization, error) {
+	finalization, err := scanFinalization(s.pool.QueryRow(ctx, getFinalizationByRoundSQL, roundID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting review finalization for round %d: %w", roundID, err)
+	}
+	return finalization, nil
+}
+
+// BeginFinalization locks the review round and persists the verdict, packet
+// identity, and saga row in one transaction. Remote message/task writes happen
+// only after this transaction commits.
+func (s *Store) BeginFinalization(
+	ctx context.Context,
+	finalization *ReviewFinalization,
+	packet *ReviewPacket,
+	decidedAt time.Time,
+) (*ReviewFinalization, *ReviewPacket, *ReviewRound, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("beginning review finalization: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	round, err := scanRound(tx.QueryRow(ctx, getRoundForUpdateSQL, finalization.ReviewRoundID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, nil, notFound(fmt.Errorf("%w: %d", ErrMissingRound, finalization.ReviewRoundID), "round_not_found")
+	}
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("locking review round for finalization: %w", err)
+	}
+	existing, err := scanFinalization(tx.QueryRow(ctx, getFinalizationByRoundSQL, finalization.ReviewRoundID))
+	if err == nil {
+		storedPacket, packetErr := scanPacket(tx.QueryRow(ctx, getPacketSQL, existing.PacketID))
+		if packetErr != nil {
+			return nil, nil, nil, fmt.Errorf("getting existing finalization packet: %w", packetErr)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return nil, nil, nil, fmt.Errorf("committing existing review finalization read: %w", err)
+		}
+		return existing, storedPacket, round, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, nil, fmt.Errorf("checking existing review finalization: %w", err)
+	}
+	if round.Verdict != "" && (round.Verdict != finalization.Verdict ||
+		round.VerdictBy != "" && round.VerdictBy != finalization.DecidedBy) {
+		return nil, nil, nil, conflict(ErrFinalizationConflict, "review_finalization_conflict")
+	}
+
+	storedPacket, err := scanPacket(tx.QueryRow(ctx, getReviewFindingsPacketForRoundSQL, finalization.ReviewRoundID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		storedPacket, err = scanPacket(tx.QueryRow(ctx, storePacketSQL, packet.ProjectID, packet.TaskID, packet.ReviewRoundID,
+			packet.PacketKind, packet.Sender, packet.MessageID, jsonOrNil(packet.FrontMatter), jsonOrNil(packet.TypedEnvelope),
+			packet.MarkdownBody, packet.SourceMarkdown, PacketStatusPendingMessageAppend, jsonOrNil(packet.ValidationErrors),
+			emptyToNil(packet.IdempotencyKey), packet.CreatedAt, packet.AcceptedAt))
+	}
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("reserving finalization packet: %w", err)
+	}
+	updatedRound, err := scanRound(tx.QueryRow(ctx, setVerdictSQL, round.ID, finalization.Verdict, finalization.DecidedBy,
+		emptyToNil(finalization.Notes), decidedAt, decidedAt))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("persisting finalization verdict: %w", err)
+	}
+
+	finalization.PacketID = storedPacket.ID
+	finalization.PacketIdempotencyKey = storedPacket.IdempotencyKey
+	finalization.State = FinalizationStatePending
+	if storedPacket.MessageID != nil {
+		finalization.MessageID = storedPacket.MessageID
+		finalization.PacketPostedAt = storedPacket.AcceptedAt
+		if finalization.PacketPostedAt == nil {
+			finalization.PacketPostedAt = &decidedAt
+		}
+		finalization.State = FinalizationStatePacketPosted
+	}
+	storedFinalization, err := scanFinalization(tx.QueryRow(ctx, insertFinalizationSQL,
+		finalization.ProjectID, finalization.TaskID, finalization.ReviewRoundID, finalization.Verdict,
+		finalization.DecidedBy, emptyToNil(finalization.Notes), finalization.ThreadID, emptyToNil(finalization.RunID),
+		emptyToNil(finalization.SubagentRole), finalization.TargetTaskStatus, finalization.PacketID,
+		finalization.IdempotencyKey, finalization.PacketIdempotencyKey, finalization.State, finalization.MessageID,
+		finalization.PacketPostedAt, finalization.CreatedAt, finalization.UpdatedAt))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("creating review finalization: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, nil, fmt.Errorf("committing review finalization: %w", err)
+	}
+	return storedFinalization, storedPacket, updatedRound, nil
+}
+
+func (s *Store) MarkFinalizationPacketPosted(
+	ctx context.Context,
+	id int64,
+	messageID int64,
+	postedAt time.Time,
+) (*ReviewFinalization, *ReviewPacket, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("beginning finalization packet checkpoint: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	current, err := getFinalizationTx(ctx, tx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	packet, err := scanPacket(tx.QueryRow(ctx, acceptPacketSQL, current.PacketID, messageID, postedAt))
+	if err != nil {
+		return nil, nil, fmt.Errorf("accepting finalization packet: %w", err)
+	}
+	updated, err := scanFinalization(tx.QueryRow(ctx, markFinalizationPacketPostedSQL, id, messageID, postedAt))
+	if err != nil {
+		return nil, nil, fmt.Errorf("recording finalization packet checkpoint: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, fmt.Errorf("committing finalization packet checkpoint: %w", err)
+	}
+	return updated, packet, nil
+}
+
+func (s *Store) MarkFinalizationTaskTransitioned(ctx context.Context, id int64, transitionedAt time.Time) (*ReviewFinalization, error) {
+	finalization, err := scanFinalization(s.pool.QueryRow(ctx, markFinalizationTaskTransitionedSQL, id, transitionedAt))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, notFound(fmt.Errorf("review finalization not found: %d", id), "review_finalization_not_found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("recording finalization task checkpoint: %w", err)
+	}
+	return finalization, nil
+}
+
+func (s *Store) CompleteFinalization(ctx context.Context, id int64, completedAt time.Time) (*ReviewFinalization, error) {
+	finalization, err := scanFinalization(s.pool.QueryRow(ctx, completeFinalizationSQL, id, completedAt))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, conflict(fmt.Errorf("review finalization %d is missing a delivery checkpoint", id), "review_finalization_incomplete")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("completing review finalization: %w", err)
+	}
+	return finalization, nil
+}
+
+func (s *Store) RecordFinalizationError(
+	ctx context.Context,
+	id int64,
+	step string,
+	message string,
+	attemptedAt time.Time,
+) (*ReviewFinalization, error) {
+	finalization, err := scanFinalization(s.pool.QueryRow(ctx, recordFinalizationErrorSQL, id, step, message, attemptedAt))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, notFound(fmt.Errorf("review finalization not found: %d", id), "review_finalization_not_found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("recording review finalization error: %w", err)
+	}
+	return finalization, nil
+}
+
 func (s *Store) WorkflowSummary(ctx context.Context, projectID string, taskID int64) (WorkflowSummary, error) {
 	rounds, err := s.ListRounds(ctx, projectID, taskID)
 	if err != nil {
@@ -547,6 +720,35 @@ func scanPacket(row rowScanner) (*ReviewPacket, error) {
 	return &packet, nil
 }
 
+func scanFinalization(row rowScanner) (*ReviewFinalization, error) {
+	var finalization ReviewFinalization
+	err := row.Scan(
+		&finalization.ID, &finalization.ProjectID, &finalization.TaskID, &finalization.ReviewRoundID,
+		&finalization.Verdict, &finalization.DecidedBy, &finalization.Notes, &finalization.ThreadID,
+		&finalization.RunID, &finalization.SubagentRole, &finalization.TargetTaskStatus,
+		&finalization.PacketID, &finalization.IdempotencyKey, &finalization.PacketIdempotencyKey,
+		&finalization.State, &finalization.MessageID, &finalization.PacketPostedAt,
+		&finalization.TaskTransitionedAt, &finalization.CompletedAt, &finalization.LastErrorStep,
+		&finalization.LastError, &finalization.MessageAttempts, &finalization.TaskTransitionAttempts,
+		&finalization.CreatedAt, &finalization.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &finalization, nil
+}
+
+func getFinalizationTx(ctx context.Context, tx pgx.Tx, id int64) (*ReviewFinalization, error) {
+	finalization, err := scanFinalization(tx.QueryRow(ctx, getFinalizationForUpdateSQL, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, notFound(fmt.Errorf("review finalization not found: %d", id), "review_finalization_not_found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting review finalization %d: %w", id, err)
+	}
+	return finalization, nil
+}
+
 func scanGitHubCheckGate(row rowScanner) (*GitHubCheckGate, error) {
 	var gate GitHubCheckGate
 	var requiredChecks []byte
@@ -623,6 +825,7 @@ const (
 	roundColumns                = `id, project_id, task_id, round_number, requested_by, branch, base_branch, base_commit, head_commit, coalesce(last_reviewed_head_commit, ''), commits_since_last_review, coalesce(tests_run, '[]'::jsonb), coalesce(notes, ''), coalesce(preferred_diff_base_ref, ''), coalesce(preferred_diff_base_commit, ''), coalesce(preferred_diff_head_ref, ''), coalesce(preferred_diff_head_commit, ''), coalesce(alternate_diff_base_ref, ''), coalesce(alternate_diff_base_commit, ''), coalesce(alternate_diff_head_ref, ''), coalesce(alternate_diff_head_commit, ''), coalesce(delta_base_commit, ''), inherited_commit_count, task_local_commit_count, coalesce(verdict, ''), coalesce(verdict_by, ''), coalesce(verdict_notes, ''), requested_at, verdict_at, created_at, updated_at`
 	findingColumns              = `f.id, f.project_id, f.finding_key, f.task_id, f.review_round_id, r.round_number, f.finding_number, f.created_by, f.category, f.summary, coalesce(f.notes, ''), coalesce(f.file_references, '[]'::jsonb), coalesce(f.test_commands, '[]'::jsonb), f.status, coalesce(f.status_updated_by, ''), coalesce(f.status_notes, ''), f.status_updated_at, coalesce(f.response_by, ''), coalesce(f.response_notes, ''), f.response_at, f.follow_up_task_id, coalesce(f.run_id, ''), coalesce(f.subagent_role, ''), f.created_at, f.updated_at`
 	packetColumns               = `id, project_id, task_id, review_round_id, packet_kind, sender, message_id, front_matter, typed_envelope, markdown_body, source_markdown, validation_status, coalesce(validation_errors, '[]'::jsonb), coalesce(idempotency_key, ''), created_at, accepted_at`
+	finalizationColumns         = `id, project_id, task_id, review_round_id, verdict, decided_by, coalesce(notes, ''), thread_id, coalesce(run_id, ''), coalesce(subagent_role, ''), target_task_status, packet_id, idempotency_key, packet_idempotency_key, state, message_id, packet_posted_at, task_transitioned_at, completed_at, coalesce(last_error_step, ''), coalesce(last_error, ''), message_attempts, task_transition_attempts, created_at, updated_at`
 	githubCheckGateColumns      = `id, project_id, task_id, repository, commit_sha, ref, coalesce(required_checks, '[]'::jsonb), status, requested_by, coalesce(agent_profile, ''), coalesce(agent_instance_id, ''), coalesce(session_key, ''), timeout_at, poll_interval_seconds, next_poll_at, last_checked_at, completed_at, coalesce(status_url, ''), coalesce(summary, ''), coalesce(check_runs, '[]'::jsonb), coalesce(failure_summary, ''), coalesce(terminal_reason, ''), coalesce(missing_required_checks, '[]'::jsonb), coalesce(observed_check_runs, '[]'::jsonb), evidence_message_status, evidence_message_id, coalesce(evidence_message_error, ''), evidence_message_attempted_at, created_at, updated_at`
 	githubCheckGateEventColumns = `id, schema, schema_version, gate_id, project_id, task_id, repository, commit_sha, ref, status, terminal_reason, required_checks, check_runs, observed_check_runs, missing_required_checks, coalesce(summary, ''), coalesce(failure_summary, ''), requested_by, coalesce(agent_profile, ''), coalesce(agent_instance_id, ''), coalesce(session_key, ''), gate_created_at, completed_at, created_at`
 )
@@ -632,6 +835,7 @@ const (
 	createRoundSQL       = `insert into den_review.review_rounds(project_id, task_id, round_number, requested_by, branch, base_branch, base_commit, head_commit, last_reviewed_head_commit, commits_since_last_review, tests_run, notes, preferred_diff_base_ref, preferred_diff_base_commit, preferred_diff_head_ref, preferred_diff_head_commit, alternate_diff_base_ref, alternate_diff_base_commit, alternate_diff_head_ref, alternate_diff_head_commit, delta_base_commit, inherited_commit_count, task_local_commit_count, requested_at, created_at, updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) returning ` + roundColumns
 	listRoundsSQL        = `select ` + roundColumns + ` from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number asc`
 	getRoundSQL          = `select ` + roundColumns + ` from den_review.review_rounds where id = $1`
+	getRoundForUpdateSQL = `select ` + roundColumns + ` from den_review.review_rounds where id = $1 for update`
 	setVerdictSQL        = `update den_review.review_rounds set verdict = $2, verdict_by = $3, verdict_notes = $4, verdict_at = $5, updated_at = $6 where id = $1 returning ` + roundColumns
 	nextFindingNumberSQL = `select coalesce(max(finding_number), 0) + 1 from den_review.review_findings where project_id = $1 and task_id = $2`
 	createFindingSQL     = `
@@ -689,10 +893,66 @@ from updated f
 join den_review.review_rounds r on r.id = f.review_round_id`
 
 const (
-	insertFindingEventSQL     = `insert into den_review.review_finding_events(project_id, task_id, review_round_id, review_finding_id, event_kind, actor, old_status, new_status, notes, response_notes, follow_up_task_id, run_id, subagent_role, created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`
-	storePacketSQL            = `insert into den_review.review_packets(project_id, task_id, review_round_id, packet_kind, sender, message_id, front_matter, typed_envelope, markdown_body, source_markdown, validation_status, validation_errors, idempotency_key, created_at, accepted_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) on conflict(project_id, idempotency_key) do update set message_id = excluded.message_id, front_matter = excluded.front_matter, typed_envelope = excluded.typed_envelope, markdown_body = excluded.markdown_body, source_markdown = excluded.source_markdown, validation_status = excluded.validation_status, validation_errors = excluded.validation_errors, accepted_at = excluded.accepted_at returning ` + packetColumns
-	getPacketSQL              = `select ` + packetColumns + ` from den_review.review_packets where id = $1`
-	getPacketByIdempotencySQL = `select ` + packetColumns + ` from den_review.review_packets where project_id = $1 and idempotency_key = $2`
+	insertFindingEventSQL              = `insert into den_review.review_finding_events(project_id, task_id, review_round_id, review_finding_id, event_kind, actor, old_status, new_status, notes, response_notes, follow_up_task_id, run_id, subagent_role, created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`
+	storePacketSQL                     = `insert into den_review.review_packets(project_id, task_id, review_round_id, packet_kind, sender, message_id, front_matter, typed_envelope, markdown_body, source_markdown, validation_status, validation_errors, idempotency_key, created_at, accepted_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) on conflict(project_id, idempotency_key) do update set message_id = excluded.message_id, front_matter = excluded.front_matter, typed_envelope = excluded.typed_envelope, markdown_body = excluded.markdown_body, source_markdown = excluded.source_markdown, validation_status = excluded.validation_status, validation_errors = excluded.validation_errors, accepted_at = excluded.accepted_at returning ` + packetColumns
+	getPacketSQL                       = `select ` + packetColumns + ` from den_review.review_packets where id = $1`
+	getPacketByIdempotencySQL          = `select ` + packetColumns + ` from den_review.review_packets where project_id = $1 and idempotency_key = $2`
+	getReviewFindingsPacketForRoundSQL = `select ` + packetColumns + ` from den_review.review_packets where review_round_id = $1 and packet_kind = 'review_findings' order by (message_id is not null) desc, accepted_at desc nulls last, id desc limit 1`
+	acceptPacketSQL                    = `update den_review.review_packets set message_id = coalesce(message_id, $2), validation_status = 'accepted', accepted_at = coalesce(accepted_at, $3) where id = $1 returning ` + packetColumns
+)
+
+const (
+	getFinalizationByRoundSQL   = `select ` + finalizationColumns + ` from den_review.review_finalizations where review_round_id = $1`
+	getFinalizationForUpdateSQL = `select ` + finalizationColumns + ` from den_review.review_finalizations where id = $1 for update`
+	insertFinalizationSQL       = `
+insert into den_review.review_finalizations(
+	project_id, task_id, review_round_id, verdict, decided_by, notes, thread_id, run_id, subagent_role,
+	target_task_status, packet_id, idempotency_key, packet_idempotency_key, state, message_id,
+	packet_posted_at, created_at, updated_at)
+values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+returning ` + finalizationColumns
+	markFinalizationPacketPostedSQL = `
+update den_review.review_finalizations
+set state = case when state = 'complete' then state else 'packet_posted' end,
+	message_id = coalesce(message_id, $2),
+	packet_posted_at = coalesce(packet_posted_at, $3),
+	last_error_step = null,
+	last_error = null,
+	message_attempts = message_attempts + 1,
+	updated_at = $3
+where id = $1
+returning ` + finalizationColumns
+	markFinalizationTaskTransitionedSQL = `
+update den_review.review_finalizations
+set state = case when state = 'complete' then state else 'task_transitioned' end,
+	task_transitioned_at = coalesce(task_transitioned_at, $2),
+	last_error_step = null,
+	last_error = null,
+	task_transition_attempts = task_transition_attempts + 1,
+	updated_at = $2
+where id = $1
+returning ` + finalizationColumns
+	completeFinalizationSQL = `
+update den_review.review_finalizations
+set state = 'complete',
+	completed_at = coalesce(completed_at, $2),
+	last_error_step = null,
+	last_error = null,
+	updated_at = $2
+where id = $1
+  and packet_posted_at is not null
+  and task_transitioned_at is not null
+returning ` + finalizationColumns
+	recordFinalizationErrorSQL = `
+update den_review.review_finalizations
+set state = case when state = 'complete' then state else 'retryable_error' end,
+	last_error_step = $2,
+	last_error = $3,
+	message_attempts = message_attempts + case when $2 = 'packet_delivery' then 1 else 0 end,
+	task_transition_attempts = task_transition_attempts + case when $2 = 'task_transition' then 1 else 0 end,
+	updated_at = $4
+where id = $1
+returning ` + finalizationColumns
 )
 
 const (

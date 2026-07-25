@@ -46,6 +46,16 @@ type SetReviewVerdictRequest struct {
 	SubagentRole string `json:"subagent_role,omitempty"`
 }
 
+type FinalizeReviewRequest struct {
+	ReviewRoundID int64  `json:"review_round_id"`
+	Verdict       string `json:"verdict"`
+	DecidedBy     string `json:"decided_by"`
+	Notes         string `json:"notes,omitempty"`
+	ThreadID      *int64 `json:"thread_id,omitempty"`
+	RunID         string `json:"run_id,omitempty"`
+	SubagentRole  string `json:"subagent_role,omitempty"`
+}
+
 type RespondToFindingRequest struct {
 	RespondedBy    string `json:"responded_by"`
 	ResponseNotes  string `json:"response_notes,omitempty"`
@@ -179,6 +189,34 @@ type ReviewPacketResponse struct {
 	ValidationErrors []ValidationIssue `json:"validation_errors,omitempty"`
 	CreatedAt        time.Time         `json:"created_at,omitempty"`
 	AcceptedAt       *time.Time        `json:"accepted_at,omitempty"`
+}
+
+type ReviewFinalizationResponse struct {
+	ID                     int64                `json:"id"`
+	ProjectID              string               `json:"project_id"`
+	TaskID                 int64                `json:"task_id"`
+	ReviewRoundID          int64                `json:"review_round_id"`
+	Verdict                string               `json:"verdict"`
+	DecidedBy              string               `json:"decided_by"`
+	Notes                  string               `json:"notes,omitempty"`
+	ThreadID               *int64               `json:"thread_id,omitempty"`
+	RunID                  string               `json:"run_id,omitempty"`
+	SubagentRole           string               `json:"subagent_role,omitempty"`
+	TargetTaskStatus       string               `json:"target_task_status"`
+	IdempotencyKey         string               `json:"idempotency_key"`
+	State                  string               `json:"state"`
+	Packet                 ReviewPacketResponse `json:"packet"`
+	MessageID              *int64               `json:"message_id,omitempty"`
+	PacketPostedAt         *time.Time           `json:"packet_posted_at,omitempty"`
+	TaskTransitionedAt     *time.Time           `json:"task_transitioned_at,omitempty"`
+	CompletedAt            *time.Time           `json:"completed_at,omitempty"`
+	LastErrorStep          string               `json:"last_error_step,omitempty"`
+	LastError              string               `json:"last_error,omitempty"`
+	MessageAttempts        int                  `json:"message_attempts"`
+	TaskTransitionAttempts int                  `json:"task_transition_attempts"`
+	ResultingTaskStatus    string               `json:"resulting_task_status"`
+	CreatedAt              time.Time            `json:"created_at"`
+	UpdatedAt              time.Time            `json:"updated_at"`
 }
 
 type GitHubCheckGateResponse struct {

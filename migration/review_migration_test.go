@@ -49,3 +49,27 @@ func TestReviewGitHubDiagnosticsMigrationDiscovered(t *testing.T) {
 	}
 	t.Fatal("den_review version 3 migration not discovered")
 }
+
+func TestReviewFinalizationMigrationDiscovered(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	for i := range migrations {
+		if migrations[i].Schema == "den_review" && migrations[i].Version == 5 {
+			for _, want := range []string{
+				"create table den_review.review_finalizations",
+				"unique(review_round_id)",
+				"packet_posted_at",
+				"task_transitioned_at",
+				"review_finalizations_state_updated_idx",
+			} {
+				if !strings.Contains(migrations[i].SQL, want) {
+					t.Fatalf("review finalization migration missing %q", want)
+				}
+			}
+			return
+		}
+	}
+	t.Fatal("den_review version 5 migration not discovered")
+}

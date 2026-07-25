@@ -69,9 +69,15 @@ func DefaultTools() ([]ToolDefinition, error) {
 			definition.Deprecated = true
 			definition.DeprecationMessage = policy.message
 		}
+		if policy, ok := hiddenCompatibilityToolPolicies[tool.Name]; ok {
+			definition.Hidden = true
+			definition.Deprecated = true
+			definition.DeprecationMessage = policy.message
+		}
 		tools = append(tools, definition)
 	}
 	tools = append(tools, githubCheckGateTools()...)
+	tools = append(tools, reviewFinalizationTools()...)
 	tools = append(tools, taskContextTools()...)
 	tools = append(tools, contractErgonomicsTools()...)
 	return tools, nil
@@ -210,6 +216,24 @@ func githubCheckGateTools() []ToolDefinition {
 	}}
 }
 
+func reviewFinalizationTools() []ToolDefinition {
+	return []ToolDefinition{{
+		Name:        "finalize_review",
+		Description: "Finalize a normal review exactly once. This durable saga posts the canonical findings packet and transitions the task; retries resume incomplete delivery checkpoints. Supports looks_good and changes_requested only.",
+		Backend:     "review",
+		Operation:   "finalize_review",
+		InputSchema: ObjectSchema(map[string]Schema{
+			"review_round_id": IntegerSchema("Existing review round to finalize."),
+			"verdict":         StringSchema("Green-path verdict: looks_good or changes_requested."),
+			"decided_by":      StringSchema("Agent or user making the review decision and task transition."),
+			"notes":           NullableStringSchema("Optional final review notes included in the canonical packet."),
+			"thread_id":       NullableIntegerSchema("Optional existing task-thread root for the canonical packet."),
+			"run_id":          NullableStringSchema("Optional run correlation identifier."),
+			"subagent_role":   NullableStringSchema("Optional subagent role for correlation."),
+		}, "review_round_id", "verdict", "decided_by"),
+	}}
+}
+
 func contractErgonomicsTools() []ToolDefinition {
 	return []ToolDefinition{
 		{
@@ -256,6 +280,12 @@ func contractErgonomicsTools() []ToolDefinition {
 
 var hiddenAdminToolPolicies = map[string]hiddenToolPolicy{
 	"delete_space": {message: "delete_space is admin-only and hidden from default MCP tool discovery. Prefer archive_space or update_space_visibility for normal lifecycle removal."},
+}
+
+var hiddenCompatibilityToolPolicies = map[string]hiddenToolPolicy{
+	"set_review_verdict": {
+		message: "set_review_verdict is hidden compatibility behavior for exceptional follow_up_needed or blocked_by_dependency decisions. Use finalize_review for normal looks_good or changes_requested closeout.",
+	},
 }
 
 var retiredToolPolicies = map[string]retiredToolPolicy{

@@ -23,6 +23,7 @@ type ReviewUseCases interface {
 	ListFindings(ctx context.Context, projectID string, taskID int64, query ListFindingsQuery) ([]*ReviewFinding, error)
 	ListFindingsForTask(ctx context.Context, taskID int64, query ListFindingsQuery) ([]*ReviewFinding, error)
 	SetVerdict(ctx context.Context, roundID int64, req SetReviewVerdictRequest) (*ReviewRound, error)
+	FinalizeReview(ctx context.Context, req FinalizeReviewRequest) (*ReviewFinalizationReceipt, error)
 	RespondToFinding(ctx context.Context, findingID int64, req RespondToFindingRequest) (*ReviewFinding, error)
 	SetFindingStatus(ctx context.Context, findingID int64, req SetFindingStatusRequest) (*ReviewFinding, error)
 	SplitFindingsToFollowUp(ctx context.Context, projectID string, taskID int64, req SplitFindingsRequest) (SplitFindingsResponse, error)
@@ -65,6 +66,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/tasks/{task_id}/review/workflow-summary", h.workflowSummaryForTask)
 	mux.HandleFunc("POST /v1/review/rounds/{review_round_id}/findings", h.createFinding)
 	mux.HandleFunc("POST /v1/review/rounds/{review_round_id}/verdict", h.setVerdict)
+	mux.HandleFunc("POST /v1/review/finalizations", h.finalizeReview)
 	mux.HandleFunc("POST /v1/review/findings/{finding_id}/response", h.respondToFinding)
 	mux.HandleFunc("POST /v1/review/findings/{finding_id}/status", h.setFindingStatus)
 }
@@ -214,6 +216,19 @@ func (h *Handler) setVerdict(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.WriteJSON(w, http.StatusOK, toRoundResponse(round))
+}
+
+func (h *Handler) finalizeReview(w http.ResponseWriter, r *http.Request) {
+	var req FinalizeReviewRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	receipt, err := h.service.FinalizeReview(r.Context(), req)
+	if err != nil {
+		writeReviewError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, toFinalizationResponse(receipt))
 }
 
 func (h *Handler) respondToFinding(w http.ResponseWriter, r *http.Request) {
@@ -401,8 +416,10 @@ func (h *Handler) waitForGitHubCheckGate(w http.ResponseWriter, r *http.Request)
 		NextCursor int64                         `json:"next_cursor"`
 		Terminal   bool                          `json:"terminal"`
 		TimedOut   bool                          `json:"timed_out"`
-	}{Gate: toGitHubCheckGateResponse(receipt.Gate), Event: receipt.Event, NextCursor: receipt.NextCursor,
-		Terminal: receipt.Terminal, TimedOut: receipt.TimedOut}
+	}{
+		Gate: toGitHubCheckGateResponse(receipt.Gate), Event: receipt.Event, NextCursor: receipt.NextCursor,
+		Terminal: receipt.Terminal, TimedOut: receipt.TimedOut,
+	}
 	api.WriteJSON(w, http.StatusOK, response)
 }
 

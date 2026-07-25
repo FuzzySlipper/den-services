@@ -2,6 +2,7 @@ package review
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,19 +13,24 @@ type memoryStore struct {
 	nextRoundID                int64
 	nextFindingID              int64
 	nextPacketID               int64
+	nextFinalizationID         int64
 	nextGitHubCheckGateID      int64
 	nextGitHubCheckGateEventID int64
 	rounds                     map[int64]*ReviewRound
 	findings                   map[int64]*ReviewFinding
 	packets                    map[int64]*ReviewPacket
+	finalizations              map[int64]*ReviewFinalization
 	githubCheckGates           map[int64]*GitHubCheckGate
 	githubCheckGateEvents      map[int64]*GitHubCheckGateTerminalEvent
+	failCompleteOnce           bool
 }
 
 func newMemoryStore() *memoryStore {
 	return &memoryStore{
-		nextRoundID: 1, nextFindingID: 1, nextPacketID: 1, nextGitHubCheckGateID: 1, nextGitHubCheckGateEventID: 1,
+		nextRoundID: 1, nextFindingID: 1, nextPacketID: 1, nextFinalizationID: 1,
+		nextGitHubCheckGateID: 1, nextGitHubCheckGateEventID: 1,
 		rounds: map[int64]*ReviewRound{}, findings: map[int64]*ReviewFinding{}, packets: map[int64]*ReviewPacket{},
+		finalizations:         map[int64]*ReviewFinalization{},
 		githubCheckGates:      map[int64]*GitHubCheckGate{},
 		githubCheckGateEvents: map[int64]*GitHubCheckGateTerminalEvent{},
 	}
@@ -217,6 +223,188 @@ func (s *memoryStore) GetPacket(_ context.Context, id int64) (*ReviewPacket, err
 		return nil, notFound(fmt.Errorf("review packet not found: %d", id), "packet_not_found")
 	}
 	copied := *packet
+	return &copied, nil
+}
+
+func (s *memoryStore) GetReviewFindingsPacketForRound(_ context.Context, roundID int64) (*ReviewPacket, error) {
+	var selected *ReviewPacket
+	for _, packet := range s.packets {
+		if packet.ReviewRoundID == nil || *packet.ReviewRoundID != roundID || packet.PacketKind != PacketKindReviewFindings {
+			continue
+		}
+		if selected == nil || packet.MessageID != nil && selected.MessageID == nil || packet.ID > selected.ID {
+			copied := *packet
+			selected = &copied
+		}
+	}
+	return selected, nil
+}
+
+func (s *memoryStore) GetFinalizationByRound(_ context.Context, roundID int64) (*ReviewFinalization, error) {
+	for _, finalization := range s.finalizations {
+		if finalization.ReviewRoundID == roundID {
+			copied := *finalization
+			return &copied, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *memoryStore) BeginFinalization(
+	ctx context.Context,
+	finalization *ReviewFinalization,
+	packet *ReviewPacket,
+	decidedAt time.Time,
+) (*ReviewFinalization, *ReviewPacket, *ReviewRound, error) {
+	existing, err := s.GetFinalizationByRound(ctx, finalization.ReviewRoundID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if existing != nil {
+		storedPacket, packetErr := s.GetPacket(ctx, existing.PacketID)
+		round, roundErr := s.GetRound(ctx, existing.ReviewRoundID)
+		return existing, storedPacket, round, errors.Join(packetErr, roundErr)
+	}
+	round, err := s.GetRound(ctx, finalization.ReviewRoundID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if round.Verdict != "" && (round.Verdict != finalization.Verdict ||
+		round.VerdictBy != "" && round.VerdictBy != finalization.DecidedBy) {
+		return nil, nil, nil, conflict(ErrFinalizationConflict, "review_finalization_conflict")
+	}
+	storedPacket, err := s.GetReviewFindingsPacketForRound(ctx, finalization.ReviewRoundID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if storedPacket == nil {
+		packet.ValidationStatus = PacketStatusPendingMessageAppend
+		storedPacket, err = s.StorePacket(ctx, packet)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	round, err = s.SetVerdict(ctx, round.ID, finalization.Verdict, finalization.DecidedBy, finalization.Notes, decidedAt)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	finalization.ID = s.nextFinalizationID
+	s.nextFinalizationID++
+	finalization.PacketID = storedPacket.ID
+	finalization.PacketIdempotencyKey = storedPacket.IdempotencyKey
+	if storedPacket.MessageID != nil {
+		finalization.MessageID = storedPacket.MessageID
+		finalization.PacketPostedAt = storedPacket.AcceptedAt
+		if finalization.PacketPostedAt == nil {
+			finalization.PacketPostedAt = &decidedAt
+		}
+		finalization.State = FinalizationStatePacketPosted
+	}
+	copied := *finalization
+	s.finalizations[copied.ID] = &copied
+	return &copied, storedPacket, round, nil
+}
+
+func (s *memoryStore) MarkFinalizationPacketPosted(
+	_ context.Context,
+	id int64,
+	messageID int64,
+	postedAt time.Time,
+) (*ReviewFinalization, *ReviewPacket, error) {
+	finalization, ok := s.finalizations[id]
+	if !ok {
+		return nil, nil, notFound(fmt.Errorf("review finalization not found: %d", id), "review_finalization_not_found")
+	}
+	packet := s.packets[finalization.PacketID]
+	packet.MessageID = &messageID
+	packet.ValidationStatus = PacketStatusAccepted
+	if packet.AcceptedAt == nil {
+		packet.AcceptedAt = &postedAt
+	}
+	if finalization.MessageID == nil {
+		finalization.MessageID = &messageID
+	}
+	if finalization.PacketPostedAt == nil {
+		finalization.PacketPostedAt = &postedAt
+	}
+	if finalization.State != FinalizationStateComplete {
+		finalization.State = FinalizationStatePacketPosted
+	}
+	finalization.LastError = ""
+	finalization.LastErrorStep = ""
+	finalization.MessageAttempts++
+	finalization.UpdatedAt = postedAt
+	finalizationCopy := *finalization
+	packetCopy := *packet
+	return &finalizationCopy, &packetCopy, nil
+}
+
+func (s *memoryStore) MarkFinalizationTaskTransitioned(_ context.Context, id int64, transitionedAt time.Time) (*ReviewFinalization, error) {
+	finalization, ok := s.finalizations[id]
+	if !ok {
+		return nil, notFound(fmt.Errorf("review finalization not found: %d", id), "review_finalization_not_found")
+	}
+	if finalization.TaskTransitionedAt == nil {
+		finalization.TaskTransitionedAt = &transitionedAt
+	}
+	if finalization.State != FinalizationStateComplete {
+		finalization.State = FinalizationStateTaskTransitioned
+	}
+	finalization.LastError = ""
+	finalization.LastErrorStep = ""
+	finalization.TaskTransitionAttempts++
+	finalization.UpdatedAt = transitionedAt
+	copied := *finalization
+	return &copied, nil
+}
+
+func (s *memoryStore) CompleteFinalization(_ context.Context, id int64, completedAt time.Time) (*ReviewFinalization, error) {
+	if s.failCompleteOnce {
+		s.failCompleteOnce = false
+		return nil, errors.New("completion checkpoint failed")
+	}
+	finalization, ok := s.finalizations[id]
+	if !ok {
+		return nil, notFound(fmt.Errorf("review finalization not found: %d", id), "review_finalization_not_found")
+	}
+	if finalization.PacketPostedAt == nil || finalization.TaskTransitionedAt == nil {
+		return nil, conflict(errors.New("review finalization is missing a delivery checkpoint"), "review_finalization_incomplete")
+	}
+	finalization.State = FinalizationStateComplete
+	if finalization.CompletedAt == nil {
+		finalization.CompletedAt = &completedAt
+	}
+	finalization.LastError = ""
+	finalization.LastErrorStep = ""
+	finalization.UpdatedAt = completedAt
+	copied := *finalization
+	return &copied, nil
+}
+
+func (s *memoryStore) RecordFinalizationError(
+	_ context.Context,
+	id int64,
+	step string,
+	message string,
+	attemptedAt time.Time,
+) (*ReviewFinalization, error) {
+	finalization, ok := s.finalizations[id]
+	if !ok {
+		return nil, notFound(fmt.Errorf("review finalization not found: %d", id), "review_finalization_not_found")
+	}
+	if finalization.State != FinalizationStateComplete {
+		finalization.State = FinalizationStateRetryableError
+	}
+	finalization.LastErrorStep = step
+	finalization.LastError = message
+	if step == FinalizationStepPacketDelivery {
+		finalization.MessageAttempts++
+	}
+	if step == FinalizationStepTaskTransition {
+		finalization.TaskTransitionAttempts++
+	}
+	finalization.UpdatedAt = attemptedAt
+	copied := *finalization
 	return &copied, nil
 }
 

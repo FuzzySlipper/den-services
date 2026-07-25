@@ -23,6 +23,7 @@ local and staged verification, then a later explicit cutover task can update
 - `POST /v1/projects/{project_id}/tasks/{task_id}/review/packets/validate`
 - `POST /v1/projects/{project_id}/tasks/{task_id}/review/packets`
 - `POST /v1/review/rounds/{review_round_id}/findings`
+- `POST /v1/review/finalizations`
 - `POST /v1/review/rounds/{review_round_id}/verdict`
 - `POST /v1/review/findings/{finding_id}/response`
 - `POST /v1/review/findings/{finding_id}/status`
@@ -34,7 +35,7 @@ verification:
 
 - `create_review_round`
 - `list_review_rounds`
-- `set_review_verdict`
+- `finalize_review` (normal `looks_good` / `changes_requested` closeout)
 - `create_review_finding`
 - `list_review_findings`
 - `respond_to_review_finding`
@@ -42,6 +43,11 @@ verification:
 - `request_review`
 - `post_review_findings`
 - `split_review_findings_to_follow_up`
+
+`set_review_verdict` remains resolvable only as hidden compatibility behavior
+for the exceptional `follow_up_needed` and `blocked_by_dependency` verdicts.
+Normal reviewers must use `finalize_review`; it owns the canonical findings
+packet and task transition as one retryable workflow.
 
 New Markdown packet tools can route here once accepted by MCP/tool docs:
 
@@ -78,3 +84,36 @@ lookup.
 6. Verify messages side effects create task-thread packet evidence with
    compatible metadata.
 7. Update MCP route mapping only in an explicit cutover task.
+
+## Finalization Cutover And Recovery
+
+`POST /v1/review/finalizations` accepts a review round, green-path verdict, and
+decision identity. Review stores the verdict, reserves the canonical
+`review_findings` packet, and creates the finalization record in one database
+transaction. It then resumes three durable checkpoints:
+
+1. append the packet through Messages;
+2. transition the task through Tasks (`looks_good` to `done`,
+   `changes_requested` to `in_progress`);
+3. mark the finalization complete.
+
+Retries with the same round, verdict, and `decided_by` resume the first
+incomplete checkpoint. Messages deduplicates the canonical packet by
+`review_packet_id`, and Review reads current task state before retrying a task
+transition, so response loss does not create duplicate packet or task-history
+evidence. A different verdict or decision identity for an already-finalized
+round is a conflict.
+
+Migration order is Messages migration 002, Review migration 005, then Review
+and MCP rollout. Existing review rounds require no eager backfill. On first
+finalization, Review adopts an existing round-scoped `review_findings` packet
+when present; otherwise it creates one. `post_review_findings` remains an
+advanced repair/repost operation and also reuses that packet after the task has
+left `review`.
+
+Rollback is application-first: restore MCP discovery/routing and the prior
+Review/Messages binaries while leaving both additive schema objects in place.
+Do not drop `review_finalizations` or the Messages idempotency index until every
+row is `complete` and no rollback binary is writing review packets. If a
+finalization is incomplete, retry the same request after restoring the
+successor binaries; do not manually replay its packet or task transition.
