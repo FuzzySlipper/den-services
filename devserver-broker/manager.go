@@ -54,6 +54,10 @@ func (m *Manager) Up(ctx context.Context, options UpOptions) (UpResult, error) {
 	if strings.TrimSpace(options.PublicHostOverride) != "" {
 		manifest.PublicHost = options.PublicHostOverride
 	}
+	intendedFingerprint, err := ResolveLaunchFingerprint(ctx, manifest)
+	if err != nil {
+		return UpResult{}, fmt.Errorf("fingerprinting intended launch: %w", err)
+	}
 	sessionKey := SessionKey(manifest.Project, repoRoot)
 	registry := NewLeaseRegistry(m.cfg.StateDir)
 	if err := registry.Lock(ctx, m.cfg.Timeouts.LockTimeout); err != nil {
@@ -66,13 +70,51 @@ func (m *Manager) Up(ctx context.Context, options UpOptions) (UpResult, error) {
 	}
 	leases = pruneDeadLeases(leases)
 	store := NewSessionStore(m.cfg.SessionRoot)
-	if existing, ok := m.reusableCurrentSession(ctx, store, manifest, sessionKey); ok {
-		existing.LastCheckedAt = m.clock()
-		existing.Status = "running"
-		if err := store.WriteCurrent(existing); err != nil {
-			return UpResult{}, err
+	restartSource := ""
+	if existing, ok := m.currentSession(ctx, store, manifest, sessionKey); ok {
+		existing.CurrentFingerprint = intendedFingerprint
+		existing.FingerprintError = ""
+		existing.Stale = existing.LaunchFingerprint.Value != intendedFingerprint.Value
+		if existing.Stale {
+			existing.StaleReason = fingerprintDriftReason(existing.LaunchFingerprint, intendedFingerprint)
+		} else {
+			existing.StaleReason = ""
 		}
-		return UpResult{Session: existing, Reused: true}, nil
+		canReuse := existing.Health.Matched && !existing.Stale && manifest.ReusePolicy != ReusePolicyNever
+		if canReuse && (existing.Ownership == "broker_owned" || manifest.ReusePolicy == ReusePolicyExplicit) {
+			existing.SchemaVersion = SessionSchemaV1
+			existing.LastCheckedAt = m.clock()
+			existing.Status = "running"
+			if err := store.WriteCurrent(existing); err != nil {
+				return UpResult{}, err
+			}
+			return UpResult{Session: existing, Reused: true}, nil
+		}
+		if existing.Ownership == "unowned" && existing.Health.Matched && existing.Stale && manifest.ReusePolicy == ReusePolicyExplicit {
+			existing.Status = "stale"
+			existing.LastCheckedAt = m.clock()
+			if err := store.WriteCurrent(existing); err != nil {
+				return UpResult{}, err
+			}
+			return UpResult{Session: existing}, fmt.Errorf(
+				"%w: unowned session cannot be restarted safely; restart the external host, then run den-serve up again",
+				ErrSessionStale,
+			)
+		}
+		if existing.Ownership == "broker_owned" && existing.PID > 0 && processGroupAlive(existing.PID) {
+			switch {
+			case existing.Stale:
+				restartSource = "restarted_stale"
+			case !existing.Health.Matched:
+				restartSource = "restarted_unhealthy"
+			default:
+				restartSource = "restarted_reuse_disabled"
+			}
+			if err := StopProcessGroup(existing.PID, m.cfg.Timeouts.ShutdownTimeout); err != nil {
+				return UpResult{}, fmt.Errorf("stopping previous broker-owned process group: %w", err)
+			}
+			leases = removeLease(leases, existing.SessionKey)
+		}
 	}
 	port, reused, reuseSource, health, err := m.selectPortOrReuse(ctx, manifest, leases)
 	if err != nil {
@@ -100,30 +142,33 @@ func (m *Manager) Up(ctx context.Context, options UpOptions) (UpResult, error) {
 	}
 	command := renderTemplate(manifest.Command, values)
 	session := SessionState{
-		SchemaVersion: SessionSchemaV0,
-		SessionID:     sessionID,
-		SessionKey:    sessionKey,
-		Project:       manifest.Project,
-		Target:        manifest.Target,
-		RepoRoot:      manifest.RepoRoot,
-		ManifestPath:  manifest.ManifestPath,
-		Command:       command,
-		BindHost:      manifest.BindHost,
-		ProbeHost:     manifest.ProbeHost,
-		PublicHost:    publicHost,
-		Port:          port,
-		LocalURL:      local,
-		LANURL:        lan,
-		HealthURL:     healthURL(manifest.ProbeHost, port, manifest.HealthPath),
-		ReuseSource:   reuseSource,
-		Status:        "running",
-		Health:        health,
-		StartedAt:     now,
-		LastCheckedAt: now,
-		StdoutLog:     filepath.Join(sessionDir, "server.stdout.log"),
-		StderrLog:     filepath.Join(sessionDir, "server.stderr.log"),
-		StatePath:     store.CurrentPath(sessionKey),
-		SessionDir:    sessionDir,
+		SchemaVersion:      SessionSchemaV1,
+		SessionID:          sessionID,
+		SessionKey:         sessionKey,
+		Project:            manifest.Project,
+		Target:             manifest.Target,
+		RepoRoot:           manifest.RepoRoot,
+		ManifestPath:       manifest.ManifestPath,
+		LaunchFingerprint:  intendedFingerprint,
+		CurrentFingerprint: intendedFingerprint,
+		Command:            command,
+		BindHost:           manifest.BindHost,
+		ProbeHost:          manifest.ProbeHost,
+		PublicHost:         publicHost,
+		PublicHostOverride: strings.TrimSpace(options.PublicHostOverride),
+		Port:               port,
+		LocalURL:           local,
+		LANURL:             lan,
+		HealthURL:          healthURL(manifest.ProbeHost, port, manifest.HealthPath),
+		ReuseSource:        reuseSource,
+		Status:             "running",
+		Health:             health,
+		StartedAt:          now,
+		LastCheckedAt:      now,
+		StdoutLog:          filepath.Join(sessionDir, "server.stdout.log"),
+		StderrLog:          filepath.Join(sessionDir, "server.stderr.log"),
+		StatePath:          store.CurrentPath(sessionKey),
+		SessionDir:         sessionDir,
 	}
 	hash, err := ManifestHash(manifest.ManifestPath)
 	if err != nil {
@@ -161,6 +206,9 @@ func (m *Manager) Up(ctx context.Context, options UpOptions) (UpResult, error) {
 	session.PID = process.PID
 	session.Ownership = "broker_owned"
 	session.ReuseSource = "started"
+	if restartSource != "" {
+		session.ReuseSource = restartSource
+	}
 	health, err = waitForHealth(ctx, m.httpClient, manifest, port)
 	session.Health = health
 	if err != nil {
@@ -170,6 +218,17 @@ func (m *Manager) Up(ctx context.Context, options UpOptions) (UpResult, error) {
 		_ = registry.Save(leases)
 		return UpResult{Session: session}, err
 	}
+	launchedFingerprint, err := ResolveLaunchFingerprint(ctx, manifest)
+	if err != nil {
+		_ = StopProcessGroup(process.PID, m.cfg.Timeouts.ShutdownTimeout)
+		session.Status = "failed"
+		session.FingerprintError = err.Error()
+		_ = store.WriteCurrent(session)
+		_ = registry.Save(leases)
+		return UpResult{Session: session}, fmt.Errorf("fingerprinting completed launch: %w", err)
+	}
+	session.LaunchFingerprint = launchedFingerprint
+	session.CurrentFingerprint = launchedFingerprint
 	lease := LeaseRecord{
 		SessionID:  session.SessionID,
 		SessionKey: session.SessionKey,
@@ -193,7 +252,7 @@ func (m *Manager) Up(ctx context.Context, options UpOptions) (UpResult, error) {
 	if err := store.WriteCurrent(session); err != nil {
 		return UpResult{}, err
 	}
-	return UpResult{Session: session, Started: true}, nil
+	return UpResult{Session: session, Started: true, Restarted: restartSource != ""}, nil
 }
 
 func (m *Manager) Status(ctx context.Context, options StatusOptions) (SessionState, error) {
@@ -273,15 +332,21 @@ func (m *Manager) Stop(ctx context.Context, options StopOptions) (StopResult, er
 	return StopResult{Session: session, Stopped: true, Message: "stopped broker-owned process group"}, nil
 }
 
-func (m *Manager) reusableCurrentSession(ctx context.Context, store *SessionStore, manifest *ServeManifest, sessionKey string) (SessionState, bool) {
+func (m *Manager) currentSession(ctx context.Context, store *SessionStore, manifest *ServeManifest, sessionKey string) (SessionState, bool) {
 	session, err := store.ReadCurrentByKey(sessionKey)
-	if err != nil || session.PID <= 0 || session.Ownership != "broker_owned" || !processGroupAlive(session.PID) {
+	if err != nil {
+		return SessionState{}, false
+	}
+	switch session.Ownership {
+	case "broker_owned":
+		if session.PID <= 0 || !processGroupAlive(session.PID) {
+			return SessionState{}, false
+		}
+	case "unowned":
+	default:
 		return SessionState{}, false
 	}
 	health := checkHealth(ctx, m.httpClient, manifest, session.Port)
-	if !health.Matched {
-		return SessionState{}, false
-	}
 	session.Health = health
 	return session, true
 }
@@ -298,6 +363,22 @@ func (m *Manager) refreshSession(ctx context.Context, store *SessionStore, sessi
 		loaded, err := LoadServeManifest(session.ManifestPath, session.RepoRoot, m.cfg)
 		if err == nil {
 			manifest = loaded
+			if session.PublicHostOverride != "" {
+				manifest.PublicHost = session.PublicHostOverride
+			}
+		}
+	}
+	currentFingerprint, fingerprintErr := ResolveLaunchFingerprint(ctx, manifest)
+	if fingerprintErr != nil {
+		session.FingerprintError = fingerprintErr.Error()
+	} else {
+		session.CurrentFingerprint = currentFingerprint
+		session.FingerprintError = ""
+		session.Stale = session.LaunchFingerprint.Value != currentFingerprint.Value
+		if session.Stale {
+			session.StaleReason = fingerprintDriftReason(session.LaunchFingerprint, currentFingerprint)
+		} else {
+			session.StaleReason = ""
 		}
 	}
 	health := checkHealth(ctx, m.httpClient, manifest, session.Port)
@@ -306,6 +387,8 @@ func (m *Manager) refreshSession(ctx context.Context, store *SessionStore, sessi
 	switch {
 	case session.PID > 0 && !processGroupAlive(session.PID):
 		session.Status = "stopped"
+	case health.Matched && session.Stale:
+		session.Status = "stale"
 	case health.Matched:
 		session.Status = "running"
 	case session.PID == 0 && session.Ownership == "unowned":

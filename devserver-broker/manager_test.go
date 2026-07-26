@@ -2,11 +2,13 @@ package devserver
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -78,6 +80,167 @@ func TestUpBindsLanFacingProbesLoopbackAndReusesBrokerOwnedSession(t *testing.T)
 	}
 	if !second.Reused || second.Session.Port != session.Port || second.Session.PID != session.PID {
 		t.Fatalf("second session reuse = %v port/pid %d/%d, want %d/%d", second.Reused, second.Session.Port, second.Session.PID, session.Port, session.PID)
+	}
+	if second.Session.LaunchFingerprint.Value == "" ||
+		second.Session.LaunchFingerprint.Value != second.Session.CurrentFingerprint.Value ||
+		second.Session.Stale {
+		t.Fatalf("reused session fingerprints = launch=%+v current=%+v stale=%v",
+			second.Session.LaunchFingerprint, second.Session.CurrentFingerprint, second.Session.Stale)
+	}
+}
+
+func TestUpRestartsBrokerOwnedSessionWhenCheckoutFingerprintDrifts(t *testing.T) {
+	cfg := testConfig(t)
+	manager := newTestManager(t, cfg)
+	repoRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoRoot, "native-version.txt"), []byte("native-v1\n"), 0o600); err != nil {
+		t.Fatalf("writing native version: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "ui-version.txt"), []byte("ui-v1\n"), 0o600); err != nil {
+		t.Fatalf("writing UI version: %v", err)
+	}
+	writeServeManifest(t, repoRoot, "versioned-host", map[string]any{
+		"command":   helperCommand("versioned-module-host"),
+		"healthUrl": "/health",
+		"readyText": "versioned-host-ready",
+	})
+	initializeGitRepo(t, repoRoot)
+
+	first, err := manager.Up(t.Context(), UpOptions{Project: "versioned-host", RepoRoot: repoRoot})
+	if err != nil {
+		t.Fatalf("first Up() error = %v", err)
+	}
+	defer func() {
+		_, _ = manager.Stop(t.Context(), StopOptions{Project: "versioned-host", RepoRoot: repoRoot})
+	}()
+	if !first.Started || first.Restarted || first.Session.LaunchFingerprint.RepoHead == "" {
+		t.Fatalf("first Up() = %+v", first)
+	}
+	assertHTTPBody(t, first.Session.LocalURL+"versions", "native=native-v1 ui=ui-v1")
+
+	if err := os.WriteFile(filepath.Join(repoRoot, "native-version.txt"), []byte("native-v2\n"), 0o600); err != nil {
+		t.Fatalf("updating native version: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "ui-version.txt"), []byte("ui-v2\n"), 0o600); err != nil {
+		t.Fatalf("updating UI version: %v", err)
+	}
+	assertHTTPBody(t, first.Session.LocalURL+"versions", "native=native-v1 ui=ui-v2")
+	runGit(t, repoRoot, "add", "native-version.txt", "ui-version.txt")
+	runGit(t, repoRoot, "commit", "-m", "update loaded module and UI")
+
+	stale, err := manager.Status(t.Context(), StatusOptions{Project: "versioned-host", RepoRoot: repoRoot})
+	if err != nil {
+		t.Fatalf("stale Status() error = %v", err)
+	}
+	if stale.Status != "stale" || !stale.Stale || stale.StaleReason != "repo HEAD changed" {
+		t.Fatalf("stale Status() = status=%q stale=%v reason=%q", stale.Status, stale.Stale, stale.StaleReason)
+	}
+	if stale.LaunchFingerprint.RepoHead == stale.CurrentFingerprint.RepoHead {
+		t.Fatalf("stale repo HEAD remained %q", stale.LaunchFingerprint.RepoHead)
+	}
+
+	second, err := manager.Up(t.Context(), UpOptions{Project: "versioned-host", RepoRoot: repoRoot})
+	if err != nil {
+		t.Fatalf("second Up() error = %v", err)
+	}
+	if !second.Started || !second.Restarted || second.Reused || second.Session.ReuseSource != "restarted_stale" {
+		t.Fatalf("second Up() = started=%v restarted=%v reused=%v source=%q",
+			second.Started, second.Restarted, second.Reused, second.Session.ReuseSource)
+	}
+	if second.Session.SessionID == first.Session.SessionID || second.Session.PID == first.Session.PID {
+		t.Fatalf("second session did not replace first: first=%s/%d second=%s/%d",
+			first.Session.SessionID, first.Session.PID, second.Session.SessionID, second.Session.PID)
+	}
+	if processGroupAlive(first.Session.PID) {
+		t.Fatalf("old broker-owned process group %d remains alive", first.Session.PID)
+	}
+	if second.Session.Port != first.Session.Port {
+		t.Fatalf("restart port = %d, want preserved preferred/free port %d", second.Session.Port, first.Session.Port)
+	}
+	if second.Session.LaunchFingerprint.Value != second.Session.CurrentFingerprint.Value || second.Session.Stale {
+		t.Fatalf("restarted fingerprints = launch=%+v current=%+v stale=%v",
+			second.Session.LaunchFingerprint, second.Session.CurrentFingerprint, second.Session.Stale)
+	}
+	assertHTTPBody(t, second.Session.LocalURL+"versions", "native=native-v2 ui=ui-v2")
+}
+
+func TestLaunchFingerprintIncludesExplicitNativeBuildPath(t *testing.T) {
+	cfg := testConfig(t)
+	repoRoot := t.TempDir()
+	buildDir := filepath.Join(repoRoot, "build")
+	if err := os.MkdirAll(buildDir, 0o700); err != nil {
+		t.Fatalf("creating build dir: %v", err)
+	}
+	addonPath := filepath.Join(buildDir, "addon.node")
+	if err := os.WriteFile(addonPath, []byte("addon-v1"), 0o600); err != nil {
+		t.Fatalf("writing addon: %v", err)
+	}
+	writeServeManifest(t, repoRoot, "native-build", map[string]any{
+		"command":          helperCommand("server"),
+		"healthUrl":        "/health",
+		"readyText":        "native-build-ready",
+		"fingerprintPaths": []string{"build/addon.node"},
+	})
+	manifestPath, err := FindManifest(repoRoot, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := LoadServeManifest(manifestPath, repoRoot, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := ResolveLaunchFingerprint(t.Context(), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(addonPath, []byte("addon-v2"), 0o600); err != nil {
+		t.Fatalf("updating addon: %v", err)
+	}
+	second, err := ResolveLaunchFingerprint(t.Context(), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Value == second.Value || first.SourceHash == second.SourceHash {
+		t.Fatalf("explicit native build change was not fingerprinted: first=%+v second=%+v", first, second)
+	}
+}
+
+func TestLaunchFingerprintTracksDirtyCheckoutContent(t *testing.T) {
+	cfg := testConfig(t)
+	repoRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoRoot, "source.txt"), []byte("source-v1"), 0o600); err != nil {
+		t.Fatalf("writing source: %v", err)
+	}
+	writeServeManifest(t, repoRoot, "dirty-source", map[string]any{
+		"command":   helperCommand("server"),
+		"healthUrl": "/health",
+		"readyText": "dirty-source-ready",
+	})
+	initializeGitRepo(t, repoRoot)
+	manifestPath, err := FindManifest(repoRoot, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := LoadServeManifest(manifestPath, repoRoot, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clean, err := ResolveLaunchFingerprint(t.Context(), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clean.RepoDirty {
+		t.Fatalf("clean checkout reported dirty: %+v", clean)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "source.txt"), []byte("source-v2"), 0o600); err != nil {
+		t.Fatalf("updating source: %v", err)
+	}
+	dirty, err := ResolveLaunchFingerprint(t.Context(), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !dirty.RepoDirty || clean.Value == dirty.Value || clean.SourceHash == dirty.SourceHash {
+		t.Fatalf("dirty checkout was not fingerprinted: clean=%+v dirty=%+v", clean, dirty)
 	}
 }
 
@@ -215,6 +378,23 @@ func TestStopLeavesExplicitUnownedReuseRunning(t *testing.T) {
 	if !result.Reused || result.Session.Ownership != "unowned" {
 		t.Fatalf("Reused/Ownership = %v/%q, want explicit unowned reuse", result.Reused, result.Session.Ownership)
 	}
+	writeServeManifest(t, repoRoot, "gamma", map[string]any{
+		"command":        helperCommand("server"),
+		"preferredPort":  port,
+		"healthUrl":      "/",
+		"readyText":      "gamma-ready",
+		"identityHeader": "X-Den-Project",
+		"reusePolicy":    "explicit",
+		"env":            map[string]string{"LAUNCH_REVISION": "2"},
+	})
+	stale, err := manager.Up(t.Context(), UpOptions{Project: "gamma", RepoRoot: repoRoot})
+	if !errors.Is(err, ErrSessionStale) {
+		t.Fatalf("stale unowned Up() error = %v, want ErrSessionStale", err)
+	}
+	if stale.Session.Status != "stale" || !stale.Session.Stale || stale.Session.Ownership != "unowned" {
+		t.Fatalf("stale unowned session = %+v", stale.Session)
+	}
+	assertHTTPBody(t, url, "gamma-ready")
 	stopped, err := manager.Stop(t.Context(), StopOptions{Project: "gamma", RepoRoot: repoRoot})
 	if err != nil {
 		t.Fatalf("Stop() error = %v", err)
@@ -302,6 +482,35 @@ func TestHelperProcess(t *testing.T) {
 		mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("X-ASHA-Browser-Host", "browser-host.v0")
 			_, _ = fmt.Fprintf(w, `{ "ok": true, "project": %q }`, project)
+		})
+		if err := http.ListenAndServe(net.JoinHostPort(host, port), mux); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	case "versioned-module-host":
+		nativeVersion, err := os.ReadFile("native-version.txt")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		host := os.Getenv("HOST")
+		if host == "" {
+			host = DefaultProbeHost
+		}
+		port := os.Getenv("PORT")
+		project := os.Getenv("DEN_SERVE_TEST_PROJECT")
+		mux := http.NewServeMux()
+		mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Den-Project", project)
+			_, _ = fmt.Fprint(w, "versioned-host-ready")
+		})
+		mux.HandleFunc("/versions", func(w http.ResponseWriter, _ *http.Request) {
+			uiVersion, readErr := os.ReadFile("ui-version.txt")
+			if readErr != nil {
+				http.Error(w, readErr.Error(), http.StatusInternalServerError)
+				return
+			}
+			_, _ = fmt.Fprintf(w, "native=%s ui=%s", strings.TrimSpace(string(nativeVersion)), strings.TrimSpace(string(uiVersion)))
 		})
 		if err := http.ListenAndServe(net.JoinHostPort(host, port), mux); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -417,6 +626,25 @@ func helperCommand(mode string) string {
 
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
+func initializeGitRepo(t *testing.T, repoRoot string) {
+	t.Helper()
+	runGit(t, repoRoot, "init")
+	runGit(t, repoRoot, "config", "user.name", "den-serve-test")
+	runGit(t, repoRoot, "config", "user.email", "den-serve-test@example.invalid")
+	runGit(t, repoRoot, "add", ".")
+	runGit(t, repoRoot, "commit", "-m", "initial fixture")
+}
+
+func runGit(t *testing.T, repoRoot string, args ...string) {
+	t.Helper()
+	commandArgs := append([]string{"-C", repoRoot}, args...)
+	cmd := exec.Command("git", commandArgs...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)
+	}
 }
 
 func stopSession(t *testing.T, manager *Manager, session SessionState) {

@@ -20,6 +20,10 @@ local: http://127.0.0.1:5173/
 lan:   http://192.168.1.22:5173/
 state: /home/agent/.cache/den-serve/sessions/asha-demo-abc123/current.json
 logs:  /home/agent/.cache/den-serve/sessions/asha-demo-abc123/asha-demo-...
+launch source: restarted_stale
+started: 2026-07-25T17:00:00Z
+launch fingerprint:  0123456789abcdef...
+current fingerprint: 0123456789abcdef...
 pid:   12345
 ```
 
@@ -61,6 +65,7 @@ Minimal manifest:
     "readyText": "\"project\": \"asha-demo\"",
     "identityHeader": "X-Den-Project",
     "reusePolicy": "broker_owned",
+    "fingerprintPaths": ["dist/native/asha_engine.node"],
     "startupTimeout": "45s"
   }
 }
@@ -72,6 +77,13 @@ as `"browser-host.v0"` for `X-ASHA-Browser-Host`; pair that host identity with
 `readyText` when it must independently identify the project.
 
 `den-serve` does not require a Playwright `tests` block when reading `.den-playwright.json`.
+
+The launch fingerprint always includes the resolved `serve` definition. In a
+Git checkout it also includes `HEAD`, tracked dirty content, and untracked
+non-ignored files. Use `fingerprintPaths` for ignored or generated inputs whose
+bytes affect the loaded process, especially native addons. Entries are relative
+files or directories below the repo root. Keep directory entries narrow so
+fingerprinting does not walk an entire build cache.
 
 Template variables available in serve commands and manifest env values:
 
@@ -95,6 +107,20 @@ If `preferredPort` is occupied:
 
 Broker-owned dev servers are started in their own process group. `stop` only stops broker-owned process groups with recorded live sessions. It never kills arbitrary user processes.
 
+When `up` finds a healthy broker-owned session whose launch fingerprint differs
+from the intended checkout, it stops that process group and starts a fresh
+session. A stale explicitly reused unowned process is never killed; `up` returns
+`den-serve session is stale` and tells the caller to restart the external host.
+
+Native addons are loaded into process memory. Replacing a `.node` file on disk
+does not update a Node process that already loaded it. A matching health response
+therefore proves app identity and readiness, not source freshness; the launch
+fingerprint is the freshness proof.
+
 ## Session State
 
 Session state lives under `~/.cache/den-serve/sessions` by default and is keyed by project plus repo path. Two worktrees with the same project id get separate session records. `status`, `list`, `logs`, and `stop` work from this persisted state.
+
+`status` recalculates the current fingerprint without changing the launch
+fingerprint. It reports `stale` plus a reason when repo `HEAD`, dirty/explicit
+inputs, or the resolved launch definition drifted after the process started.

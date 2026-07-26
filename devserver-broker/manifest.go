@@ -32,6 +32,7 @@ type serveManifestFile struct {
 	StartupTimeout      string            `json:"startupTimeout"`
 	HealthInterval      string            `json:"healthInterval"`
 	Environment         map[string]string `json:"env"`
+	FingerprintPaths    []string          `json:"fingerprintPaths"`
 }
 
 type portRangeFile struct {
@@ -140,6 +141,7 @@ func (f serveManifestFile) toManifest(cfg ManagerConfig) (ServeManifest, error) 
 		StartupTimeout:      startupTimeout,
 		HealthInterval:      healthInterval,
 		Environment:         copyMap(f.Environment),
+		FingerprintPaths:    append([]string(nil), f.FingerprintPaths...),
 	}, nil
 }
 
@@ -176,6 +178,12 @@ func (m *ServeManifest) validate() error {
 	}
 	if m.StartupTimeout <= 0 || m.HealthInterval <= 0 {
 		return fmt.Errorf("%w: serve timeouts must be positive", ErrInvalidManifest)
+	}
+	for _, path := range m.FingerprintPaths {
+		clean := filepath.Clean(strings.TrimSpace(path))
+		if clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("%w: serve.fingerprintPaths entries must be relative paths below the repo root", ErrInvalidManifest)
+		}
 	}
 	return nil
 }

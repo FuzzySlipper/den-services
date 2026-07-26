@@ -209,6 +209,21 @@ func printSessionPacket(session devserver.SessionState) {
 	}
 	fmt.Printf("state: %s\n", session.StatePath)
 	fmt.Printf("logs:  %s\n", session.SessionDir)
+	fmt.Printf("launch source: %s\n", session.ReuseSource)
+	fmt.Printf("started: %s\n", session.StartedAt.UTC().Format("2006-01-02T15:04:05.999999999Z"))
+	if session.LaunchFingerprint.Value != "" {
+		fmt.Printf("launch fingerprint:  %s\n", session.LaunchFingerprint.Value)
+		fmt.Printf("current fingerprint: %s\n", session.CurrentFingerprint.Value)
+		if session.LaunchFingerprint.RepoHead != "" {
+			fmt.Printf("launch repo HEAD:    %s\n", session.LaunchFingerprint.RepoHead)
+		}
+	}
+	if session.Stale {
+		fmt.Printf("stale: true (%s)\n", session.StaleReason)
+	}
+	if session.FingerprintError != "" {
+		fmt.Printf("fingerprint error: %s\n", session.FingerprintError)
+	}
 	if session.PID > 0 {
 		fmt.Printf("pid:   %d\n", session.PID)
 	}

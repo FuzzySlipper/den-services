@@ -11,6 +11,8 @@ const (
 	PublicHostAuto      = "auto"
 	DefaultTarget       = "default"
 	SessionSchemaV0     = "den-serve-session/v0"
+	SessionSchemaV1     = "den-serve-session/v1"
+	FingerprintSchemaV1 = "den-serve-launch-fingerprint/v1"
 	DefaultManifestName = ".den-serve.json"
 )
 
@@ -56,6 +58,7 @@ type ServeManifest struct {
 	StartupTimeout      time.Duration
 	HealthInterval      time.Duration
 	Environment         map[string]string
+	FingerprintPaths    []string
 }
 
 // ExpectedIdentityHeaderValue returns the configured host identity value. The
@@ -102,9 +105,10 @@ type StopOptions struct {
 }
 
 type UpResult struct {
-	Session SessionState
-	Started bool
-	Reused  bool
+	Session   SessionState
+	Started   bool
+	Reused    bool
+	Restarted bool
 }
 
 type StopResult struct {
@@ -114,33 +118,48 @@ type StopResult struct {
 }
 
 type SessionState struct {
-	SchemaVersion string       `json:"schema_version"`
-	SessionID     string       `json:"session_id"`
-	SessionKey    string       `json:"session_key"`
-	Project       string       `json:"project"`
-	Target        string       `json:"target"`
-	RepoRoot      string       `json:"repo_root"`
-	ManifestPath  string       `json:"manifest_path"`
-	ManifestHash  string       `json:"manifest_hash"`
-	Command       string       `json:"command"`
-	BindHost      string       `json:"bind_host"`
-	ProbeHost     string       `json:"probe_host"`
-	PublicHost    string       `json:"public_host,omitempty"`
-	Port          int          `json:"port"`
-	LocalURL      string       `json:"local_url"`
-	LANURL        string       `json:"lan_url,omitempty"`
-	HealthURL     string       `json:"health_url"`
-	PID           int          `json:"pid,omitempty"`
-	Ownership     string       `json:"ownership"`
-	ReuseSource   string       `json:"reuse_source"`
-	Status        string       `json:"status"`
-	Health        HealthResult `json:"health"`
-	StartedAt     time.Time    `json:"started_at"`
-	LastCheckedAt time.Time    `json:"last_checked_at"`
-	StdoutLog     string       `json:"stdout_log"`
-	StderrLog     string       `json:"stderr_log"`
-	StatePath     string       `json:"state_path"`
-	SessionDir    string       `json:"session_dir"`
+	SchemaVersion      string            `json:"schema_version"`
+	SessionID          string            `json:"session_id"`
+	SessionKey         string            `json:"session_key"`
+	Project            string            `json:"project"`
+	Target             string            `json:"target"`
+	RepoRoot           string            `json:"repo_root"`
+	ManifestPath       string            `json:"manifest_path"`
+	ManifestHash       string            `json:"manifest_hash"`
+	LaunchFingerprint  LaunchFingerprint `json:"launch_fingerprint"`
+	CurrentFingerprint LaunchFingerprint `json:"current_fingerprint"`
+	Stale              bool              `json:"stale"`
+	StaleReason        string            `json:"stale_reason,omitempty"`
+	FingerprintError   string            `json:"fingerprint_error,omitempty"`
+	Command            string            `json:"command"`
+	BindHost           string            `json:"bind_host"`
+	ProbeHost          string            `json:"probe_host"`
+	PublicHost         string            `json:"public_host,omitempty"`
+	PublicHostOverride string            `json:"public_host_override,omitempty"`
+	Port               int               `json:"port"`
+	LocalURL           string            `json:"local_url"`
+	LANURL             string            `json:"lan_url,omitempty"`
+	HealthURL          string            `json:"health_url"`
+	PID                int               `json:"pid,omitempty"`
+	Ownership          string            `json:"ownership"`
+	ReuseSource        string            `json:"reuse_source"`
+	Status             string            `json:"status"`
+	Health             HealthResult      `json:"health"`
+	StartedAt          time.Time         `json:"started_at"`
+	LastCheckedAt      time.Time         `json:"last_checked_at"`
+	StdoutLog          string            `json:"stdout_log"`
+	StderrLog          string            `json:"stderr_log"`
+	StatePath          string            `json:"state_path"`
+	SessionDir         string            `json:"session_dir"`
+}
+
+type LaunchFingerprint struct {
+	SchemaVersion        string `json:"schema_version"`
+	Value                string `json:"value"`
+	RepoHead             string `json:"repo_head,omitempty"`
+	RepoDirty            bool   `json:"repo_dirty"`
+	LaunchDefinitionHash string `json:"launch_definition_hash"`
+	SourceHash           string `json:"source_hash"`
 }
 
 type HealthResult struct {
@@ -157,4 +176,5 @@ var (
 	ErrInvalidManifest = errors.New("invalid devserver manifest")
 	ErrNoPortAvailable = errors.New("no devserver broker port available")
 	ErrSessionNotFound = errors.New("den-serve session not found")
+	ErrSessionStale    = errors.New("den-serve session is stale")
 )
