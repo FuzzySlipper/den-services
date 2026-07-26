@@ -324,7 +324,8 @@ func (s *memoryStore) MarkFinalizationPacketPosted(
 	if finalization.MessageID == nil {
 		finalization.MessageID = &messageID
 	}
-	if finalization.PacketPostedAt == nil {
+	firstCheckpoint := finalization.PacketPostedAt == nil
+	if firstCheckpoint {
 		finalization.PacketPostedAt = &postedAt
 	}
 	if finalization.State != FinalizationStateComplete {
@@ -332,7 +333,9 @@ func (s *memoryStore) MarkFinalizationPacketPosted(
 	}
 	finalization.LastError = ""
 	finalization.LastErrorStep = ""
-	finalization.MessageAttempts++
+	if firstCheckpoint && finalization.MessageAttempts == 0 {
+		finalization.MessageAttempts = 1
+	}
 	finalization.UpdatedAt = postedAt
 	finalizationCopy := *finalization
 	packetCopy := *packet
@@ -344,7 +347,8 @@ func (s *memoryStore) MarkFinalizationTaskTransitioned(_ context.Context, id int
 	if !ok {
 		return nil, notFound(fmt.Errorf("review finalization not found: %d", id), "review_finalization_not_found")
 	}
-	if finalization.TaskTransitionedAt == nil {
+	firstCheckpoint := finalization.TaskTransitionedAt == nil
+	if firstCheckpoint {
 		finalization.TaskTransitionedAt = &transitionedAt
 	}
 	if finalization.State != FinalizationStateComplete {
@@ -352,7 +356,9 @@ func (s *memoryStore) MarkFinalizationTaskTransitioned(_ context.Context, id int
 	}
 	finalization.LastError = ""
 	finalization.LastErrorStep = ""
-	finalization.TaskTransitionAttempts++
+	if firstCheckpoint && finalization.TaskTransitionAttempts == 0 {
+		finalization.TaskTransitionAttempts = 1
+	}
 	finalization.UpdatedAt = transitionedAt
 	copied := *finalization
 	return &copied, nil
@@ -392,16 +398,20 @@ func (s *memoryStore) RecordFinalizationError(
 	if !ok {
 		return nil, notFound(fmt.Errorf("review finalization not found: %d", id), "review_finalization_not_found")
 	}
-	if finalization.State != FinalizationStateComplete {
+	stepComplete := finalization.State == FinalizationStateComplete ||
+		step == FinalizationStepPacketDelivery && finalization.PacketPostedAt != nil ||
+		step == FinalizationStepTaskTransition && finalization.TaskTransitionedAt != nil ||
+		step == FinalizationStepCompletion && finalization.CompletedAt != nil
+	if !stepComplete {
 		finalization.State = FinalizationStateRetryableError
+		finalization.LastErrorStep = step
+		finalization.LastError = message
 	}
-	finalization.LastErrorStep = step
-	finalization.LastError = message
-	if step == FinalizationStepPacketDelivery {
-		finalization.MessageAttempts++
+	if step == FinalizationStepPacketDelivery && finalization.MessageAttempts == 0 {
+		finalization.MessageAttempts = 1
 	}
-	if step == FinalizationStepTaskTransition {
-		finalization.TaskTransitionAttempts++
+	if step == FinalizationStepTaskTransition && finalization.TaskTransitionAttempts == 0 {
+		finalization.TaskTransitionAttempts = 1
 	}
 	finalization.UpdatedAt = attemptedAt
 	copied := *finalization

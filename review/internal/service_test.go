@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -379,6 +380,90 @@ func TestFinalizeReviewResumesTaskFailureAndResponseLoss(t *testing.T) {
 			}
 			if len(messages.appended) != 1 || len(tasks.statusUpdates) != 1 {
 				t.Fatalf("retry duplicated side effects: messages=%d tasks=%d", len(messages.appended), len(tasks.statusUpdates))
+			}
+		})
+	}
+}
+
+func TestFinalizeReviewConcurrentRetriesAreIdempotent(t *testing.T) {
+	for _, loseResponse := range []bool{false, true} {
+		name := "normal"
+		if loseResponse {
+			name = "one task response is lost"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			store := &synchronizedFinalizationStore{memoryStore: newMemoryStore()}
+			messages := &fakeMessages{}
+			seedTasks := &fakeTasks{
+				tasks: map[int64]TaskContext{
+					42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
+				},
+				failStatusUpdate: true,
+			}
+			service := newTestService(store, messages, seedTasks)
+			round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
+				RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := FinalizeReviewRequest{ReviewRoundID: round.ID, Verdict: VerdictLooksGood, DecidedBy: "reviewer"}
+			pending, err := service.FinalizeReview(ctx, req)
+			if err == nil || pending.Finalization.LastErrorStep != FinalizationStepTaskTransition {
+				t.Fatalf("seed FinalizeReview() = receipt %+v error %v", pending, err)
+			}
+
+			tasks := newBarrierTasks(loseResponse)
+			service.tasks = tasks
+			type result struct {
+				receipt *ReviewFinalizationReceipt
+				err     error
+			}
+			results := make(chan result, 2)
+			for range 2 {
+				go func() {
+					receipt, finalizeErr := service.FinalizeReview(ctx, req)
+					results <- result{receipt: receipt, err: finalizeErr}
+				}()
+			}
+			for range 2 {
+				select {
+				case <-tasks.entered:
+				case <-time.After(time.Second):
+					t.Fatal("concurrent finalization did not reach task transition barrier")
+				}
+			}
+			close(tasks.release)
+
+			var successes int
+			for range 2 {
+				result := <-results
+				if result.err == nil {
+					successes++
+					if result.receipt.Finalization.ID != pending.Finalization.ID {
+						t.Fatalf("concurrent retry returned finalization %d, want %d",
+							result.receipt.Finalization.ID, pending.Finalization.ID)
+					}
+				}
+			}
+			if successes == 0 {
+				t.Fatal("all concurrent finalization retries failed")
+			}
+			completed, err := service.FinalizeReview(ctx, req)
+			if err != nil {
+				t.Fatalf("settled FinalizeReview() error = %v", err)
+			}
+			if completed.Finalization.State != FinalizationStateComplete ||
+				completed.Finalization.MessageAttempts != 1 ||
+				completed.Finalization.TaskTransitionAttempts != 1 {
+				t.Fatalf("settled finalization = %+v", completed.Finalization)
+			}
+			if len(messages.appended) != 1 {
+				t.Fatalf("canonical messages = %d, want 1", len(messages.appended))
+			}
+			if tasks.setCalls != 2 || tasks.historyTransitions != 1 || tasks.task.Status != TaskStatusDone {
+				t.Fatalf("task calls=%d history=%d task=%+v", tasks.setCalls, tasks.historyTransitions, tasks.task)
 			}
 		})
 	}
@@ -1379,6 +1464,136 @@ type fakeMessages struct {
 	failAppend       bool
 	failAfterAppend  bool
 	messagesByPacket map[string]AppendedMessage
+}
+
+type synchronizedFinalizationStore struct {
+	*memoryStore
+	mu sync.Mutex
+}
+
+func (s *synchronizedFinalizationStore) GetFinalizationByRound(ctx context.Context, roundID int64) (*ReviewFinalization, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.memoryStore.GetFinalizationByRound(ctx, roundID)
+}
+
+func (s *synchronizedFinalizationStore) MarkFinalizationPacketPosted(
+	ctx context.Context,
+	id int64,
+	messageID int64,
+	postedAt time.Time,
+) (*ReviewFinalization, *ReviewPacket, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.memoryStore.MarkFinalizationPacketPosted(ctx, id, messageID, postedAt)
+}
+
+func (s *synchronizedFinalizationStore) MarkFinalizationTaskTransitioned(
+	ctx context.Context,
+	id int64,
+	transitionedAt time.Time,
+) (*ReviewFinalization, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.memoryStore.MarkFinalizationTaskTransitioned(ctx, id, transitionedAt)
+}
+
+func (s *synchronizedFinalizationStore) CompleteFinalization(
+	ctx context.Context,
+	id int64,
+	completedAt time.Time,
+) (*ReviewFinalization, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.memoryStore.CompleteFinalization(ctx, id, completedAt)
+}
+
+func (s *synchronizedFinalizationStore) RecordFinalizationError(
+	ctx context.Context,
+	id int64,
+	step string,
+	message string,
+	attemptedAt time.Time,
+) (*ReviewFinalization, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.memoryStore.RecordFinalizationError(ctx, id, step, message, attemptedAt)
+}
+
+type barrierTasks struct {
+	mu                 sync.Mutex
+	task               TaskContext
+	entered            chan struct{}
+	release            chan struct{}
+	loseFirstResponse  bool
+	responseLost       bool
+	setCalls           int
+	historyTransitions int
+}
+
+func newBarrierTasks(loseFirstResponse bool) *barrierTasks {
+	return &barrierTasks{
+		task:              TaskContext{ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
+		entered:           make(chan struct{}, 2),
+		release:           make(chan struct{}),
+		loseFirstResponse: loseFirstResponse,
+	}
+}
+
+func (f *barrierTasks) GetTask(_ context.Context, taskID int64) (TaskContext, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if taskID != f.task.ID {
+		return TaskContext{}, validationError(errors.New("task not found"), "task_not_found", "task_id", "common.task_id")
+	}
+	return f.task, nil
+}
+
+func (f *barrierTasks) GetTaskContext(_ context.Context, projectID string, taskID int64) (TaskContext, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if taskID != f.task.ID || projectID != f.task.ProjectID {
+		return TaskContext{}, validationError(errors.New("task not found"), "task_not_found", "task_id", "common.task_id")
+	}
+	return f.task, nil
+}
+
+func (f *barrierTasks) SetTaskStatus(
+	ctx context.Context,
+	projectID string,
+	taskID int64,
+	agent string,
+	status string,
+) (TaskContext, error) {
+	f.entered <- struct{}{}
+	select {
+	case <-ctx.Done():
+		return TaskContext{}, ctx.Err()
+	case <-f.release:
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if taskID != f.task.ID || projectID != f.task.ProjectID {
+		return TaskContext{}, validationError(errors.New("task not found"), "task_not_found", "task_id", "common.task_id")
+	}
+	f.setCalls++
+	if f.task.Status != status {
+		f.task.Status = status
+		f.historyTransitions++
+	}
+	if f.loseFirstResponse && !f.responseLost {
+		f.responseLost = true
+		return TaskContext{}, errors.New("task update response lost")
+	}
+	return f.task, nil
+}
+
+func (f *barrierTasks) CreateFollowUpTask(
+	context.Context,
+	string,
+	CreateFollowUpTaskRequest,
+) (CreatedTask, error) {
+	return CreatedTask{}, errors.New("unexpected follow-up task creation")
 }
 
 type fakeGitHubChecks struct {

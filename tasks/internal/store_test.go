@@ -3,11 +3,19 @@ package tasks
 import (
 	"context"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func TestTaskUpdatesLockRowsBeforeComparingPatches(t *testing.T) {
+	if !strings.Contains(strings.ToLower(getTaskForUpdateSQL), "for update") {
+		t.Fatalf("task update read is not row-locking: %s", getTaskForUpdateSQL)
+	}
+}
 
 func TestStoreLifecycleSmoke(t *testing.T) {
 	databaseURL := os.Getenv("DEN_TASKS_TEST_DATABASE_URL")
@@ -103,4 +111,38 @@ func TestStoreLifecycleSmoke(t *testing.T) {
 		t.Fatalf("History() error = %v", err)
 	}
 	assertHistoryField(t, history, "status", StatusPlanned, StatusReview)
+
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	done := StatusDone
+	var ready sync.WaitGroup
+	ready.Add(2)
+	for range 2 {
+		go func() {
+			ready.Done()
+			<-start
+			_, updateErr := store.UpdateTask(ctx, dependency.ID(), TaskPatch{Status: &done}, "concurrent-store-test", now.Add(2*time.Minute))
+			results <- updateErr
+		}()
+	}
+	ready.Wait()
+	close(start)
+	for range 2 {
+		if updateErr := <-results; updateErr != nil {
+			t.Fatalf("concurrent UpdateTask() error = %v", updateErr)
+		}
+	}
+	history, err = store.History(ctx, dependency.ID())
+	if err != nil {
+		t.Fatalf("History(after concurrent update) error = %v", err)
+	}
+	var reviewToDone int
+	for _, entry := range history {
+		if entry.Field == "status" && entry.OldValue == StatusReview && entry.NewValue == StatusDone {
+			reviewToDone++
+		}
+	}
+	if reviewToDone != 1 {
+		t.Fatalf("review->done history entries = %d, want 1: %+v", reviewToDone, history)
+	}
 }

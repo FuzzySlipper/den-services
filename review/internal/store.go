@@ -918,7 +918,7 @@ set state = case when state = 'complete' then state else 'packet_posted' end,
 	packet_posted_at = coalesce(packet_posted_at, $3),
 	last_error_step = null,
 	last_error = null,
-	message_attempts = message_attempts + 1,
+	message_attempts = greatest(message_attempts, 1),
 	updated_at = $3
 where id = $1
 returning ` + finalizationColumns
@@ -928,7 +928,7 @@ set state = case when state = 'complete' then state else 'task_transitioned' end
 	task_transitioned_at = coalesce(task_transitioned_at, $2),
 	last_error_step = null,
 	last_error = null,
-	task_transition_attempts = task_transition_attempts + 1,
+	task_transition_attempts = greatest(task_transition_attempts, 1),
 	updated_at = $2
 where id = $1
 returning ` + finalizationColumns
@@ -945,11 +945,32 @@ where id = $1
 returning ` + finalizationColumns
 	recordFinalizationErrorSQL = `
 update den_review.review_finalizations
-set state = case when state = 'complete' then state else 'retryable_error' end,
-	last_error_step = $2,
-	last_error = $3,
-	message_attempts = message_attempts + case when $2 = 'packet_delivery' then 1 else 0 end,
-	task_transition_attempts = task_transition_attempts + case when $2 = 'task_transition' then 1 else 0 end,
+set state = case
+		when state = 'complete'
+			or ($2 = 'packet_delivery' and packet_posted_at is not null)
+			or ($2 = 'task_transition' and task_transitioned_at is not null)
+			or ($2 = 'completion' and completed_at is not null)
+		then state
+		else 'retryable_error'
+	end,
+	last_error_step = case
+		when state = 'complete'
+			or ($2 = 'packet_delivery' and packet_posted_at is not null)
+			or ($2 = 'task_transition' and task_transitioned_at is not null)
+			or ($2 = 'completion' and completed_at is not null)
+		then last_error_step
+		else $2
+	end,
+	last_error = case
+		when state = 'complete'
+			or ($2 = 'packet_delivery' and packet_posted_at is not null)
+			or ($2 = 'task_transition' and task_transitioned_at is not null)
+			or ($2 = 'completion' and completed_at is not null)
+		then last_error
+		else $3
+	end,
+	message_attempts = case when $2 = 'packet_delivery' then greatest(message_attempts, 1) else message_attempts end,
+	task_transition_attempts = case when $2 = 'task_transition' then greatest(task_transition_attempts, 1) else task_transition_attempts end,
 	updated_at = $4
 where id = $1
 returning ` + finalizationColumns

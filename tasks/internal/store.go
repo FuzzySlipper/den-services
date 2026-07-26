@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -131,7 +132,7 @@ func (s *Store) UpdateTask(ctx context.Context, id int64, patch TaskPatch, agent
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	current, err := getTaskTx(ctx, tx, id)
+	current, err := getTaskForUpdateTx(ctx, tx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -139,6 +140,12 @@ func (s *Store) UpdateTask(ctx context.Context, id int64, patch TaskPatch, agent
 		if err := validateParent(ctx, tx, current.ProjectID(), id, patch.ParentID); err != nil {
 			return nil, err
 		}
+	}
+	if !taskPatchChanges(current, patch) {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("committing idempotent task update: %w", err)
+		}
+		return current, nil
 	}
 	if err := writeHistory(ctx, tx, id, current, patch, agent); err != nil {
 		return nil, err
@@ -365,6 +372,32 @@ func getTaskTx(ctx context.Context, tx pgx.Tx, id int64) (*Task, error) {
 		return nil, err
 	}
 	return task, nil
+}
+
+func getTaskForUpdateTx(ctx context.Context, tx pgx.Tx, id int64) (*Task, error) {
+	task, err := scanTask(tx.QueryRow(ctx, getTaskForUpdateSQL, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, notFound(id)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return task, nil
+}
+
+func taskPatchChanges(current *Task, patch TaskPatch) bool {
+	return patch.Title != nil && current.Title() != *patch.Title ||
+		patch.Description != nil && current.Description() != *patch.Description ||
+		patch.Status != nil && current.Status() != *patch.Status ||
+		patch.Priority != nil && current.Priority() != *patch.Priority ||
+		patch.AssignedTo != nil && current.AssignedTo() != *patch.AssignedTo ||
+		patch.HasTags && !slices.Equal(current.Tags(), patch.Tags) ||
+		patch.HasParent && int64String(current.ParentID()) != int64String(patch.ParentID) ||
+		patch.BlockerSummary != nil && current.BlockerSummary() != *patch.BlockerSummary ||
+		patch.BlockerReason != nil && current.BlockerReason() != *patch.BlockerReason ||
+		patch.BlockerAttemptedRemedies != nil && current.BlockerAttemptedRemedies() != *patch.BlockerAttemptedRemedies ||
+		patch.BlockerSuggestedNextStep != nil && current.BlockerSuggestedNextStep() != *patch.BlockerSuggestedNextStep ||
+		patch.BlockerRequiresHumanInput != nil && current.BlockerRequiresHumanInput() != *patch.BlockerRequiresHumanInput
 }
 
 func createsDependencyCycle(ctx context.Context, tx pgx.Tx, taskID int64, dependsOn int64) bool {
@@ -732,7 +765,10 @@ insert into den_tasks.tasks (
 values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14, $15)
 returning ` + taskColumns
 
-const getTaskSQL = `select ` + taskColumns + ` from den_tasks.tasks where id = $1`
+const (
+	getTaskSQL          = `select ` + taskColumns + ` from den_tasks.tasks where id = $1`
+	getTaskForUpdateSQL = getTaskSQL + ` for update`
+)
 
 const listTasksSQL = `
 select ` + taskColumns + `,

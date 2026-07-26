@@ -120,6 +120,9 @@ func (s *memoryStore) UpdateTask(_ context.Context, id int64, patch TaskPatch, a
 			return nil, err
 		}
 	}
+	if !taskPatchChanges(current, patch) {
+		return cloneTask(current), nil
+	}
 	params := NewTaskParams{
 		ID:                        current.ID(),
 		ProjectID:                 current.ProjectID(),
