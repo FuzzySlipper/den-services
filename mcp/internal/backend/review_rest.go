@@ -70,6 +70,8 @@ type reviewToolArguments struct {
 	CommitSHA               string          `json:"commit_sha"`
 	Ref                     string          `json:"ref"`
 	RequiredChecks          json.RawMessage `json:"required_checks"`
+	CampaignChildren        json.RawMessage `json:"children"`
+	CampaignRepositories    json.RawMessage `json:"repositories"`
 	TimeoutSeconds          *int            `json:"timeout_seconds"`
 	PollIntervalSeconds     *int            `json:"poll_interval_seconds"`
 	AgentProfile            string          `json:"agent_profile"`
@@ -103,6 +105,27 @@ type reviewRoundBody struct {
 	TaskLocalCommitCount    *int     `json:"task_local_commit_count,omitempty"`
 	ThreadID                *int64   `json:"thread_id,omitempty"`
 	RunID                   string   `json:"run_id,omitempty"`
+}
+
+type campaignReviewBody struct {
+	RequestedBy  string                   `json:"requested_by"`
+	Children     []campaignReviewChild    `json:"children"`
+	Repositories []campaignRepositoryHead `json:"repositories"`
+	TestsRun     []string                 `json:"tests_run,omitempty"`
+	Notes        string                   `json:"notes,omitempty"`
+	ThreadID     *int64                   `json:"thread_id,omitempty"`
+	RunID        string                   `json:"run_id,omitempty"`
+}
+
+type campaignReviewChild struct {
+	ProjectID     string `json:"project_id"`
+	TaskID        int64  `json:"task_id"`
+	ReviewRoundID int64  `json:"review_round_id"`
+}
+
+type campaignRepositoryHead struct {
+	Repository string `json:"repository"`
+	HeadSHA    string `json:"head_sha"`
 }
 
 type postReviewFindingsBody struct {
@@ -275,6 +298,23 @@ func reviewRESTRequestBody(operation string, arguments reviewToolArguments) ([]b
 			AlternateDiffHeadRef: strings.TrimSpace(arguments.AlternateDiffHeadRef), AlternateDiffHeadCommit: strings.TrimSpace(arguments.AlternateDiffHeadCommit),
 			DeltaBaseCommit: strings.TrimSpace(arguments.DeltaBaseCommit), InheritedCommitCount: arguments.InheritedCommitCount,
 			TaskLocalCommitCount: arguments.TaskLocalCommitCount, ThreadID: arguments.ThreadID, RunID: strings.TrimSpace(arguments.RunID),
+		})
+	case "request_campaign_review":
+		testsRun, err := parseStringList(arguments.TestsRun)
+		if err != nil {
+			return nil, err
+		}
+		var children []campaignReviewChild
+		if err := json.Unmarshal(arguments.CampaignChildren, &children); err != nil {
+			return nil, fmt.Errorf("decoding campaign children: %w", err)
+		}
+		var repositories []campaignRepositoryHead
+		if err := json.Unmarshal(arguments.CampaignRepositories, &repositories); err != nil {
+			return nil, fmt.Errorf("decoding campaign repositories: %w", err)
+		}
+		return json.Marshal(campaignReviewBody{
+			RequestedBy: strings.TrimSpace(arguments.RequestedBy), Children: children, Repositories: repositories,
+			TestsRun: testsRun, Notes: strings.TrimSpace(arguments.Notes), ThreadID: arguments.ThreadID, RunID: strings.TrimSpace(arguments.RunID),
 		})
 	case "post_review_findings":
 		return json.Marshal(postReviewFindingsBody{

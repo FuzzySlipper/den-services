@@ -73,3 +73,27 @@ func TestReviewFinalizationMigrationDiscovered(t *testing.T) {
 	}
 	t.Fatal("den_review version 5 migration not discovered")
 }
+
+func TestReviewCampaignTargetsMigrationDiscovered(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	for i := range migrations {
+		if migrations[i].Schema == "den_review" && migrations[i].Version == 6 {
+			for _, want := range []string{
+				"add column target_kind text not null default 'code_diff'",
+				"add column campaign_children jsonb not null",
+				"add column campaign_repositories jsonb not null",
+				"alter column branch drop not null",
+				"alter column head_commit drop not null",
+			} {
+				if !strings.Contains(migrations[i].SQL, want) {
+					t.Fatalf("review campaign migration missing %q", want)
+				}
+			}
+			return
+		}
+	}
+	t.Fatal("den_review version 6 migration not discovered")
+}

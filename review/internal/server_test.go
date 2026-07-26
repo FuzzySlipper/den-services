@@ -3,6 +3,7 @@ package review
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -122,6 +123,52 @@ func TestReviewServerDiscoversGitHubChecksWithoutTaskContext(t *testing.T) {
 	if response.Code != http.StatusOK || discovery.ConfigurationStatus != GitHubCheckDiscoveryValid ||
 		len(discovery.ObservedCheckRuns) != 1 {
 		t.Fatalf("response code=%d discovery=%+v body=%s", response.Code, discovery, response.Body.String())
+	}
+}
+
+func TestReviewServerRequestsCampaignReconciliation(t *testing.T) {
+	store := newMemoryStore()
+	parentID := int64(6212)
+	childID := int64(7001)
+	head := "0123456789abcdef0123456789abcdef01234567"
+	childRound, err := store.CreateRound(t.Context(), &ReviewRound{
+		ProjectID: "den-services", TaskID: childID, RequestedBy: "child-agent", TargetKind: ReviewTargetCodeDiff,
+		Branch: "main", BaseBranch: "main", BaseCommit: "base", HeadCommit: head,
+		RequestedAt: fixedReviewTestTime(), CreatedAt: fixedReviewTestTime(), UpdatedAt: fixedReviewTestTime(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetVerdict(t.Context(), childRound.ID, VerdictLooksGood, "reviewer", "", fixedReviewTestTime()); err != nil {
+		t.Fatal(err)
+	}
+	service := newTestService(store, &fakeMessages{}, &fakeTasks{tasks: map[int64]TaskContext{
+		parentID: {ID: parentID, ProjectID: "den-services", Status: TaskStatusReview},
+		childID:  {ID: childID, ProjectID: "den-services", Status: TaskStatusDone, ParentID: &parentID},
+	}})
+	info, _ := health.NewBuildInfo("review", "0.1.0", "testcommit", time.Now().UTC())
+	server, err := NewHTTPServer(&Config{
+		BindAddr: "127.0.0.1:0", ServiceToken: "token", AllowUnauthenticatedLocalDev: true,
+		HTTP: HTTPConfig{ReadHeaderTimeout: 5 * time.Second},
+	}, info, service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := bytes.NewBufferString(fmt.Sprintf(`{
+		"requested_by":"campaign-agent",
+		"children":[{"project_id":"den-services","task_id":%d,"review_round_id":%d}],
+		"repositories":[{"repository":"owner/repo","head_sha":"%s"}]
+	}`, childID, childRound.ID, head))
+	request := httptest.NewRequest(http.MethodPost, "/v1/projects/den-services/tasks/6212/review/campaign-request", body)
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+
+	var packet ReviewPacketResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &packet); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, response.Body.String())
+	}
+	if response.Code != http.StatusCreated || packet.TypedEnvelope["target_kind"] != ReviewTargetCampaignReconciliation {
+		t.Fatalf("response code=%d packet=%+v body=%s", response.Code, packet, response.Body.String())
 	}
 }
 

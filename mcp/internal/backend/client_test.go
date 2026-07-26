@@ -857,6 +857,46 @@ func TestClientCallsReviewRESTCreateRoundTaskScoped(t *testing.T) {
 	}
 }
 
+func TestClientCallsReviewRESTRequestCampaignReview(t *testing.T) {
+	var sawPath string
+	var sawBody campaignReviewBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":7,"project_id":"den-services","task_id":6212,"packet_kind":"review_request"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("review", server.URL),
+		reviewRouteForTest("request_campaign_review", http.MethodPost, "/v1/projects/{project_id}/tasks/{task_id}/review/campaign-request"),
+		ToolCall{
+			ToolName: "request_campaign_review", Operation: "request_campaign_review", RequestID: json.RawMessage(`1`),
+			Arguments: json.RawMessage(`{
+				"project_id":"den-services",
+				"task_id":6212,
+				"requested_by":"codex",
+				"children":[{"project_id":"den-services","task_id":7001,"review_round_id":70}],
+				"repositories":[{"repository":"owner/repo","head_sha":"0123456789abcdef0123456789abcdef01234567"}],
+				"tests_run":["go test ./..."]
+			}`),
+		})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawPath != "/v1/projects/den-services/tasks/6212/review/campaign-request" ||
+		sawBody.RequestedBy != "codex" || len(sawBody.Children) != 1 || len(sawBody.Repositories) != 1 ||
+		len(sawBody.TestsRun) != 1 {
+		t.Fatalf("path=%q body=%#v", sawPath, sawBody)
+	}
+}
+
 func TestClientCallsReviewRESTFinalizeReview(t *testing.T) {
 	var sawPath string
 	var sawBody finalizeReviewBody

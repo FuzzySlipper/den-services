@@ -44,7 +44,7 @@ func firstDetailArgument(toolName string) string {
 
 func taskDerivesProject(name string) bool {
 	switch name {
-	case "get_latest_task_packet", "post_review_findings", "request_review", "split_review_findings_to_follow_up",
+	case "get_latest_task_packet", "post_review_findings", "request_review", "request_campaign_review", "split_review_findings_to_follow_up",
 		"await_github_checks", "watch_github_checks", "get_github_check_gate", "wait_for_github_checks",
 		"mark_task_notifications_read":
 		return true

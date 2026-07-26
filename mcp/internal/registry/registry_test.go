@@ -18,8 +18,8 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 70 {
-		t.Fatalf("tool count = %d, want 70", len(names))
+	if len(names) != 71 {
+		t.Fatalf("tool count = %d, want 71", len(names))
 	}
 	for _, name := range []string{
 		"search_documents",
@@ -225,7 +225,7 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 	for _, tool := range listed[visibleIndex:] {
 		if tool.Name != "await_github_checks" && tool.Name != "discover_github_checks" && tool.Name != "watch_github_checks" &&
 			tool.Name != "get_github_check_gate" && tool.Name != "wait_for_github_checks" && tool.Name != "get_task_context" &&
-			tool.Name != "finalize_review" &&
+			tool.Name != "finalize_review" && tool.Name != "request_campaign_review" &&
 			tool.Name != "get_details" && tool.Name != "mark_project_notifications_read" &&
 			tool.Name != "mark_task_notifications_read" && tool.Name != "ensure_document_discussion" {
 			t.Fatalf("unexpected non-snapshot tool %q", tool.Name)
@@ -257,7 +257,7 @@ func TestTaskScopedSchemasDeriveProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{
-		"get_latest_task_packet", "post_review_findings", "request_review", "split_review_findings_to_follow_up",
+		"get_latest_task_packet", "post_review_findings", "request_review", "request_campaign_review", "split_review_findings_to_follow_up",
 		"await_github_checks", "watch_github_checks", "get_github_check_gate", "wait_for_github_checks", "mark_task_notifications_read",
 	} {
 		tool, err := registry.Resolve(name)

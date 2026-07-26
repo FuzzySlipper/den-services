@@ -75,6 +75,12 @@ const (
 	TaskStatusReview     = "review"
 	TaskStatusDone       = "done"
 	TaskStatusCancelled  = "cancelled"
+
+	ReviewTargetCodeDiff               = "code_diff"
+	ReviewTargetCampaignReconciliation = "campaign_reconciliation"
+
+	CampaignMembershipDirectSubtask = "direct_subtask"
+	CampaignMembershipTag           = "campaign_tag"
 )
 
 var (
@@ -98,6 +104,17 @@ var (
 	ErrFinalizationConflict    = errors.New("review round was finalized with different decision identity")
 	ErrUnresolvedFindings      = errors.New("looks_good requires no unresolved findings for the task")
 	ErrActionableFinding       = errors.New("changes_requested requires an actionable finding in the current review round")
+	ErrMissingCampaignChild    = errors.New("campaign child is missing")
+	ErrMissingCampaignRound    = errors.New("campaign child review round is missing")
+	ErrMissingCampaignHead     = errors.New("campaign repository head is missing")
+	ErrDuplicateCampaignChild  = errors.New("duplicate campaign child")
+	ErrDuplicateCampaignRound  = errors.New("duplicate campaign review round")
+	ErrDuplicateCampaignRepo   = errors.New("duplicate campaign repository")
+	ErrStaleCampaignRound      = errors.New("campaign child review round is stale")
+	ErrUnapprovedCampaignRound = errors.New("campaign child review round is not approved")
+	ErrBlockedCampaignChild    = errors.New("campaign child has unresolved blocking findings")
+	ErrUnrelatedCampaignChild  = errors.New("task is not an explicit member of the campaign")
+	ErrCampaignHeadMismatch    = errors.New("campaign child head is not present in repository snapshot")
 )
 
 type ServiceError struct {
@@ -138,6 +155,9 @@ type ReviewRound struct {
 	TaskID                  int64
 	RoundNumber             int
 	RequestedBy             string
+	TargetKind              string
+	CampaignChildren        []CampaignReviewChild
+	CampaignRepositories    []CampaignRepositoryHead
 	Branch                  string
 	BaseBranch              string
 	BaseCommit              string
@@ -164,6 +184,20 @@ type ReviewRound struct {
 	VerdictAt               *time.Time
 	CreatedAt               time.Time
 	UpdatedAt               time.Time
+}
+
+type CampaignReviewChild struct {
+	ProjectID       string `json:"project_id"`
+	TaskID          int64  `json:"task_id"`
+	ReviewRoundID   int64  `json:"review_round_id"`
+	HeadCommit      string `json:"head_commit"`
+	MembershipKind  string `json:"membership_kind"`
+	ApprovedVerdict string `json:"approved_verdict"`
+}
+
+type CampaignRepositoryHead struct {
+	Repository string `json:"repository"`
+	HeadSHA    string `json:"head_sha"`
 }
 
 type ReviewFinding struct {
@@ -256,12 +290,14 @@ type ValidationIssue struct {
 }
 
 type TaskContext struct {
-	ID          int64  `json:"id"`
-	ProjectID   string `json:"project_id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Status      string `json:"status"`
-	Priority    int    `json:"priority"`
+	ID          int64    `json:"id"`
+	ProjectID   string   `json:"project_id"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Status      string   `json:"status"`
+	Priority    int      `json:"priority"`
+	ParentID    *int64   `json:"parent_id,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
 }
 
 type CreatedTask struct {

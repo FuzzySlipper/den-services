@@ -39,6 +39,7 @@ func newMemoryStore() *memoryStore {
 func (s *memoryStore) Ping(context.Context) error { return nil }
 
 func (s *memoryStore) CreateRound(_ context.Context, round *ReviewRound) (*ReviewRound, error) {
+	round.TargetKind = firstNonEmpty(round.TargetKind, ReviewTargetCodeDiff)
 	var latest *ReviewRound
 	for _, existing := range s.rounds {
 		if existing.ProjectID == round.ProjectID && existing.TaskID == round.TaskID && (latest == nil || existing.RoundNumber > latest.RoundNumber) {
@@ -46,22 +47,24 @@ func (s *memoryStore) CreateRound(_ context.Context, round *ReviewRound) (*Revie
 		}
 	}
 	if latest != nil {
-		if latest.HeadCommit == round.HeadCommit {
-			return nil, conflict(fmt.Errorf("head commit was already reviewed: %s", round.HeadCommit), "same_head_review")
-		}
 		round.RoundNumber = latest.RoundNumber + 1
-		if round.LastReviewedHeadCommit == "" {
-			round.LastReviewedHeadCommit = latest.HeadCommit
+		if round.TargetKind != ReviewTargetCampaignReconciliation {
+			if round.HeadCommit != "" && latest.HeadCommit == round.HeadCommit {
+				return nil, conflict(fmt.Errorf("head commit was already reviewed: %s", round.HeadCommit), "same_head_review")
+			}
+			if round.LastReviewedHeadCommit == "" {
+				round.LastReviewedHeadCommit = latest.HeadCommit
+			}
 		}
 	} else {
 		round.RoundNumber = 1
 	}
-	if round.DeltaBaseCommit == "" {
+	if round.TargetKind != ReviewTargetCampaignReconciliation && round.DeltaBaseCommit == "" {
 		round.DeltaBaseCommit = round.LastReviewedHeadCommit
 	}
 	round.ID = s.nextRoundID
 	s.nextRoundID++
-	copied := *round
+	copied := cloneReviewRound(round)
 	s.rounds[copied.ID] = &copied
 	return &copied, nil
 }
@@ -70,7 +73,7 @@ func (s *memoryStore) ListRounds(_ context.Context, projectID string, taskID int
 	var rounds []*ReviewRound
 	for _, round := range s.rounds {
 		if round.ProjectID == projectID && round.TaskID == taskID {
-			copied := *round
+			copied := cloneReviewRound(round)
 			rounds = append(rounds, &copied)
 		}
 	}
@@ -82,8 +85,16 @@ func (s *memoryStore) GetRound(_ context.Context, id int64) (*ReviewRound, error
 	if !ok {
 		return nil, notFound(fmt.Errorf("%w: %d", ErrMissingRound, id), "round_not_found")
 	}
-	copied := *round
+	copied := cloneReviewRound(round)
 	return &copied, nil
+}
+
+func cloneReviewRound(round *ReviewRound) ReviewRound {
+	copied := *round
+	copied.TestsRun = append([]string(nil), round.TestsRun...)
+	copied.CampaignChildren = append([]CampaignReviewChild(nil), round.CampaignChildren...)
+	copied.CampaignRepositories = append([]CampaignRepositoryHead(nil), round.CampaignRepositories...)
+	return copied
 }
 
 func (s *memoryStore) SetVerdict(_ context.Context, id int64, verdict string, decidedBy string, notes string, decidedAt time.Time) (*ReviewRound, error) {
@@ -96,7 +107,7 @@ func (s *memoryStore) SetVerdict(_ context.Context, id int64, verdict string, de
 	round.VerdictNotes = notes
 	round.VerdictAt = &decidedAt
 	round.UpdatedAt = decidedAt
-	copied := *round
+	copied := cloneReviewRound(round)
 	return &copied, nil
 }
 

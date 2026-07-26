@@ -78,9 +78,29 @@ func DefaultTools() ([]ToolDefinition, error) {
 	}
 	tools = append(tools, githubCheckGateTools()...)
 	tools = append(tools, reviewFinalizationTools()...)
+	tools = append(tools, campaignReviewTools()...)
 	tools = append(tools, taskContextTools()...)
 	tools = append(tools, contractErgonomicsTools()...)
 	return tools, nil
+}
+
+func campaignReviewTools() []ToolDefinition {
+	return []ToolDefinition{{
+		Name:        "request_campaign_review",
+		Description: "Request a campaign reconciliation review from immutable approved child review rounds and exact repository heads. Children must be direct subtasks or share the campaign:<parent_project_id>:<parent_task_id> tag.",
+		Backend:     "review",
+		Operation:   "request_campaign_review",
+		InputSchema: ObjectSchema(map[string]Schema{
+			"task_id":      IntegerSchema("Parent campaign task ID."),
+			"requested_by": StringSchema("Agent or user requesting campaign reconciliation."),
+			"children":     AnySchema("JSON array of {project_id, task_id, review_round_id} child snapshots."),
+			"repositories": AnySchema("JSON array of exact {repository, head_sha} tuples."),
+			"tests_run":    AnySchema("Optional JSON array or comma-separated list of campaign verification commands."),
+			"notes":        NullableStringSchema("Optional reconciliation notes."),
+			"thread_id":    NullableIntegerSchema("Optional task thread receiving the review packet."),
+			"run_id":       NullableStringSchema("Optional agent run correlation ID."),
+		}, "task_id", "requested_by", "children", "repositories"),
+	}}
 }
 
 func modernizeInputSchema(name string, schema Schema) Schema {

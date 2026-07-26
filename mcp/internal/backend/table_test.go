@@ -497,6 +497,7 @@ func reviewRoute(operation string) bool {
 		"list_review_rounds",
 		"list_review_findings",
 		"request_review",
+		"request_campaign_review",
 		"post_review_findings",
 		"split_review_findings_to_follow_up",
 		"create_review_finding",

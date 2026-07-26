@@ -113,22 +113,25 @@ type WorkflowSummary struct {
 }
 
 type ReviewTimelineEntry struct {
-	ReviewRoundID          int64      `json:"review_round_id"`
-	RoundNumber            int        `json:"round_number"`
-	Branch                 string     `json:"branch"`
-	RequestedBy            string     `json:"requested_by"`
-	RequestedAt            time.Time  `json:"requested_at"`
-	HeadCommit             string     `json:"head_commit"`
-	LastReviewedHeadCommit string     `json:"last_reviewed_head_commit,omitempty"`
-	CommitsSinceLastReview *int       `json:"commits_since_last_review,omitempty"`
-	Verdict                string     `json:"verdict,omitempty"`
-	VerdictBy              string     `json:"verdict_by,omitempty"`
-	VerdictAt              *time.Time `json:"verdict_at,omitempty"`
-	TotalFindings          int        `json:"total_findings"`
-	OpenFindings           int        `json:"open_findings"`
-	AddressedFindings      int        `json:"addressed_findings"`
-	ClaimedFixedFindings   int        `json:"claimed_fixed_findings"`
-	ResolvedFindings       int        `json:"resolved_findings"`
+	ReviewRoundID          int64                    `json:"review_round_id"`
+	RoundNumber            int                      `json:"round_number"`
+	TargetKind             string                   `json:"target_kind"`
+	CampaignChildren       []CampaignReviewChild    `json:"campaign_children,omitempty"`
+	CampaignRepositories   []CampaignRepositoryHead `json:"campaign_repositories,omitempty"`
+	Branch                 string                   `json:"branch,omitempty"`
+	RequestedBy            string                   `json:"requested_by"`
+	RequestedAt            time.Time                `json:"requested_at"`
+	HeadCommit             string                   `json:"head_commit,omitempty"`
+	LastReviewedHeadCommit string                   `json:"last_reviewed_head_commit,omitempty"`
+	CommitsSinceLastReview *int                     `json:"commits_since_last_review,omitempty"`
+	Verdict                string                   `json:"verdict,omitempty"`
+	VerdictBy              string                   `json:"verdict_by,omitempty"`
+	VerdictAt              *time.Time               `json:"verdict_at,omitempty"`
+	TotalFindings          int                      `json:"total_findings"`
+	OpenFindings           int                      `json:"open_findings"`
+	AddressedFindings      int                      `json:"addressed_findings"`
+	ClaimedFixedFindings   int                      `json:"claimed_fixed_findings"`
+	ResolvedFindings       int                      `json:"resolved_findings"`
 }
 
 type CreateFollowUpTaskRequest struct {
@@ -300,6 +303,148 @@ func (s *Service) RequestReview(ctx context.Context, projectID string, taskID in
 	}
 	packet := packetForRound(round, kind, req.ThreadID, req.RunID)
 	return s.acceptPacket(ctx, packet, req.ThreadID)
+}
+
+func (s *Service) RequestCampaignReview(ctx context.Context, projectID string, taskID int64, req CreateCampaignReviewRequest) (*ReviewPacket, error) {
+	parent, err := s.validateTask(ctx, projectID, taskID, TaskStatusInProgress, TaskStatusReview)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.projects.AssertWritable(ctx, parent.ProjectID); err != nil {
+		return nil, err
+	}
+	round, err := s.campaignRoundFromRequest(ctx, parent, req)
+	if err != nil {
+		return nil, err
+	}
+	round, err = s.store.CreateRound(ctx, round)
+	if err != nil {
+		return nil, err
+	}
+	kind := PacketKindReviewRequest
+	if round.RoundNumber > 1 {
+		kind = PacketKindRereviewRequest
+	}
+	return s.acceptPacket(ctx, packetForRound(round, kind, req.ThreadID, req.RunID), req.ThreadID)
+}
+
+func (s *Service) campaignRoundFromRequest(ctx context.Context, parent TaskContext, req CreateCampaignReviewRequest) (*ReviewRound, error) {
+	requestedBy := strings.TrimSpace(req.RequestedBy)
+	if requestedBy == "" {
+		return nil, validationError(ErrMissingActor, "missing_actor", "requested_by", "campaign_review_request.requested_by")
+	}
+	if len(req.Children) == 0 {
+		return nil, validationError(ErrMissingCampaignChild, "missing_campaign_children", "children", "campaign_review_request.children")
+	}
+	if len(req.Repositories) == 0 {
+		return nil, validationError(ErrMissingCampaignHead, "missing_campaign_repositories", "repositories", "campaign_review_request.repositories")
+	}
+
+	repositories := make([]CampaignRepositoryHead, 0, len(req.Repositories))
+	heads := make(map[string]struct{}, len(req.Repositories))
+	seenRepositories := make(map[string]struct{}, len(req.Repositories))
+	for _, repository := range req.Repositories {
+		name := strings.TrimSpace(repository.Repository)
+		head := strings.TrimSpace(repository.HeadSHA)
+		if !validGitHubRepository(name) || !validGitHubSHA(head) {
+			return nil, validationError(ErrMissingCampaignHead, "invalid_campaign_repository_head", "repositories", "campaign_review_request.repositories")
+		}
+		if _, exists := seenRepositories[name]; exists {
+			return nil, validationError(ErrDuplicateCampaignRepo, "duplicate_campaign_repository", "repositories", "campaign_review_request.repositories")
+		}
+		seenRepositories[name] = struct{}{}
+		heads[head] = struct{}{}
+		repositories = append(repositories, CampaignRepositoryHead{Repository: name, HeadSHA: head})
+	}
+
+	children := make([]CampaignReviewChild, 0, len(req.Children))
+	seenTasks := make(map[string]struct{}, len(req.Children))
+	seenRounds := make(map[int64]struct{}, len(req.Children))
+	for _, requestedChild := range req.Children {
+		childProjectID := strings.TrimSpace(requestedChild.ProjectID)
+		if childProjectID == "" || requestedChild.TaskID == 0 || requestedChild.ReviewRoundID == 0 {
+			return nil, validationError(ErrMissingCampaignChild, "invalid_campaign_child", "children", "campaign_review_request.children")
+		}
+		taskKey := fmt.Sprintf("%s:%d", childProjectID, requestedChild.TaskID)
+		if _, exists := seenTasks[taskKey]; exists {
+			return nil, validationError(ErrDuplicateCampaignChild, "duplicate_campaign_child", "children", "campaign_review_request.children")
+		}
+		if _, exists := seenRounds[requestedChild.ReviewRoundID]; exists {
+			return nil, validationError(ErrDuplicateCampaignRound, "duplicate_campaign_review_round", "children", "campaign_review_request.children")
+		}
+		seenTasks[taskKey] = struct{}{}
+		seenRounds[requestedChild.ReviewRoundID] = struct{}{}
+
+		childTask, err := s.tasks.GetTaskContext(ctx, childProjectID, requestedChild.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		membershipKind := campaignMembership(parent, childTask)
+		if membershipKind == "" {
+			return nil, validationError(ErrUnrelatedCampaignChild, "unrelated_campaign_child", "children", "campaign_review_request.children")
+		}
+		childRound, err := s.store.GetRound(ctx, requestedChild.ReviewRoundID)
+		if err != nil {
+			if errors.Is(err, ErrMissingRound) {
+				return nil, validationError(ErrMissingCampaignRound, "missing_campaign_review_round", "children", "campaign_review_request.children")
+			}
+			return nil, err
+		}
+		if childRound.ProjectID != childProjectID || childRound.TaskID != requestedChild.TaskID {
+			return nil, validationError(ErrMissingCampaignChild, "campaign_round_task_mismatch", "children", "campaign_review_request.children")
+		}
+		rounds, err := s.store.ListRounds(ctx, childProjectID, requestedChild.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		var latest *ReviewRound
+		for _, candidate := range rounds {
+			if latest == nil || candidate.RoundNumber > latest.RoundNumber {
+				latest = candidate
+			}
+		}
+		if latest == nil || latest.ID != childRound.ID {
+			return nil, validationError(ErrStaleCampaignRound, "stale_campaign_review_round", "children", "campaign_review_request.children")
+		}
+		if childRound.Verdict != VerdictLooksGood {
+			return nil, validationError(ErrUnapprovedCampaignRound, "unapproved_campaign_review_round", "children", "campaign_review_request.children")
+		}
+		findings, err := s.store.ListFindings(ctx, ListFindingsQuery{ProjectID: childProjectID, TaskID: requestedChild.TaskID})
+		if err != nil {
+			return nil, err
+		}
+		for _, finding := range findings {
+			if !resolvedStatus(finding.Status) && (finding.Category == CategoryBlockingBug || finding.Category == CategoryAcceptanceGap) {
+				return nil, validationError(ErrBlockedCampaignChild, "blocked_campaign_child", "children", "campaign_review_request.children")
+			}
+		}
+		if _, exists := heads[childRound.HeadCommit]; !exists {
+			return nil, validationError(ErrCampaignHeadMismatch, "campaign_head_mismatch", "repositories", "campaign_review_request.repositories")
+		}
+		children = append(children, CampaignReviewChild{
+			ProjectID: childProjectID, TaskID: requestedChild.TaskID, ReviewRoundID: childRound.ID,
+			HeadCommit: childRound.HeadCommit, MembershipKind: membershipKind, ApprovedVerdict: childRound.Verdict,
+		})
+	}
+
+	now := s.clock().UTC()
+	return &ReviewRound{
+		ProjectID: parent.ProjectID, TaskID: parent.ID, RequestedBy: requestedBy,
+		TargetKind: ReviewTargetCampaignReconciliation, CampaignChildren: children, CampaignRepositories: repositories,
+		TestsRun: trimSlice(req.TestsRun), Notes: strings.TrimSpace(req.Notes),
+		RequestedAt: now, CreatedAt: now, UpdatedAt: now,
+	}, nil
+}
+
+func campaignMembership(parent TaskContext, child TaskContext) string {
+	if child.ProjectID == parent.ProjectID && child.ParentID != nil && *child.ParentID == parent.ID {
+		return CampaignMembershipDirectSubtask
+	}
+	tag := fmt.Sprintf("campaign:%s:%d", parent.ProjectID, parent.ID)
+	if contains(parent.Tags, tag) && contains(child.Tags, tag) {
+		return CampaignMembershipTag
+	}
+	return ""
 }
 
 func (s *Service) ListRounds(ctx context.Context, projectID string, taskID int64) ([]*ReviewRound, error) {
@@ -1309,7 +1454,8 @@ func (s *Service) validatePacketContext(ctx context.Context, packet *ReviewPacke
 		if round.ProjectID != packet.ProjectID || round.TaskID != packet.TaskID {
 			return validationError(fmt.Errorf("review round mismatch"), "review_round_mismatch", "review_round_id", packet.PacketKind+".review_round_id")
 		}
-		if requiresReviewedHead(packet.PacketKind) && stringValue(packet.TypedEnvelope["reviewed_head_commit"]) != round.HeadCommit {
+		if requiresReviewedHead(packet.PacketKind) && round.TargetKind != ReviewTargetCampaignReconciliation &&
+			stringValue(packet.TypedEnvelope["reviewed_head_commit"]) != round.HeadCommit {
 			return validationError(fmt.Errorf("reviewed head does not match round"), "stale_reviewed_head", "reviewed_head_commit", packet.PacketKind+".reviewed_head_commit")
 		}
 	}
@@ -1358,7 +1504,8 @@ func roundFromRequest(projectID string, taskID int64, req CreateReviewRoundReque
 	}
 	round := &ReviewRound{
 		ProjectID: projectID, TaskID: taskID, RequestedBy: strings.TrimSpace(req.RequestedBy),
-		Branch: strings.TrimSpace(req.Branch), BaseBranch: strings.TrimSpace(req.BaseBranch),
+		TargetKind: ReviewTargetCodeDiff,
+		Branch:     strings.TrimSpace(req.Branch), BaseBranch: strings.TrimSpace(req.BaseBranch),
 		BaseCommit: strings.TrimSpace(req.BaseCommit), HeadCommit: strings.TrimSpace(req.HeadCommit),
 		LastReviewedHeadCommit: strings.TrimSpace(req.LastReviewedHeadCommit), CommitsSinceLastReview: req.CommitsSinceLastReview,
 		TestsRun: trimSlice(req.TestsRun), Notes: strings.TrimSpace(req.Notes),

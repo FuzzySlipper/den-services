@@ -42,22 +42,26 @@ func (s *Store) CreateRound(ctx context.Context, round *ReviewRound) (*ReviewRou
 	} else {
 		roundNumber++
 	}
-	if round.LastReviewedHeadCommit == "" {
-		round.LastReviewedHeadCommit = previousHead
-	}
-	if round.DeltaBaseCommit == "" {
-		round.DeltaBaseCommit = round.LastReviewedHeadCommit
-	}
-	if previousHead != "" && previousHead == round.HeadCommit {
-		return nil, conflict(fmt.Errorf("head commit was already reviewed: %s", round.HeadCommit), "same_head_review")
+	if round.TargetKind != ReviewTargetCampaignReconciliation {
+		if round.LastReviewedHeadCommit == "" {
+			round.LastReviewedHeadCommit = previousHead
+		}
+		if round.DeltaBaseCommit == "" {
+			round.DeltaBaseCommit = round.LastReviewedHeadCommit
+		}
+		if previousHead != "" && previousHead == round.HeadCommit {
+			return nil, conflict(fmt.Errorf("head commit was already reviewed: %s", round.HeadCommit), "same_head_review")
+		}
 	}
 	round.RoundNumber = roundNumber
 	created, err := scanRound(tx.QueryRow(ctx, createRoundSQL, round.ProjectID, round.TaskID, round.RoundNumber, round.RequestedBy,
-		round.Branch, round.BaseBranch, round.BaseCommit, round.HeadCommit, emptyToNil(round.LastReviewedHeadCommit), round.CommitsSinceLastReview,
-		jsonOrNil(round.TestsRun), emptyToNil(round.Notes), emptyToNil(round.PreferredDiffBaseRef), emptyToNil(round.PreferredDiffBaseCommit),
-		emptyToNil(round.PreferredDiffHeadRef), emptyToNil(round.PreferredDiffHeadCommit), emptyToNil(round.AlternateDiffBaseRef),
-		emptyToNil(round.AlternateDiffBaseCommit), emptyToNil(round.AlternateDiffHeadRef), emptyToNil(round.AlternateDiffHeadCommit),
-		emptyToNil(round.DeltaBaseCommit), round.InheritedCommitCount, round.TaskLocalCommitCount, round.RequestedAt, round.CreatedAt, round.UpdatedAt))
+		firstNonEmpty(round.TargetKind, ReviewTargetCodeDiff), jsonArray(round.CampaignChildren), jsonArray(round.CampaignRepositories),
+		emptyToNil(round.Branch), emptyToNil(round.BaseBranch), emptyToNil(round.BaseCommit), emptyToNil(round.HeadCommit),
+		emptyToNil(round.LastReviewedHeadCommit), round.CommitsSinceLastReview, jsonOrNil(round.TestsRun), emptyToNil(round.Notes),
+		emptyToNil(round.PreferredDiffBaseRef), emptyToNil(round.PreferredDiffBaseCommit), emptyToNil(round.PreferredDiffHeadRef),
+		emptyToNil(round.PreferredDiffHeadCommit), emptyToNil(round.AlternateDiffBaseRef), emptyToNil(round.AlternateDiffBaseCommit),
+		emptyToNil(round.AlternateDiffHeadRef), emptyToNil(round.AlternateDiffHeadCommit), emptyToNil(round.DeltaBaseCommit),
+		round.InheritedCommitCount, round.TaskLocalCommitCount, round.RequestedAt, round.CreatedAt, round.UpdatedAt))
 	if err != nil {
 		return nil, fmt.Errorf("creating review round: %w", err)
 	}
@@ -610,7 +614,13 @@ func buildWorkflowSummary(rounds []*ReviewRound, findings []*ReviewFinding) Work
 		}
 	}
 	for _, round := range rounds {
-		entry := ReviewTimelineEntry{ReviewRoundID: round.ID, RoundNumber: round.RoundNumber, Branch: round.Branch, RequestedBy: round.RequestedBy, RequestedAt: round.RequestedAt, HeadCommit: round.HeadCommit, LastReviewedHeadCommit: round.LastReviewedHeadCommit, CommitsSinceLastReview: round.CommitsSinceLastReview, Verdict: round.Verdict, VerdictBy: round.VerdictBy, VerdictAt: round.VerdictAt}
+		entry := ReviewTimelineEntry{
+			ReviewRoundID: round.ID, RoundNumber: round.RoundNumber, TargetKind: firstNonEmpty(round.TargetKind, ReviewTargetCodeDiff),
+			CampaignChildren: round.CampaignChildren, CampaignRepositories: round.CampaignRepositories,
+			Branch: round.Branch, RequestedBy: round.RequestedBy, RequestedAt: round.RequestedAt, HeadCommit: round.HeadCommit,
+			LastReviewedHeadCommit: round.LastReviewedHeadCommit, CommitsSinceLastReview: round.CommitsSinceLastReview,
+			Verdict: round.Verdict, VerdictBy: round.VerdictBy, VerdictAt: round.VerdictAt,
+		}
 		for _, finding := range byRound[round.ID] {
 			entry.TotalFindings++
 			if resolvedStatus(finding.Status) {
@@ -673,7 +683,10 @@ type rowScanner interface {
 func scanRound(row rowScanner) (*ReviewRound, error) {
 	var round ReviewRound
 	var tests []byte
-	err := row.Scan(&round.ID, &round.ProjectID, &round.TaskID, &round.RoundNumber, &round.RequestedBy, &round.Branch, &round.BaseBranch,
+	var campaignChildren []byte
+	var campaignRepositories []byte
+	err := row.Scan(&round.ID, &round.ProjectID, &round.TaskID, &round.RoundNumber, &round.RequestedBy, &round.TargetKind,
+		&campaignChildren, &campaignRepositories, &round.Branch, &round.BaseBranch,
 		&round.BaseCommit, &round.HeadCommit, &round.LastReviewedHeadCommit, &round.CommitsSinceLastReview, &tests, &round.Notes,
 		&round.PreferredDiffBaseRef, &round.PreferredDiffBaseCommit, &round.PreferredDiffHeadRef, &round.PreferredDiffHeadCommit,
 		&round.AlternateDiffBaseRef, &round.AlternateDiffBaseCommit, &round.AlternateDiffHeadRef, &round.AlternateDiffHeadCommit,
@@ -683,6 +696,8 @@ func scanRound(row rowScanner) (*ReviewRound, error) {
 		return nil, err
 	}
 	_ = json.Unmarshal(tests, &round.TestsRun)
+	_ = json.Unmarshal(campaignChildren, &round.CampaignChildren)
+	_ = json.Unmarshal(campaignRepositories, &round.CampaignRepositories)
 	return &round, nil
 }
 
@@ -822,7 +837,7 @@ func emptyToNil(value string) any {
 }
 
 const (
-	roundColumns                = `id, project_id, task_id, round_number, requested_by, branch, base_branch, base_commit, head_commit, coalesce(last_reviewed_head_commit, ''), commits_since_last_review, coalesce(tests_run, '[]'::jsonb), coalesce(notes, ''), coalesce(preferred_diff_base_ref, ''), coalesce(preferred_diff_base_commit, ''), coalesce(preferred_diff_head_ref, ''), coalesce(preferred_diff_head_commit, ''), coalesce(alternate_diff_base_ref, ''), coalesce(alternate_diff_base_commit, ''), coalesce(alternate_diff_head_ref, ''), coalesce(alternate_diff_head_commit, ''), coalesce(delta_base_commit, ''), inherited_commit_count, task_local_commit_count, coalesce(verdict, ''), coalesce(verdict_by, ''), coalesce(verdict_notes, ''), requested_at, verdict_at, created_at, updated_at`
+	roundColumns                = `id, project_id, task_id, round_number, requested_by, coalesce(target_kind, 'code_diff'), coalesce(campaign_children, '[]'::jsonb), coalesce(campaign_repositories, '[]'::jsonb), coalesce(branch, ''), coalesce(base_branch, ''), coalesce(base_commit, ''), coalesce(head_commit, ''), coalesce(last_reviewed_head_commit, ''), commits_since_last_review, coalesce(tests_run, '[]'::jsonb), coalesce(notes, ''), coalesce(preferred_diff_base_ref, ''), coalesce(preferred_diff_base_commit, ''), coalesce(preferred_diff_head_ref, ''), coalesce(preferred_diff_head_commit, ''), coalesce(alternate_diff_base_ref, ''), coalesce(alternate_diff_base_commit, ''), coalesce(alternate_diff_head_ref, ''), coalesce(alternate_diff_head_commit, ''), coalesce(delta_base_commit, ''), inherited_commit_count, task_local_commit_count, coalesce(verdict, ''), coalesce(verdict_by, ''), coalesce(verdict_notes, ''), requested_at, verdict_at, created_at, updated_at`
 	findingColumns              = `f.id, f.project_id, f.finding_key, f.task_id, f.review_round_id, r.round_number, f.finding_number, f.created_by, f.category, f.summary, coalesce(f.notes, ''), coalesce(f.file_references, '[]'::jsonb), coalesce(f.test_commands, '[]'::jsonb), f.status, coalesce(f.status_updated_by, ''), coalesce(f.status_notes, ''), f.status_updated_at, coalesce(f.response_by, ''), coalesce(f.response_notes, ''), f.response_at, f.follow_up_task_id, coalesce(f.run_id, ''), coalesce(f.subagent_role, ''), f.created_at, f.updated_at`
 	packetColumns               = `id, project_id, task_id, review_round_id, packet_kind, sender, message_id, front_matter, typed_envelope, markdown_body, source_markdown, validation_status, coalesce(validation_errors, '[]'::jsonb), coalesce(idempotency_key, ''), created_at, accepted_at`
 	finalizationColumns         = `id, project_id, task_id, review_round_id, verdict, decided_by, coalesce(notes, ''), thread_id, coalesce(run_id, ''), coalesce(subagent_role, ''), target_task_status, packet_id, idempotency_key, packet_idempotency_key, state, message_id, packet_posted_at, task_transitioned_at, completed_at, coalesce(last_error_step, ''), coalesce(last_error, ''), message_attempts, task_transition_attempts, created_at, updated_at`
@@ -831,8 +846,8 @@ const (
 )
 
 const (
-	latestRoundSQL       = `select round_number, head_commit from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number desc limit 1`
-	createRoundSQL       = `insert into den_review.review_rounds(project_id, task_id, round_number, requested_by, branch, base_branch, base_commit, head_commit, last_reviewed_head_commit, commits_since_last_review, tests_run, notes, preferred_diff_base_ref, preferred_diff_base_commit, preferred_diff_head_ref, preferred_diff_head_commit, alternate_diff_base_ref, alternate_diff_base_commit, alternate_diff_head_ref, alternate_diff_head_commit, delta_base_commit, inherited_commit_count, task_local_commit_count, requested_at, created_at, updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) returning ` + roundColumns
+	latestRoundSQL       = `select round_number, coalesce(head_commit, '') from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number desc limit 1`
+	createRoundSQL       = `insert into den_review.review_rounds(project_id, task_id, round_number, requested_by, target_kind, campaign_children, campaign_repositories, branch, base_branch, base_commit, head_commit, last_reviewed_head_commit, commits_since_last_review, tests_run, notes, preferred_diff_base_ref, preferred_diff_base_commit, preferred_diff_head_ref, preferred_diff_head_commit, alternate_diff_base_ref, alternate_diff_base_commit, alternate_diff_head_ref, alternate_diff_head_commit, delta_base_commit, inherited_commit_count, task_local_commit_count, requested_at, created_at, updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) returning ` + roundColumns
 	listRoundsSQL        = `select ` + roundColumns + ` from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number asc`
 	getRoundSQL          = `select ` + roundColumns + ` from den_review.review_rounds where id = $1`
 	getRoundForUpdateSQL = `select ` + roundColumns + ` from den_review.review_rounds where id = $1 for update`

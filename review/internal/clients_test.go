@@ -41,3 +41,21 @@ func TestHTTPTaskClientSetTaskStatusUsesProjectTaskPatch(t *testing.T) {
 		t.Fatalf("task = %+v", task)
 	}
 }
+
+func TestHTTPTaskClientDecodesCampaignMembershipFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/projects/child-project/tasks/7001" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"task":{"id":7001,"project_id":"child-project","parent_id":6212,"title":"Child","status":"done","priority":2,"tags":["campaign:den-services:6212"]}}`))
+	}))
+	defer server.Close()
+
+	task, err := NewTaskClient(server.URL, "").GetTaskContext(t.Context(), "child-project", 7001)
+	if err != nil {
+		t.Fatalf("GetTaskContext() error = %v", err)
+	}
+	if task.ParentID == nil || *task.ParentID != 6212 || len(task.Tags) != 1 || task.Tags[0] != "campaign:den-services:6212" {
+		t.Fatalf("task = %+v", task)
+	}
+}

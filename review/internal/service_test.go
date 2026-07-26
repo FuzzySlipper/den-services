@@ -113,6 +113,251 @@ func TestRequestReviewMetadataUsesCanonicalPacketKind(t *testing.T) {
 	}
 }
 
+func TestRequestCampaignReviewSnapshotsThreeRepositoryCampaignAndFinalizesIdempotently(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	parentID := int64(5934)
+	campaignTag := "campaign:den-services:5934"
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		parentID: {ID: parentID, ProjectID: "den-services", Status: TaskStatusReview, Tags: []string{campaignTag}},
+		6097:     {ID: 6097, ProjectID: "den-services", Status: TaskStatusDone, ParentID: &parentID},
+		6098:     {ID: 6098, ProjectID: "asha-d20-fantasy", Status: TaskStatusDone, Tags: []string{campaignTag}},
+		6099:     {ID: 6099, ProjectID: "asha-rulebench", Status: TaskStatusDone, Tags: []string{campaignTag}},
+	}}
+	service := newTestService(store, messages, tasks)
+
+	repositories := []CampaignRepositoryHead{
+		{Repository: "FuzzySlipper/asha-rpg", HeadSHA: strings.Repeat("a", 40)},
+		{Repository: "FuzzySlipper/asha-d20-fantasy", HeadSHA: strings.Repeat("b", 40)},
+		{Repository: "FuzzySlipper/asha-rulebench", HeadSHA: strings.Repeat("c", 40)},
+	}
+	childSpecs := []struct {
+		projectID string
+		taskID    int64
+		head      string
+	}{
+		{projectID: "den-services", taskID: 6097, head: repositories[0].HeadSHA},
+		{projectID: "asha-d20-fantasy", taskID: 6098, head: repositories[1].HeadSHA},
+		{projectID: "asha-rulebench", taskID: 6099, head: repositories[2].HeadSHA},
+	}
+	children := make([]CampaignReviewChildRequest, 0, len(childSpecs))
+	for _, spec := range childSpecs {
+		round, err := store.CreateRound(ctx, &ReviewRound{
+			ProjectID: spec.projectID, TaskID: spec.taskID, RequestedBy: "implementer",
+			TargetKind: ReviewTargetCodeDiff, Branch: "main", BaseBranch: "main",
+			BaseCommit: strings.Repeat("0", 40), HeadCommit: spec.head,
+			RequestedAt: fixedReviewTestTime(), CreatedAt: fixedReviewTestTime(), UpdatedAt: fixedReviewTestTime(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.SetVerdict(ctx, round.ID, VerdictLooksGood, "reviewer", "approved", fixedReviewTestTime()); err != nil {
+			t.Fatal(err)
+		}
+		children = append(children, CampaignReviewChildRequest{
+			ProjectID: spec.projectID, TaskID: spec.taskID, ReviewRoundID: round.ID,
+		})
+	}
+
+	packet, err := service.RequestCampaignReview(ctx, "den-services", parentID, CreateCampaignReviewRequest{
+		RequestedBy: "campaign-agent", Children: children, Repositories: repositories,
+		TestsRun: []string{"three-repo campaign replay"}, Notes: "Modeled after campaign task 5934.",
+	})
+	if err != nil {
+		t.Fatalf("RequestCampaignReview() error = %v", err)
+	}
+	round, err := store.GetRound(ctx, *packet.ReviewRoundID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if round.TargetKind != ReviewTargetCampaignReconciliation || len(round.CampaignChildren) != 3 || len(round.CampaignRepositories) != 3 {
+		t.Fatalf("campaign snapshot = %+v", round)
+	}
+	if round.Branch != "" || round.BaseCommit != "" || round.HeadCommit != "" {
+		t.Fatalf("campaign unexpectedly stored diff target: %+v", round)
+	}
+	if round.CampaignChildren[0].MembershipKind != CampaignMembershipDirectSubtask ||
+		round.CampaignChildren[1].MembershipKind != CampaignMembershipTag {
+		t.Fatalf("membership snapshot = %+v", round.CampaignChildren)
+	}
+	if _, exists := packet.TypedEnvelope["head_commit"]; exists {
+		t.Fatalf("campaign packet contains diff head: %#v", packet.TypedEnvelope)
+	}
+	if packet.TypedEnvelope["target_kind"] != ReviewTargetCampaignReconciliation ||
+		!strings.Contains(packet.MarkdownBody, "Campaign Reconciliation") {
+		t.Fatalf("campaign packet = %#v\n%s", packet.TypedEnvelope, packet.MarkdownBody)
+	}
+
+	finalize := FinalizeReviewRequest{ReviewRoundID: round.ID, Verdict: VerdictLooksGood, DecidedBy: "reviewer"}
+	first, err := service.FinalizeReview(ctx, finalize)
+	if err != nil {
+		t.Fatalf("FinalizeReview() error = %v", err)
+	}
+	second, err := service.FinalizeReview(ctx, finalize)
+	if err != nil {
+		t.Fatalf("FinalizeReview() retry error = %v", err)
+	}
+	if first.Finalization.ID != second.Finalization.ID || first.Finalization.State != FinalizationStateComplete {
+		t.Fatalf("campaign finalization not idempotent: first=%+v second=%+v", first.Finalization, second.Finalization)
+	}
+	if len(messages.appended) != 2 || len(tasks.statusUpdates) != 1 {
+		t.Fatalf("campaign side effects: messages=%d task_updates=%d", len(messages.appended), len(tasks.statusUpdates))
+	}
+	if _, exists := first.Packet.TypedEnvelope["reviewed_head_commit"]; exists {
+		t.Fatalf("campaign completion packet contains diff head: %#v", first.Packet.TypedEnvelope)
+	}
+}
+
+func TestRequestCampaignReviewRejectsStaleUnapprovedUnrelatedDuplicateAndMismatchedTargets(t *testing.T) {
+	const (
+		parentID = int64(6212)
+		childID  = int64(7001)
+	)
+	head := strings.Repeat("d", 40)
+	baseTasks := func() *fakeTasks {
+		return &fakeTasks{tasks: map[int64]TaskContext{
+			parentID: {ID: parentID, ProjectID: "den-services", Status: TaskStatusReview},
+			childID:  {ID: childID, ProjectID: "den-services", Status: TaskStatusDone, ParentID: ptrInt64(parentID)},
+		}}
+	}
+	seedRound := func(t *testing.T, store *memoryStore, verdict string) *ReviewRound {
+		t.Helper()
+		round, err := store.CreateRound(context.Background(), &ReviewRound{
+			ProjectID: "den-services", TaskID: childID, RequestedBy: "agent", TargetKind: ReviewTargetCodeDiff,
+			Branch: "main", BaseBranch: "main", BaseCommit: strings.Repeat("0", 40), HeadCommit: head,
+			RequestedAt: fixedReviewTestTime(), CreatedAt: fixedReviewTestTime(), UpdatedAt: fixedReviewTestTime(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if verdict != "" {
+			if _, err := store.SetVerdict(context.Background(), round.ID, verdict, "reviewer", "", fixedReviewTestTime()); err != nil {
+				t.Fatal(err)
+			}
+			round.Verdict = verdict
+		}
+		return round
+	}
+	request := func(roundID int64) CreateCampaignReviewRequest {
+		return CreateCampaignReviewRequest{
+			RequestedBy:  "agent",
+			Children:     []CampaignReviewChildRequest{{ProjectID: "den-services", TaskID: childID, ReviewRoundID: roundID}},
+			Repositories: []CampaignRepositoryHead{{Repository: "owner/repo", HeadSHA: head}},
+		}
+	}
+
+	t.Run("unapproved", func(t *testing.T) {
+		store := newMemoryStore()
+		round := seedRound(t, store, VerdictChangesRequested)
+		_, err := newTestService(store, &fakeMessages{}, baseTasks()).RequestCampaignReview(context.Background(), "den-services", parentID, request(round.ID))
+		assertServiceErrorCode(t, err, "unapproved_campaign_review_round")
+	})
+	t.Run("stale", func(t *testing.T) {
+		store := newMemoryStore()
+		round := seedRound(t, store, VerdictLooksGood)
+		store.rounds[round.ID].HeadCommit = strings.Repeat("e", 40)
+		_ = seedRound(t, store, VerdictLooksGood)
+		_, err := newTestService(store, &fakeMessages{}, baseTasks()).RequestCampaignReview(context.Background(), "den-services", parentID, request(round.ID))
+		assertServiceErrorCode(t, err, "stale_campaign_review_round")
+	})
+	t.Run("unrelated", func(t *testing.T) {
+		store := newMemoryStore()
+		round := seedRound(t, store, VerdictLooksGood)
+		tasks := baseTasks()
+		tasks.tasks[childID] = TaskContext{ID: childID, ProjectID: "den-services", Status: TaskStatusDone}
+		_, err := newTestService(store, &fakeMessages{}, tasks).RequestCampaignReview(context.Background(), "den-services", parentID, request(round.ID))
+		assertServiceErrorCode(t, err, "unrelated_campaign_child")
+	})
+	t.Run("duplicate", func(t *testing.T) {
+		store := newMemoryStore()
+		round := seedRound(t, store, VerdictLooksGood)
+		req := request(round.ID)
+		req.Children = append(req.Children, req.Children[0])
+		_, err := newTestService(store, &fakeMessages{}, baseTasks()).RequestCampaignReview(context.Background(), "den-services", parentID, req)
+		assertServiceErrorCode(t, err, "duplicate_campaign_child")
+	})
+	t.Run("head mismatch", func(t *testing.T) {
+		store := newMemoryStore()
+		round := seedRound(t, store, VerdictLooksGood)
+		req := request(round.ID)
+		req.Repositories[0].HeadSHA = strings.Repeat("f", 40)
+		_, err := newTestService(store, &fakeMessages{}, baseTasks()).RequestCampaignReview(context.Background(), "den-services", parentID, req)
+		assertServiceErrorCode(t, err, "campaign_head_mismatch")
+	})
+	t.Run("missing round", func(t *testing.T) {
+		_, err := newTestService(newMemoryStore(), &fakeMessages{}, baseTasks()).RequestCampaignReview(
+			context.Background(), "den-services", parentID, request(9999),
+		)
+		assertServiceErrorCode(t, err, "missing_campaign_review_round")
+	})
+	t.Run("duplicate repository", func(t *testing.T) {
+		store := newMemoryStore()
+		round := seedRound(t, store, VerdictLooksGood)
+		req := request(round.ID)
+		req.Repositories = append(req.Repositories, req.Repositories[0])
+		_, err := newTestService(store, &fakeMessages{}, baseTasks()).RequestCampaignReview(context.Background(), "den-services", parentID, req)
+		assertServiceErrorCode(t, err, "duplicate_campaign_repository")
+	})
+	t.Run("unresolved blocker", func(t *testing.T) {
+		store := newMemoryStore()
+		round := seedRound(t, store, VerdictLooksGood)
+		if _, err := store.CreateFinding(context.Background(), &ReviewFinding{
+			ProjectID: "den-services", TaskID: childID, ReviewRoundID: round.ID, CreatedBy: "reviewer",
+			Category: CategoryAcceptanceGap, Summary: "missing proof", Status: StatusOpen,
+			CreatedAt: fixedReviewTestTime(), UpdatedAt: fixedReviewTestTime(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		_, err := newTestService(store, &fakeMessages{}, baseTasks()).RequestCampaignReview(context.Background(), "den-services", parentID, request(round.ID))
+		assertServiceErrorCode(t, err, "blocked_campaign_child")
+	})
+}
+
+func TestParseCampaignReviewPacketDoesNotRequireDiffFields(t *testing.T) {
+	packet, err := ParseReviewPacketMarkdown(`---
+schema: den_review_packet
+schema_version: 1
+packet_kind: review_request
+project_id: den-services
+task_id: 6212
+review_round_id: 77
+sender: campaign-agent
+requested_by: campaign-agent
+target_kind: campaign_reconciliation
+campaign_children:
+  - project_id: den-services
+    task_id: 7001
+    review_round_id: 70
+campaign_repositories:
+  - repository: owner/repo
+    head_sha: 0123456789abcdef0123456789abcdef01234567
+verify:
+  - checked: true
+    item: child rounds approved
+---
+Campaign review evidence.
+`)
+	if err != nil {
+		t.Fatalf("ParseReviewPacketMarkdown() error = %v", err)
+	}
+	if packet.TypedEnvelope["target_kind"] != ReviewTargetCampaignReconciliation || packet.ReviewRoundID == nil {
+		t.Fatalf("packet = %+v", packet)
+	}
+}
+
+func ptrInt64(value int64) *int64 {
+	return &value
+}
+
+func assertServiceErrorCode(t *testing.T, err error, want string) {
+	t.Helper()
+	var serviceError *ServiceError
+	if !errors.As(err, &serviceError) || serviceError.Code() != want {
+		t.Fatalf("error = %T %v, want service code %s", err, err, want)
+	}
+}
+
 func TestDiscoverGitHubChecksIsReadOnly(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()

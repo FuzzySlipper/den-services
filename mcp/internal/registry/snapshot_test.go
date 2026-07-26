@@ -18,7 +18,7 @@ func TestDefaultToolSchemaSnapshot(t *testing.T) {
 	}
 	actual = append(actual, '\n')
 
-	const wantHash = "99a43ed35d2a4ec11754c06f871a66483fb61f7c1acf70dda1294da2d8f1d7d3"
+	const wantHash = "d231e0de506e0522e52063750511749167d086cde872f0891b1d55bc3cacd6bd"
 	actualHash := fmt.Sprintf("%x", sha256.Sum256(actual))
 	if actualHash != wantHash {
 		t.Fatalf("default tool schema snapshot hash = %s, want %s\n%s", actualHash, wantHash, string(actual))

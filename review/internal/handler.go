@@ -17,6 +17,7 @@ type ReviewUseCases interface {
 	CreateRound(ctx context.Context, projectID string, taskID int64, req CreateReviewRoundRequest) (*ReviewRound, error)
 	CreateRoundForTask(ctx context.Context, taskID int64, req CreateReviewRoundRequest) (*ReviewRound, error)
 	RequestReview(ctx context.Context, projectID string, taskID int64, req CreateReviewRoundRequest) (*ReviewPacket, error)
+	RequestCampaignReview(ctx context.Context, projectID string, taskID int64, req CreateCampaignReviewRequest) (*ReviewPacket, error)
 	ListRounds(ctx context.Context, projectID string, taskID int64) ([]*ReviewRound, error)
 	ListRoundsForTask(ctx context.Context, taskID int64) ([]*ReviewRound, error)
 	CreateFinding(ctx context.Context, roundID int64, req CreateReviewFindingRequest) (*ReviewFinding, error)
@@ -50,6 +51,7 @@ func NewHandler(service ReviewUseCases) *Handler {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/rounds", h.createRound)
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/request", h.requestReview)
+	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/campaign-request", h.requestCampaignReview)
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}/review/rounds", h.listRounds)
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}/review/findings", h.listFindings)
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/findings/split-follow-up", h.splitFindings)
@@ -117,6 +119,23 @@ func (h *Handler) requestReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	packet, err := h.service.RequestReview(r.Context(), r.PathValue("project_id"), taskID, req)
+	if err != nil {
+		writeReviewError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusCreated, toPacketResponse(packet))
+}
+
+func (h *Handler) requestCampaignReview(w http.ResponseWriter, r *http.Request) {
+	taskID, ok := h.taskID(w, r)
+	if !ok {
+		return
+	}
+	var req CreateCampaignReviewRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	packet, err := h.service.RequestCampaignReview(r.Context(), r.PathValue("project_id"), taskID, req)
 	if err != nil {
 		writeReviewError(w, err)
 		return

@@ -7,14 +7,31 @@ import (
 
 func renderReviewRequestPacket(round *ReviewRound, kind string) string {
 	var builder strings.Builder
-	builder.WriteString("# Review Request\n\n")
+	if round.TargetKind == ReviewTargetCampaignReconciliation {
+		builder.WriteString("# Campaign Reconciliation Review Request\n\n")
+	} else {
+		builder.WriteString("# Review Request\n\n")
+	}
 	builder.WriteString(fmt.Sprintf("- packet_kind: %s\n", kind))
 	builder.WriteString(fmt.Sprintf("- project_id: %s\n", round.ProjectID))
 	builder.WriteString(fmt.Sprintf("- task_id: %d\n", round.TaskID))
 	builder.WriteString(fmt.Sprintf("- review_round_id: %d\n", round.ID))
-	builder.WriteString(fmt.Sprintf("- branch: %s\n", round.Branch))
-	builder.WriteString(fmt.Sprintf("- base_branch: %s\n", round.BaseBranch))
-	builder.WriteString(fmt.Sprintf("- head_commit: %s\n\n", round.HeadCommit))
+	builder.WriteString(fmt.Sprintf("- target_kind: %s\n", firstNonEmpty(round.TargetKind, ReviewTargetCodeDiff)))
+	if round.TargetKind == ReviewTargetCampaignReconciliation {
+		builder.WriteString("\n## Approved child rounds\n\n")
+		for _, child := range round.CampaignChildren {
+			builder.WriteString(fmt.Sprintf("- %s/%d round %d at `%s` (%s)\n", child.ProjectID, child.TaskID, child.ReviewRoundID, child.HeadCommit, child.MembershipKind))
+		}
+		builder.WriteString("\n## Repository heads\n\n")
+		for _, repository := range round.CampaignRepositories {
+			builder.WriteString(fmt.Sprintf("- %s: `%s`\n", repository.Repository, repository.HeadSHA))
+		}
+		builder.WriteString("\n")
+	} else {
+		builder.WriteString(fmt.Sprintf("- branch: %s\n", round.Branch))
+		builder.WriteString(fmt.Sprintf("- base_branch: %s\n", round.BaseBranch))
+		builder.WriteString(fmt.Sprintf("- head_commit: %s\n\n", round.HeadCommit))
+	}
 	if round.Notes != "" {
 		builder.WriteString("## Notes\n\n")
 		builder.WriteString(round.Notes)
@@ -43,12 +60,22 @@ func reviewFindingsPacket(round *ReviewRound, findings []*ReviewFinding, openFin
 	builder.WriteString("Review findings\n\n")
 	builder.WriteString(fmt.Sprintf("Review round: `%d`\n", round.RoundNumber))
 	builder.WriteString(fmt.Sprintf("Verdict: `%s`\n", firstNonEmpty(round.Verdict, "pending")))
-	builder.WriteString(fmt.Sprintf("Reviewed diff: `%s...%s`\n", round.PreferredDiffBaseRef, round.PreferredDiffHeadRef))
-	if round.AlternateDiffBaseRef != "" || round.AlternateDiffHeadRef != "" {
-		builder.WriteString(fmt.Sprintf("Alternate diff: `%s...%s`\n", round.AlternateDiffBaseRef, round.AlternateDiffHeadRef))
-	}
-	if round.DeltaBaseCommit != "" {
-		builder.WriteString(fmt.Sprintf("Delta since last review: `%s..%s`\n", round.DeltaBaseCommit, round.HeadCommit))
+	if round.TargetKind == ReviewTargetCampaignReconciliation {
+		builder.WriteString("Reviewed target: `campaign_reconciliation`\n")
+		for _, child := range round.CampaignChildren {
+			builder.WriteString(fmt.Sprintf("Child: `%s/%d` round `%d` at `%s`\n", child.ProjectID, child.TaskID, child.ReviewRoundID, child.HeadCommit))
+		}
+		for _, repository := range round.CampaignRepositories {
+			builder.WriteString(fmt.Sprintf("Repository: `%s` at `%s`\n", repository.Repository, repository.HeadSHA))
+		}
+	} else {
+		builder.WriteString(fmt.Sprintf("Reviewed diff: `%s...%s`\n", round.PreferredDiffBaseRef, round.PreferredDiffHeadRef))
+		if round.AlternateDiffBaseRef != "" || round.AlternateDiffHeadRef != "" {
+			builder.WriteString(fmt.Sprintf("Alternate diff: `%s...%s`\n", round.AlternateDiffBaseRef, round.AlternateDiffHeadRef))
+		}
+		if round.DeltaBaseCommit != "" {
+			builder.WriteString(fmt.Sprintf("Delta since last review: `%s..%s`\n", round.DeltaBaseCommit, round.HeadCommit))
+		}
 	}
 
 	testCommands := uniqueFindingValues(findings, func(finding *ReviewFinding) []string { return finding.TestCommands })
@@ -83,7 +110,9 @@ func reviewFindingsPacket(round *ReviewRound, findings []*ReviewFinding, openFin
 	body := strings.TrimSpace(builder.String())
 	envelope := metadataForRound(round, PacketKindReviewFindings, metadataTypeForPacket(PacketKindReviewFindings, ""), firstNonEmpty(round.Verdict, VerdictChangesRequested))
 	envelope["sender"] = strings.TrimSpace(req.Sender)
-	envelope["reviewed_head_commit"] = round.HeadCommit
+	if round.TargetKind != ReviewTargetCampaignReconciliation {
+		envelope["reviewed_head_commit"] = round.HeadCommit
+	}
 	envelope["findings"] = findingMetadata(findings)
 	envelope["open_findings"] = openFindings
 	envelope["reviewer_test_commands"] = testCommands
