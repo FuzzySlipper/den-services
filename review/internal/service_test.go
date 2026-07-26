@@ -177,9 +177,14 @@ func TestRequestCampaignReviewSnapshotsThreeRepositoryCampaignAndFinalizesIdempo
 	if round.Branch != "" || round.BaseCommit != "" || round.HeadCommit != "" {
 		t.Fatalf("campaign unexpectedly stored diff target: %+v", round)
 	}
-	if round.CampaignChildren[0].MembershipKind != CampaignMembershipDirectSubtask ||
-		round.CampaignChildren[1].MembershipKind != CampaignMembershipTag {
-		t.Fatalf("membership snapshot = %+v", round.CampaignChildren)
+	membershipByTask := map[int64]string{}
+	for _, child := range round.CampaignChildren {
+		membershipByTask[child.TaskID] = child.MembershipKind
+	}
+	if membershipByTask[6097] != CampaignMembershipDirectSubtask ||
+		membershipByTask[6098] != CampaignMembershipTag ||
+		membershipByTask[6099] != CampaignMembershipTag {
+		t.Fatalf("membership snapshot = %+v", membershipByTask)
 	}
 	if _, exists := packet.TypedEnvelope["head_commit"]; exists {
 		t.Fatalf("campaign packet contains diff head: %#v", packet.TypedEnvelope)
@@ -187,6 +192,31 @@ func TestRequestCampaignReviewSnapshotsThreeRepositoryCampaignAndFinalizesIdempo
 	if packet.TypedEnvelope["target_kind"] != ReviewTargetCampaignReconciliation ||
 		!strings.Contains(packet.MarkdownBody, "Campaign Reconciliation") {
 		t.Fatalf("campaign packet = %#v\n%s", packet.TypedEnvelope, packet.MarkdownBody)
+	}
+	retriedPacket, err := service.RequestCampaignReview(ctx, "den-services", parentID, CreateCampaignReviewRequest{
+		RequestedBy: "campaign-agent",
+		Children: []CampaignReviewChildRequest{
+			children[2],
+			children[0],
+			children[1],
+		},
+		Repositories: []CampaignRepositoryHead{
+			repositories[2],
+			repositories[0],
+			repositories[1],
+		},
+		TestsRun: []string{"three-repo campaign replay"}, Notes: "Modeled after campaign task 5934.",
+	})
+	if err != nil {
+		t.Fatalf("RequestCampaignReview() retry error = %v", err)
+	}
+	parentRounds, err := store.ListRounds(ctx, "den-services", parentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retriedPacket.ID != packet.ID || len(parentRounds) != 1 || len(messages.appended) != 1 {
+		t.Fatalf("campaign rerequest duplicated state: packets=%d/%d rounds=%d messages=%d",
+			packet.ID, retriedPacket.ID, len(parentRounds), len(messages.appended))
 	}
 
 	finalize := FinalizeReviewRequest{ReviewRoundID: round.ID, Verdict: VerdictLooksGood, DecidedBy: "reviewer"}

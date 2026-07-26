@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -317,6 +318,23 @@ func (s *Service) RequestCampaignReview(ctx context.Context, projectID string, t
 	if err != nil {
 		return nil, err
 	}
+	existingRounds, err := s.store.ListRounds(ctx, parent.ProjectID, parent.ID)
+	if err != nil {
+		return nil, err
+	}
+	var latest *ReviewRound
+	for _, candidate := range existingRounds {
+		if latest == nil || candidate.RoundNumber > latest.RoundNumber {
+			latest = candidate
+		}
+	}
+	if latest != nil && sameCampaignRequest(latest, round) {
+		kind := PacketKindReviewRequest
+		if latest.RoundNumber > 1 {
+			kind = PacketKindRereviewRequest
+		}
+		return s.acceptPacket(ctx, packetForRound(latest, kind, req.ThreadID, req.RunID), req.ThreadID)
+	}
 	round, err = s.store.CreateRound(ctx, round)
 	if err != nil {
 		return nil, err
@@ -426,6 +444,18 @@ func (s *Service) campaignRoundFromRequest(ctx context.Context, parent TaskConte
 			HeadCommit: childRound.HeadCommit, MembershipKind: membershipKind, ApprovedVerdict: childRound.Verdict,
 		})
 	}
+	sort.Slice(children, func(i, j int) bool {
+		if children[i].ProjectID != children[j].ProjectID {
+			return children[i].ProjectID < children[j].ProjectID
+		}
+		if children[i].TaskID != children[j].TaskID {
+			return children[i].TaskID < children[j].TaskID
+		}
+		return children[i].ReviewRoundID < children[j].ReviewRoundID
+	})
+	sort.Slice(repositories, func(i, j int) bool {
+		return repositories[i].Repository < repositories[j].Repository
+	})
 
 	now := s.clock().UTC()
 	return &ReviewRound{
@@ -434,6 +464,40 @@ func (s *Service) campaignRoundFromRequest(ctx context.Context, parent TaskConte
 		TestsRun: trimSlice(req.TestsRun), Notes: strings.TrimSpace(req.Notes),
 		RequestedAt: now, CreatedAt: now, UpdatedAt: now,
 	}, nil
+}
+
+func sameCampaignRequest(existing *ReviewRound, requested *ReviewRound) bool {
+	if existing.TargetKind != ReviewTargetCampaignReconciliation ||
+		existing.RequestedBy != requested.RequestedBy ||
+		existing.Notes != requested.Notes ||
+		!equalStrings(existing.TestsRun, requested.TestsRun) ||
+		len(existing.CampaignChildren) != len(requested.CampaignChildren) ||
+		len(existing.CampaignRepositories) != len(requested.CampaignRepositories) {
+		return false
+	}
+	for i := range existing.CampaignChildren {
+		if existing.CampaignChildren[i] != requested.CampaignChildren[i] {
+			return false
+		}
+	}
+	for i := range existing.CampaignRepositories {
+		if existing.CampaignRepositories[i] != requested.CampaignRepositories[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalStrings(left []string, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func campaignMembership(parent TaskContext, child TaskContext) string {
