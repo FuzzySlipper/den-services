@@ -328,7 +328,7 @@ func (s *Service) RequestCampaignReview(ctx context.Context, projectID string, t
 			latest = candidate
 		}
 	}
-	if latest != nil && sameCampaignRequest(latest, round) {
+	if latest != nil && latest.Verdict == "" && sameCampaignRequest(latest, round) {
 		kind := PacketKindReviewRequest
 		if latest.RoundNumber > 1 {
 			kind = PacketKindRereviewRequest

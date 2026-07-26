@@ -219,20 +219,60 @@ func TestRequestCampaignReviewSnapshotsThreeRepositoryCampaignAndFinalizesIdempo
 			packet.ID, retriedPacket.ID, len(parentRounds), len(messages.appended))
 	}
 
-	finalize := FinalizeReviewRequest{ReviewRoundID: round.ID, Verdict: VerdictLooksGood, DecidedBy: "reviewer"}
+	finding, err := service.CreateFinding(ctx, round.ID, CreateReviewFindingRequest{
+		CreatedBy: "reviewer", Category: CategoryBlockingBug, Summary: "campaign integration needs correction",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changesRequested, err := service.FinalizeReview(ctx, FinalizeReviewRequest{
+		ReviewRoundID: round.ID, Verdict: VerdictChangesRequested, DecidedBy: "reviewer",
+	})
+	if err != nil {
+		t.Fatalf("changes-requested FinalizeReview() error = %v", err)
+	}
+	if changesRequested.Finalization.State != FinalizationStateComplete || tasks.tasks[parentID].Status != TaskStatusInProgress {
+		t.Fatalf("changes-requested finalization = %+v task=%+v", changesRequested.Finalization, tasks.tasks[parentID])
+	}
+	if _, err := service.SetFindingStatus(ctx, finding.ID, SetFindingStatusRequest{
+		Status: StatusVerifiedFixed, UpdatedBy: "implementer", Notes: "campaign correction verified",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rereviewPacket, err := service.RequestCampaignReview(ctx, "den-services", parentID, CreateCampaignReviewRequest{
+		RequestedBy: "campaign-agent", Children: children, Repositories: repositories,
+		TestsRun: []string{"three-repo campaign replay"}, Notes: "Modeled after campaign task 5934.",
+	})
+	if err != nil {
+		t.Fatalf("RequestCampaignReview() after changes requested error = %v", err)
+	}
+	parentRounds, err = store.ListRounds(ctx, "den-services", parentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rereviewPacket.ID == packet.ID || len(parentRounds) != 2 || parentRounds[1].RoundNumber != 2 {
+		t.Fatalf("campaign rereview did not create a new round: packets=%d/%d rounds=%+v",
+			packet.ID, rereviewPacket.ID, parentRounds)
+	}
+
+	parentTask := tasks.tasks[parentID]
+	parentTask.Status = TaskStatusReview
+	tasks.tasks[parentID] = parentTask
+	finalize := FinalizeReviewRequest{ReviewRoundID: *rereviewPacket.ReviewRoundID, Verdict: VerdictLooksGood, DecidedBy: "reviewer"}
 	first, err := service.FinalizeReview(ctx, finalize)
 	if err != nil {
-		t.Fatalf("FinalizeReview() error = %v", err)
+		t.Fatalf("looks-good FinalizeReview() error = %v", err)
 	}
 	second, err := service.FinalizeReview(ctx, finalize)
 	if err != nil {
-		t.Fatalf("FinalizeReview() retry error = %v", err)
+		t.Fatalf("looks-good FinalizeReview() retry error = %v", err)
 	}
 	if first.Finalization.ID != second.Finalization.ID || first.Finalization.State != FinalizationStateComplete {
 		t.Fatalf("campaign finalization not idempotent: first=%+v second=%+v", first.Finalization, second.Finalization)
 	}
-	if len(messages.appended) != 2 || len(tasks.statusUpdates) != 1 {
-		t.Fatalf("campaign side effects: messages=%d task_updates=%d", len(messages.appended), len(tasks.statusUpdates))
+	if len(messages.appended) != 4 || len(tasks.statusUpdates) != 2 {
+		t.Fatalf("campaign lifecycle side effects: messages=%d task_updates=%d", len(messages.appended), len(tasks.statusUpdates))
 	}
 	if _, exists := first.Packet.TypedEnvelope["reviewed_head_commit"]; exists {
 		t.Fatalf("campaign completion packet contains diff head: %#v", first.Packet.TypedEnvelope)
