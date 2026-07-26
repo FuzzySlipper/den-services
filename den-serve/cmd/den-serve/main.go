@@ -200,33 +200,39 @@ func splitProjectArg(args []string) (string, []string) {
 }
 
 func printSessionPacket(session devserver.SessionState) {
-	fmt.Printf("%s %s\n", session.Project, session.Status)
-	fmt.Printf("local: %s\n", session.LocalURL)
+	fmt.Print(formatSessionPacket(session))
+}
+
+func formatSessionPacket(session devserver.SessionState) string {
+	var packet strings.Builder
+	fmt.Fprintf(&packet, "%s %s\n", session.Project, session.Status)
+	fmt.Fprintf(&packet, "local: %s\n", session.LocalURL)
 	if session.LANURL != "" {
-		fmt.Printf("lan:   %s\n", session.LANURL)
+		fmt.Fprintf(&packet, "lan:   %s\n", session.LANURL)
 	} else {
-		fmt.Println("lan:   unavailable")
+		fmt.Fprintln(&packet, "lan:   unavailable")
 	}
-	fmt.Printf("state: %s\n", session.StatePath)
-	fmt.Printf("logs:  %s\n", session.SessionDir)
-	fmt.Printf("launch source: %s\n", session.ReuseSource)
-	fmt.Printf("started: %s\n", session.StartedAt.UTC().Format("2006-01-02T15:04:05.999999999Z"))
+	fmt.Fprintf(&packet, "state: %s\n", session.StatePath)
+	fmt.Fprintf(&packet, "logs:  %s\n", session.SessionDir)
+	fmt.Fprintf(&packet, "launch source: %s\n", session.ReuseSource)
+	fmt.Fprintf(&packet, "started: %s\n", session.StartedAt.UTC().Format("2006-01-02T15:04:05.999999999Z"))
 	if session.LaunchFingerprint.Value != "" {
-		fmt.Printf("launch fingerprint:  %s\n", session.LaunchFingerprint.Value)
-		fmt.Printf("current fingerprint: %s\n", session.CurrentFingerprint.Value)
+		fmt.Fprintf(&packet, "launch fingerprint:  %s\n", session.LaunchFingerprint.Value)
+		fmt.Fprintf(&packet, "current fingerprint: %s\n", session.CurrentFingerprint.Value)
 		if session.LaunchFingerprint.RepoHead != "" {
-			fmt.Printf("launch repo HEAD:    %s\n", session.LaunchFingerprint.RepoHead)
+			fmt.Fprintf(&packet, "launch repo HEAD:    %s\n", session.LaunchFingerprint.RepoHead)
 		}
 	}
 	if session.Stale {
-		fmt.Printf("stale: true (%s)\n", session.StaleReason)
+		fmt.Fprintf(&packet, "stale: true (%s)\n", session.StaleReason)
 	}
 	if session.FingerprintError != "" {
-		fmt.Printf("fingerprint error: %s\n", session.FingerprintError)
+		fmt.Fprintf(&packet, "fingerprint error: %s\n", session.FingerprintError)
 	}
 	if session.PID > 0 {
-		fmt.Printf("pid:   %d\n", session.PID)
+		fmt.Fprintf(&packet, "pid:   %d\n", session.PID)
 	}
+	return packet.String()
 }
 
 func printTail(path string) {
