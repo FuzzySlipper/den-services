@@ -175,6 +175,11 @@ func taskContextTools() []ToolDefinition {
 }
 
 func githubCheckGateTools() []ToolDefinition {
+	discoverySchema := ObjectSchema(map[string]Schema{
+		"repository":      StringSchema("GitHub repository as owner/name."),
+		"commit_sha":      StringSchema("Full 40-character commit SHA to inspect. Discovery is exact-SHA and read-only."),
+		"required_checks": AnySchema("Optional JSON array or comma-separated list of exact GitHub check-run names to validate against observed runs."),
+	}, "repository", "commit_sha")
 	watchSchema := ObjectSchema(map[string]Schema{
 		"task_id":               IntegerSchema("Task ID to gate."),
 		"repository":            StringSchema("GitHub repository as owner/name."),
@@ -199,6 +204,11 @@ func githubCheckGateTools() []ToolDefinition {
 		"wait_ms":    NullableIntegerSchema("Bounded server wait in milliseconds. Defaults to no wait and is capped at 50000."),
 	}, "task_id", "commit_sha")
 	return []ToolDefinition{{
+		Name:        "discover_github_checks",
+		Description: "Read GitHub check runs for an exact commit and optionally validate exact required names without creating a gate, changing a task, or posting evidence.",
+		Backend:     "review",
+		Operation:   "discover_github_checks", InputSchema: discoverySchema,
+	}, {
 		Name:        "watch_github_checks",
 		Description: "Register or read the durable exact-SHA GitHub check gate and return its deferral handle/current status immediately.",
 		Backend:     "review",

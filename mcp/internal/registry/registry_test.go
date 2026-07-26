@@ -18,8 +18,8 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 69 {
-		t.Fatalf("tool count = %d, want 69", len(names))
+	if len(names) != 70 {
+		t.Fatalf("tool count = %d, want 70", len(names))
 	}
 	for _, name := range []string{
 		"search_documents",
@@ -28,6 +28,7 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		"get_task",
 		"store_document",
 		"await_github_checks",
+		"discover_github_checks",
 		"watch_github_checks",
 		"get_github_check_gate",
 		"wait_for_github_checks",
@@ -222,7 +223,7 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 		t.Fatalf("visible count = %d, listed count = %d", visibleIndex, len(listed))
 	}
 	for _, tool := range listed[visibleIndex:] {
-		if tool.Name != "await_github_checks" && tool.Name != "watch_github_checks" &&
+		if tool.Name != "await_github_checks" && tool.Name != "discover_github_checks" && tool.Name != "watch_github_checks" &&
 			tool.Name != "get_github_check_gate" && tool.Name != "wait_for_github_checks" && tool.Name != "get_task_context" &&
 			tool.Name != "finalize_review" &&
 			tool.Name != "get_details" && tool.Name != "mark_project_notifications_read" &&

@@ -67,6 +67,10 @@ const (
 	GitHubCheckEvidenceStatusPosted      = "posted"
 	GitHubCheckEvidenceStatusError       = "error"
 
+	GitHubCheckDiscoveryNotValidated = "not_validated"
+	GitHubCheckDiscoveryValid        = "valid"
+	GitHubCheckDiscoveryMissing      = "missing_required_checks"
+
 	TaskStatusInProgress = "in_progress"
 	TaskStatusReview     = "review"
 	TaskStatusDone       = "done"
@@ -325,6 +329,17 @@ type GitHubCheckResult struct {
 	FailureSummary            string
 	TerminalReason            string
 	CheckRuns                 []GitHubCheckRun
+	ObservedCheckRuns         []GitHubCheckRun
+	MissingRequiredChecks     []string
+	AllObservedChecksTerminal bool
+}
+
+type GitHubCheckDiscovery struct {
+	Repository                string
+	CommitSHA                 string
+	RequiredChecks            []string
+	ConfigurationStatus       string
+	Summary                   string
 	ObservedCheckRuns         []GitHubCheckRun
 	MissingRequiredChecks     []string
 	AllObservedChecksTerminal bool

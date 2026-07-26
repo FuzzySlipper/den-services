@@ -112,6 +112,29 @@ func TestEvaluateGitHubCheckRunsKeepsLatestRerunByName(t *testing.T) {
 	}
 }
 
+func TestGitHubClientDiscoversLatestObservedRunsWithoutRequiredNames(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"check_runs":[
+			{"id":10,"name":"Verify","status":"completed","conclusion":"failure","html_url":"https://github.test/old"},
+			{"id":20,"name":"Verify","status":"completed","conclusion":"success","html_url":"https://github.test/new"},
+			{"id":30,"name":"Lint","status":"in_progress","details_url":"https://github.test/lint"}
+		]}`))
+	}))
+	defer server.Close()
+	client := NewGitHubClient(server.URL, "", time.Second)
+
+	result, err := client.CheckCommit(context.Background(), "owner/repo", "0123456789abcdef0123456789abcdef01234567", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ObservedCheckRuns) != 2 ||
+		result.ObservedCheckRuns[0].Name != "Lint" ||
+		result.ObservedCheckRuns[1].URL != "https://github.test/new" ||
+		result.AllObservedChecksTerminal {
+		t.Fatalf("observed runs = %+v", result)
+	}
+}
+
 func TestEvaluateGitHubCheckRunsPreservesQueueAndRunTimestamps(t *testing.T) {
 	createdAt := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
 	startedAt := createdAt.Add(20 * time.Second)

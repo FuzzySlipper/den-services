@@ -1023,6 +1023,36 @@ func TestClientCallsReviewRESTAwaitGitHubChecks(t *testing.T) {
 	}
 }
 
+func TestClientCallsReviewRESTDiscoverGitHubChecksWithoutTaskScope(t *testing.T) {
+	var sawPath string
+	var sawBody githubCheckDiscoveryBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		_, _ = w.Write([]byte(`{"repository":"owner/repo","configuration_status":"valid"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("review", server.URL),
+		reviewRouteForTest("discover_github_checks", http.MethodPost, "/v1/review/github-checks/discover"), ToolCall{
+			ToolName: "discover_github_checks", Operation: "discover_github_checks", RequestID: json.RawMessage(`1`),
+			Arguments: json.RawMessage(`{"repository":"owner/repo","commit_sha":"0123456789abcdef0123456789abcdef01234567","required_checks":"Verify,lint"}`),
+		})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawPath != "/v1/review/github-checks/discover" || sawBody.Repository != "owner/repo" ||
+		len(sawBody.RequiredChecks) != 2 || sawBody.RequiredChecks[1] != "lint" {
+		t.Fatalf("path=%q body=%#v", sawPath, sawBody)
+	}
+}
+
 func TestClientCallsReviewRESTReadAndBoundedWaitGitHubChecks(t *testing.T) {
 	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -48,3 +48,13 @@ func toWorkflowSummaryResponse(summary WorkflowSummary) WorkflowSummaryResponse 
 	}
 	return response
 }
+
+func toGitHubCheckDiscoveryResponse(discovery *GitHubCheckDiscovery) GitHubCheckDiscoveryResponse {
+	return GitHubCheckDiscoveryResponse{
+		Repository: discovery.Repository, CommitSHA: discovery.CommitSHA,
+		RequiredChecks: discovery.RequiredChecks, ConfigurationStatus: discovery.ConfigurationStatus,
+		Summary: discovery.Summary, ObservedCheckRuns: discovery.ObservedCheckRuns,
+		MissingRequiredChecks:     discovery.MissingRequiredChecks,
+		AllObservedChecksTerminal: discovery.AllObservedChecksTerminal,
+	}
+}

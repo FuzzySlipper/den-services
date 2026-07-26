@@ -739,6 +739,44 @@ func (s *Service) WorkflowSummaryForTask(ctx context.Context, taskID int64) (Wor
 	return s.WorkflowSummary(ctx, task.ProjectID, taskID)
 }
 
+func (s *Service) DiscoverGitHubChecks(ctx context.Context, req DiscoverGitHubChecksRequest) (*GitHubCheckDiscovery, error) {
+	repository := strings.TrimSpace(req.Repository)
+	if !validGitHubRepository(repository) {
+		return nil, validationError(fmt.Errorf("repository must be owner/name"), "invalid_repository", "repository", "github_check_discovery.repository")
+	}
+	commitSHA := strings.ToLower(strings.TrimSpace(req.CommitSHA))
+	if !validGitHubSHA(commitSHA) {
+		return nil, validationError(fmt.Errorf("commit_sha must be a full 40-character hex SHA"), "invalid_commit_sha", "commit_sha", "github_check_discovery.commit_sha")
+	}
+	if s.githubChecks == nil {
+		return nil, NewServiceError(ErrGitHubChecksUnset, "github_checks_unconfigured", http.StatusInternalServerError)
+	}
+	requiredChecks := trimSlice(req.RequiredChecks)
+	result, err := s.githubChecks.CheckCommit(ctx, repository, commitSHA, requiredChecks)
+	if err != nil {
+		return nil, err
+	}
+	configurationStatus := GitHubCheckDiscoveryNotValidated
+	summary := "Observed GitHub check runs for the exact commit."
+	if len(result.ObservedCheckRuns) == 0 {
+		summary = "No GitHub check runs are currently visible for the exact commit."
+	}
+	if len(requiredChecks) > 0 {
+		configurationStatus = GitHubCheckDiscoveryValid
+		summary = "Every requested GitHub check name exactly matches an observed check run."
+		if len(result.MissingRequiredChecks) > 0 {
+			configurationStatus = GitHubCheckDiscoveryMissing
+			summary = "One or more requested GitHub check names do not match the check runs currently observed for the exact commit."
+		}
+	}
+	return &GitHubCheckDiscovery{
+		Repository: repository, CommitSHA: commitSHA, RequiredChecks: requiredChecks,
+		ConfigurationStatus: configurationStatus, Summary: summary,
+		ObservedCheckRuns: result.ObservedCheckRuns, MissingRequiredChecks: result.MissingRequiredChecks,
+		AllObservedChecksTerminal: result.AllObservedChecksTerminal,
+	}, nil
+}
+
 func (s *Service) RegisterGitHubCheckGate(ctx context.Context, projectID string, taskID int64, req RegisterGitHubCheckGateRequest) (*GitHubCheckGate, error) {
 	task, err := s.validateTask(ctx, projectID, taskID)
 	if err != nil {

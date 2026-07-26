@@ -10,11 +10,30 @@ Den does not run CI. GitHub Actions remains the CI runner. The Review service re
 
 ## MCP tools
 
-Use `watch_github_checks` after pushing:
+When the exact GitHub job/check-run names are not already known, inspect the
+exact pushed commit first:
 
 ```json
 {
-  "project_id": "den-services",
+  "repository": "OWNER/REPO",
+  "commit_sha": "0123456789abcdef0123456789abcdef01234567",
+  "required_checks": ["optional exact name to validate"]
+}
+```
+
+`discover_github_checks` is read-only. It does not require a Den task, change
+task status, create or supersede a gate, post evidence, or alter any polling
+deadline. It returns every latest-by-name check run currently visible for the
+exact SHA, including status, conclusion, and URLs. When `required_checks` is
+supplied, `configuration_status` is `valid` or
+`missing_required_checks`, and the response includes exact observed candidates.
+An empty observation means GitHub has not exposed check runs for that SHA yet;
+it is not a successful gate.
+
+Copy the intended exact names into `watch_github_checks` after discovery:
+
+```json
+{
   "task_id": 4245,
   "repository": "OWNER/REPO",
   "commit_sha": "0123456789abcdef0123456789abcdef01234567",
@@ -31,12 +50,17 @@ Use `watch_github_checks` after pushing:
 
 `watch_github_checks` is intentionally non-blocking. It registers the durable exact-SHA gate and returns the deferral handle/current state. `await_github_checks` remains available for compatibility through the migration window, but is deprecated because it historically returned immediately despite its name.
 
+Repository check profiles are intentionally not part of this contract.
+Discovery keeps configuration explicit and auditably exact without introducing
+a second name-mapping system. Add profiles only if measured repeated usage
+shows a problem that exact-SHA discovery does not solve.
+
 Registering a gate promotes the referenced task to `review` in the Tasks service before the gate is stored. Agents do not need a separate status-update call, and registration intentionally works from every current task status. When this moves a `blocked` task to review, Tasks clears the stale blocker context so `blocked` remains a truthful statement about an active impediment.
 
 Read the existing gate without changing its timeout, grace window, polling interval, or `next_poll_at`:
 
 ```json
-{"project_id":"den-services","task_id":4245,"commit_sha":"0123456789abcdef0123456789abcdef01234567"}
+{"task_id":4245,"commit_sha":"0123456789abcdef0123456789abcdef01234567"}
 ```
 
 Use that payload with `get_github_check_gate`, or add `after_id` and `wait_ms` for `wait_for_github_checks`. The bounded wait is capped at 50 seconds and returns either terminal gate/event state or a typed progress receipt with `timed_out: true` and a reusable `next_cursor`. A direct Codex CLI session may issue another bounded wait using that cursor; it must not hot-loop or call the watch operation again. Managed runtimes should consume the project terminal-event cursor directly.
@@ -58,6 +82,12 @@ The response is the current gate record:
 
 ## Review HTTP API
 
+Discover check runs without creating workflow state:
+
+```http
+POST /v1/review/github-checks/discover
+```
+
 Register a gate:
 
 ```http
@@ -76,7 +106,7 @@ Bounded wait on an existing task/commit gate:
 GET /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}/wait?after_id=41&wait_ms=45000
 ```
 
-Both endpoints require the Review service token.
+These endpoints require the Review service token.
 
 For the current high-trust local deployment, Review may be configured with
 `allow_unauthenticated_local_dev: true`. In that mode, direct local HTTP

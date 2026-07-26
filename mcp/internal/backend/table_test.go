@@ -506,6 +506,7 @@ func reviewRoute(operation string) bool {
 		"set_review_finding_status",
 		"await_github_checks",
 		"watch_github_checks",
+		"discover_github_checks",
 		"get_github_check_gate",
 		"wait_for_github_checks":
 		return true

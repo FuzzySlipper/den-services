@@ -187,6 +187,12 @@ type githubCheckGateBody struct {
 	SessionKey          string   `json:"session_key,omitempty"`
 }
 
+type githubCheckDiscoveryBody struct {
+	Repository     string   `json:"repository"`
+	CommitSHA      string   `json:"commit_sha"`
+	RequiredChecks []string `json:"required_checks,omitempty"`
+}
+
 func (c *Client) callReviewREST(ctx context.Context, backend config.BackendConfig, route Route, call ToolCall) (Result, *Failure, error) {
 	request, err := buildReviewRESTRequest(ctx, backend, route, call)
 	if err != nil {
@@ -341,6 +347,15 @@ func reviewRESTRequestBody(operation string, arguments reviewToolArguments) ([]b
 			PollIntervalSeconds: arguments.PollIntervalSeconds, RequestedBy: strings.TrimSpace(arguments.RequestedBy),
 			AgentProfile: strings.TrimSpace(arguments.AgentProfile), AgentInstanceID: strings.TrimSpace(arguments.AgentInstanceID),
 			SessionKey: strings.TrimSpace(arguments.SessionKey),
+		})
+	case "discover_github_checks":
+		requiredChecks, err := parseStringList(arguments.RequiredChecks)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(githubCheckDiscoveryBody{
+			Repository: strings.TrimSpace(arguments.Repository), CommitSHA: strings.TrimSpace(arguments.CommitSHA),
+			RequiredChecks: requiredChecks,
 		})
 	case "list_review_rounds", "list_review_findings", "get_github_check_gate", "wait_for_github_checks":
 		return nil, nil

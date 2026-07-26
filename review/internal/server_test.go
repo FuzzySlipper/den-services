@@ -96,6 +96,35 @@ func TestReviewServerFinalizesReview(t *testing.T) {
 	}
 }
 
+func TestReviewServerDiscoversGitHubChecksWithoutTaskContext(t *testing.T) {
+	service := newTestService(newMemoryStore(), &fakeMessages{}, &fakeTasks{})
+	service.ConfigureGitHubChecks(&fakeGitHubChecks{result: GitHubCheckResult{
+		ObservedCheckRuns:         []GitHubCheckRun{{Name: "Verify", Status: "completed", Conclusion: "success"}},
+		AllObservedChecksTerminal: true,
+	}}, DefaultGitHubCheckOptions())
+	info, _ := health.NewBuildInfo("review", "0.1.0", "testcommit", time.Now().UTC())
+	server, err := NewHTTPServer(&Config{
+		BindAddr: "127.0.0.1:0", ServiceToken: "token", AllowUnauthenticatedLocalDev: true,
+		HTTP: HTTPConfig{ReadHeaderTimeout: 5 * time.Second},
+	}, info, service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := bytes.NewBufferString(`{"repository":"owner/repo","commit_sha":"0123456789abcdef0123456789abcdef01234567","required_checks":["Verify"]}`)
+	request := httptest.NewRequest(http.MethodPost, "/v1/review/github-checks/discover", body)
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+
+	var discovery GitHubCheckDiscoveryResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &discovery); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, response.Body.String())
+	}
+	if response.Code != http.StatusOK || discovery.ConfigurationStatus != GitHubCheckDiscoveryValid ||
+		len(discovery.ObservedCheckRuns) != 1 {
+		t.Fatalf("response code=%d discovery=%+v body=%s", response.Code, discovery, response.Body.String())
+	}
+}
+
 func newReviewServerForAuthTest(t *testing.T, allowUnauthenticated bool) *http.Server {
 	t.Helper()
 

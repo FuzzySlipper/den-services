@@ -32,6 +32,7 @@ type ReviewUseCases interface {
 	PostPacketMarkdown(ctx context.Context, projectID string, taskID int64, req PostPacketMarkdownRequest) (*ReviewPacket, error)
 	WorkflowSummary(ctx context.Context, projectID string, taskID int64) (WorkflowSummary, error)
 	WorkflowSummaryForTask(ctx context.Context, taskID int64) (WorkflowSummary, error)
+	DiscoverGitHubChecks(ctx context.Context, req DiscoverGitHubChecksRequest) (*GitHubCheckDiscovery, error)
 	RegisterGitHubCheckGate(ctx context.Context, projectID string, taskID int64, req RegisterGitHubCheckGateRequest) (*GitHubCheckGate, error)
 	GetGitHubCheckGate(ctx context.Context, projectID string, taskID int64, commitSHA string) (*GitHubCheckGate, error)
 	WaitGitHubCheckGateEvents(ctx context.Context, query ListGitHubCheckGateEventsQuery, wait time.Duration) (GitHubCheckGateEventPage, error)
@@ -56,6 +57,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}/review/workflow-summary", h.workflowSummary)
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/packets/validate", h.validatePacket)
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/packets", h.postPacket)
+	mux.HandleFunc("POST /v1/review/github-checks/discover", h.discoverGitHubChecks)
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates", h.registerGitHubCheckGate)
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}", h.getGitHubCheckGate)
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}/wait", h.waitForGitHubCheckGate)
@@ -357,6 +359,19 @@ func (h *Handler) workflowSummaryForTask(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	api.WriteJSON(w, http.StatusOK, toWorkflowSummaryResponse(summary))
+}
+
+func (h *Handler) discoverGitHubChecks(w http.ResponseWriter, r *http.Request) {
+	var req DiscoverGitHubChecksRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	discovery, err := h.service.DiscoverGitHubChecks(r.Context(), req)
+	if err != nil {
+		writeReviewError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, toGitHubCheckDiscoveryResponse(discovery))
 }
 
 func (h *Handler) registerGitHubCheckGate(w http.ResponseWriter, r *http.Request) {

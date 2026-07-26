@@ -113,6 +113,86 @@ func TestRequestReviewMetadataUsesCanonicalPacketKind(t *testing.T) {
 	}
 }
 
+func TestDiscoverGitHubChecksIsReadOnly(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Status: TaskStatusInProgress},
+	}}
+	provider := &fakeGitHubChecks{result: GitHubCheckResult{
+		ObservedCheckRuns: []GitHubCheckRun{
+			{Name: "Fast changed-surface safeguards", Status: "completed", Conclusion: "success", DetailsURL: "https://github.test/job/1"},
+		},
+		MissingRequiredChecks:     []string{"ASHA CI"},
+		AllObservedChecksTerminal: true,
+	}}
+	service := newTestService(store, messages, tasks)
+	service.ConfigureGitHubChecks(provider, DefaultGitHubCheckOptions())
+
+	discovery, err := service.DiscoverGitHubChecks(ctx, DiscoverGitHubChecksRequest{
+		Repository: " FuzzySlipper/asha ", CommitSHA: "ABCDEF0123456789ABCDEF0123456789ABCDEF01",
+		RequiredChecks: []string{" ASHA CI "},
+	})
+	if err != nil {
+		t.Fatalf("DiscoverGitHubChecks() error = %v", err)
+	}
+	if discovery.Repository != "FuzzySlipper/asha" || discovery.CommitSHA != "abcdef0123456789abcdef0123456789abcdef01" {
+		t.Fatalf("normalized discovery target = %+v", discovery)
+	}
+	if discovery.ConfigurationStatus != GitHubCheckDiscoveryMissing ||
+		len(discovery.MissingRequiredChecks) != 1 ||
+		len(discovery.ObservedCheckRuns) != 1 ||
+		discovery.ObservedCheckRuns[0].DetailsURL == "" {
+		t.Fatalf("discovery diagnostics = %+v", discovery)
+	}
+	if provider.calls != 1 || provider.lastRepository != "FuzzySlipper/asha" ||
+		provider.lastCommitSHA != discovery.CommitSHA ||
+		len(provider.lastRequiredChecks) != 1 || provider.lastRequiredChecks[0] != "ASHA CI" {
+		t.Fatalf("provider call = %+v", provider)
+	}
+	if len(tasks.statusUpdates) != 0 || len(messages.appended) != 0 || len(store.githubCheckGates) != 0 {
+		t.Fatalf("discovery mutated workflow: task_updates=%v messages=%v gates=%v",
+			tasks.statusUpdates, messages.appended, store.githubCheckGates)
+	}
+}
+
+func TestDiscoverGitHubChecksWithoutValidationReportsNoVisibleRuns(t *testing.T) {
+	provider := &fakeGitHubChecks{result: GitHubCheckResult{}}
+	service := newTestService(newMemoryStore(), &fakeMessages{}, &fakeTasks{})
+	service.ConfigureGitHubChecks(provider, DefaultGitHubCheckOptions())
+
+	discovery, err := service.DiscoverGitHubChecks(context.Background(), DiscoverGitHubChecksRequest{
+		Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if discovery.ConfigurationStatus != GitHubCheckDiscoveryNotValidated ||
+		!strings.Contains(discovery.Summary, "No GitHub check runs") ||
+		len(discovery.ObservedCheckRuns) != 0 {
+		t.Fatalf("discovery = %+v", discovery)
+	}
+}
+
+func TestDiscoverGitHubChecksRejectsInvalidTargetBeforeProviderCall(t *testing.T) {
+	provider := &fakeGitHubChecks{}
+	service := newTestService(newMemoryStore(), &fakeMessages{}, &fakeTasks{})
+	service.ConfigureGitHubChecks(provider, DefaultGitHubCheckOptions())
+
+	for _, req := range []DiscoverGitHubChecksRequest{
+		{Repository: "not-a-repository", CommitSHA: "0123456789abcdef0123456789abcdef01234567"},
+		{Repository: "owner/repo", CommitSHA: "short"},
+	} {
+		if _, err := service.DiscoverGitHubChecks(context.Background(), req); err == nil {
+			t.Fatalf("DiscoverGitHubChecks(%+v) error = nil", req)
+		}
+	}
+	if provider.calls != 0 {
+		t.Fatalf("provider calls = %d, want 0", provider.calls)
+	}
+}
+
 func TestPostReviewFindingsAppendsCompatiblePacket(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()
@@ -1597,15 +1677,21 @@ func (f *barrierTasks) CreateFollowUpTask(
 }
 
 type fakeGitHubChecks struct {
-	result       GitHubCheckResult
-	err          error
-	resultsBySHA map[string]GitHubCheckResult
-	errorsBySHA  map[string]error
-	calls        int
+	result             GitHubCheckResult
+	err                error
+	resultsBySHA       map[string]GitHubCheckResult
+	errorsBySHA        map[string]error
+	calls              int
+	lastRepository     string
+	lastCommitSHA      string
+	lastRequiredChecks []string
 }
 
-func (f *fakeGitHubChecks) CheckCommit(_ context.Context, _ string, commitSHA string, _ []string) (GitHubCheckResult, error) {
+func (f *fakeGitHubChecks) CheckCommit(_ context.Context, repository string, commitSHA string, requiredChecks []string) (GitHubCheckResult, error) {
 	f.calls++
+	f.lastRepository = repository
+	f.lastCommitSHA = commitSHA
+	f.lastRequiredChecks = append([]string(nil), requiredChecks...)
 	if err := f.errorsBySHA[commitSHA]; err != nil {
 		return GitHubCheckResult{}, err
 	}

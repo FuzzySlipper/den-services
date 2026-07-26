@@ -114,6 +114,23 @@ type RegisterGitHubCheckGateRequest struct {
 	SessionKey          string   `json:"session_key,omitempty"`
 }
 
+type DiscoverGitHubChecksRequest struct {
+	Repository     string   `json:"repository"`
+	CommitSHA      string   `json:"commit_sha"`
+	RequiredChecks []string `json:"required_checks,omitempty"`
+}
+
+type GitHubCheckDiscoveryResponse struct {
+	Repository                string           `json:"repository"`
+	CommitSHA                 string           `json:"commit_sha"`
+	RequiredChecks            []string         `json:"required_checks,omitempty"`
+	ConfigurationStatus       string           `json:"configuration_status"`
+	Summary                   string           `json:"summary"`
+	ObservedCheckRuns         []GitHubCheckRun `json:"observed_check_runs"`
+	MissingRequiredChecks     []string         `json:"missing_required_checks,omitempty"`
+	AllObservedChecksTerminal bool             `json:"all_observed_checks_terminal"`
+}
+
 type ReviewRoundResponse struct {
 	ID                      int64      `json:"id"`
 	ProjectID               string     `json:"project_id"`
