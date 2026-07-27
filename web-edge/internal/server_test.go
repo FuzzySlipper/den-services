@@ -44,7 +44,12 @@ func TestServerServesReleaseAndProxiesOnlyThroughGateway(t *testing.T) {
 	edge := httptest.NewServer(server.Handler)
 	defer edge.Close()
 
-	response := get(t, edge.URL+"/projects/den-web/tasks")
+	response := get(t, edge.URL+"/")
+	if response.StatusCode != http.StatusOK || !strings.Contains(readBody(t, response), "<title>Den</title>") {
+		t.Fatalf("root response status = %d", response.StatusCode)
+	}
+
+	response = get(t, edge.URL+"/projects/den-web/tasks")
 	if response.StatusCode != http.StatusOK || !strings.Contains(readBody(t, response), "<title>Den</title>") {
 		t.Fatalf("SPA response status = %d", response.StatusCode)
 	}

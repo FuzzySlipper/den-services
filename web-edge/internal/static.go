@@ -7,6 +7,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -67,13 +68,17 @@ func (h *staticHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requestPath, err := filepath.Localize(strings.TrimPrefix(filepath.Clean("/"+r.URL.Path), "/"))
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	if requestPath == "." {
+	cleanedPath := path.Clean("/" + r.URL.Path)
+	requestPath := ""
+	var err error
+	if cleanedPath == "/" {
 		requestPath = "index.html"
+	} else {
+		requestPath, err = filepath.Localize(strings.TrimPrefix(cleanedPath, "/"))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
 	}
 	target := filepath.Join(h.cfg.Root, requestPath)
 	if info, statErr := os.Stat(target); statErr == nil && info.Mode().IsRegular() {
