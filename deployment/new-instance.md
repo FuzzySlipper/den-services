@@ -357,8 +357,10 @@ sudo -u postgres psql -p 5433 -d postgres \
   -c "alter system set listen_addresses = '127.0.0.1'"
 ```
 
-Create a small, explicit host authentication file. Keep peer access for the
-local PostgreSQL administrator and require SCRAM for every application role:
+Create a small, explicit host authentication file matching the selected
+deployment profile. For the local-trust profile, keep peer access for the local
+PostgreSQL administrator and trust only Unix-socket and IPv4 loopback
+application connections:
 
 ```sh
 sudo cp "/etc/postgresql/$DEN_POSTGRES_MAJOR/denservices/pg_hba.conf" \
@@ -366,8 +368,8 @@ sudo cp "/etc/postgresql/$DEN_POSTGRES_MAJOR/denservices/pg_hba.conf" \
 sudo tee \
   "/etc/postgresql/$DEN_POSTGRES_MAJOR/denservices/pg_hba.conf" >/dev/null <<'EOF'
 local   all   postgres                              peer
-local   all   all                                   scram-sha-256
-host    all   all   127.0.0.1/32                    scram-sha-256
+local   all   all                                   trust
+host    all   all   127.0.0.1/32                    trust
 EOF
 sudo chown postgres:postgres \
   "/etc/postgresql/$DEN_POSTGRES_MAJOR/denservices/pg_hba.conf"
@@ -378,6 +380,11 @@ sudo systemctl restart \
 sudo systemctl enable \
   "postgresql@$DEN_POSTGRES_MAJOR-denservices.service"
 ```
+
+For the hardened profile, use the same file and commands but replace both
+`trust` application methods with `scram-sha-256`; then provision the distinct
+passwords and password-bearing URLs described below. Do not combine SCRAM HBA
+rules with the passwordless URLs from the local-trust profile.
 
 Do not add a LAN `pg_hba.conf` entry. Every service in this deployment connects
 over loopback.
