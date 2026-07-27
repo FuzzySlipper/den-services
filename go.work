@@ -27,4 +27,5 @@ use (
 	./timeline
 	./visual-contract
 	./visual-inspect
+	./web-edge
 )

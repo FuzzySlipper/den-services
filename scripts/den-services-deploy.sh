@@ -367,7 +367,7 @@ built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 stage_dir="$(mktemp -d "/tmp/den-services-${service}.XXXXXX")"
 
 echo "Testing ${service} from ${repo_root}"
-go test ./...
+go test "./${module}/..."
 
 echo "Building ${binary_path}"
 mkdir -p "${stage_dir}/bin"

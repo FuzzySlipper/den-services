@@ -1,0 +1,15 @@
+server:
+  listen_addr: "0.0.0.0:18080"
+  read_header_timeout: "5s"
+  idle_timeout: "2m"
+
+static:
+  root: "/data/services/den-web/wwwroot"
+  runtime_config_file: "den-web-config.json"
+  build_sentinel_file: "den-web-build.json"
+  immutable_asset_max_age: "8760h"
+
+gateway:
+  base_url: "http://127.0.0.1:8079"
+  bearer_token_env: "DEN_WEB_EDGE_GATEWAY_TOKEN"
+  response_header_timeout: "30s"
