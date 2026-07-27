@@ -1146,6 +1146,19 @@ Do not open 8079, 5199, 5433, or any owner-service port.
 
 ### 7.5 Validate Den Web from the machine and a LAN browser
 
+Identify the target unambiguously before collecting receipts. Private LAN
+addresses commonly repeat across sites, so an IP alone can accidentally prove
+another deployment:
+
+```sh
+hostname
+cat /etc/machine-id
+cat /proc/sys/kernel/random/boot_id
+hostname -I
+```
+
+Record the SSH host/profile or other access route alongside these values.
+
 On the new machine, run the checked-in smoke with the deployed commit:
 
 ```sh
