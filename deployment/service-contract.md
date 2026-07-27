@@ -14,10 +14,18 @@ Every registered service must:
 - bind health/version URLs on loopback by default;
 - deploy as `den-go@<service>.service`.
 
+`web-edge` is the intentional public-listener exception: it binds the trusted
+LAN address on port 18080, while its registered smoke URLs remain loopback.
+
 The root deployment contract test builds every registered primary binary and
 runs `--version`. The den-srv deploy script should additionally smoke
 `/health` and `/version` after restart and compare the reported commit to the
 binary it built.
+
+For a new empty instance where PostgreSQL and all den-services processes run on
+one machine, follow [`new-instance.md`](./new-instance.md). It includes the
+PostgreSQL role/migration order, systemd bootstrap, service dependency order,
+and first-deployment evidence checklist.
 
 For new Den Core lifeboat services, use
 [`docs/lifeboat-service-substrate.md`](../docs/lifeboat-service-substrate.md)

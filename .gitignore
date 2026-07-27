@@ -5,6 +5,8 @@ dist/
 *.test
 *.out
 migrate
+!migration/cmd/migrate/
+!migration/cmd/migrate/main.go
 coverage.*
 
 # Local config and secrets

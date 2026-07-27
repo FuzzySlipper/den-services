@@ -39,3 +39,10 @@ make test
 make build SERVICE=gateway
 make build-all
 ```
+
+## Deployment
+
+For a new, empty instance with PostgreSQL and all services on one machine, use
+the [single-machine deployment guide](deployment/new-instance.md). Its Fedora
+path and local-agent security profile were validated during the first
+clean-machine deployment.

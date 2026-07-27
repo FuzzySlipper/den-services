@@ -1,5 +1,10 @@
 # den-services PostgreSQL deployment notes
 
+For a clean, empty, single-machine installation, follow
+[`new-instance.md`](./new-instance.md). This file records the first `den-srv`
+deployment and remains useful as historical operational evidence; it is not a
+complete fresh-host procedure.
+
 Source of operational truth: Den document
 `den-network/den-services-postgresql-2026-06-18`.
 

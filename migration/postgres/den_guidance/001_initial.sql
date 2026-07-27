@@ -75,8 +75,8 @@ begin
             end,
             sort_order,
             notes,
-            coalesce(nullif(created_at, '')::timestamptz, now()),
-            coalesce(nullif(updated_at, '')::timestamptz, now())
+            coalesce(nullif(created_at::text, '')::timestamptz, now()),
+            coalesce(nullif(updated_at::text, '')::timestamptz, now())
         from den_core.agent_guidance_entries
         on conflict (project_id, document_project_id, document_slug) do nothing;
 
