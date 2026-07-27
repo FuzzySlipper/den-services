@@ -34,11 +34,12 @@ These limitations remain:
   Doc Publish's writable Git checkout and push credentials, and Visual
   Inspect's model endpoint. The proven local profile disables Review's GitHub
   polling and omits those optional services.
-- Fedora 43's Node 22.22.2 can build and run Den Web, but the checked-in
-  Nx/Playwright configuration fails while loading its browser-test config with
-  `TypeError: Cannot convert undefined or null to object`. The deployment
-  procedure below preserves the non-browser gates and requires a live browser
-  run from a build host where `npm run e2e` passes.
+- Node 22.22.2 can build and run Den Web, but the checked-in Nx/Playwright
+  configuration fails while loading its browser-test config with
+  `TypeError: Cannot convert undefined or null to object`. Upgrade to a newer
+  patch release in the same maintained Node channel; Node 22.23.1 is proven.
+  The fallback below is only for distributions whose maintained channel cannot
+  yet provide the corrected runtime.
 
 Record each correction in [First-deployment evidence](#first-deployment-evidence)
 and update this guide in the same change.
@@ -92,8 +93,9 @@ normal local agents should use MCP.
 - The interactive deployment/service account can use non-interactive sudo and
   owns the service roots. The proven account was `lore:lore`.
 - Go 1.26 or newer is installed; every module currently declares `go 1.26`.
-- Node.js 22 or newer and npm are installed when Den Web is included. The
-  proven Den Web runtime used Fedora's Node 22.22.2 and npm 10.9.7.
+- Node.js 22 or newer and npm are installed when Den Web is included. Node
+  22.23.1 and npm 10.9.8 are proven for the complete build and Playwright
+  suite; avoid Node 22.22.2 as described in the caveats.
 - The machine can clone `https://github.com/FuzzySlipper/den-services.git` and
   `https://github.com/FuzzySlipper/den-web.git`, or equivalent repository URLs.
 - All commands are run on the new machine.
@@ -1026,12 +1028,22 @@ sudo install -d -m 0755 \
   /data/services/den-web /data/services/den-web/releases
 ```
 
+Install the pinned frontend dependencies and Playwright Chromium before the
+first deployment. The deploy command runs the full browser suite, so a clean
+machine must have both the browser binary and its OS libraries:
+
+```sh
+cd /data/dev/den-web
+npm ci
+npx playwright install --with-deps chromium
+```
+
 Stage the first asset release without a live smoke. This breaks the initial
 asset/edge startup dependency; normal later deploys must leave smoke enabled:
 
 ```sh
 cd /data/dev/den-web
-env NX_TUI=false DEPLOY_SMOKE=0 ENVIRONMENT_NAME="$(hostname -s)" \
+env NX_DAEMON=false NX_TUI=false DEPLOY_SMOKE=0 ENVIRONMENT_NAME="$(hostname -s)" \
   npm run deploy:den-srv
 ```
 
@@ -1073,15 +1085,18 @@ static/API smoke:
 ```sh
 cd /data/dev/den-web
 env \
+  NX_DAEMON=false \
   NX_TUI=false \
   DEN_WEB_URL='http://127.0.0.1:18080' \
   ENVIRONMENT_NAME="$(hostname -s)" \
   npm run deploy:den-srv
 ```
 
-If Fedora's Node 22.22.2 produces the Nx native-loader error recorded in the
-caveats, the deploy stops before activating a release. Preserve the other gates
-and use the deploy script only for staging, restart, and smoke:
+If Node 22.22.2 produces the Nx native-loader error recorded in the caveats,
+upgrade to a newer patch release from the same maintained channel first. If the
+operating system cannot yet provide one, the deploy stops before activating a
+release. Preserve the other gates and use the deploy script only for staging,
+restart, and smoke:
 
 ```sh
 cd /data/dev/den-web
@@ -1095,6 +1110,7 @@ npm test
 npm run build
 
 env \
+  NX_DAEMON=false \
   NX_TUI=false \
   SKIP_INSTALL=1 \
   SKIP_CHECKS=1 \
