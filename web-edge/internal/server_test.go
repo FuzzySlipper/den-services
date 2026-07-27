@@ -1,6 +1,7 @@
 package webedge
 
 import (
+	"bufio"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -119,6 +120,129 @@ func TestServerCachePolicy(t *testing.T) {
 	_ = response.Body.Close()
 }
 
+func TestServerPreservesProxyBodyIdempotencyHeadersAndStatus(t *testing.T) {
+	var receivedBody string
+	var receivedIdempotencyKey string
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read Gateway request body: %v", err)
+			return
+		}
+		receivedBody = string(body)
+		receivedIdempotencyKey = r.Header.Get("Idempotency-Key")
+		if r.Method != http.MethodPost {
+			t.Errorf("Gateway method = %s, want POST", r.Method)
+		}
+		w.Header().Set("Location", "/v1/review/finalizations/17")
+		w.Header().Set("X-Request-ID", "gateway-request-17")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"accepted":true}`))
+	}))
+	defer gateway.Close()
+
+	edge := newTestEdge(t, releaseFixture(t), gateway.URL)
+	request, err := http.NewRequest(
+		http.MethodPost,
+		edge.URL+"/api/v1/review/finalizations",
+		strings.NewReader(`{"review_round_id":17}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", "finalization-17")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusAccepted {
+		t.Fatalf("proxy status = %d, want 202", response.StatusCode)
+	}
+	if got := response.Header.Get("Location"); got != "/v1/review/finalizations/17" {
+		t.Fatalf("Location = %q", got)
+	}
+	if got := response.Header.Get("X-Request-ID"); got != "gateway-request-17" {
+		t.Fatalf("X-Request-ID = %q", got)
+	}
+	if receivedBody != `{"review_round_id":17}` {
+		t.Fatalf("Gateway body = %q", receivedBody)
+	}
+	if receivedIdempotencyKey != "finalization-17" {
+		t.Fatalf("Gateway Idempotency-Key = %q", receivedIdempotencyKey)
+	}
+}
+
+func TestServerStreamsSSEThroughTheEdge(t *testing.T) {
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("X-Stream-Owner", "timeline")
+		_, _ = io.WriteString(w, "event: stream_open\ndata: {\"scope\":\"den-web\"}\n\n")
+		w.(http.Flusher).Flush()
+	}))
+	defer gateway.Close()
+
+	edge := newTestEdge(t, releaseFixture(t), gateway.URL)
+	response := get(t, edge.URL+"/api/v1/timeline/projects/den-web/stream?limit=1")
+	defer response.Body.Close()
+	if got := response.Header.Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	if got := response.Header.Get("X-Stream-Owner"); got != "timeline" {
+		t.Fatalf("X-Stream-Owner = %q", got)
+	}
+	line, err := bufio.NewReader(response.Body).ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	if line != "event: stream_open\n" {
+		t.Fatalf("first streamed line = %q", line)
+	}
+}
+
+func TestStaticHandlerRejectsMethodsAndTraversalAndSupportsHEAD(t *testing.T) {
+	root := releaseFixture(t)
+	handler, err := newStaticHandler(testConfig(root, &url.URL{}).Static)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	post := httptest.NewRequest(http.MethodPost, "http://edge/", nil)
+	postRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(postRecorder, post)
+	if postRecorder.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST / status = %d, want 405", postRecorder.Code)
+	}
+	if got := postRecorder.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Fatalf("Allow = %q", got)
+	}
+
+	traversal := httptest.NewRequest(http.MethodGet, "http://edge/", nil)
+	traversal.URL.Path = "/../outside.txt"
+	traversalRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(traversalRecorder, traversal)
+	if traversalRecorder.Code != http.StatusNotFound {
+		t.Fatalf("traversal status = %d, want 404", traversalRecorder.Code)
+	}
+
+	head := httptest.NewRequest(http.MethodHead, "http://edge/main.12345678.js", nil)
+	headRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(headRecorder, head)
+	if headRecorder.Code != http.StatusOK {
+		t.Fatalf("HEAD asset status = %d", headRecorder.Code)
+	}
+	if headRecorder.Body.Len() != 0 {
+		t.Fatalf("HEAD asset body length = %d, want 0", headRecorder.Body.Len())
+	}
+	if headRecorder.Header().Get("Content-Length") == "" {
+		t.Fatal("HEAD asset is missing Content-Length")
+	}
+}
+
 func releaseFixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -156,6 +280,29 @@ func testConfig(root string, target *url.URL) *Config {
 			ResponseHeaderTimeout: time.Second,
 		},
 	}
+}
+
+func newTestEdge(t *testing.T, root string, gatewayURL string) *httptest.Server {
+	t.Helper()
+	target, err := url.Parse(gatewayURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := health.NewBuildInfo("web-edge", "test", "edge-commit", time.Unix(1, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewHTTPServer(
+		testConfig(root, target),
+		info,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edge := httptest.NewServer(server.Handler)
+	t.Cleanup(edge.Close)
+	return edge
 }
 
 func get(t *testing.T, target string) *http.Response {

@@ -67,6 +67,10 @@ func (h *staticHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if hasParentTraversal(r.URL.Path) {
+		http.NotFound(w, r)
+		return
+	}
 
 	cleanedPath := path.Clean("/" + r.URL.Path)
 	requestPath := ""
@@ -92,6 +96,15 @@ func (h *staticHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.serveFile(w, r, indexPath, info)
+}
+
+func hasParentTraversal(requestPath string) bool {
+	for _, segment := range strings.Split(requestPath, "/") {
+		if segment == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *staticHandler) serveFile(w http.ResponseWriter, r *http.Request, path string, info os.FileInfo) {
