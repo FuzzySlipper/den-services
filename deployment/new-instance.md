@@ -12,6 +12,13 @@ loopback. Only an intentional front door should be exposed to the LAN. The
 proven local-agent profile keeps MCP and Gateway on loopback; Den Web is the
 only LAN listener and does not require a browser access token.
 
+An all-in-one trusted agentbox may intentionally expose MCP on
+`0.0.0.0:5199` so local and LAN agent runtimes share one stable endpoint. In
+that profile, MCP is a second intentional front door alongside Den Web. Keep
+Gateway, PostgreSQL, and owner services on loopback. Do not use this
+unauthenticated profile outside a trusted agent network; use the hardened token
+profile when the network boundary is broader.
+
 This is not a data migration guide. Do not run the legacy import or backfill
 tools named in [No data import](#no-data-import).
 
@@ -731,6 +738,10 @@ At minimum, make these same-machine changes:
   den-core backend is deliberately provided.
 - In the local-trust profile, MCP uses `listen_addr: "127.0.0.1:5199"` and
   `security.allow_unauthenticated_local_dev: true`.
+- In the trusted agentbox LAN profile, MCP instead uses
+  `listen_addr: "0.0.0.0:5199"`. The same unauthenticated setting then applies
+  to LAN callers as well as local callers; this is an explicit mutation-capable
+  trusted-network choice, not an authentication boundary.
 - In the local-trust core deployment, set `review.github.enabled: false` and
   omit Gateway, Doc Publish, Visual Inspect, and Visual Contract until those
   capabilities are actually needed.
@@ -905,18 +916,28 @@ the guide with the diagnosis.
    done
    ```
 
-6. Deploy the local MCP front door after its standalone route configuration is
+6. Deploy the MCP front door after its standalone route configuration is
    reviewed:
 
    ```sh
    scripts/den-services-deploy.sh mcp --no-pull
    ```
 
-   Keep MCP on `127.0.0.1:5199`. A headless local-agent machine may omit
-   Gateway. When Den Web is included, defer Gateway deployment to section 7,
-   where its successor-only route table is installed first, and keep it on
-   `127.0.0.1:8079`. Legacy-only MCP operations continue to report the absent
-   `den-core` backend, while successor-backed operations work.
+   Keep MCP on `127.0.0.1:5199` for the local-agent profile, or deliberately
+   bind `0.0.0.0:5199` for the trusted agentbox LAN profile described above. A
+   headless agent machine may omit Gateway. When Den Web is included, defer
+   Gateway deployment to section 7, where its successor-only route table is
+   installed first, and keep it on `127.0.0.1:8079`. Legacy-only MCP operations
+   continue to report the absent `den-core` backend, while successor-backed
+   operations work.
+
+   If a legacy Den process already owns `5199`, first prove den-services MCP on
+   an alternate loopback canary port. Then move the legacy process to a
+   documented loopback-only rollback port such as `127.0.0.1:5200` before
+   starting `den-go@mcp.service` on canonical `5199`. Do not leave two LAN MCP
+   endpoints that both appear canonical. Existing clients already configured
+   for `http://localhost:5199/mcp` or the machine's LAN address then cut over
+   without configuration churn.
 
 After each first successful deployment, enable the unit for boot:
 
@@ -1142,7 +1163,10 @@ sudo firewall-cmd --permanent \
 sudo firewall-cmd --reload
 ```
 
-Do not open 8079, 5199, 5433, or any owner-service port.
+Do not open 8079, 5433, or any owner-service port. Keep 5199 closed for the
+local-agent profile. For the trusted agentbox LAN profile, allow 5199 only on
+the intended trusted-LAN interface or zone and record that exception in the
+deployment evidence.
 
 ### 7.5 Validate Den Web from the machine and a LAN browser
 
@@ -1258,9 +1282,10 @@ Confirm that PostgreSQL is not LAN-exposed:
 sudo ss -ltnp | grep ':5433'
 ```
 
-### 8.3 Token-free local MCP contract
+### 8.3 MCP contract
 
-Initialize MCP without an `Authorization` header:
+Initialize MCP without an `Authorization` header in the local-trust or trusted
+agentbox LAN profile:
 
 ```sh
 curl -fsS -X POST http://127.0.0.1:5199/mcp \
@@ -1280,7 +1305,10 @@ curl -fsS -X POST http://127.0.0.1:5199/mcp \
 ```
 
 On a clean instance, the result should contain `"isError":false` and an empty
-project list.
+project list. For the trusted agentbox LAN profile, repeat both calls through
+the machine's LAN address from a second host and confirm `tools/list` exposes
+the same registry as loopback. For the hardened profile, include the configured
+bearer token instead of performing token-free calls.
 
 ### 8.4 Reboot persistence
 
