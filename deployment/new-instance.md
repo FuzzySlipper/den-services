@@ -130,16 +130,23 @@ sudo apt-get install -y \
   ca-certificates \
   curl \
   git \
-  nodejs \
-  npm \
   openssl \
   postgresql-common \
   python3
 ```
 
-If the distribution's Node package is older than Node 22, install a current
-Node release from a maintained source before deploying Den Web. Verify both
-tools:
+Install Node and npm only when they are absent:
+
+```sh
+command -v node >/dev/null || sudo apt-get install -y nodejs
+command -v npm >/dev/null || sudo apt-get install -y npm
+```
+
+Keeping these as separate, conditional transactions matters when a host already
+uses NodeSource or another maintained Node repository: those `nodejs` packages
+bundle npm and conflict with Ubuntu's separate `npm` package. If the selected
+Node package is older than Node 22, install a current Node release from one
+maintained source before deploying Den Web. Verify both tools:
 
 ```sh
 node --version
