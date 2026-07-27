@@ -77,6 +77,9 @@ func (s *memoryStore) ListRounds(_ context.Context, projectID string, taskID int
 			rounds = append(rounds, &copied)
 		}
 	}
+	sort.Slice(rounds, func(i, j int) bool {
+		return rounds[i].RoundNumber < rounds[j].RoundNumber
+	})
 	return rounds, nil
 }
 

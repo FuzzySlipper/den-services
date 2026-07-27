@@ -684,6 +684,16 @@ for service in "${DEN_DEPLOY_SERVICES[@]}"; do
     -o "$DEN_SERVICE_USER" -g "$DEN_SERVICE_GROUP" \
     "/data/services/$service/config"
 done
+
+# Artifacts writes content-addressed blobs below its service root. Create each
+# path component explicitly so an intermediate directory is not left root-owned
+# by a recursive sudo install.
+sudo install -d -m 0755 \
+  -o "$DEN_SERVICE_USER" -g "$DEN_SERVICE_GROUP" \
+  /data/services/artifacts/data
+sudo install -d -m 0755 \
+  -o "$DEN_SERVICE_USER" -g "$DEN_SERVICE_GROUP" \
+  /data/services/artifacts/data/blobs
 ```
 
 The deployment script refuses to create these top-level roots itself.
