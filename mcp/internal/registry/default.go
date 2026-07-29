@@ -169,6 +169,8 @@ func modernizeDescription(name, description string) string {
 		return "Mark explicit user notification IDs as read for an agent identity. For scoped operations, use mark_project_notifications_read or mark_task_notifications_read."
 	case "get_document_discussion":
 		return "Read discussion threads and comments for a document without creating state. Use ensure_document_discussion only when a default thread must exist."
+	case "request_review":
+		return "Create or idempotently reuse a review request round and packet, then transition an in-progress task to review. The result reports whether the task transition was applied or already satisfied."
 	default:
 		return description
 	}

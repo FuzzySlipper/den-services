@@ -165,7 +165,10 @@ Current Core MCP tools in scope:
 Current REST behavior to preserve:
 
 - `POST /api/projects/{projectId}/tasks/{taskId}/review/request` creates a
-  review round and appends a review request or re-review packet.
+  review round, appends a review request or re-review packet, and moves an
+  `in_progress` task to `review`. Identical retries reuse the accepted
+  undecided round and packet, so a lost task-transition response can converge
+  without duplicate history.
 - `GET /api/projects/{projectId}/tasks/{taskId}/review-findings` lists findings
   by task, optional round, status, or resolved filter.
 - `POST /api/projects/{projectId}/tasks/{taskId}/review-rounds/{roundId}/findings`
@@ -413,7 +416,7 @@ MCP compatibility can preserve existing tool names by routing to review APIs:
 | `list_review_findings` | `review` | Reads by task or round. |
 | `respond_to_review_finding` | `review` | Stores response and optional status. |
 | `set_review_finding_status` | `review` | Stores status evidence. |
-| `request_review` | `review` | Prefer Markdown packet post path once available. |
+| `request_review` | `review` | Creates the packet and transitions `in_progress` to `review`; the result reports whether the transition was applied or already satisfied. |
 | `post_review_findings` | `review` | Advanced repair/repost path; reuses the round's canonical findings packet. |
 | `split_review_findings_to_follow_up` | `review` | Calls tasks; does not write task tables. |
 

@@ -211,20 +211,22 @@ type ReviewFindingResponse struct {
 }
 
 type ReviewPacketResponse struct {
-	ID               int64             `json:"id,omitempty"`
-	ProjectID        string            `json:"project_id"`
-	TaskID           int64             `json:"task_id"`
-	ReviewRoundID    *int64            `json:"review_round_id,omitempty"`
-	PacketKind       string            `json:"packet_kind"`
-	Sender           string            `json:"sender"`
-	MessageID        *int64            `json:"message_id,omitempty"`
-	FrontMatter      map[string]any    `json:"front_matter"`
-	TypedEnvelope    map[string]any    `json:"typed_envelope"`
-	MarkdownBody     string            `json:"markdown_body"`
-	ValidationStatus string            `json:"validation_status"`
-	ValidationErrors []ValidationIssue `json:"validation_errors,omitempty"`
-	CreatedAt        time.Time         `json:"created_at,omitempty"`
-	AcceptedAt       *time.Time        `json:"accepted_at,omitempty"`
+	ID                  int64             `json:"id,omitempty"`
+	ProjectID           string            `json:"project_id"`
+	TaskID              int64             `json:"task_id"`
+	ReviewRoundID       *int64            `json:"review_round_id,omitempty"`
+	PacketKind          string            `json:"packet_kind"`
+	Sender              string            `json:"sender"`
+	MessageID           *int64            `json:"message_id,omitempty"`
+	FrontMatter         map[string]any    `json:"front_matter"`
+	TypedEnvelope       map[string]any    `json:"typed_envelope"`
+	MarkdownBody        string            `json:"markdown_body"`
+	ValidationStatus    string            `json:"validation_status"`
+	ValidationErrors    []ValidationIssue `json:"validation_errors,omitempty"`
+	CreatedAt           time.Time         `json:"created_at,omitempty"`
+	AcceptedAt          *time.Time        `json:"accepted_at,omitempty"`
+	TaskTransition      string            `json:"task_transition,omitempty"`
+	ResultingTaskStatus string            `json:"resulting_task_status,omitempty"`
 }
 
 type ReviewFinalizationResponse struct {

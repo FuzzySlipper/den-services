@@ -76,6 +76,9 @@ const (
 	TaskStatusDone       = "done"
 	TaskStatusCancelled  = "cancelled"
 
+	TaskTransitionApplied          = "transitioned"
+	TaskTransitionAlreadySatisfied = "already_review"
+
 	ReviewTargetCodeDiff               = "code_diff"
 	ReviewTargetCampaignReconciliation = "campaign_reconciliation"
 
@@ -229,22 +232,24 @@ type ReviewFinding struct {
 }
 
 type ReviewPacket struct {
-	ID               int64
-	ProjectID        string
-	TaskID           int64
-	ReviewRoundID    *int64
-	PacketKind       string
-	Sender           string
-	MessageID        *int64
-	FrontMatter      map[string]any
-	TypedEnvelope    map[string]any
-	MarkdownBody     string
-	SourceMarkdown   string
-	ValidationStatus string
-	ValidationErrors []ValidationIssue
-	IdempotencyKey   string
-	CreatedAt        time.Time
-	AcceptedAt       *time.Time
+	ID                  int64
+	ProjectID           string
+	TaskID              int64
+	ReviewRoundID       *int64
+	PacketKind          string
+	Sender              string
+	MessageID           *int64
+	FrontMatter         map[string]any
+	TypedEnvelope       map[string]any
+	MarkdownBody        string
+	SourceMarkdown      string
+	ValidationStatus    string
+	ValidationErrors    []ValidationIssue
+	IdempotencyKey      string
+	CreatedAt           time.Time
+	AcceptedAt          *time.Time
+	TaskTransition      string
+	ResultingTaskStatus string
 }
 
 type ReviewFinalization struct {

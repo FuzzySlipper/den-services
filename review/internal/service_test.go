@@ -93,9 +93,10 @@ func TestServiceSetVerdictRejectsGreenPathVerdicts(t *testing.T) {
 func TestRequestReviewMetadataUsesCanonicalPacketKind(t *testing.T) {
 	ctx := context.Background()
 	messages := &fakeMessages{}
-	service := newTestService(newMemoryStore(), messages, &fakeTasks{tasks: map[int64]TaskContext{
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
 		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusReview, Priority: 1},
-	}})
+	}}
+	service := newTestService(newMemoryStore(), messages, tasks)
 	packet, err := service.RequestReview(ctx, "den-services", 42, CreateReviewRoundRequest{
 		RequestedBy: "pi", Branch: "task/3696-review-service", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
 	})
@@ -110,6 +111,91 @@ func TestRequestReviewMetadataUsesCanonicalPacketKind(t *testing.T) {
 	}
 	if messages.appended[0].Metadata["type"] != "review_request_packet" || messages.appended[0].Metadata["packet_kind"] != PacketKindReviewRequest {
 		t.Fatalf("message metadata did not separate type/packet_kind: %#v", messages.appended[0].Metadata)
+	}
+	if packet.TaskTransition != TaskTransitionAlreadySatisfied || packet.ResultingTaskStatus != TaskStatusReview {
+		t.Fatalf("task transition result = %q/%q", packet.TaskTransition, packet.ResultingTaskStatus)
+	}
+	if len(tasks.statusUpdates) != 0 {
+		t.Fatalf("already-review task received status updates: %+v", tasks.statusUpdates)
+	}
+}
+
+func TestRequestReviewTransitionsInProgressTaskAndConvergesAfterResponseLoss(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	tasks := &fakeTasks{
+		tasks: map[int64]TaskContext{
+			42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+		},
+		failAfterStatusUpdate: true,
+	}
+	service := newTestService(store, messages, tasks)
+	request := CreateReviewRoundRequest{
+		RequestedBy: "pi", Branch: "task/6377-request-review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+		TestsRun: []string{"go test -race ./review/internal"}, Notes: "Request review and transition atomically from the caller's perspective.",
+	}
+
+	if _, err := service.RequestReview(ctx, "den-services", 42, request); err == nil || !strings.Contains(err.Error(), "response lost") {
+		t.Fatalf("first RequestReview() error = %v, want response loss", err)
+	}
+	packet, err := service.RequestReview(ctx, "den-services", 42, request)
+	if err != nil {
+		t.Fatalf("retry RequestReview() error = %v", err)
+	}
+	rounds, err := store.ListRounds(ctx, "den-services", 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rounds) != 1 || len(messages.appended) != 1 || len(tasks.statusUpdates) != 1 {
+		t.Fatalf("retry duplicated workflow state: rounds=%d messages=%d status_updates=%d",
+			len(rounds), len(messages.appended), len(tasks.statusUpdates))
+	}
+	if packet.TaskTransition != TaskTransitionAlreadySatisfied || packet.ResultingTaskStatus != TaskStatusReview {
+		t.Fatalf("retry task transition result = %q/%q", packet.TaskTransition, packet.ResultingTaskStatus)
+	}
+}
+
+func TestRequestReviewConcurrentRetriesCreateOneWorkflowTransition(t *testing.T) {
+	ctx := context.Background()
+	store := &synchronizedRequestStore{memoryStore: newMemoryStore()}
+	messages := &synchronizedMessages{fakeMessages: &fakeMessages{}}
+	tasks := newBarrierTasks(false)
+	tasks.task.Status = TaskStatusInProgress
+	service := newTestService(store, messages, tasks)
+	request := CreateReviewRoundRequest{
+		RequestedBy: "pi", Branch: "task/6377-request-review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+	}
+
+	results := make(chan *ReviewPacket, 2)
+	errs := make(chan error, 2)
+	for range 2 {
+		go func() {
+			packet, err := service.RequestReview(ctx, "den-services", 42, request)
+			results <- packet
+			errs <- err
+		}()
+	}
+	<-tasks.entered
+	<-tasks.entered
+	close(tasks.release)
+
+	var packets []*ReviewPacket
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatalf("concurrent RequestReview() error = %v", err)
+		}
+		packets = append(packets, <-results)
+	}
+	rounds, err := store.ListRounds(ctx, "den-services", 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rounds) != 1 || packets[0].ID != packets[1].ID {
+		t.Fatalf("concurrent requests diverged: rounds=%d packet_ids=%d/%d", len(rounds), packets[0].ID, packets[1].ID)
+	}
+	if len(messages.appended) != 1 || tasks.historyTransitions != 1 {
+		t.Fatalf("concurrent requests duplicated effects: messages=%d transitions=%d", len(messages.appended), tasks.historyTransitions)
 	}
 }
 
@@ -1864,6 +1950,54 @@ type fakeMessages struct {
 type synchronizedFinalizationStore struct {
 	*memoryStore
 	mu sync.Mutex
+}
+
+type synchronizedRequestStore struct {
+	*memoryStore
+	mu sync.Mutex
+}
+
+func (s *synchronizedRequestStore) CreateRound(ctx context.Context, round *ReviewRound) (*ReviewRound, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.memoryStore.CreateRound(ctx, round)
+}
+
+func (s *synchronizedRequestStore) ListRounds(ctx context.Context, projectID string, taskID int64) ([]*ReviewRound, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.memoryStore.ListRounds(ctx, projectID, taskID)
+}
+
+func (s *synchronizedRequestStore) StorePacket(ctx context.Context, packet *ReviewPacket) (*ReviewPacket, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.memoryStore.StorePacket(ctx, packet)
+}
+
+func (s *synchronizedRequestStore) GetPacketByIdempotency(
+	ctx context.Context,
+	projectID string,
+	idempotencyKey string,
+) (*ReviewPacket, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.memoryStore.GetPacketByIdempotency(ctx, projectID, idempotencyKey)
+}
+
+type synchronizedMessages struct {
+	*fakeMessages
+	mu sync.Mutex
+}
+
+func (s *synchronizedMessages) AppendTaskMessage(
+	ctx context.Context,
+	projectID string,
+	req AppendMessageRequest,
+) (AppendedMessage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.fakeMessages.AppendTaskMessage(ctx, projectID, req)
 }
 
 func (s *synchronizedFinalizationStore) GetFinalizationByRound(ctx context.Context, roundID int64) (*ReviewFinalization, error) {

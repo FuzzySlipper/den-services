@@ -294,7 +294,18 @@ func (s *Service) CreateRoundForTask(ctx context.Context, taskID int64, req Crea
 }
 
 func (s *Service) RequestReview(ctx context.Context, projectID string, taskID int64, req CreateReviewRoundRequest) (*ReviewPacket, error) {
-	round, err := s.CreateRound(ctx, projectID, taskID, req)
+	task, err := s.validateTask(ctx, projectID, taskID, TaskStatusInProgress, TaskStatusReview)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.projects.AssertWritable(ctx, task.ProjectID); err != nil {
+		return nil, err
+	}
+	requestedRound, err := roundFromRequest(task.ProjectID, taskID, req, s.clock().UTC())
+	if err != nil {
+		return nil, err
+	}
+	round, err := s.reusableOrNewReviewRound(ctx, requestedRound)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +314,59 @@ func (s *Service) RequestReview(ctx context.Context, projectID string, taskID in
 		kind = PacketKindRereviewRequest
 	}
 	packet := packetForRound(round, kind, req.ThreadID, req.RunID)
-	return s.acceptPacket(ctx, packet, req.ThreadID)
+	packet, err = s.acceptPacket(ctx, packet, req.ThreadID)
+	if err != nil {
+		return nil, err
+	}
+	if task.Status == TaskStatusReview {
+		packet.TaskTransition = TaskTransitionAlreadySatisfied
+		packet.ResultingTaskStatus = TaskStatusReview
+		return packet, nil
+	}
+	updated, err := s.tasks.SetTaskStatus(ctx, task.ProjectID, task.ID, req.RequestedBy, TaskStatusReview)
+	if err != nil {
+		return nil, err
+	}
+	if updated.Status != TaskStatusReview {
+		return nil, fmt.Errorf("task status transition returned %q, want %q", updated.Status, TaskStatusReview)
+	}
+	packet.TaskTransition = TaskTransitionApplied
+	packet.ResultingTaskStatus = updated.Status
+	return packet, nil
+}
+
+func (s *Service) reusableOrNewReviewRound(ctx context.Context, requested *ReviewRound) (*ReviewRound, error) {
+	if existing, err := s.reusableReviewRound(ctx, requested); err != nil || existing != nil {
+		return existing, err
+	}
+	round, err := s.store.CreateRound(ctx, requested)
+	if err == nil {
+		return round, nil
+	}
+	// Another identical request may have committed between the read and create.
+	// Re-read before returning the create conflict so concurrent callers converge
+	// on the canonical undecided round.
+	if existing, reuseErr := s.reusableReviewRound(ctx, requested); reuseErr != nil || existing != nil {
+		return existing, reuseErr
+	}
+	return nil, err
+}
+
+func (s *Service) reusableReviewRound(ctx context.Context, requested *ReviewRound) (*ReviewRound, error) {
+	rounds, err := s.store.ListRounds(ctx, requested.ProjectID, requested.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	var latest *ReviewRound
+	for _, candidate := range rounds {
+		if latest == nil || candidate.RoundNumber > latest.RoundNumber {
+			latest = candidate
+		}
+	}
+	if latest != nil && latest.Verdict == "" && sameReviewRequest(latest, requested) {
+		return latest, nil
+	}
+	return nil, nil
 }
 
 func (s *Service) RequestCampaignReview(ctx context.Context, projectID string, taskID int64, req CreateCampaignReviewRequest) (*ReviewPacket, error) {
@@ -486,6 +549,37 @@ func sameCampaignRequest(existing *ReviewRound, requested *ReviewRound) bool {
 		}
 	}
 	return true
+}
+
+func sameReviewRequest(existing *ReviewRound, requested *ReviewRound) bool {
+	return existing.TargetKind == ReviewTargetCodeDiff &&
+		existing.RequestedBy == requested.RequestedBy &&
+		existing.Branch == requested.Branch &&
+		existing.BaseBranch == requested.BaseBranch &&
+		existing.BaseCommit == requested.BaseCommit &&
+		existing.HeadCommit == requested.HeadCommit &&
+		(requested.LastReviewedHeadCommit == "" || existing.LastReviewedHeadCommit == requested.LastReviewedHeadCommit) &&
+		equalOptionalInts(existing.CommitsSinceLastReview, requested.CommitsSinceLastReview) &&
+		equalStrings(existing.TestsRun, requested.TestsRun) &&
+		existing.Notes == requested.Notes &&
+		existing.PreferredDiffBaseRef == requested.PreferredDiffBaseRef &&
+		existing.PreferredDiffBaseCommit == requested.PreferredDiffBaseCommit &&
+		existing.PreferredDiffHeadRef == requested.PreferredDiffHeadRef &&
+		existing.PreferredDiffHeadCommit == requested.PreferredDiffHeadCommit &&
+		existing.AlternateDiffBaseRef == requested.AlternateDiffBaseRef &&
+		existing.AlternateDiffBaseCommit == requested.AlternateDiffBaseCommit &&
+		existing.AlternateDiffHeadRef == requested.AlternateDiffHeadRef &&
+		existing.AlternateDiffHeadCommit == requested.AlternateDiffHeadCommit &&
+		(requested.DeltaBaseCommit == "" || existing.DeltaBaseCommit == requested.DeltaBaseCommit) &&
+		equalOptionalInts(existing.InheritedCommitCount, requested.InheritedCommitCount) &&
+		equalOptionalInts(existing.TaskLocalCommitCount, requested.TaskLocalCommitCount)
+}
+
+func equalOptionalInts(left *int, right *int) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func equalStrings(left []string, right []string) bool {

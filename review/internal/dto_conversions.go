@@ -15,6 +15,7 @@ func toPacketResponse(packet *ReviewPacket) ReviewPacketResponse {
 		FrontMatter: packet.FrontMatter, TypedEnvelope: packet.TypedEnvelope, MarkdownBody: packet.MarkdownBody,
 		ValidationStatus: packet.ValidationStatus, ValidationErrors: packet.ValidationErrors,
 		CreatedAt: packet.CreatedAt, AcceptedAt: packet.AcceptedAt,
+		TaskTransition: packet.TaskTransition, ResultingTaskStatus: packet.ResultingTaskStatus,
 	}
 }
 
