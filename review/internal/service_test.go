@@ -156,6 +156,80 @@ func TestRequestReviewTransitionsInProgressTaskAndConvergesAfterResponseLoss(t *
 	}
 }
 
+func TestRequestReviewTransitionsInProgressTaskAndReportsResult(t *testing.T) {
+	ctx := context.Background()
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Status: TaskStatusInProgress},
+	}}
+	service := newTestService(newMemoryStore(), &fakeMessages{}, tasks)
+	packet, err := service.RequestReview(ctx, "den-services", 42, CreateReviewRoundRequest{
+		RequestedBy: "pi", Branch: "main", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+	})
+	if err != nil {
+		t.Fatalf("RequestReview() error = %v", err)
+	}
+	response := toPacketResponse(packet)
+	if response.TaskTransition != TaskTransitionApplied || response.ResultingTaskStatus != TaskStatusReview {
+		t.Fatalf("task transition response = %+v", response)
+	}
+	if len(tasks.statusUpdates) != 1 || tasks.statusUpdates[0].Status != TaskStatusReview {
+		t.Fatalf("task status updates = %+v", tasks.statusUpdates)
+	}
+}
+
+func TestRequestReviewReturnsTypedRetryableTaskTransitionError(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	tasks := &fakeTasks{
+		tasks: map[int64]TaskContext{
+			42: {ID: 42, ProjectID: "den-services", Status: TaskStatusInProgress},
+		},
+		failStatusUpdate: true,
+	}
+	service := newTestService(store, &fakeMessages{}, tasks)
+	request := CreateReviewRoundRequest{
+		RequestedBy: "pi", Branch: "main", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+	}
+	if _, err := service.RequestReview(ctx, "den-services", 42, request); err == nil {
+		t.Fatal("RequestReview() error = nil, want retryable transition error")
+	} else {
+		var serviceErr *ServiceError
+		if !errors.As(err, &serviceErr) || serviceErr.Code() != "task_transition_retryable" ||
+			serviceErr.HTTPStatus() != http.StatusServiceUnavailable {
+			t.Fatalf("RequestReview() error = %#v, want typed retryable transition error", err)
+		}
+	}
+
+	tasks.failStatusUpdate = false
+	packet, err := service.RequestReview(ctx, "den-services", 42, request)
+	if err != nil {
+		t.Fatalf("retry RequestReview() error = %v", err)
+	}
+	rounds, err := store.ListRounds(ctx, "den-services", 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rounds) != 1 || packet.TaskTransition != TaskTransitionApplied {
+		t.Fatalf("retry did not converge: rounds=%d packet=%+v", len(rounds), packet)
+	}
+}
+
+func TestRequestReviewRejectsTerminalTasks(t *testing.T) {
+	for _, status := range []string{TaskStatusDone, TaskStatusCancelled} {
+		t.Run(status, func(t *testing.T) {
+			service := newTestService(newMemoryStore(), &fakeMessages{}, &fakeTasks{tasks: map[int64]TaskContext{
+				42: {ID: 42, ProjectID: "den-services", Status: status},
+			}})
+			_, err := service.RequestReview(context.Background(), "den-services", 42, CreateReviewRoundRequest{
+				RequestedBy: "pi", Branch: "main", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+			})
+			if err == nil || !errors.Is(err, ErrInvalidTaskState) {
+				t.Fatalf("RequestReview() error = %v, want ErrInvalidTaskState", err)
+			}
+		})
+	}
+}
+
 func TestRequestReviewConcurrentRetriesCreateOneWorkflowTransition(t *testing.T) {
 	ctx := context.Background()
 	store := &synchronizedRequestStore{memoryStore: newMemoryStore()}

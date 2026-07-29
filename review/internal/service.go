@@ -325,7 +325,11 @@ func (s *Service) RequestReview(ctx context.Context, projectID string, taskID in
 	}
 	updated, err := s.tasks.SetTaskStatus(ctx, task.ProjectID, task.ID, req.RequestedBy, TaskStatusReview)
 	if err != nil {
-		return nil, err
+		return nil, NewServiceError(
+			fmt.Errorf("transitioning task to review: %w", err),
+			"task_transition_retryable",
+			http.StatusServiceUnavailable,
+		)
 	}
 	if updated.Status != TaskStatusReview {
 		return nil, fmt.Errorf("task status transition returned %q, want %q", updated.Status, TaskStatusReview)

@@ -168,7 +168,8 @@ Current REST behavior to preserve:
   review round, appends a review request or re-review packet, and moves an
   `in_progress` task to `review`. Identical retries reuse the accepted
   undecided round and packet, so a lost task-transition response can converge
-  without duplicate history.
+  without duplicate history. A failed transition returns the typed
+  `task_transition_retryable` service error rather than claiming success.
 - `GET /api/projects/{projectId}/tasks/{taskId}/review-findings` lists findings
   by task, optional round, status, or resolved filter.
 - `POST /api/projects/{projectId}/tasks/{taskId}/review-rounds/{roundId}/findings`
