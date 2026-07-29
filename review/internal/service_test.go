@@ -230,6 +230,41 @@ func TestRequestReviewRejectsTerminalTasks(t *testing.T) {
 	}
 }
 
+func TestRequestReviewDoesNotOverwriteStatusThatWinsAfterValidation(t *testing.T) {
+	for _, status := range []string{TaskStatusDone, TaskStatusCancelled, "blocked"} {
+		t.Run(status, func(t *testing.T) {
+			store := newMemoryStore()
+			messages := &fakeMessages{}
+			tasks := &fakeTasks{
+				tasks: map[int64]TaskContext{
+					42: {ID: 42, ProjectID: "den-services", Status: TaskStatusInProgress},
+				},
+				statusBeforeReviewTransition: status,
+			}
+			service := newTestService(store, messages, tasks)
+			_, err := service.RequestReview(context.Background(), "den-services", 42, CreateReviewRoundRequest{
+				RequestedBy: "pi", Branch: "main", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+			})
+			var serviceErr *ServiceError
+			if !errors.As(err, &serviceErr) || serviceErr.Code() != "review_transition_ineligible" ||
+				serviceErr.HTTPStatus() != http.StatusConflict {
+				t.Fatalf("RequestReview() error = %#v, want typed non-mutating conflict", err)
+			}
+			if got := tasks.tasks[42].Status; got != status {
+				t.Fatalf("task status = %q, want winning status %q", got, status)
+			}
+			rounds, listErr := store.ListRounds(context.Background(), "den-services", 42)
+			if listErr != nil {
+				t.Fatal(listErr)
+			}
+			if len(rounds) != 1 || len(messages.appended) != 1 || len(tasks.statusUpdates) != 0 {
+				t.Fatalf("workflow effects: rounds=%d messages=%d status_updates=%d",
+					len(rounds), len(messages.appended), len(tasks.statusUpdates))
+			}
+		})
+	}
+}
+
 func TestRequestReviewConcurrentRetriesCreateOneWorkflowTransition(t *testing.T) {
 	ctx := context.Background()
 	store := &synchronizedRequestStore{memoryStore: newMemoryStore()}
@@ -1965,11 +2000,12 @@ func fixedReviewTestTime() time.Time {
 }
 
 type fakeTasks struct {
-	tasks                 map[int64]TaskContext
-	created               []CreateFollowUpTaskRequest
-	statusUpdates         []fakeTaskStatusUpdate
-	failStatusUpdate      bool
-	failAfterStatusUpdate bool
+	tasks                        map[int64]TaskContext
+	created                      []CreateFollowUpTaskRequest
+	statusUpdates                []fakeTaskStatusUpdate
+	failStatusUpdate             bool
+	failAfterStatusUpdate        bool
+	statusBeforeReviewTransition string
 }
 
 type fakeTaskStatusUpdate struct {
@@ -2007,6 +2043,44 @@ func (f *fakeTasks) SetTaskStatus(_ context.Context, projectID string, taskID in
 		return TaskContext{}, errors.New("task update response lost")
 	}
 	return task, nil
+}
+
+func (f *fakeTasks) TransitionTaskToReview(
+	_ context.Context,
+	projectID string,
+	taskID int64,
+	agent string,
+) (TaskReviewTransition, error) {
+	task, ok := f.tasks[taskID]
+	if !ok || task.ProjectID != projectID {
+		return TaskReviewTransition{}, validationError(errors.New("task not found"), "task_not_found", "task_id", "common.task_id")
+	}
+	if f.statusBeforeReviewTransition != "" {
+		task.Status = f.statusBeforeReviewTransition
+		f.tasks[taskID] = task
+		f.statusBeforeReviewTransition = ""
+	}
+	if task.Status == TaskStatusReview {
+		return TaskReviewTransition{Task: task, Transition: TaskTransitionAlreadySatisfied}, nil
+	}
+	if task.Status != TaskStatusInProgress {
+		return TaskReviewTransition{}, NewServiceError(
+			fmt.Errorf("task must currently be in_progress or review: current status is %s", task.Status),
+			"review_transition_ineligible",
+			http.StatusConflict,
+		)
+	}
+	if f.failStatusUpdate {
+		return TaskReviewTransition{}, errors.New("task update failed")
+	}
+	task.Status = TaskStatusReview
+	f.tasks[taskID] = task
+	f.statusUpdates = append(f.statusUpdates, fakeTaskStatusUpdate{Agent: agent, Status: TaskStatusReview})
+	if f.failAfterStatusUpdate {
+		f.failAfterStatusUpdate = false
+		return TaskReviewTransition{}, errors.New("task update response lost")
+	}
+	return TaskReviewTransition{Task: task, Transition: TaskTransitionApplied}, nil
 }
 
 func (f *fakeTasks) CreateFollowUpTask(_ context.Context, projectID string, req CreateFollowUpTaskRequest) (CreatedTask, error) {
@@ -2189,6 +2263,43 @@ func (f *barrierTasks) SetTaskStatus(
 		return TaskContext{}, errors.New("task update response lost")
 	}
 	return f.task, nil
+}
+
+func (f *barrierTasks) TransitionTaskToReview(
+	ctx context.Context,
+	projectID string,
+	taskID int64,
+	_ string,
+) (TaskReviewTransition, error) {
+	f.entered <- struct{}{}
+	select {
+	case <-ctx.Done():
+		return TaskReviewTransition{}, ctx.Err()
+	case <-f.release:
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if taskID != f.task.ID || projectID != f.task.ProjectID {
+		return TaskReviewTransition{}, validationError(errors.New("task not found"), "task_not_found", "task_id", "common.task_id")
+	}
+	f.setCalls++
+	transition := TaskTransitionAlreadySatisfied
+	if f.task.Status == TaskStatusInProgress {
+		f.task.Status = TaskStatusReview
+		f.historyTransitions++
+		transition = TaskTransitionApplied
+	} else if f.task.Status != TaskStatusReview {
+		return TaskReviewTransition{}, NewServiceError(
+			fmt.Errorf("task review transition rejected from %s", f.task.Status),
+			"review_transition_ineligible",
+			http.StatusConflict,
+		)
+	}
+	if f.loseFirstResponse && !f.responseLost {
+		f.responseLost = true
+		return TaskReviewTransition{}, errors.New("task update response lost")
+	}
+	return TaskReviewTransition{Task: f.task, Transition: transition}, nil
 }
 
 func (f *barrierTasks) CreateFollowUpTask(

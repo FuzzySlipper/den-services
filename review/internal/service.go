@@ -29,6 +29,7 @@ type TaskClient interface {
 	GetTask(ctx context.Context, taskID int64) (TaskContext, error)
 	GetTaskContext(ctx context.Context, projectID string, taskID int64) (TaskContext, error)
 	SetTaskStatus(ctx context.Context, projectID string, taskID int64, agent string, status string) (TaskContext, error)
+	TransitionTaskToReview(ctx context.Context, projectID string, taskID int64, agent string) (TaskReviewTransition, error)
 	CreateFollowUpTask(ctx context.Context, projectID string, req CreateFollowUpTaskRequest) (CreatedTask, error)
 }
 
@@ -318,24 +319,23 @@ func (s *Service) RequestReview(ctx context.Context, projectID string, taskID in
 	if err != nil {
 		return nil, err
 	}
-	if task.Status == TaskStatusReview {
-		packet.TaskTransition = TaskTransitionAlreadySatisfied
-		packet.ResultingTaskStatus = TaskStatusReview
-		return packet, nil
-	}
-	updated, err := s.tasks.SetTaskStatus(ctx, task.ProjectID, task.ID, req.RequestedBy, TaskStatusReview)
+	transition, err := s.tasks.TransitionTaskToReview(ctx, task.ProjectID, task.ID, req.RequestedBy)
 	if err != nil {
+		var serviceErr *ServiceError
+		if errors.As(err, &serviceErr) && serviceErr.HTTPStatus() == http.StatusConflict {
+			return nil, err
+		}
 		return nil, NewServiceError(
 			fmt.Errorf("transitioning task to review: %w", err),
 			"task_transition_retryable",
 			http.StatusServiceUnavailable,
 		)
 	}
-	if updated.Status != TaskStatusReview {
-		return nil, fmt.Errorf("task status transition returned %q, want %q", updated.Status, TaskStatusReview)
+	if transition.Task.Status != TaskStatusReview {
+		return nil, fmt.Errorf("task status transition returned %q, want %q", transition.Task.Status, TaskStatusReview)
 	}
-	packet.TaskTransition = TaskTransitionApplied
-	packet.ResultingTaskStatus = updated.Status
+	packet.TaskTransition = transition.Transition
+	packet.ResultingTaskStatus = transition.Task.Status
 	return packet, nil
 }
 

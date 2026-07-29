@@ -18,6 +18,7 @@ type TaskStore interface {
 	GetDetail(ctx context.Context, id int64) (TaskDetail, error)
 	ListTasks(ctx context.Context, query ListTasksQuery) ([]TaskSummary, error)
 	UpdateTask(ctx context.Context, id int64, patch TaskPatch, agent string, updatedAt time.Time) (*Task, error)
+	TransitionTaskToReview(ctx context.Context, projectID string, id int64, agent string, updatedAt time.Time) (*Task, string, error)
 	AddDependency(ctx context.Context, taskID int64, dependsOn int64) error
 	RemoveDependency(ctx context.Context, taskID int64, dependsOn int64) error
 	NextTask(ctx context.Context, projectID string, assignedTo string) (*Task, error)
@@ -138,6 +139,33 @@ func (s *Service) UpdateTask(ctx context.Context, taskID int64, req UpdateTaskRe
 		return nil, validationFailed(err)
 	}
 	return s.store.UpdateTask(ctx, taskID, patch, strings.TrimSpace(req.Agent), s.clock().UTC())
+}
+
+func (s *Service) TransitionTaskToReview(
+	ctx context.Context,
+	projectID string,
+	taskID int64,
+	req ReviewTransitionRequest,
+) (*Task, string, error) {
+	projectID = strings.TrimSpace(projectID)
+	agent := strings.TrimSpace(req.Agent)
+	if projectID == "" {
+		return nil, "", validationFailed(ErrMissingProjectID)
+	}
+	if agent == "" {
+		return nil, "", validationFailed(ErrMissingAgent)
+	}
+	current, err := s.store.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, "", err
+	}
+	if current.ProjectID() != projectID {
+		return nil, "", notFound(taskID)
+	}
+	if err := s.projects.AssertWritable(ctx, projectID); err != nil {
+		return nil, "", err
+	}
+	return s.store.TransitionTaskToReview(ctx, projectID, taskID, agent, s.clock().UTC())
 }
 
 func (s *Service) AddDependency(ctx context.Context, taskID int64, dependsOn int64) error {

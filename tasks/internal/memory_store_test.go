@@ -217,6 +217,40 @@ func (s *memoryStore) UpdateTask(_ context.Context, id int64, patch TaskPatch, a
 	return cloneTask(updated), nil
 }
 
+func (s *memoryStore) TransitionTaskToReview(
+	_ context.Context,
+	projectID string,
+	id int64,
+	agent string,
+	updatedAt time.Time,
+) (*Task, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.tasks[id]
+	if !ok || current.ProjectID() != projectID {
+		return nil, "", notFound(id)
+	}
+	if current.Status() == StatusReview {
+		return cloneTask(current), TaskTransitionAlreadySatisfied, nil
+	}
+	if current.Status() != StatusInProgress {
+		return nil, "", conflict(
+			fmt.Errorf("%w: current status is %s", ErrReviewTransitionState, current.Status()),
+			"review_transition_ineligible",
+		)
+	}
+	updated := cloneTask(current)
+	updated.status = StatusReview
+	updated.updatedAt = updatedAt
+	s.tasks[id] = updated
+	s.appendHistoryLocked(id, "status", StatusInProgress, StatusReview, agent, updatedAt)
+	s.appendChangeLocked("updated", id, updatedAt)
+	for dependentID := range s.dependentTaskIDsLocked(id) {
+		s.appendChangeLocked("updated", dependentID, updatedAt)
+	}
+	return cloneTask(updated), TaskTransitionApplied, nil
+}
+
 func (s *memoryStore) AddDependency(_ context.Context, taskID int64, dependsOn int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -108,6 +108,52 @@ func TestHTTPTasksLifecycle(t *testing.T) {
 	}
 }
 
+func TestHTTPReviewTransitionEndpoint(t *testing.T) {
+	server := testServer(t)
+	createResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(createResponse, authedJSONRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{
+		"title":"Conditional review transition"
+	}`))
+	var task TaskResponse
+	decodeJSON(t, createResponse.Body, &task)
+
+	inProgressResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(
+		inProgressResponse,
+		authedJSONRequest(
+			http.MethodPatch,
+			"/v1/projects/den-services/tasks/"+int64String(&task.ID),
+			`{"agent":"runner","status":"in_progress"}`,
+		),
+	)
+	if inProgressResponse.Code != http.StatusOK {
+		t.Fatalf("in-progress status = %d body=%s", inProgressResponse.Code, inProgressResponse.Body.String())
+	}
+
+	transitionPath := "/v1/projects/den-services/tasks/" + int64String(&task.ID) + "/transitions/review"
+	transitionResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(
+		transitionResponse,
+		authedJSONRequest(http.MethodPost, transitionPath, `{"agent":"reviewer"}`),
+	)
+	if transitionResponse.Code != http.StatusOK {
+		t.Fatalf("transition status = %d body=%s", transitionResponse.Code, transitionResponse.Body.String())
+	}
+	var result ReviewTransitionResponse
+	decodeJSON(t, transitionResponse.Body, &result)
+	if result.Task.Status != StatusReview || result.TaskTransition != TaskTransitionApplied ||
+		result.ResultingTaskStatus != StatusReview {
+		t.Fatalf("transition result = %+v", result)
+	}
+
+	retryResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(retryResponse, authedJSONRequest(http.MethodPost, transitionPath, `{"agent":"reviewer"}`))
+	decodeJSON(t, retryResponse.Body, &result)
+	if retryResponse.Code != http.StatusOK || result.TaskTransition != TaskTransitionAlreadySatisfied {
+		t.Fatalf("retry status=%d result=%+v", retryResponse.Code, result)
+	}
+}
+
 func TestHTTPCrossProjectDependencyBlocksAndProjectsOwner(t *testing.T) {
 	server := testServer(t)
 

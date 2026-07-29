@@ -14,6 +14,7 @@ type TaskUseCases interface {
 	GetTask(ctx context.Context, taskID int64) (TaskDetail, error)
 	ListTasks(ctx context.Context, projectID string, query ListTasksQuery) ([]TaskSummary, error)
 	UpdateTask(ctx context.Context, taskID int64, req UpdateTaskRequest) (*Task, error)
+	TransitionTaskToReview(ctx context.Context, projectID string, taskID int64, req ReviewTransitionRequest) (*Task, string, error)
 	AddDependency(ctx context.Context, taskID int64, dependsOn int64) error
 	RemoveDependency(ctx context.Context, taskID int64, dependsOn int64) error
 	NextTask(ctx context.Context, projectID string, assignedTo string) (*Task, error)
@@ -38,6 +39,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/next", h.nextTask)
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}", h.getProjectTask)
 	mux.HandleFunc("PATCH /v1/projects/{project_id}/tasks/{task_id}", h.updateProjectTask)
+	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/transitions/review", h.transitionTaskToReview)
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/dependencies", h.addProjectDependency)
 	mux.HandleFunc("DELETE /v1/projects/{project_id}/tasks/{task_id}/dependencies/{depends_on}", h.removeProjectDependency)
 
@@ -46,6 +48,29 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/tasks/{task_id}/dependencies", h.addDependency)
 	mux.HandleFunc("DELETE /v1/tasks/{task_id}/dependencies/{depends_on}", h.removeDependency)
 	mux.HandleFunc("GET /v1/tasks/{task_id}/history", h.history)
+}
+
+func (h *Handler) transitionTaskToReview(w http.ResponseWriter, r *http.Request) {
+	taskID, err := pathInt64(r, "task_id")
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	var req ReviewTransitionRequest
+	if err := api.DecodeJSON(r, &req); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	task, transition, err := h.service.TransitionTaskToReview(r.Context(), r.PathValue("project_id"), taskID, req)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, ReviewTransitionResponse{
+		Task:                toTaskResponse(task),
+		TaskTransition:      transition,
+		ResultingTaskStatus: task.Status(),
+	})
 }
 
 func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {

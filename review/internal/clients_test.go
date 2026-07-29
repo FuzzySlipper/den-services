@@ -2,6 +2,7 @@ package review
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -39,6 +40,51 @@ func TestHTTPTaskClientSetTaskStatusUsesProjectTaskPatch(t *testing.T) {
 	}
 	if task.ID != 42 || task.Status != TaskStatusReview {
 		t.Fatalf("task = %+v", task)
+	}
+}
+
+func TestHTTPTaskClientTransitionTaskToReviewUsesConditionalEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/projects/den-services/tasks/42/transitions/review" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		var body struct {
+			Agent string `json:"agent"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Agent != "codex" {
+			t.Fatalf("agent = %q", body.Agent)
+		}
+		_, _ = w.Write([]byte(`{
+			"task":{"id":42,"project_id":"den-services","title":"Gate task","status":"review","priority":2},
+			"task_transition":"transitioned",
+			"resulting_task_status":"review"
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := NewTaskClient(server.URL, "").TransitionTaskToReview(t.Context(), "den-services", 42, "codex")
+	if err != nil {
+		t.Fatalf("TransitionTaskToReview() error = %v", err)
+	}
+	if result.Task.Status != TaskStatusReview || result.Transition != TaskTransitionApplied {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestHTTPTaskClientTransitionTaskToReviewPreservesIneligibleConflict(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"error":{"code":"review_transition_ineligible","message":"current status is done"}}`, http.StatusConflict)
+	}))
+	defer server.Close()
+
+	_, err := NewTaskClient(server.URL, "").TransitionTaskToReview(t.Context(), "den-services", 42, "codex")
+	var serviceErr *ServiceError
+	if !errors.As(err, &serviceErr) || serviceErr.Code() != "review_transition_ineligible" ||
+		serviceErr.HTTPStatus() != http.StatusConflict {
+		t.Fatalf("TransitionTaskToReview() error = %#v", err)
 	}
 }
 

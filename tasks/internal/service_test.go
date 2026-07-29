@@ -60,6 +60,79 @@ func TestServiceCreateListAndSubtasks(t *testing.T) {
 	}
 }
 
+func TestServiceTransitionTaskToReviewIsConditionalAndIdempotent(t *testing.T) {
+	service := newTestService()
+	ctx := context.Background()
+	task, err := service.CreateTask(ctx, "den-services", CreateTaskRequest{Title: "Review transition"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inProgress := StatusInProgress
+	if _, err := service.UpdateTask(ctx, task.ID(), UpdateTaskRequest{Agent: "runner", Status: &inProgress}); err != nil {
+		t.Fatal(err)
+	}
+	transitioned, transition, err := service.TransitionTaskToReview(
+		ctx,
+		"den-services",
+		task.ID(),
+		ReviewTransitionRequest{Agent: "review"},
+	)
+	if err != nil {
+		t.Fatalf("TransitionTaskToReview() error = %v", err)
+	}
+	if transitioned.Status() != StatusReview || transition != TaskTransitionApplied {
+		t.Fatalf("transitioned task/result = %s/%s", transitioned.Status(), transition)
+	}
+	_, transition, err = service.TransitionTaskToReview(
+		ctx,
+		"den-services",
+		task.ID(),
+		ReviewTransitionRequest{Agent: "review"},
+	)
+	if err != nil || transition != TaskTransitionAlreadySatisfied {
+		t.Fatalf("idempotent transition = %q, error = %v", transition, err)
+	}
+	history, err := service.History(ctx, task.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reviewTransitions int
+	for _, entry := range history {
+		if entry.Field == "status" && entry.OldValue == StatusInProgress && entry.NewValue == StatusReview {
+			reviewTransitions++
+		}
+	}
+	if reviewTransitions != 1 {
+		t.Fatalf("in_progress -> review history transitions = %d, want 1", reviewTransitions)
+	}
+
+	doneTask, err := service.CreateTask(ctx, "den-services", CreateTaskRequest{Title: "Already done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := StatusDone
+	if _, err := service.UpdateTask(ctx, doneTask.ID(), UpdateTaskRequest{Agent: "runner", Status: &done}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = service.TransitionTaskToReview(
+		ctx,
+		"den-services",
+		doneTask.ID(),
+		ReviewTransitionRequest{Agent: "review"},
+	)
+	var serviceErr *ServiceError
+	if !errors.As(err, &serviceErr) || serviceErr.Code() != "review_transition_ineligible" {
+		t.Fatalf("done transition error = %#v, want review_transition_ineligible", err)
+	}
+	detail, err := service.GetTask(ctx, doneTask.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Task.Status() != StatusDone {
+		t.Fatalf("rejected transition changed status to %q", detail.Task.Status())
+	}
+}
+
 func TestServiceNextTaskDependenciesAndCycles(t *testing.T) {
 	service := newTestService()
 	ctx := context.Background()

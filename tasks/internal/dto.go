@@ -49,6 +49,16 @@ type AddDependencyRequest struct {
 	DependsOn int64 `json:"depends_on"`
 }
 
+type ReviewTransitionRequest struct {
+	Agent string `json:"agent"`
+}
+
+type ReviewTransitionResponse struct {
+	Task                TaskResponse `json:"task"`
+	TaskTransition      string       `json:"task_transition"`
+	ResultingTaskStatus string       `json:"resulting_task_status"`
+}
+
 type TaskResponse struct {
 	ID                        int64     `json:"id"`
 	ProjectID                 string    `json:"project_id"`

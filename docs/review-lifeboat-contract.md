@@ -170,6 +170,10 @@ Current REST behavior to preserve:
   undecided round and packet, so a lost task-transition response can converge
   without duplicate history. A failed transition returns the typed
   `task_transition_retryable` service error rather than claiming success.
+  Review calls the Tasks-owned conditional transition endpoint: Tasks locks
+  the canonical row, applies `in_progress -> review`, treats `review` as an
+  idempotent no-op, and returns `review_transition_ineligible` without mutation
+  if a competing `blocked`, `done`, or `cancelled` state won the race.
 - `GET /api/projects/{projectId}/tasks/{taskId}/review-findings` lists findings
   by task, optional round, status, or resolved filter.
 - `POST /api/projects/{projectId}/tasks/{taskId}/review-rounds/{roundId}/findings`

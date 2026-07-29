@@ -106,6 +106,42 @@ func TestStoreLifecycleSmoke(t *testing.T) {
 	if next == nil || next.ID() != task.ID() {
 		t.Fatalf("next after review = %+v, want waiting task %d", next, task.ID())
 	}
+	inProgress := StatusInProgress
+	if _, err := store.UpdateTask(ctx, task.ID(), TaskPatch{Status: &inProgress}, "store-test", now.Add(time.Minute)); err != nil {
+		t.Fatalf("UpdateTask(in_progress) error = %v", err)
+	}
+	reviewed, transition, err := store.TransitionTaskToReview(
+		ctx,
+		projectID,
+		task.ID(),
+		"store-test",
+		now.Add(2*time.Minute),
+	)
+	if err != nil || reviewed.Status() != StatusReview || transition != TaskTransitionApplied {
+		t.Fatalf("TransitionTaskToReview() task=%+v transition=%q error=%v", reviewed, transition, err)
+	}
+	if _, transition, err := store.TransitionTaskToReview(
+		ctx,
+		projectID,
+		task.ID(),
+		"store-test",
+		now.Add(3*time.Minute),
+	); err != nil || transition != TaskTransitionAlreadySatisfied {
+		t.Fatalf("idempotent TransitionTaskToReview() transition=%q error=%v", transition, err)
+	}
+	taskHistory, err := store.History(ctx, task.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inProgressToReview int
+	for _, entry := range taskHistory {
+		if entry.Field == "status" && entry.OldValue == StatusInProgress && entry.NewValue == StatusReview {
+			inProgressToReview++
+		}
+	}
+	if inProgressToReview != 1 {
+		t.Fatalf("in_progress->review history entries = %d, want 1: %+v", inProgressToReview, taskHistory)
+	}
 	history, err := store.History(ctx, dependency.ID())
 	if err != nil {
 		t.Fatalf("History() error = %v", err)

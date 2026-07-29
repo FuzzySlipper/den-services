@@ -16,6 +16,9 @@ const (
 	StatusDone       = "done"
 	StatusCancelled  = "cancelled"
 
+	TaskTransitionApplied          = "transitioned"
+	TaskTransitionAlreadySatisfied = "already_review"
+
 	AvailabilityAvailable             = "available"
 	AvailabilityWaitingOnDependencies = "waiting_on_dependencies"
 )
@@ -33,6 +36,7 @@ var (
 	ErrParentProjectMismatch = errors.New("parent task must be in the same project")                        //nolint:gochecknoglobals
 	ErrDependencyCycle       = errors.New("dependency would create a cycle")                                //nolint:gochecknoglobals
 	ErrParentCycle           = errors.New("parent relationship would create a cycle")                       //nolint:gochecknoglobals
+	ErrReviewTransitionState = errors.New("task must currently be in_progress or review")                   //nolint:gochecknoglobals
 )
 
 type ServiceError struct {

@@ -252,6 +252,11 @@ type ReviewPacket struct {
 	ResultingTaskStatus string
 }
 
+type TaskReviewTransition struct {
+	Task       TaskContext
+	Transition string
+}
+
 type ReviewFinalization struct {
 	ID                     int64
 	ProjectID              string

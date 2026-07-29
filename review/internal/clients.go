@@ -164,6 +164,75 @@ func (c *HTTPTaskClient) SetTaskStatus(ctx context.Context, projectID string, ta
 	return task, nil
 }
 
+func (c *HTTPTaskClient) TransitionTaskToReview(
+	ctx context.Context,
+	projectID string,
+	taskID int64,
+	agent string,
+) (TaskReviewTransition, error) {
+	if c.baseURL == "" {
+		return TaskReviewTransition{}, NewServiceError(ErrTaskClientUnset, "task_client_unconfigured", http.StatusInternalServerError)
+	}
+	data, err := json.Marshal(struct {
+		Agent string `json:"agent"`
+	}{Agent: strings.TrimSpace(agent)})
+	if err != nil {
+		return TaskReviewTransition{}, fmt.Errorf("encoding task review transition: %w", err)
+	}
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		fmt.Sprintf("%s/v1/projects/%s/tasks/%d/transitions/review", c.baseURL, url.PathEscape(projectID), taskID),
+		bytes.NewReader(data),
+	)
+	if err != nil {
+		return TaskReviewTransition{}, fmt.Errorf("building task review transition request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return TaskReviewTransition{}, fmt.Errorf("transitioning task to review: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusConflict {
+		return TaskReviewTransition{}, NewServiceError(
+			fmt.Errorf("task review transition rejected: %s", errorMessage(resp)),
+			"review_transition_ineligible",
+			http.StatusConflict,
+		)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return TaskReviewTransition{}, fmt.Errorf("task review transition failed: %s", errorMessage(resp))
+	}
+	var decoded struct {
+		Task                TaskContext `json:"task"`
+		TaskTransition      string      `json:"task_transition"`
+		ResultingTaskStatus string      `json:"resulting_task_status"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		return TaskReviewTransition{}, fmt.Errorf("decoding task review transition: %w", err)
+	}
+	if decoded.Task.ProjectID != projectID {
+		return TaskReviewTransition{}, validationError(
+			fmt.Errorf("task %d is not in project %s", taskID, projectID),
+			"project_mismatch",
+			"task_id",
+			"common.task_id",
+		)
+	}
+	if decoded.Task.Status != decoded.ResultingTaskStatus {
+		return TaskReviewTransition{}, fmt.Errorf(
+			"task review transition status mismatch: task=%q result=%q",
+			decoded.Task.Status,
+			decoded.ResultingTaskStatus,
+		)
+	}
+	return TaskReviewTransition{Task: decoded.Task, Transition: decoded.TaskTransition}, nil
+}
+
 func (c *HTTPTaskClient) CreateFollowUpTask(ctx context.Context, projectID string, req CreateFollowUpTaskRequest) (CreatedTask, error) {
 	if c.baseURL == "" {
 		return CreatedTask{}, NewServiceError(ErrTaskClientUnset, "task_client_unconfigured", http.StatusInternalServerError)

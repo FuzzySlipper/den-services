@@ -147,6 +147,68 @@ func (s *Store) UpdateTask(ctx context.Context, id int64, patch TaskPatch, agent
 		}
 		return current, nil
 	}
+	updated, err := updateTaskTx(ctx, tx, id, current, patch, agent, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing update task: %w", err)
+	}
+	return updated, nil
+}
+
+func (s *Store) TransitionTaskToReview(
+	ctx context.Context,
+	projectID string,
+	id int64,
+	agent string,
+	updatedAt time.Time,
+) (*Task, string, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, "", fmt.Errorf("beginning review transition: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	current, err := getTaskForUpdateTx(ctx, tx, id)
+	if err != nil {
+		return nil, "", err
+	}
+	if current.ProjectID() != projectID {
+		return nil, "", notFound(id)
+	}
+	if current.Status() == StatusReview {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, "", fmt.Errorf("committing idempotent review transition: %w", err)
+		}
+		return current, TaskTransitionAlreadySatisfied, nil
+	}
+	if current.Status() != StatusInProgress {
+		return nil, "", conflict(
+			fmt.Errorf("%w: current status is %s", ErrReviewTransitionState, current.Status()),
+			"review_transition_ineligible",
+		)
+	}
+	review := StatusReview
+	updated, err := updateTaskTx(ctx, tx, id, current, TaskPatch{Status: &review}, agent, updatedAt)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, "", fmt.Errorf("committing review transition: %w", err)
+	}
+	return updated, TaskTransitionApplied, nil
+}
+
+func updateTaskTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	id int64,
+	current *Task,
+	patch TaskPatch,
+	agent string,
+	updatedAt time.Time,
+) (*Task, error) {
 	if err := writeHistory(ctx, tx, id, current, patch, agent); err != nil {
 		return nil, err
 	}
@@ -176,9 +238,6 @@ func (s *Store) UpdateTask(ctx context.Context, id int64, patch TaskPatch, agent
 	}
 	if err := recordUpdateTaskChangesTx(ctx, tx, current, updated, patch); err != nil {
 		return nil, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("committing update task: %w", err)
 	}
 	return updated, nil
 }
