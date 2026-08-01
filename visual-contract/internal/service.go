@@ -31,6 +31,20 @@ func normalizeArtifactBasePath(raw string) (string, error) {
 	if trimmed == "" {
 		return "", fmt.Errorf("artifact public base path is required")
 	}
+	decoded := trimmed
+	for {
+		if strings.Contains(decoded, `\`) {
+			return "", fmt.Errorf("artifact public base path must not contain literal or percent-encoded backslashes")
+		}
+		unescaped, err := url.PathUnescape(decoded)
+		if err != nil {
+			return "", fmt.Errorf("decoding artifact public base path: %w", err)
+		}
+		if unescaped == decoded {
+			break
+		}
+		decoded = unescaped
+	}
 	parsed, err := url.Parse(trimmed)
 	if err != nil {
 		return "", fmt.Errorf("parsing artifact public base path: %w", err)

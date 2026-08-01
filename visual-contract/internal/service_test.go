@@ -27,6 +27,25 @@ func TestNewServiceRequiresRootRelativeArtifactBasePath(t *testing.T) {
 	}
 }
 
+func TestNewServiceRejectsWHATWGAuthorityConfusionPaths(t *testing.T) {
+	// Browsers treat backslashes as slashes while resolving special HTTP URLs.
+	// These apparent paths would therefore escape the same-origin route and
+	// resolve against 127.0.0.1 if allowed into emitted artifact references.
+	tests := []string{
+		`/\127.0.0.1:8086`,
+		`/%5c127.0.0.1:8086`,
+		`/%5C127.0.0.1:8086`,
+		`/%255c127.0.0.1:8086`,
+	}
+	for _, basePath := range tests {
+		t.Run(basePath, func(t *testing.T) {
+			if _, err := NewService(basePath, NewFileArtifactStore(t.TempDir())); err == nil {
+				t.Fatalf("NewService(%q) error = nil, path could escape same-origin routing", basePath)
+			}
+		})
+	}
+}
+
 func TestNewServiceNormalizesTrailingSlash(t *testing.T) {
 	service, err := NewService("/api/v1/visual-contracts/", NewFileArtifactStore(t.TempDir()))
 	if err != nil {
