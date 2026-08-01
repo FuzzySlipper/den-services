@@ -319,6 +319,74 @@ func TestRouteTableRejectsOverlappingExactPathAndMethod(t *testing.T) {
 	}
 }
 
+func TestRouteTableRewritesConfiguredNonTemplatedPrefix(t *testing.T) {
+	table, err := NewRouteTable([]routeFile{{
+		Name:                 "visual-contract",
+		PathPattern:          "/v1/visual-contracts",
+		Methods:              []string{httpMethodPost},
+		LegacyUpstreamURL:    "http://legacy",
+		SuccessorUpstreamURL: "http://visual-contract",
+		SuccessorMode:        string(SuccessorModeAlways),
+		SuccessorAuth:        testSuccessorAuth(),
+		PathRewrite: pathRewriteFile{
+			FromPrefix: "/v1/visual-contracts",
+			ToPrefix:   "/visual-contracts",
+		},
+	}})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+
+	match, ok := table.Match(httpMethodPost, "/v1/visual-contracts/compare", false)
+	if !ok {
+		t.Fatal("Match() ok = false")
+	}
+	if got := match.PathRewrite.Apply("/v1/visual-contracts/compare"); got != "/visual-contracts/compare" {
+		t.Fatalf("rewritten path = %q, want /visual-contracts/compare", got)
+	}
+	if _, ok := table.Match(httpMethodPost, "/v1/visual-contracts-extra/compare", false); ok {
+		t.Fatal("near-prefix path unexpectedly matched")
+	}
+}
+
+func TestRouteTableRejectsInvalidPathRewrite(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		rewrite pathRewriteFile
+	}{
+		{
+			name:    "missing destination",
+			pattern: "/v1/visual-contracts",
+			rewrite: pathRewriteFile{FromPrefix: "/v1/visual-contracts"},
+		},
+		{
+			name:    "prefix does not match route",
+			pattern: "/v1/visual-contracts",
+			rewrite: pathRewriteFile{FromPrefix: "/v1/contracts", ToPrefix: "/visual-contracts"},
+		},
+		{
+			name:    "templated route",
+			pattern: "/v1/projects/{project_id}/contracts",
+			rewrite: pathRewriteFile{FromPrefix: "/v1/projects/{project_id}/contracts", ToPrefix: "/contracts"},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := NewRouteTable([]routeFile{{
+				Name:              "invalid-rewrite",
+				PathPattern:       testCase.pattern,
+				LegacyUpstreamURL: "http://legacy",
+				PathRewrite:       testCase.rewrite,
+			}})
+			if err == nil {
+				t.Fatal("NewRouteTable() error = nil, want path rewrite validation error")
+			}
+		})
+	}
+}
+
 func TestRouteTableAllowsDisjointMethodsForSamePath(t *testing.T) {
 	_, err := NewRouteTable([]routeFile{
 		{Name: "conversation-read", PathPattern: "/v1/conversation", Methods: []string{httpMethodGet}, LegacyUpstreamURL: "http://legacy"},

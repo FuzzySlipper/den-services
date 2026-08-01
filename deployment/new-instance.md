@@ -1011,6 +1011,7 @@ DEN_GATEWAY_DOCUMENTS_UPSTREAM_TOKEN=local-den
 DEN_GATEWAY_GUIDANCE_UPSTREAM_TOKEN=local-den
 DEN_GATEWAY_REVIEW_UPSTREAM_TOKEN=local-den
 DEN_GATEWAY_ARTIFACTS_UPSTREAM_TOKEN=local-den
+DEN_GATEWAY_VISUAL_CONTRACT_UPSTREAM_TOKEN=<matching-DEN_VISUAL_CONTRACT_SERVICE_TOKEN>
 DEN_GATEWAY_LIBRARIAN_UPSTREAM_TOKEN=local-den
 DEN_GATEWAY_DELIVERY_WRITE_TOKEN=local-den
 DEN_GATEWAY_DELIVERY_UPSTREAM_TOKEN=local-den
@@ -1022,6 +1023,13 @@ DEN_GATEWAY_CONVERSATION_UPSTREAM_TOKEN=local-den
 DEN_GATEWAY_TIMELINE_READ_TOKEN=local-den
 DEN_GATEWAY_TIMELINE_UPSTREAM_TOKEN=local-den
 ```
+
+The visual-contract route is deliberately path-translated by Gateway:
+browser `/api/v1/visual-contracts/*` becomes Gateway
+`/v1/visual-contracts/*`, then visual-contract `/visual-contracts/*`.
+Use the exact same secret for `DEN_GATEWAY_VISUAL_CONTRACT_UPSTREAM_TOKEN`
+and the visual-contract service's `DEN_VISUAL_CONTRACT_SERVICE_TOKEN`.
+Neither value belongs in `den-web-config.json` or any browser request.
 
 Install and test Gateway:
 

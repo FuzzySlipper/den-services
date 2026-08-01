@@ -302,6 +302,20 @@ routes:
     successor_auth:
       bearer_token: "${DEN_GATEWAY_ARTIFACTS_UPSTREAM_TOKEN}"
 
+  - name: "visual-contract-routes"
+    path_pattern: "/v1/visual-contracts"
+    methods: ["GET", "POST"]
+    legacy_upstream_url: "http://127.0.0.1:8086"
+    successor_upstream_url: "http://127.0.0.1:8086"
+    successor_mode: "always"
+    path_rewrite:
+      from_prefix: "/v1/visual-contracts"
+      to_prefix: "/visual-contracts"
+    caller_auth:
+      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
+    successor_auth:
+      bearer_token: "${DEN_GATEWAY_VISUAL_CONTRACT_UPSTREAM_TOKEN}"
+
   - name: "librarian-root-routes"
     path_pattern: "/v1/librarian"
     methods: ["POST"]

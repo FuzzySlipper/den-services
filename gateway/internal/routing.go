@@ -33,6 +33,7 @@ type Route struct {
 	legacyCallerAuth    CallerAuth
 	successorCallerAuth CallerAuth
 	identityTranslation IdentityTranslation
+	pathRewrite         PathRewrite
 }
 
 type RouteMatch struct {
@@ -40,7 +41,13 @@ type RouteMatch struct {
 	Auth                UpstreamAuth
 	CallerAuth          CallerAuth
 	IdentityTranslation IdentityTranslation
+	PathRewrite         PathRewrite
 	UsesSuccessor       bool
+}
+
+type PathRewrite struct {
+	fromPrefix string
+	toPrefix   string
 }
 
 type UpstreamAuth struct {
@@ -70,6 +77,12 @@ type routeFile struct {
 	LegacyCallerAuth     callerAuthFile          `yaml:"legacy_caller_auth"`
 	SuccessorCallerAuth  callerAuthFile          `yaml:"successor_caller_auth"`
 	IdentityTranslation  identityTranslationFile `yaml:"identity_translation"`
+	PathRewrite          pathRewriteFile         `yaml:"path_rewrite"`
+}
+
+type pathRewriteFile struct {
+	FromPrefix string `yaml:"from_prefix"`
+	ToPrefix   string `yaml:"to_prefix"`
 }
 
 type upstreamAuthFile struct {
@@ -211,6 +224,10 @@ func newRoute(file routeFile, values sharedconfig.Values) (Route, error) {
 	if translation.Enabled() && successorURL == nil {
 		return Route{}, fmt.Errorf("route %s identity_translation requires successor_upstream_url", file.Name)
 	}
+	pathRewrite, err := newPathRewrite(file.Name, pattern, file.PathRewrite)
+	if err != nil {
+		return Route{}, err
+	}
 	return Route{
 		name:                file.Name,
 		pathPattern:         pattern,
@@ -223,7 +240,42 @@ func newRoute(file routeFile, values sharedconfig.Values) (Route, error) {
 		legacyCallerAuth:    legacyCallerAuth,
 		successorCallerAuth: successorCallerAuth,
 		identityTranslation: translation,
+		pathRewrite:         pathRewrite,
 	}, nil
+}
+
+func newPathRewrite(routeName string, pathPattern string, file pathRewriteFile) (PathRewrite, error) {
+	fromPrefix := strings.TrimRight(strings.TrimSpace(file.FromPrefix), "/")
+	toPrefix := strings.TrimRight(strings.TrimSpace(file.ToPrefix), "/")
+	if fromPrefix == "" && toPrefix == "" {
+		return PathRewrite{}, nil
+	}
+	if fromPrefix == "" || toPrefix == "" {
+		return PathRewrite{}, fmt.Errorf("route %s path_rewrite requires both from_prefix and to_prefix", routeName)
+	}
+	if !strings.HasPrefix(fromPrefix, "/") || !strings.HasPrefix(toPrefix, "/") {
+		return PathRewrite{}, fmt.Errorf("route %s path_rewrite prefixes must start with /", routeName)
+	}
+	if strings.Contains(pathPattern, "{") {
+		return PathRewrite{}, fmt.Errorf("route %s path_rewrite does not support templated path_pattern", routeName)
+	}
+	normalizedPattern := strings.TrimRight(pathPattern, "/")
+	if fromPrefix != normalizedPattern {
+		return PathRewrite{}, fmt.Errorf("route %s path_rewrite.from_prefix must equal path_pattern", routeName)
+	}
+	return PathRewrite{fromPrefix: fromPrefix, toPrefix: toPrefix}, nil
+}
+
+func (r PathRewrite) Enabled() bool {
+	return r.fromPrefix != ""
+}
+
+func (r PathRewrite) Apply(path string) string {
+	if !r.Enabled() {
+		return path
+	}
+	suffix := strings.TrimPrefix(path, r.fromPrefix)
+	return joinPaths(r.toPrefix, suffix)
 }
 
 func newUpstreamAuth(file upstreamAuthFile, values sharedconfig.Values) (UpstreamAuth, error) {
@@ -321,10 +373,15 @@ func (t *RouteTable) Match(method string, path string, preferSuccessor bool) (Ro
 				Auth:                route.successorAuth,
 				CallerAuth:          t.authForRoute(route, true),
 				IdentityTranslation: route.identityTranslation,
+				PathRewrite:         route.pathRewrite,
 				UsesSuccessor:       true,
 			}, true
 		}
-		return RouteMatch{Target: cloneURL(route.legacyURL), CallerAuth: t.authForRoute(route, false)}, true
+		return RouteMatch{
+			Target:      cloneURL(route.legacyURL),
+			CallerAuth:  t.authForRoute(route, false),
+			PathRewrite: route.pathRewrite,
+		}, true
 	}
 	return RouteMatch{}, false
 }

@@ -57,6 +57,72 @@ func TestGatewayProxiesRequestWithoutPayloadModification(t *testing.T) {
 	}
 }
 
+func TestGatewayRewritesVisualContractPathAndReplacesCallerAuthorization(t *testing.T) {
+	const upstreamToken = "visual-contract-upstream-token"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("ReadAll() error = %v", err)
+		}
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.RequestURI() != "/visual-contracts/compare?include=artifacts" {
+			t.Fatalf("request uri = %s, want rewritten visual-contract route", r.URL.RequestURI())
+		}
+		if string(body) != `{"reference":{"scene":"reference"},"candidate":{"scene":"candidate"}}` {
+			t.Fatalf("body = %s, want unchanged comparison body", string(body))
+		}
+		if authorization := r.Header.Get("Authorization"); authorization != "Bearer "+upstreamToken {
+			t.Fatalf("Authorization = %q, want visual-contract upstream token", authorization)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Visual-Contract", "typed-error")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"error":{"code":"invalid_visual_contract","message":"candidate is invalid"}}`))
+	}))
+	defer upstream.Close()
+
+	table, err := NewRouteTable([]routeFile{{
+		Name:                 "visual-contract-browser",
+		PathPattern:          "/v1/visual-contracts",
+		Methods:              []string{http.MethodGet, http.MethodPost},
+		LegacyUpstreamURL:    upstream.URL,
+		SuccessorUpstreamURL: upstream.URL,
+		SuccessorMode:        string(SuccessorModeAlways),
+		CallerAuth:           callerAuthFile{BearerToken: "web-edge-token"},
+		SuccessorAuth:        upstreamAuthFile{BearerToken: upstreamToken},
+		PathRewrite: pathRewriteFile{
+			FromPrefix: "/v1/visual-contracts",
+			ToPrefix:   "/visual-contracts",
+		},
+	}})
+	if err != nil {
+		t.Fatalf("NewRouteTable() error = %v", err)
+	}
+	server := newTestGatewayServerWithRoutes(t, table, "gateway-service-token")
+	request := httptest.NewRequest(http.MethodPost, "/v1/visual-contracts/compare?include=artifacts", strings.NewReader(`{"reference":{"scene":"reference"},"candidate":{"scene":"candidate"}}`))
+	request.Header.Set("Authorization", "Bearer web-edge-token")
+	recorder := httptest.NewRecorder()
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d body=%s", recorder.Code, http.StatusUnprocessableEntity, recorder.Body.String())
+	}
+	if recorder.Header().Get("X-Visual-Contract") != "typed-error" {
+		t.Fatalf("X-Visual-Contract = %q, want typed-error", recorder.Header().Get("X-Visual-Contract"))
+	}
+	if recorder.Body.String() != `{"error":{"code":"invalid_visual_contract","message":"candidate is invalid"}}` {
+		t.Fatalf("body = %q, want typed upstream error", recorder.Body.String())
+	}
+	for _, secret := range []string{"web-edge-token", upstreamToken, "gateway-service-token"} {
+		if strings.Contains(recorder.Body.String(), secret) {
+			t.Fatalf("response leaked token %q", secret)
+		}
+	}
+}
+
 func TestGatewayTranslatesIdentityOnlyForSuccessorRoute(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
