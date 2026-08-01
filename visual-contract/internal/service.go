@@ -5,21 +5,50 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/url"
+	"path"
+	"strings"
 )
 
 type Service struct {
-	artifactBaseURL string
-	artifacts       ArtifactStore
+	artifactBasePath string
+	artifacts        ArtifactStore
 }
 
-func NewService(artifactBaseURL string, artifacts ArtifactStore) (*Service, error) {
-	if artifactBaseURL == "" {
-		return nil, invalidRequest("artifact base url is required")
+func NewService(artifactBasePath string, artifacts ArtifactStore) (*Service, error) {
+	normalizedBasePath, err := normalizeArtifactBasePath(artifactBasePath)
+	if err != nil {
+		return nil, invalidRequest(err.Error())
 	}
 	if artifacts == nil {
 		return nil, invalidRequest("artifact store is required")
 	}
-	return &Service{artifactBaseURL: artifactBaseURL, artifacts: artifacts}, nil
+	return &Service{artifactBasePath: normalizedBasePath, artifacts: artifacts}, nil
+}
+
+func normalizeArtifactBasePath(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", fmt.Errorf("artifact public base path is required")
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("parsing artifact public base path: %w", err)
+	}
+	if parsed.IsAbs() || parsed.Host != "" || parsed.Scheme != "" || strings.HasPrefix(trimmed, "//") {
+		return "", fmt.Errorf("artifact public base path must be root-relative")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("artifact public base path must not contain a query or fragment")
+	}
+	if !strings.HasPrefix(parsed.Path, "/") {
+		return "", fmt.Errorf("artifact public base path must start with /")
+	}
+	normalized := strings.TrimRight(parsed.Path, "/")
+	if normalized == "" || path.Clean(normalized) != normalized {
+		return "", fmt.Errorf("artifact public base path must be normalized")
+	}
+	return normalized, nil
 }
 
 func (s *Service) Validate(_ context.Context, contract *Contract) (*ValidationResponse, error) {
@@ -65,7 +94,7 @@ func (s *Service) Compare(ctx context.Context, reference *Contract, candidate *C
 	if err != nil {
 		return nil, err
 	}
-	applyRunArtifacts(report, s.artifactBaseURL, run.RunID)
+	applyRunArtifacts(report, s.artifactBasePath, run.RunID)
 	return report, nil
 }
 
@@ -111,7 +140,7 @@ func (s *Service) Overlays(ctx context.Context, reference *Contract, candidate *
 		if err != nil {
 			return nil, err
 		}
-		applyRunArtifacts(report, s.artifactBaseURL, run.RunID)
+		applyRunArtifacts(report, s.artifactBasePath, run.RunID)
 		response.RunID = run.RunID
 		response.Artifacts = report.Artifacts
 	}
@@ -123,7 +152,7 @@ func (s *Service) GetRun(ctx context.Context, runID string) (*VisualContractRun,
 	if err != nil {
 		return nil, err
 	}
-	run.Artifacts = artifactRefsMap(s.artifactBaseURL, run.RunID, run.Names)
+	run.Artifacts = artifactRefsMap(s.artifactBasePath, run.RunID, run.Names)
 	return run, nil
 }
 
@@ -223,7 +252,7 @@ func (s *Service) persistRun(ctx context.Context, reference *Contract, candidate
 	if err != nil {
 		return nil, err
 	}
-	applyRunArtifacts(report, s.artifactBaseURL, runID)
+	applyRunArtifacts(report, s.artifactBasePath, runID)
 	referenceJSON, err := json.MarshalIndent(reference, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("encoding reference contract artifact: %w", err)
@@ -247,22 +276,22 @@ func (s *Service) persistRun(ctx context.Context, reference *Contract, candidate
 	})
 }
 
-func applyRunArtifacts(report *ComparisonReport, baseURL string, runID string) {
+func applyRunArtifacts(report *ComparisonReport, basePath string, runID string) {
 	report.RunID = runID
 	report.Artifacts = ArtifactRefs{
-		ReferenceContract: artifactURL(baseURL, runID, ArtifactReferenceContract),
-		CandidateContract: artifactURL(baseURL, runID, ArtifactCandidateContract),
-		Report:            artifactURL(baseURL, runID, ArtifactReport),
-		ReferenceOverlay:  artifactURL(baseURL, runID, ArtifactReferenceOverlay),
-		CandidateOverlay:  artifactURL(baseURL, runID, ArtifactCandidateOverlay),
-		DiffOverlay:       artifactURL(baseURL, runID, ArtifactDiffOverlay),
+		ReferenceContract: artifactPath(basePath, runID, ArtifactReferenceContract),
+		CandidateContract: artifactPath(basePath, runID, ArtifactCandidateContract),
+		Report:            artifactPath(basePath, runID, ArtifactReport),
+		ReferenceOverlay:  artifactPath(basePath, runID, ArtifactReferenceOverlay),
+		CandidateOverlay:  artifactPath(basePath, runID, ArtifactCandidateOverlay),
+		DiffOverlay:       artifactPath(basePath, runID, ArtifactDiffOverlay),
 	}
 }
 
-func artifactRefsMap(baseURL string, runID string, names []string) map[string]string {
+func artifactRefsMap(basePath string, runID string, names []string) map[string]string {
 	refs := make(map[string]string, len(names))
 	for _, name := range names {
-		refs[name] = artifactURL(baseURL, runID, name)
+		refs[name] = artifactPath(basePath, runID, name)
 	}
 	return refs
 }

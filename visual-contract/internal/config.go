@@ -19,8 +19,8 @@ type Config struct {
 }
 
 type ArtifactConfig struct {
-	BaseURL string
-	Path    string
+	PublicBasePath string
+	Path           string
 }
 
 type HTTPConfig struct {
@@ -34,8 +34,8 @@ type configFile struct {
 }
 
 type artifactConfigFile struct {
-	BaseURL string `yaml:"base_url"`
-	Path    string `yaml:"path"`
+	PublicBasePath string `yaml:"public_base_path"`
+	Path           string `yaml:"path"`
 }
 
 type httpConfigFile struct {
@@ -67,8 +67,8 @@ func LoadConfigFromPath(path string) (*Config, error) {
 		BindAddr:     file.BindAddr,
 		ServiceToken: values.String("DEN_VISUAL_CONTRACT_SERVICE_TOKEN", ""),
 		Artifacts: ArtifactConfig{
-			BaseURL: file.Artifacts.BaseURL,
-			Path:    file.Artifacts.Path,
+			PublicBasePath: file.Artifacts.PublicBasePath,
+			Path:           file.Artifacts.Path,
 		},
 		HTTP: httpConfig,
 	}
@@ -85,8 +85,8 @@ func (c *Config) validate() error {
 	if c.ServiceToken == "" {
 		return errors.New("service token is required")
 	}
-	if c.Artifacts.BaseURL == "" {
-		return errors.New("artifacts.base_url is required")
+	if _, err := normalizeArtifactBasePath(c.Artifacts.PublicBasePath); err != nil {
+		return fmt.Errorf("artifacts.public_base_path: %w", err)
 	}
 	if c.Artifacts.Path == "" {
 		return errors.New("artifacts.path is required")

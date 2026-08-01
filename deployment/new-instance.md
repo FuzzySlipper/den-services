@@ -745,6 +745,11 @@ At minimum, make these same-machine changes:
 - In the local-trust core deployment, set `review.github.enabled: false` and
   omit Gateway, Doc Publish, Visual Inspect, and Visual Contract until those
   capabilities are actually needed.
+- When Visual Contract is enabled, keep it bound to loopback but set
+  `artifacts.public_base_path: "/api/v1/visual-contracts"`. Emitted artifact
+  refs are browser-visible same-origin paths served through web-edge and
+  Gateway; never configure this field with the private `127.0.0.1:8086`
+  service-owner URL.
 
 ### 4.3 Create service environment files
 
@@ -1027,6 +1032,9 @@ DEN_GATEWAY_TIMELINE_UPSTREAM_TOKEN=local-den
 The visual-contract route is deliberately path-translated by Gateway:
 browser `/api/v1/visual-contracts/*` becomes Gateway
 `/v1/visual-contracts/*`, then visual-contract `/visual-contracts/*`.
+The service emits artifact refs under the original browser prefix configured as
+`artifacts.public_base_path: "/api/v1/visual-contracts"`; Gateway must not
+rewrite response bodies.
 Use the exact same secret for `DEN_GATEWAY_VISUAL_CONTRACT_UPSTREAM_TOKEN`
 and the visual-contract service's `DEN_VISUAL_CONTRACT_SERVICE_TOKEN`.
 Neither value belongs in `den-web-config.json` or any browser request.

@@ -17,7 +17,7 @@ func NewHTTPServer(cfg *Config, buildInfo health.BuildInfo) (*http.Server, error
 		return nil, err
 	}
 	store := NewFileArtifactStore(cfg.Artifacts.Path)
-	service, err := NewService(cfg.Artifacts.BaseURL, store)
+	service, err := NewService(cfg.Artifacts.PublicBasePath, store)
 	if err != nil {
 		return nil, err
 	}

@@ -17,7 +17,7 @@ func TestServerRoutesRequireAuthAndExposeHealth(t *testing.T) {
 	cfg := &Config{
 		BindAddr:     "127.0.0.1:0",
 		ServiceToken: "test-token",
-		Artifacts:    ArtifactConfig{BaseURL: "http://127.0.0.1:8086/visual-contracts", Path: t.TempDir()},
+		Artifacts:    ArtifactConfig{PublicBasePath: "/api/v1/visual-contracts", Path: t.TempDir()},
 		HTTP:         HTTPConfig{ReadHeaderTimeout: time.Second},
 	}
 	info, err := health.NewBuildInfo("visual-contract", "dev", "unknown", time.Unix(0, 0).UTC())
@@ -46,7 +46,7 @@ func TestValidateRoute(t *testing.T) {
 	cfg := &Config{
 		BindAddr:     "127.0.0.1:0",
 		ServiceToken: "test-token",
-		Artifacts:    ArtifactConfig{BaseURL: "http://127.0.0.1:8086/visual-contracts", Path: t.TempDir()},
+		Artifacts:    ArtifactConfig{PublicBasePath: "/api/v1/visual-contracts", Path: t.TempDir()},
 		HTTP:         HTTPConfig{ReadHeaderTimeout: time.Second},
 	}
 	info, err := health.NewBuildInfo("visual-contract", "dev", "unknown", time.Unix(0, 0).UTC())
@@ -93,6 +93,24 @@ func TestCompareRoutePersistsAndRetrievesArtifacts(t *testing.T) {
 	if report.RunID == "" {
 		t.Fatal("compare response missing run_id")
 	}
+	assertPublicArtifactRefs(t, report.RunID, artifactRefs(report.Artifacts))
+	assertContains(t, recorder.Body.String(), `"report":"/api/v1/visual-contracts/`+report.RunID+`/artifacts/report.json"`)
+	for _, forbidden := range []string{"http://", "https://", "127.0.0.1", "test-token"} {
+		if strings.Contains(recorder.Body.String(), forbidden) {
+			t.Fatalf("compare response contains forbidden value %q: %s", forbidden, recorder.Body.String())
+		}
+	}
+
+	runRecorder := httptest.NewRecorder()
+	server.Handler.ServeHTTP(runRecorder, authedRequest(http.MethodGet, "/visual-contracts/"+report.RunID, nil))
+	if runRecorder.Code != http.StatusOK {
+		t.Fatalf("run status = %d, want 200; body=%s", runRecorder.Code, runRecorder.Body.String())
+	}
+	var run VisualContractRun
+	if err := json.Unmarshal(runRecorder.Body.Bytes(), &run); err != nil {
+		t.Fatalf("Unmarshal(run response) error = %v", err)
+	}
+	assertPublicArtifactRefs(t, report.RunID, run.Artifacts)
 
 	unauthorized := httptest.NewRecorder()
 	server.Handler.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/visual-contracts/"+report.RunID+"/artifacts/report.json", nil))
@@ -148,7 +166,7 @@ func newTestServer(t *testing.T) *http.Server {
 	cfg := &Config{
 		BindAddr:     "127.0.0.1:0",
 		ServiceToken: "test-token",
-		Artifacts:    ArtifactConfig{BaseURL: "http://127.0.0.1:8086/visual-contracts", Path: t.TempDir()},
+		Artifacts:    ArtifactConfig{PublicBasePath: "/api/v1/visual-contracts", Path: t.TempDir()},
 		HTTP:         HTTPConfig{ReadHeaderTimeout: time.Second},
 	}
 	info, err := health.NewBuildInfo("visual-contract", "dev", "unknown", time.Unix(0, 0).UTC())

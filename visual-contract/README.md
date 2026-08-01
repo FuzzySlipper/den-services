@@ -170,8 +170,14 @@ curl -fsS \
   http://127.0.0.1:8086/visual-contracts/compare
 ```
 
-Compare responses include a `run_id` and artifact refs. Fetch artifacts through
-the service with the same bearer token:
+Compare and run-metadata responses include a `run_id` plus root-relative
+artifact refs such as
+`/api/v1/visual-contracts/{run_id}/artifacts/report.json`. The
+`artifacts.public_base_path` setting owns this browser-visible route and must
+remain a normalized same-origin path; absolute service-owner or loopback URLs
+are rejected at startup. Browser callers follow the refs through web-edge and
+Gateway without a token. Operators may still fetch the private owner route
+directly with the service bearer token:
 
 ```bash
 curl -fsS \

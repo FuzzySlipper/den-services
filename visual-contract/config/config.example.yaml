@@ -4,7 +4,7 @@
 bind_addr: "127.0.0.1:8086" # Loopback HTTP listen address.
 
 artifacts:
-  base_url: "http://127.0.0.1:8086/visual-contracts" # Public base URL used in artifact refs.
+  public_base_path: "/api/v1/visual-contracts" # Root-relative browser route used in emitted artifact refs.
   path: "/data/services/visual-contract/data/artifacts" # Local artifact storage directory.
 
 http:

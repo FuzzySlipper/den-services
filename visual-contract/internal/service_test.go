@@ -4,8 +4,38 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 )
+
+func TestNewServiceRequiresRootRelativeArtifactBasePath(t *testing.T) {
+	tests := []string{
+		"",
+		"http://127.0.0.1:8086/visual-contracts",
+		"//127.0.0.1:8086/visual-contracts",
+		"visual-contracts",
+		"/api/v1/visual-contracts?token=secret",
+		"/api/v1/visual-contracts#fragment",
+		"/api/../visual-contracts",
+	}
+	for _, basePath := range tests {
+		t.Run(basePath, func(t *testing.T) {
+			if _, err := NewService(basePath, NewFileArtifactStore(t.TempDir())); err == nil {
+				t.Fatalf("NewService(%q) error = nil, want error", basePath)
+			}
+		})
+	}
+}
+
+func TestNewServiceNormalizesTrailingSlash(t *testing.T) {
+	service, err := NewService("/api/v1/visual-contracts/", NewFileArtifactStore(t.TempDir()))
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if service.artifactBasePath != "/api/v1/visual-contracts" {
+		t.Fatalf("artifactBasePath = %q, want normalized path", service.artifactBasePath)
+	}
+}
 
 func TestCompareGoldenFixtures(t *testing.T) {
 	service := newTestService(t)
@@ -90,6 +120,8 @@ func TestComparePersistsRetrievableArtifacts(t *testing.T) {
 	if run.Artifacts[ArtifactReport] == "" {
 		t.Fatalf("run artifacts missing report ref: %+v", run.Artifacts)
 	}
+	assertPublicArtifactRefs(t, report.RunID, artifactRefs(report.Artifacts))
+	assertPublicArtifactRefs(t, report.RunID, run.Artifacts)
 	storedReport, err := service.GetArtifact(context.Background(), report.RunID, ArtifactReport)
 	if err != nil {
 		t.Fatalf("GetArtifact(report) error = %v", err)
@@ -109,6 +141,35 @@ func TestComparePersistsRetrievableArtifacts(t *testing.T) {
 	_, err = service.GetArtifact(context.Background(), report.RunID, "missing.svg")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing artifact error = %v, want ErrNotFound", err)
+	}
+}
+
+func artifactRefs(refs ArtifactRefs) map[string]string {
+	return map[string]string{
+		ArtifactReferenceContract: refs.ReferenceContract,
+		ArtifactCandidateContract: refs.CandidateContract,
+		ArtifactReport:            refs.Report,
+		ArtifactReferenceOverlay:  refs.ReferenceOverlay,
+		ArtifactCandidateOverlay:  refs.CandidateOverlay,
+		ArtifactDiffOverlay:       refs.DiffOverlay,
+	}
+}
+
+func assertPublicArtifactRefs(t *testing.T, runID string, refs map[string]string) {
+	t.Helper()
+	if len(refs) != 6 {
+		t.Fatalf("artifact refs = %d, want 6: %+v", len(refs), refs)
+	}
+	for name, ref := range refs {
+		want := "/api/v1/visual-contracts/" + runID + "/artifacts/" + name
+		if ref != want {
+			t.Errorf("artifact ref %s = %q, want %q", name, ref, want)
+		}
+		for _, forbidden := range []string{"http://", "https://", "127.0.0.1", "token", "secret"} {
+			if strings.Contains(ref, forbidden) {
+				t.Errorf("artifact ref %s contains forbidden value %q: %q", name, forbidden, ref)
+			}
+		}
 	}
 }
 
@@ -650,7 +711,7 @@ func TestASHAStudioPilotFixtures(t *testing.T) {
 
 func newTestService(t *testing.T) *Service {
 	t.Helper()
-	service, err := NewService("http://127.0.0.1:8086/visual-contracts", NewFileArtifactStore(t.TempDir()))
+	service, err := NewService("/api/v1/visual-contracts", NewFileArtifactStore(t.TempDir()))
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}

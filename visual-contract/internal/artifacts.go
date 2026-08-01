@@ -189,6 +189,6 @@ func notFound(message string) error {
 	return newServiceError(fmt.Errorf("%w: %s", ErrNotFound, message), "not_found", 404)
 }
 
-func artifactURL(baseURL string, runID string, name string) string {
-	return strings.TrimRight(baseURL, "/") + "/" + runID + "/artifacts/" + name
+func artifactPath(basePath string, runID string, name string) string {
+	return strings.TrimRight(basePath, "/") + "/" + runID + "/artifacts/" + name
 }
