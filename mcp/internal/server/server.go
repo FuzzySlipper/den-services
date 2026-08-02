@@ -42,6 +42,10 @@ func NewHTTPServer(cfg *config.Config, buildInfo health.BuildInfo, mcpHandler MC
 }
 
 func protectedMCPHandler(cfg *config.Config, buildInfo health.BuildInfo, handler MCPHandler) (http.Handler, error) {
+	defaultProfile, err := registry.ParseToolProfile(cfg.Server.DefaultToolProfile)
+	if err != nil {
+		return nil, err
+	}
 	if handler == nil {
 		defaultRegistry, err := registry.DefaultRegistry()
 		if err != nil {
@@ -51,7 +55,10 @@ func protectedMCPHandler(cfg *config.Config, buildInfo health.BuildInfo, handler
 		if err != nil {
 			return nil, err
 		}
-		handler = NewMCPHandlerWithOptions(defaultRegistry, buildInfo, locator, HandlerOptions{DetailReferenceTTL: cfg.Details.ReferenceTTL})
+		handler = NewMCPHandlerWithOptions(defaultRegistry, buildInfo, locator, HandlerOptions{
+			DetailReferenceTTL: cfg.Details.ReferenceTTL,
+			DefaultToolProfile: defaultProfile,
+		})
 	}
 	if cfg.Security.AllowUnauthenticatedLocalDev {
 		return handler, nil

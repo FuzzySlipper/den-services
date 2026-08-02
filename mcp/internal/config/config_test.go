@@ -29,6 +29,9 @@ func TestLoadFromPathWithValues(t *testing.T) {
 	if cfg.Server.ReadHeaderTimeout != 5*time.Second {
 		t.Fatalf("Server.ReadHeaderTimeout = %s", cfg.Server.ReadHeaderTimeout)
 	}
+	if cfg.Server.DefaultToolProfile != "managed-runtime" {
+		t.Fatalf("Server.DefaultToolProfile = %q", cfg.Server.DefaultToolProfile)
+	}
 	if cfg.Details.ReferenceTTL != 15*time.Minute {
 		t.Fatalf("Details.ReferenceTTL = %s", cfg.Details.ReferenceTTL)
 	}
@@ -113,6 +116,7 @@ func validConfigWithAuth(allowUnauthenticatedLocalDev bool) string {
   listen_addr: "127.0.0.1:18090"
   mcp_endpoint_path: "mcp"
   read_header_timeout: "5s"
+  default_tool_profile: "managed-runtime"
 security:
   service_token_env: "DEN_MCP_SERVICE_TOKEN"
   allow_unauthenticated_local_dev: ` + boolString(allowUnauthenticatedLocalDev) + `

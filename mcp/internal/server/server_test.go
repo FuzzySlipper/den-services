@@ -54,6 +54,10 @@ func TestMCPInitializeIsWired(t *testing.T) {
 	if _, ok := capabilities["tools"]; !ok {
 		t.Fatalf("capabilities missing tools: %#v", capabilities)
 	}
+	catalog := result["catalog"].(map[string]any)
+	if catalog["toolProfile"] != "direct" {
+		t.Fatalf("initialize catalog profile = %v", catalog["toolProfile"])
+	}
 }
 
 func TestMCPToolsListIsStatic(t *testing.T) {
@@ -78,6 +82,72 @@ func TestMCPToolsListIsStatic(t *testing.T) {
 	first := tools[0].(map[string]any)
 	if first["name"] != "search_documents" {
 		t.Fatalf("first tool name = %v, want search_documents", first["name"])
+	}
+	catalog := result["catalog"].(map[string]any)
+	if catalog["toolProfile"] != "direct" {
+		t.Fatalf("catalog profile = %v, want direct", catalog["toolProfile"])
+	}
+}
+
+func TestMCPToolsListManagedRuntimeProfileFiltersPrimitives(t *testing.T) {
+	server := newTestServer(t, true, nil)
+	body, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      "managed",
+		"method":  "tools/list",
+		"params":  map[string]any{"toolProfile": "managed-runtime"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("managed tools/list status = %d, want %d", response.Code, http.StatusOK)
+	}
+	var responseBody map[string]any
+	decodeResponse(t, response, &responseBody)
+	result := responseBody["result"].(map[string]any)
+	tools := result["tools"].([]any)
+	for _, rawTool := range tools {
+		name := rawTool.(map[string]any)["name"]
+		if name == "watch_github_checks" || name == "request_review" || name == "finalize_review" {
+			t.Fatalf("managed tools/list exposed primitive %v", name)
+		}
+	}
+	catalog := result["catalog"].(map[string]any)
+	if catalog["toolProfile"] != "managed-runtime" {
+		t.Fatalf("catalog profile = %v", catalog["toolProfile"])
+	}
+	if catalog["hiddenToolCount"].(float64) == 0 {
+		t.Fatal("managed catalog reports no hidden tools")
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader([]byte(`{"jsonrpc":"2.0","id":"managed-header","method":"tools/list"}`)))
+	request.Header.Set("X-Den-MCP-Tool-Profile", "managed-runtime")
+	response = httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+	decodeResponse(t, response, &responseBody)
+	result = responseBody["result"].(map[string]any)
+	if result["catalog"].(map[string]any)["toolProfile"] != "managed-runtime" {
+		t.Fatalf("header-selected profile = %#v", result["catalog"])
+	}
+}
+
+func TestMCPRejectsUnknownToolProfile(t *testing.T) {
+	server := newTestServer(t, true, nil)
+	request := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)))
+	request.Header.Set("X-Den-MCP-Tool-Profile", "not-a-profile")
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unknown profile status = %d, want %d", response.Code, http.StatusOK)
+	}
+	var body map[string]any
+	decodeResponse(t, response, &body)
+	if body["error"].(map[string]any)["code"] != float64(-32602) {
+		t.Fatalf("unknown profile response = %#v", body)
 	}
 }
 

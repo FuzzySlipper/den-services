@@ -6,6 +6,9 @@ server:
   listen_addr: "0.0.0.0:5199"
   mcp_endpoint_path: "/mcp"
   read_header_timeout: "5s"
+  # Default discovery projection for callers that do not request a profile.
+  # Use managed-runtime only for a dedicated managed adapter endpoint.
+  default_tool_profile: "direct"
 
 security:
   service_token_env: "DEN_MCP_SERVICE_TOKEN"

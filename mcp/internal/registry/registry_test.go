@@ -181,6 +181,78 @@ func TestDefaultRegistryExposesFinalizeReviewGreenPath(t *testing.T) {
 	}
 }
 
+func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *testing.T) {
+	toolRegistry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry() error = %v", err)
+	}
+
+	direct, err := toolRegistry.ToolsForProfile(ToolProfileDirect)
+	if err != nil {
+		t.Fatalf("ToolsForProfile(direct) error = %v", err)
+	}
+	managed, err := toolRegistry.ToolsForProfile(ToolProfileManagedRuntime)
+	if err != nil {
+		t.Fatalf("ToolsForProfile(managed-runtime) error = %v", err)
+	}
+	if len(direct) != 71 {
+		t.Fatalf("direct tool count = %d, want 71", len(direct))
+	}
+	if len(managed) >= len(direct) {
+		t.Fatalf("managed tool count = %d, want fewer than direct %d", len(managed), len(direct))
+	}
+	for _, name := range []string{"discover_github_checks", "watch_github_checks", "get_github_check_gate", "wait_for_github_checks", "await_github_checks", "request_review", "create_review_round", "finalize_review"} {
+		if containsListedTool(managed, name) {
+			t.Fatalf("managed profile exposes primitive %s", name)
+		}
+		if _, err := toolRegistry.Resolve(name); err != nil {
+			t.Fatalf("Resolve(%s) error = %v; profile filtering must not remove authority", name, err)
+		}
+	}
+	for _, name := range []string{"get_task", "get_task_context", "list_tasks", "store_document", "update_task"} {
+		if !containsListedTool(managed, name) {
+			t.Fatalf("managed profile hides normal operator tool %s", name)
+		}
+	}
+
+	catalog, err := toolRegistry.Catalog(ToolProfileManagedRuntime)
+	if err != nil {
+		t.Fatalf("Catalog(managed-runtime) error = %v", err)
+	}
+	if catalog.Profile != ToolProfileManagedRuntime || catalog.Revision == "" {
+		t.Fatalf("catalog identity = %#v", catalog)
+	}
+	if catalog.HiddenToolCount == 0 || catalog.WorkflowTiers[WorkflowTierPrimitive] != 0 {
+		t.Fatalf("managed catalog = %#v", catalog)
+	}
+	if !slices.Contains(catalog.HiddenWorkflowTiers, WorkflowTierPrimitive) {
+		t.Fatalf("managed hidden tiers = %#v", catalog.HiddenWorkflowTiers)
+	}
+}
+
+func TestManagedRuntimeProfileKeepsGreenPathToolsVisible(t *testing.T) {
+	toolRegistry, err := New([]ToolDefinition{
+		{Name: "submit_task_for_review", Description: "Managed review entry point.", Backend: "review", Operation: "submit_task_for_review", WorkflowTier: WorkflowTierGreenPath, InputSchema: ObjectSchema(nil)},
+		{Name: "watch_github_checks", Description: "Low-level gate.", Backend: "review", Operation: "watch_github_checks", WorkflowTier: WorkflowTierPrimitive, InputSchema: ObjectSchema(nil)},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	managed, err := toolRegistry.ToolsForProfile(ToolProfileManagedRuntime)
+	if err != nil {
+		t.Fatalf("ToolsForProfile(managed-runtime) error = %v", err)
+	}
+	if !containsListedTool(managed, "submit_task_for_review") || containsListedTool(managed, "watch_github_checks") {
+		t.Fatalf("managed tools = %#v", managed)
+	}
+}
+
+func TestParseToolProfileRejectsUnknownProfiles(t *testing.T) {
+	if _, err := ParseToolProfile("managed-crew"); !errors.Is(err, ErrUnknownToolProfile) {
+		t.Fatalf("ParseToolProfile(managed-crew) error = %v, want %v", err, ErrUnknownToolProfile)
+	}
+}
+
 func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 	registry, err := DefaultRegistry()
 	if err != nil {
@@ -349,6 +421,15 @@ func minimalTool(name string) ToolDefinition {
 func containsName(names []string, name string) bool {
 	for _, candidate := range names {
 		if candidate == name {
+			return true
+		}
+	}
+	return false
+}
+
+func containsListedTool(tools []ListedTool, name string) bool {
+	for _, tool := range tools {
+		if tool.Name == name {
 			return true
 		}
 	}

@@ -33,6 +33,29 @@ access behavior. Do not treat this ergonomic composition as a security
 boundary. Follow document/message handles on demand and stop under the
 project's Den-connectivity policy when the packet cannot be read.
 
+## Managed-runtime tool profiles
+
+The MCP catalog labels every discovered tool with `workflowTier`:
+
+- `operator` — normal Den task, document, message, code-work, and readback work;
+- `primitive` — low-level review/gate orchestration that a managed runtime may
+  invoke through its trusted service adapter;
+- `green_path` — a canonical managed workflow entry point owned by the runtime.
+
+Direct Codex/CLI callers use the `direct` profile by default and retain the
+low-level Review/GitHub-gate tools. A managed runtime can request the narrower
+catalog with either the `X-Den-MCP-Tool-Profile: managed-runtime` HTTP header or
+the equivalent `toolProfile` field on `initialize`/`tools/list` parameters.
+The response includes a `catalog` object with the selected profile, catalog
+revision, visible count, and tier counts so startup diagnostics can verify the
+projection. The managed profile omits primitive review/gate tools from
+`tools/list`; it does not delete them or block direct service calls, so a
+persisted review workflow remains completable.
+
+The default can be set in `server.default_tool_profile`, but shared endpoints
+should normally remain `direct`; select `managed-runtime` per adapter request
+when direct and managed callers share the same MCP listener.
+
 ## Concise results and intentional details
 
 Normal tool discovery does not repeat a `verbose` parameter across resource

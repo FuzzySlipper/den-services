@@ -24,9 +24,10 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	ListenAddr        string
-	MCPEndpointPath   string
-	ReadHeaderTimeout time.Duration
+	ListenAddr         string
+	MCPEndpointPath    string
+	ReadHeaderTimeout  time.Duration
+	DefaultToolProfile string
 }
 
 type SecurityConfig struct {
@@ -61,9 +62,10 @@ type configFile struct {
 }
 
 type serverConfigFile struct {
-	ListenAddr        string `yaml:"listen_addr"`
-	MCPEndpointPath   string `yaml:"mcp_endpoint_path"`
-	ReadHeaderTimeout string `yaml:"read_header_timeout"`
+	ListenAddr         string `yaml:"listen_addr"`
+	MCPEndpointPath    string `yaml:"mcp_endpoint_path"`
+	ReadHeaderTimeout  string `yaml:"read_header_timeout"`
+	DefaultToolProfile string `yaml:"default_tool_profile"`
 }
 
 type securityConfigFile struct {
@@ -168,9 +170,10 @@ func (c serverConfigFile) toConfig() (ServerConfig, error) {
 		return ServerConfig{}, err
 	}
 	return ServerConfig{
-		ListenAddr:        strings.TrimSpace(c.ListenAddr),
-		MCPEndpointPath:   cleanPath(c.MCPEndpointPath),
-		ReadHeaderTimeout: readHeaderTimeout,
+		ListenAddr:         strings.TrimSpace(c.ListenAddr),
+		MCPEndpointPath:    cleanPath(c.MCPEndpointPath),
+		ReadHeaderTimeout:  readHeaderTimeout,
+		DefaultToolProfile: strings.TrimSpace(c.DefaultToolProfile),
 	}, nil
 }
 

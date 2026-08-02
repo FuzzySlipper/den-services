@@ -51,12 +51,13 @@ func DefaultTools() ([]ToolDefinition, error) {
 	tools := make([]ToolDefinition, 0, len(snapshot.Tools))
 	for _, tool := range snapshot.Tools {
 		definition := ToolDefinition{
-			Name:        tool.Name,
-			Description: modernizeDescription(tool.Name, tool.Description),
-			Backend:     denCoreBackend,
-			Operation:   tool.Name,
-			InputSchema: modernizeInputSchema(tool.Name, tool.InputSchema),
-			Execution:   tool.Execution,
+			Name:         tool.Name,
+			Description:  modernizeDescription(tool.Name, tool.Description),
+			Backend:      denCoreBackend,
+			Operation:    tool.Name,
+			InputSchema:  modernizeInputSchema(tool.Name, tool.InputSchema),
+			Execution:    tool.Execution,
+			WorkflowTier: workflowTierForTool(tool.Name),
 		}
 		if policy, ok := retiredToolPolicies[tool.Name]; ok {
 			definition.Hidden = true
@@ -86,10 +87,11 @@ func DefaultTools() ([]ToolDefinition, error) {
 
 func campaignReviewTools() []ToolDefinition {
 	return []ToolDefinition{{
-		Name:        "request_campaign_review",
-		Description: "Request a campaign reconciliation review from immutable approved child review rounds and exact repository heads. Children must be direct subtasks or share the campaign:<parent_project_id>:<parent_task_id> tag.",
-		Backend:     "review",
-		Operation:   "request_campaign_review",
+		Name:         "request_campaign_review",
+		Description:  "Request a campaign reconciliation review from immutable approved child review rounds and exact repository heads. Children must be direct subtasks or share the campaign:<parent_project_id>:<parent_task_id> tag.",
+		Backend:      "review",
+		Operation:    "request_campaign_review",
+		WorkflowTier: WorkflowTierPrimitive,
 		InputSchema: ObjectSchema(map[string]Schema{
 			"task_id":      IntegerSchema("Parent campaign task ID."),
 			"requested_by": StringSchema("Agent or user requesting campaign reconciliation."),
@@ -230,30 +232,33 @@ func githubCheckGateTools() []ToolDefinition {
 		Description: "Read GitHub check runs for an exact commit and optionally validate exact required names without creating a gate, changing a task, or posting evidence.",
 		Backend:     "review",
 		Operation:   "discover_github_checks", InputSchema: discoverySchema,
+		WorkflowTier: WorkflowTierPrimitive,
 	}, {
 		Name:        "watch_github_checks",
 		Description: "Register or read the durable exact-SHA GitHub check gate and return its deferral handle/current status immediately.",
 		Backend:     "review",
 		Operation:   "watch_github_checks", InputSchema: watchSchema,
+		WorkflowTier: WorkflowTierPrimitive,
 	}, {
 		Name: "get_github_check_gate", Description: "Read an existing exact-SHA GitHub check gate without changing its timeout or polling state.",
-		Backend: "review", Operation: "get_github_check_gate", InputSchema: readSchema,
+		Backend: "review", Operation: "get_github_check_gate", InputSchema: readSchema, WorkflowTier: WorkflowTierPrimitive,
 	}, {
 		Name: "wait_for_github_checks", Description: "Wait briefly for an existing exact-SHA gate terminal event. Returns terminal state or a typed progress/timeout receipt without re-registering the gate.",
-		Backend: "review", Operation: "wait_for_github_checks", InputSchema: waitSchema,
+		Backend: "review", Operation: "wait_for_github_checks", InputSchema: waitSchema, WorkflowTier: WorkflowTierPrimitive,
 	}, {
 		Name: "await_github_checks", Description: "Compatibility alias for watch_github_checks. This operation returns immediately and does not await terminal checks.",
-		Backend: "review", Operation: "await_github_checks", InputSchema: watchSchema, Deprecated: true,
+		Backend: "review", Operation: "await_github_checks", InputSchema: watchSchema, WorkflowTier: WorkflowTierPrimitive, Deprecated: true,
 		DeprecationMessage: "Use watch_github_checks, then get_github_check_gate or bounded wait_for_github_checks. await_github_checks historically returned immediately.",
 	}}
 }
 
 func reviewFinalizationTools() []ToolDefinition {
 	return []ToolDefinition{{
-		Name:        "finalize_review",
-		Description: "Finalize a normal review exactly once. This durable saga posts the canonical findings packet and transitions the task; retries resume incomplete delivery checkpoints. Supports looks_good and changes_requested only.",
-		Backend:     "review",
-		Operation:   "finalize_review",
+		Name:         "finalize_review",
+		Description:  "Finalize a normal review exactly once. This durable saga posts the canonical findings packet and transitions the task; retries resume incomplete delivery checkpoints. Supports looks_good and changes_requested only.",
+		Backend:      "review",
+		Operation:    "finalize_review",
+		WorkflowTier: WorkflowTierPrimitive,
 		InputSchema: ObjectSchema(map[string]Schema{
 			"review_round_id": IntegerSchema("Existing review round to finalize."),
 			"verdict":         StringSchema("Green-path verdict: looks_good or changes_requested."),
@@ -264,6 +269,17 @@ func reviewFinalizationTools() []ToolDefinition {
 			"subagent_role":   NullableStringSchema("Optional subagent role for correlation."),
 		}, "review_round_id", "verdict", "decided_by"),
 	}}
+}
+
+func workflowTierForTool(name string) WorkflowTier {
+	switch name {
+	case "create_review_round", "create_review_finding", "post_review_findings",
+		"respond_to_review_finding", "set_review_finding_status", "split_review_findings_to_follow_up",
+		"request_review", "set_review_verdict":
+		return WorkflowTierPrimitive
+	default:
+		return WorkflowTierOperator
+	}
 }
 
 func contractErgonomicsTools() []ToolDefinition {

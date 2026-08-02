@@ -33,7 +33,10 @@ const (
 	errorMethodNotFound = -32601
 	errorInvalidParams  = -32602
 	errorInternal       = -32603
+	toolProfileHeader   = "X-Den-MCP-Tool-Profile"
 )
+
+type toolProfileContextKey struct{}
 
 type Handler struct {
 	registry           *registry.Registry
@@ -43,6 +46,7 @@ type Handler struct {
 	clock              func() time.Time
 	detailReferenceTTL time.Duration
 	detailReferenceKey []byte
+	defaultToolProfile registry.ToolProfile
 }
 
 type HandlerOptions struct {
@@ -50,6 +54,7 @@ type HandlerOptions struct {
 	Clock              func() time.Time
 	DetailReferenceTTL time.Duration
 	DetailReferenceKey []byte
+	DefaultToolProfile registry.ToolProfile
 }
 
 type rpcRequest struct {
@@ -73,13 +78,15 @@ type rpcError struct {
 
 type initializeParams struct {
 	ProtocolVersion string `json:"protocolVersion"`
+	ToolProfile     string `json:"toolProfile,omitempty"`
 }
 
 type initializeResult struct {
-	ProtocolVersion string             `json:"protocolVersion"`
-	Capabilities    serverCapabilities `json:"capabilities"`
-	ServerInfo      serverInfo         `json:"serverInfo"`
-	Instructions    string             `json:"instructions"`
+	ProtocolVersion string                   `json:"protocolVersion"`
+	Capabilities    serverCapabilities       `json:"capabilities"`
+	ServerInfo      serverInfo               `json:"serverInfo"`
+	Instructions    string                   `json:"instructions"`
+	Catalog         registry.CatalogMetadata `json:"catalog"`
 }
 
 type serverCapabilities struct {
@@ -97,7 +104,12 @@ type serverInfo struct {
 }
 
 type toolsListResult struct {
-	Tools []registry.ListedTool `json:"tools"`
+	Tools   []registry.ListedTool    `json:"tools"`
+	Catalog registry.CatalogMetadata `json:"catalog"`
+}
+
+type toolsListParams struct {
+	ToolProfile string `json:"toolProfile,omitempty"`
 }
 
 type toolsCallParams struct {
@@ -120,7 +132,7 @@ func NewMCPHandler(registry *registry.Registry, buildInfo health.BuildInfo, loca
 	return NewMCPHandlerWithOptions(registry, buildInfo, locator, HandlerOptions{})
 }
 
-func NewMCPHandlerWithOptions(registry *registry.Registry, buildInfo health.BuildInfo, locator *backend.Locator, options HandlerOptions) *Handler {
+func NewMCPHandlerWithOptions(toolRegistry *registry.Registry, buildInfo health.BuildInfo, locator *backend.Locator, options HandlerOptions) *Handler {
 	if options.Logger == nil {
 		options.Logger = slog.Default()
 	}
@@ -129,6 +141,11 @@ func NewMCPHandlerWithOptions(registry *registry.Registry, buildInfo health.Buil
 	}
 	if options.DetailReferenceTTL <= 0 {
 		options.DetailReferenceTTL = 15 * time.Minute
+	}
+	defaultToolProfile, err := registry.ParseToolProfile(string(options.DefaultToolProfile))
+	if err != nil {
+		options.Logger.Error("invalid default MCP tool profile", "error", err)
+		defaultToolProfile = registry.ToolProfileDirect
 	}
 	if len(options.DetailReferenceKey) == 0 {
 		options.DetailReferenceKey = make([]byte, 32)
@@ -139,13 +156,14 @@ func NewMCPHandlerWithOptions(registry *registry.Registry, buildInfo health.Buil
 		}
 	}
 	return &Handler{
-		registry:           registry,
+		registry:           toolRegistry,
 		buildInfo:          buildInfo,
 		locator:            locator,
 		logger:             options.Logger,
 		clock:              options.Clock,
 		detailReferenceTTL: options.DetailReferenceTTL,
 		detailReferenceKey: append([]byte(nil), options.DetailReferenceKey...),
+		defaultToolProfile: defaultToolProfile,
 	}
 }
 
@@ -159,7 +177,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeRPCResponse(w, rpcErrorResponse(nil, errorInternal, "reading request body"))
 		return
 	}
-	response, ok := h.handlePayload(r.Context(), body)
+	profile, err := h.requestToolProfile(r)
+	if err != nil {
+		writeRPCResponse(w, rpcErrorResponse(nil, errorInvalidParams, err.Error()))
+		return
+	}
+	ctx := context.WithValue(r.Context(), toolProfileContextKey{}, profile)
+	response, ok := h.handlePayload(ctx, body)
 	if !ok {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -219,9 +243,25 @@ func (h *Handler) handleNotification(request rpcRequest) {
 func (h *Handler) handleRequest(ctx context.Context, request rpcRequest) rpcResponse {
 	switch request.Method {
 	case methodInitialize:
-		return rpcResultResponse(request.ID, h.initialize(request.Params))
+		profile, err := h.profileFromRequest(request.Params, profileFromContext(ctx))
+		if err != nil {
+			return rpcErrorResponse(request.ID, errorInvalidParams, err.Error())
+		}
+		return rpcResultResponse(request.ID, h.initialize(profile, request.Params))
 	case methodToolsList:
-		return rpcResultResponse(request.ID, toolsListResult{Tools: h.registry.Tools()})
+		profile, err := h.profileFromRequest(request.Params, profileFromContext(ctx))
+		if err != nil {
+			return rpcErrorResponse(request.ID, errorInvalidParams, err.Error())
+		}
+		tools, err := h.registry.ToolsForProfile(profile)
+		if err != nil {
+			return rpcErrorResponse(request.ID, errorInternal, err.Error())
+		}
+		catalog, err := h.registry.Catalog(profile)
+		if err != nil {
+			return rpcErrorResponse(request.ID, errorInternal, err.Error())
+		}
+		return rpcResultResponse(request.ID, toolsListResult{Tools: tools, Catalog: catalog})
 	case methodToolsCall:
 		return h.toolsCall(ctx, request)
 	default:
@@ -229,7 +269,7 @@ func (h *Handler) handleRequest(ctx context.Context, request rpcRequest) rpcResp
 	}
 }
 
-func (h *Handler) initialize(rawParams json.RawMessage) initializeResult {
+func (h *Handler) initialize(profile registry.ToolProfile, rawParams json.RawMessage) initializeResult {
 	params := initializeParams{}
 	if len(rawParams) > 0 {
 		_ = json.Unmarshal(rawParams, &params)
@@ -244,8 +284,46 @@ func (h *Handler) initialize(rawParams json.RawMessage) initializeResult {
 			Title:   "Den Services MCP",
 			Version: h.buildInfo.Version,
 		},
-		Instructions: "Static Den MCP compatibility facade. Tool discovery is available before backend health is known.",
+		Instructions: "Static Den MCP compatibility facade. Tool discovery is available before backend health is known. Discovery profile is advisory; registered service operations remain callable by trusted adapters.",
+		Catalog:      mustCatalog(h.registry, profile),
 	}
+}
+
+func (h *Handler) requestToolProfile(r *http.Request) (registry.ToolProfile, error) {
+	return h.parseToolProfile(r.Header.Get(toolProfileHeader), h.defaultToolProfile)
+}
+
+func (h *Handler) profileFromRequest(rawParams json.RawMessage, fallback registry.ToolProfile) (registry.ToolProfile, error) {
+	params := toolsListParams{}
+	if len(rawParams) > 0 {
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return "", fmt.Errorf("invalid MCP tool profile parameters")
+		}
+	}
+	return h.parseToolProfile(params.ToolProfile, fallback)
+}
+
+func (h *Handler) parseToolProfile(raw string, fallback registry.ToolProfile) (registry.ToolProfile, error) {
+	if strings.TrimSpace(raw) == "" {
+		return fallback, nil
+	}
+	return registry.ParseToolProfile(raw)
+}
+
+func profileFromContext(ctx context.Context) registry.ToolProfile {
+	profile, ok := ctx.Value(toolProfileContextKey{}).(registry.ToolProfile)
+	if !ok || profile == "" {
+		return registry.ToolProfileDirect
+	}
+	return profile
+}
+
+func mustCatalog(toolRegistry *registry.Registry, profile registry.ToolProfile) registry.CatalogMetadata {
+	catalog, err := toolRegistry.Catalog(profile)
+	if err != nil {
+		return registry.CatalogMetadata{Profile: profile, Revision: registry.ToolCatalogRevision}
+	}
+	return catalog
 }
 
 func (h *Handler) toolsCall(ctx context.Context, request rpcRequest) (response rpcResponse) {
