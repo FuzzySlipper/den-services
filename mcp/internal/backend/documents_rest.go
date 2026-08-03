@@ -3,6 +3,8 @@ package backend
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"den-services/mcp/internal/config"
 )
@@ -77,6 +80,8 @@ type updateDiscussionThreadBody struct {
 	Metadata          json.RawMessage `json:"metadata,omitempty"`
 }
 
+const documentContentPreviewBytes = 2048
+
 func (c *Client) callDocumentsREST(ctx context.Context, backend config.BackendConfig, route Route, call ToolCall) (Result, *Failure, error) {
 	request, err := buildDocumentsRESTRequest(ctx, backend, route, call)
 	if err != nil {
@@ -96,11 +101,76 @@ func (c *Client) callDocumentsREST(ctx context.Context, backend config.BackendCo
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return Result{}, statusFailure(backend.Name, call.Operation, call.ToolName, response.StatusCode, responseBody), nil
 	}
+	arguments, err := decodeDocumentsToolArguments(call.Arguments)
+	if err != nil {
+		return Result{}, nil, err
+	}
+	responseBody, err = compactDocumentToolResponse(route.Operation, arguments, responseBody)
+	if err != nil {
+		return Result{}, nil, err
+	}
 	result, err := buildRESTToolResult(responseBody)
 	if err != nil {
 		return Result{}, nil, err
 	}
 	return Result{Value: result}, nil, nil
+}
+
+// compactDocumentToolResponse keeps large document writes and default reads
+// from turning the MCP tool result into a second copy of the document. The
+// document service and web UI still use the full REST response; this is only a
+// model-facing projection. The byte count and digest let callers verify that
+// the complete content reached persistence without asking the model to replay
+// the body through its bounded tool-output channel.
+func compactDocumentToolResponse(operation string, arguments documentsToolArguments, responseBody []byte) ([]byte, error) {
+	if operation != "store_document" && operation != "get_document" {
+		return responseBody, nil
+	}
+	if arguments.Verbose != nil && *arguments.Verbose {
+		return responseBody, nil
+	}
+
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(responseBody, &document); err != nil {
+		return nil, fmt.Errorf("decoding document response for compact MCP projection: %w", err)
+	}
+	contentValue, ok := document["content"]
+	if !ok {
+		return responseBody, nil
+	}
+	var content string
+	if err := json.Unmarshal(contentValue, &content); err != nil {
+		return nil, fmt.Errorf("decoding document content for compact MCP projection: %w", err)
+	}
+	delete(document, "content")
+	digest := sha256.Sum256([]byte(content))
+	document["content_bytes"], _ = json.Marshal(len([]byte(content)))
+	document["content_sha256"], _ = json.Marshal(hex.EncodeToString(digest[:]))
+	document["content_preview"], _ = json.Marshal(documentContentPreview(content))
+	document["content_preview_truncated"], _ = json.Marshal(len([]byte(content)) > documentContentPreviewBytes)
+	compact, err := json.Marshal(document)
+	if err != nil {
+		return nil, fmt.Errorf("encoding compact document MCP projection: %w", err)
+	}
+	return compact, nil
+}
+
+func documentContentPreview(content string) string {
+	if len([]byte(content)) <= documentContentPreviewBytes {
+		return content
+	}
+	preview := make([]byte, 0, documentContentPreviewBytes)
+	for len(preview) < documentContentPreviewBytes {
+		runeValue, size := utf8.DecodeRuneInString(content[len(preview):])
+		if size == 0 || len(preview)+size > documentContentPreviewBytes {
+			break
+		}
+		preview = append(preview, content[len(preview):len(preview)+size]...)
+		if runeValue == utf8.RuneError && size == 1 {
+			break
+		}
+	}
+	return string(preview)
 }
 
 func buildDocumentsRESTRequest(ctx context.Context, backend config.BackendConfig, route Route, call ToolCall) (*http.Request, error) {

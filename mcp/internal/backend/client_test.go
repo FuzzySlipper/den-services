@@ -2,14 +2,35 @@ package backend
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+func mustJSON(t *testing.T, value any) json.RawMessage {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	return encoded
+}
+
+func mustJSONString(t *testing.T, value string) string {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	return string(encoded)
+}
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
@@ -784,8 +805,133 @@ func TestClientCallsDocumentsRESTStoreDocument(t *testing.T) {
 	if sawBody.Slug != "doc" || len(sawBody.Tags) != 2 || sawBody.Tags[1] != "smoke" {
 		t.Fatalf("body = %#v", sawBody)
 	}
-	if !strings.Contains(string(result.Value), `"structuredContent":{"id":801`) {
+	if !strings.Contains(string(result.Value), `"structuredContent":{"content_bytes":4`) {
 		t.Fatalf("result = %s", result.Value)
+	}
+	if strings.Contains(string(result.Value), `"content":"body"`) {
+		t.Fatalf("store result replayed full document content: %s", result.Value)
+	}
+	digest := sha256.Sum256([]byte("body"))
+	if !strings.Contains(string(result.Value), `"content_sha256":"`+hex.EncodeToString(digest[:])+`"`) {
+		t.Fatalf("store result missing content digest: %s", result.Value)
+	}
+}
+
+func TestClientDocumentsRESTLargeStorePreservesContentAndCompactsResult(t *testing.T) {
+	content := strings.Repeat("large markdown line\n", 8_000)
+	var receivedContent string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body storeDocumentBody
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		receivedContent = body.Content
+		w.WriteHeader(http.StatusCreated)
+		response := map[string]any{
+			"id":         802,
+			"project_id": "den-services",
+			"slug":       "large-doc",
+			"title":      "Large document",
+			"content":    body.Content,
+			"doc_type":   "note",
+			"visibility": "normal",
+		}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	result, failure, err := client.Call(context.Background(), testBackend("documents", server.URL), documentsRouteForTest("store_document", http.MethodPost, "/v1/projects/{project_id}/documents"), ToolCall{
+		ToolName:  "store_document",
+		Operation: "store_document",
+		RequestID: json.RawMessage(`1`),
+		Arguments: mustJSON(t, map[string]any{
+			"project_id": "den-services",
+			"slug":       "large-doc",
+			"title":      "Large document",
+			"content":    content,
+			"doc_type":   "note",
+		}),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if receivedContent != content {
+		t.Fatalf("request content length = %d, want %d", len(receivedContent), len(content))
+	}
+	serialized := string(result.Value)
+	if len(serialized) >= 20_000 {
+		t.Fatalf("compact result length = %d, want below Crew's 20,000-character tool-output bound", len(serialized))
+	}
+	if strings.Contains(serialized, content) || !strings.Contains(serialized, `"content_preview_truncated":true`) {
+		t.Fatalf("large store result was not compacted: %s", serialized)
+	}
+	digest := sha256.Sum256([]byte(content))
+	if !strings.Contains(serialized, `"content_bytes":`+strconv.Itoa(len([]byte(content)))) {
+		t.Fatalf("large store result missing byte count: %s", serialized)
+	}
+	if !strings.Contains(serialized, `"content_sha256":"`+hex.EncodeToString(digest[:])+`"`) {
+		t.Fatalf("large store result missing digest: %s", serialized)
+	}
+}
+
+func TestClientDocumentsRESTGetPreservesVerboseFullContent(t *testing.T) {
+	content := strings.Repeat("full document\n", 300)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"id":803,"project_id":"den-services","slug":"doc","title":"Doc","content":` + mustJSONString(t, content) + `,"doc_type":"note","visibility":"normal"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	result, failure, err := client.Call(context.Background(), testBackend("documents", server.URL), documentsRouteForTest("get_document", http.MethodGet, "/v1/projects/{project_id}/documents/{slug}"), ToolCall{
+		ToolName:  "get_document",
+		Operation: "get_document",
+		RequestID: json.RawMessage(`1`),
+		Arguments: mustJSON(t, map[string]any{"project_id": "den-services", "slug": "doc", "verbose": true}),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if !strings.Contains(string(result.Value), mustJSONString(t, content)) {
+		t.Fatalf("verbose get result omitted full content")
+	}
+}
+
+func TestClientDocumentsRESTGetCompactsDefaultContent(t *testing.T) {
+	content := strings.Repeat("default document\n", 300)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"id":804,"project_id":"den-services","slug":"doc","title":"Doc","content":` + mustJSONString(t, content) + `,"doc_type":"note","visibility":"normal"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	result, failure, err := client.Call(context.Background(), testBackend("documents", server.URL), documentsRouteForTest("get_document", http.MethodGet, "/v1/projects/{project_id}/documents/{slug}"), ToolCall{
+		ToolName:  "get_document",
+		Operation: "get_document",
+		RequestID: json.RawMessage(`1`),
+		Arguments: mustJSON(t, map[string]any{"project_id": "den-services", "slug": "doc"}),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	serialized := string(result.Value)
+	if strings.Contains(serialized, mustJSONString(t, content)) {
+		t.Fatal("default get result replayed full document content")
+	}
+	digest := sha256.Sum256([]byte(content))
+	if !strings.Contains(serialized, `"content_preview_truncated":true`) || !strings.Contains(serialized, `"content_sha256":"`+hex.EncodeToString(digest[:])+`"`) {
+		t.Fatalf("default get result missing compact content metadata: %s", serialized)
 	}
 }
 

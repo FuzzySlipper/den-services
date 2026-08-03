@@ -68,6 +68,15 @@ to read-only tools.
 Legacy callers may continue sending `verbose` directly during migration, but
 it is hidden from discovery and new callers should use `get_details`.
 
+Document writes preserve the complete Markdown body. `store_document` does not
+echo that body through the agent-facing MCP result: it returns the document
+metadata plus `content_bytes`, `content_sha256`, `content_preview`, and
+`content_preview_truncated`. The default `get_document` projection follows the
+same bounded shape. This keeps a successful large write from looking clipped
+when an agent runtime applies its tool-output limit. The browser/API document
+response remains full, and an intentional verbose/detail read can request the
+full body when it is appropriate for the caller.
+
 ## Tool usage reports
 
 The facade emits one privacy-safe `mcp_tool_call` JSON log event per call with

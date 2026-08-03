@@ -208,6 +208,13 @@ Document behavior:
   list archived documents or search archived documents separately from default
   list/search.
 
+The documents REST service remains the canonical full-content boundary. The MCP
+facade projects `store_document` responses and default `get_document` reads into
+bounded metadata (`content_bytes`, `content_sha256`, and a preview) so large
+Markdown bodies are not replayed through an agent runtime's tool-output limit;
+an explicit verbose/detail read is still available when the full body is
+needed.
+
 Discussion behavior:
 
 - `get_document_discussion` verifies the document exists. With
