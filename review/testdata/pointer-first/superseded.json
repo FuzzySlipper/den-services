@@ -1,0 +1,20 @@
+{
+  "name": "superseded-round",
+  "schema": "rusty_crew.routed_review_result.v1",
+  "schema_version": 1,
+  "workflow_key": {
+    "project_id": "den-services",
+    "task_id": 6604,
+    "review_round_id": 123,
+    "head_commit": "0123456789abcdef0123456789abcdef01234567",
+    "correlation_id": "crew-session-abc"
+  },
+  "revision": 3,
+  "material_digest": "sha256:superseded-material",
+  "state": "round_superseded",
+  "gate": {"id": 456, "status": "superseded", "terminal_reason": "superseded"},
+  "handles": {"gate_event_id": 901, "newer_round_id": 124},
+  "reply_target": "",
+  "action": "coalesce_no_wake",
+  "expected": {"serialized_bytes_max": 2048, "material_event_key": "6604:123:01234567:3"}
+}

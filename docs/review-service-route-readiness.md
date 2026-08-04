@@ -49,6 +49,12 @@ for the exceptional `follow_up_needed` and `blocked_by_dependency` verdicts.
 Normal reviewers must use `finalize_review`; it owns the canonical findings
 packet and task transition as one retryable workflow.
 
+The pointer-first review envelope and bounded wake/event contract are defined in
+[`docs/review-pointer-first-contract.md`](./review-pointer-first-contract.md).
+Normal managed submission is owned by Rusty Crew's `submit_task_for_review`;
+Review supplies exact-round/SHA facts, packet/gate handles, and deterministic
+receipts but does not own Crew routing or wake scheduling.
+
 New Markdown packet tools can route here once accepted by MCP/tool docs:
 
 - `validate_review_packet_markdown`

@@ -1,0 +1,19 @@
+{
+  "name": "rereview",
+  "schema": "den_review.review_pointer.v1",
+  "schema_version": 1,
+  "workflow_key": {
+    "project_id": "den-services",
+    "task_id": 6604,
+    "review_round_id": 124,
+    "head_commit": "fedcba9876543210fedcba9876543210fedcba98",
+    "correlation_id": "review-6604-124-fedcba98"
+  },
+  "revision": 2,
+  "material_digest": "sha256:rereview-material",
+  "state": "source_review_ready",
+  "prior_findings": [{"finding_key": "R6604-1", "status": "verified_fixed"}],
+  "gate": {"id": 457, "status": "passed", "terminal_reason": "checks_passed"},
+  "handles": {"request_packet_id": 791, "request_message_id": 792, "prior_finding_detail_ref": "opaque-finding-detail"},
+  "expected": {"serialized_bytes_max": 4096, "material_event_key": "6604:124:fedcba98:2"}
+}

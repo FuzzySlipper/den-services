@@ -56,6 +56,16 @@ The default can be set in `server.default_tool_profile`, but shared endpoints
 should normally remain `direct`; select `managed-runtime` per adapter request
 when direct and managed callers share the same MCP listener.
 
+## Pointer-first review contract
+
+The runtime-neutral review envelope, ownership split, byte budgets, and
+staleness/coalescing rules live in
+[`docs/review-pointer-first-contract.md`](../docs/review-pointer-first-contract.md).
+The important boundary is that MCP exposes Den Review facts and handles; it
+does not become the Rusty Crew wake/reply authority. Managed runtimes use their
+own submission and routed-closeout green paths, while direct sessions retain
+typed Review/GitHub primitives for recovery.
+
 ## Concise results and intentional details
 
 Normal tool discovery does not repeat a `verbose` parameter across resource
