@@ -273,7 +273,7 @@ func reviewFinalizationTools() []ToolDefinition {
 		Description:  "Finalize a normal review exactly once. This durable saga posts the canonical findings packet and transitions the task; retries resume incomplete delivery checkpoints. Supports looks_good and changes_requested only.",
 		Backend:      "review",
 		Operation:    "finalize_review",
-		WorkflowTier: WorkflowTierPrimitive,
+		WorkflowTier: WorkflowTierGreenPath,
 		InputSchema: ObjectSchema(map[string]Schema{
 			"review_round_id":           IntegerSchema("Existing review round to finalize."),
 			"verdict":                   StringSchema("Green-path verdict: looks_good or changes_requested."),

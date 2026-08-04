@@ -112,7 +112,7 @@ func TestMCPToolsListManagedRuntimeProfileFiltersPrimitives(t *testing.T) {
 	tools := result["tools"].([]any)
 	for _, rawTool := range tools {
 		name := rawTool.(map[string]any)["name"]
-		if name == "watch_github_checks" || name == "request_review" || name == "finalize_review" {
+		if name == "watch_github_checks" || name == "request_review" {
 			t.Fatalf("managed tools/list exposed primitive %v", name)
 		}
 	}

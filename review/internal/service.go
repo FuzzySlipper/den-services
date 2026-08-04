@@ -1734,6 +1734,22 @@ func finalizationPacketKey(roundID int64, digest string) string {
 	return "review-finalization-packet:" + finalizationKey(roundID, digest)
 }
 
+// finalizationMaterialsMatch is checked by the serialized store transaction,
+// not only by the service's optimistic pre-read. That second check is what
+// makes two first-writer races with the same verdict/actor but different
+// structured results converge on one winner and one typed conflict.
+func finalizationMaterialsMatch(existing, incoming *ReviewFinalization) bool {
+	if existing == nil || incoming == nil {
+		return false
+	}
+	existingDigest := strings.TrimSpace(existing.MaterialDigest)
+	incomingDigest := strings.TrimSpace(incoming.MaterialDigest)
+	if existingDigest != "" || incomingDigest != "" {
+		return existingDigest != "" && existingDigest == incomingDigest
+	}
+	return strings.TrimSpace(existing.IdempotencyKey) == strings.TrimSpace(incoming.IdempotencyKey)
+}
+
 func finalizationKey(roundID int64, digest string) string {
 	return fmt.Sprintf("%d:%s", roundID, digest)
 }

@@ -1178,6 +1178,53 @@ func TestFinalizeReviewConcurrentRetriesAreIdempotent(t *testing.T) {
 	}
 }
 
+func TestFinalizeReviewConcurrentConflictingFirstCallsReturnOneConflict(t *testing.T) {
+	ctx := context.Background()
+	store := &synchronizedFinalizationStore{memoryStore: newMemoryStore()}
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
+	}}
+	service := newTestService(store, &fakeMessages{}, tasks)
+	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
+		RequestedBy: "reviewer", Branch: "task/conflict", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requests := []FinalizeReviewRequest{
+		{ReviewRoundID: round.ID, Verdict: VerdictLooksGood, DecidedBy: "reviewer", Notes: "winner A"},
+		{ReviewRoundID: round.ID, Verdict: VerdictLooksGood, DecidedBy: "reviewer", Notes: "winner B"},
+	}
+	type result struct {
+		receipt *ReviewFinalizationReceipt
+		err     error
+	}
+	results := make(chan result, len(requests))
+	for _, req := range requests {
+		go func(req FinalizeReviewRequest) {
+			receipt, finalizeErr := service.FinalizeReview(ctx, req)
+			results <- result{receipt: receipt, err: finalizeErr}
+		}(req)
+	}
+	var successes, conflicts int
+	for range requests {
+		outcome := <-results
+		switch {
+		case outcome.err == nil:
+			successes++
+		case outcome.err != nil:
+			assertServiceErrorCode(t, outcome.err, "review_finalization_conflict")
+			conflicts++
+		}
+	}
+	if successes != 1 || conflicts != 1 {
+		t.Fatalf("concurrent conflicting results = successes:%d conflicts:%d", successes, conflicts)
+	}
+	if len(store.finalizations) != 1 || len(store.packets) != 1 || tasks.tasks[42].Status != TaskStatusDone {
+		t.Fatalf("conflicting first calls mutated duplicate state: finalizations=%d packets=%d task=%+v", len(store.finalizations), len(store.packets), tasks.tasks[42])
+	}
+}
+
 func TestFinalizeReviewResumesAfterTaskCheckpointBeforeComplete(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()
@@ -2271,6 +2318,18 @@ func (s *synchronizedFinalizationStore) GetFinalizationByRound(ctx context.Conte
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.memoryStore.GetFinalizationByRound(ctx, roundID)
+}
+
+func (s *synchronizedFinalizationStore) BeginFinalization(
+	ctx context.Context,
+	finalization *ReviewFinalization,
+	packet *ReviewPacket,
+	mutation FinalizationMutation,
+	decidedAt time.Time,
+) (*ReviewFinalization, *ReviewPacket, *ReviewRound, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.memoryStore.BeginFinalization(ctx, finalization, packet, mutation, decidedAt)
 }
 
 func (s *synchronizedFinalizationStore) MarkFinalizationPacketPosted(

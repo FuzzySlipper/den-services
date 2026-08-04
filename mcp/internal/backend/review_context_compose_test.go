@@ -19,7 +19,9 @@ func TestLocatorComposesBoundedReviewContextWithoutTaskBody(t *testing.T) {
 		case "/v1/projects/den-services/tasks/6608/review/workflow-summary":
 			_, _ = w.Write([]byte(`{"current_round":{"id":88,"project_id":"den-services","task_id":6608,"round_number":2,"base_commit":"abc","head_commit":"def","delta_base_commit":"abc"},"open_findings":[{"id":11,"status":"open"}]}`))
 		case "/v1/projects/den-services/tasks/6608/review/github-check-gates/def":
-			_, _ = w.Write([]byte(`{"id":9,"status":"passed","required_checks":["verify"]}`))
+			_, _ = w.Write([]byte(`{"id":9,"repository":"FuzzySlipper/den-services","status":"passed","required_checks":["verify"]}`))
+		case "/v1/projects/den-services":
+			_, _ = w.Write([]byte(`{"id":"den-services","root_path":"/home/dev/den-services","settings_json":{"repository":"FuzzySlipper/den-services"}}`))
 		case "/v1/projects/den-services/tasks/6608/packets/latest":
 			_, _ = w.Write([]byte(`{"id":41,"project_id":"den-services","task_id":6608,"sender":"reviewer","intent":"review_request","metadata":{"kind":"review_request"},"created_at":"2026-08-03T01:02:03Z"}`))
 		case "/v1/projects/den-services/agent-guidance":
@@ -34,7 +36,7 @@ func TestLocatorComposesBoundedReviewContextWithoutTaskBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	backends := []config.BackendConfig{testBackend("tasks", server.URL), testBackend("review", server.URL), testBackend("messages", server.URL), testBackend("guidance", server.URL)}
+	backends := []config.BackendConfig{testBackend("tasks", server.URL), testBackend("review", server.URL), testBackend("messages", server.URL), testBackend("guidance", server.URL), testBackend("projects", server.URL)}
 	locator, err := NewLocator(backends, table, server.Client())
 	if err != nil {
 		t.Fatal(err)
@@ -54,13 +56,56 @@ func TestLocatorComposesBoundedReviewContextWithoutTaskBody(t *testing.T) {
 	if len(first.Value) > reviewContextMaxBytes {
 		t.Fatalf("review context bytes = %d, want <= %d", len(first.Value), reviewContextMaxBytes)
 	}
-	for _, want := range []string{`"schema":"den_review.reviewer_context.v1"`, `"head_commit":"def"`, `"status":"passed"`, `"document_slug":"go-codestyle"`, `"material_digest":"sha256:`} {
+	for _, want := range []string{`"schema":"den_review.reviewer_context.v1"`, `"head_commit":"def"`, `"status":"passed"`, `"next_state":"source_review_ready"`, `"repository":"FuzzySlipper/den-services"`, `"root_path":"/home/dev/den-services"`, `"detail_refs"`, `"document_slug":"go-codestyle"`, `"material_digest":"sha256:`} {
 		if !strings.Contains(string(first.Value), want) {
 			t.Fatalf("review context missing %s: %s", want, first.Value)
 		}
 	}
 	if strings.Contains(string(first.Value), "this must not be copied") || strings.Contains(string(first.Value), "review_request") == false {
 		t.Fatalf("review context leaked task body or packet identity: %s", first.Value)
+	}
+}
+
+func TestReviewContextNextStateUsesGateStatus(t *testing.T) {
+	round := reviewContextRound{ID: 1, HeadCommit: "head"}
+	for _, test := range []struct {
+		name, status, want string
+	}{
+		{name: "pending", status: "pending", want: "gate_pending"},
+		{name: "passed", status: "passed", want: "source_review_ready"},
+		{name: "failed", status: "failed", want: "gate_failed"},
+		{name: "timed out", status: "timed_out", want: "gate_failed"},
+		{name: "superseded", status: "superseded", want: "round_superseded"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := reviewContextNextState("review", round, taskWorkflowReviewSummary{}, &reviewContextGate{Status: test.status}); got != test.want {
+				t.Fatalf("next state = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestBoundReviewContextRetainsFindingAndPacketPointersWhenCompacting(t *testing.T) {
+	response := reviewContextResponse{
+		SchemaVersion: 1, Schema: reviewContextSchema, ProjectID: "den-services", TaskID: 6608,
+		Task:         reviewContextTask{ID: 6608, ProjectID: "den-services", Status: "review", RootPath: "/home/dev/den-services", RepositoryHandle: "/home/dev/den-services"},
+		CurrentRound: &reviewContextRound{ID: 88, HeadCommit: "def"}, CurrentStatus: "review", NextState: "source_review_ready",
+		PriorFindings: []json.RawMessage{json.RawMessage(`{"id":11,"finding_key":"R6608-1","category":"acceptance_gap","status":"open","summary":"` + strings.Repeat("x", 3000) + `"}`)},
+		PacketHeaders: map[string]*taskWorkflowPacketHeader{"review_request": {ID: 41, Sender: "reviewer", Metadata: map[string]any{"body": strings.Repeat("x", 3000)}}},
+		Guidance:      []taskContextDocHandle{{DocumentProjectID: "den-services", DocumentSlug: "go-codestyle", Notes: strings.Repeat("x", 3000)}},
+		DetailRefs:    &reviewContextDetailRefs{Findings: "/v1/tasks/6608/review/findings", Packets: "/v1/projects/den-services/tasks/6608/packets/latest", Guidance: "/v1/projects/den-services/agent-guidance"},
+	}
+	encoded, err := boundReviewContext(&response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoded) > reviewContextMaxBytes {
+		t.Fatalf("bounded response = %d bytes, want <= %d", len(encoded), reviewContextMaxBytes)
+	}
+	for _, want := range []string{`"prior_findings"`, `"packet_headers"`, `"detail_refs"`, `"finding_key":"R6608-1"`, `"id":41`} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("bounded response missing %s: %s", want, encoded)
+		}
 	}
 }
 

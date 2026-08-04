@@ -42,11 +42,19 @@ type reviewContextTask struct {
 	ProjectID        string `json:"project_id"`
 	Title            string `json:"title,omitempty"`
 	Status           string `json:"status"`
-	RepositoryHandle string `json:"repository_handle"`
+	Repository       string `json:"repository,omitempty"`
+	RootPath         string `json:"root_path,omitempty"`
+	RepositoryHandle string `json:"repository_handle,omitempty"`
+}
+
+type reviewContextProject struct {
+	RootPath     string          `json:"root_path,omitempty"`
+	SettingsJSON json.RawMessage `json:"settings_json,omitempty"`
 }
 
 type reviewContextGate struct {
 	ID                int64    `json:"id"`
+	Repository        string   `json:"repository,omitempty"`
 	Status            string   `json:"status"`
 	RequiredChecks    []string `json:"required_checks,omitempty"`
 	TerminalReason    string   `json:"terminal_reason,omitempty"`
@@ -74,8 +82,15 @@ type reviewContextResponse struct {
 	Gate           *reviewContextGate                   `json:"gate,omitempty"`
 	PacketHeaders  map[string]*taskWorkflowPacketHeader `json:"packet_headers,omitempty"`
 	Guidance       []taskContextDocHandle               `json:"guidance_handles,omitempty"`
+	DetailRefs     *reviewContextDetailRefs             `json:"detail_refs,omitempty"`
 	SourceStatus   []taskContextSourceStatus            `json:"source_status"`
 	Truncation     reviewContextTruncation              `json:"truncation,omitempty"`
+}
+
+type reviewContextDetailRefs struct {
+	Findings string `json:"findings,omitempty"`
+	Packets  string `json:"packets,omitempty"`
+	Guidance string `json:"guidance,omitempty"`
 }
 
 type reviewContextErrorResponse struct {
@@ -121,8 +136,7 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 	response := reviewContextResponse{
 		Schema: reviewContextSchema, SchemaVersion: reviewContextSchemaVersion,
 		ProjectID: projectID, TaskID: arguments.TaskID,
-		Task: reviewContextTask{ID: taskDetail.Task.ID, ProjectID: projectID, Title: taskDetail.Task.Title, Status: taskDetail.Task.Status,
-			RepositoryHandle: reviewPath},
+		Task:          reviewContextTask{ID: taskDetail.Task.ID, ProjectID: projectID, Title: taskDetail.Task.Title, Status: taskDetail.Task.Status},
 		CurrentStatus: taskDetail.Task.Status, NextState: "not_reviewable",
 		PacketHeaders: make(map[string]*taskWorkflowPacketHeader), Guidance: []taskContextDocHandle{},
 		SourceStatus: []taskContextSourceStatus{
@@ -136,8 +150,10 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 			return Result{}, nil, fmt.Errorf("parsing review context current round: %w", err)
 		}
 		response.CurrentRound = &round
-		response.NextState = reviewContextNextState(taskDetail.Task.Status, round, summary)
-		response.PriorFindings = sortRawMessages(decodeRawArray(summary.OpenFindings), 32)
+		allFindings := decodeRawArray(summary.OpenFindings)
+		response.PriorFindings = summarizeReviewContextFindings(sortRawMessages(allFindings, 32),
+			"/v1/tasks/"+strconv.FormatInt(arguments.TaskID, 10)+"/review/findings")
+		response.Truncation.Findings = len(allFindings) > len(response.PriorFindings)
 		if round.HeadCommit != "" {
 			gatePath := "/v1/projects/" + url.PathEscape(projectID) + "/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/review/github-check-gates/" + url.PathEscape(round.HeadCommit)
 			gateBody, gateFailure, gateErr := c.taskContextGET(ctx, reviewBackend, gatePath, call)
@@ -147,6 +163,7 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 					return Result{}, nil, fmt.Errorf("parsing review context gate: %w", err)
 				}
 				response.Gate = &gate
+				response.Task.Repository = strings.TrimSpace(gate.Repository)
 				response.SourceStatus = append(response.SourceStatus, taskContextSourceStatus{Source: "gate", State: "ok", Handle: gatePath, Retryable: false})
 			} else if gateFailure != nil && gateFailure.StatusCode != nil && *gateFailure.StatusCode == 404 {
 				response.SourceStatus = append(response.SourceStatus, taskContextSourceStatus{Source: "gate", State: "absent", Handle: gatePath, ErrorCode: "no_current_gate", Retryable: false})
@@ -154,11 +171,40 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 				response.SourceStatus = append(response.SourceStatus, taskContextStatus("gate", gatePath, gateFailure, gateErr))
 			}
 		}
+		response.NextState = reviewContextNextState(taskDetail.Task.Status, round, summary, response.Gate)
 	} else {
 		return c.reviewContextTypedError(reviewContextErrorResponse{
 			SchemaVersion: reviewContextSchemaVersion, Schema: reviewContextSchema, TaskID: arguments.TaskID,
 			ErrorCode: "review_context_unavailable", Reason: "no_current_round", Retryable: false,
 		})
+	}
+	if projectsBackend, ok := backends["projects"]; ok {
+		projectPath := "/v1/projects/" + url.PathEscape(projectID)
+		projectBody, projectFailure, projectErr := c.taskContextGET(ctx, projectsBackend, projectPath, call)
+		if projectErr == nil && projectFailure == nil {
+			var project reviewContextProject
+			if err := json.Unmarshal(projectBody, &project); err != nil {
+				return Result{}, nil, fmt.Errorf("parsing review context project: %w", err)
+			}
+			response.Task.RootPath = strings.TrimSpace(project.RootPath)
+			var settings struct {
+				Repository string `json:"repository"`
+			}
+			if len(project.SettingsJSON) > 0 {
+				_ = json.Unmarshal(project.SettingsJSON, &settings)
+			}
+			if response.Task.Repository == "" {
+				response.Task.Repository = strings.TrimSpace(settings.Repository)
+			}
+			response.SourceStatus = append(response.SourceStatus, taskContextSourceStatus{Source: "project", State: "ok", Handle: projectPath, Retryable: false})
+		} else {
+			response.SourceStatus = append(response.SourceStatus, taskContextStatus("project", projectPath, projectFailure, projectErr))
+		}
+	}
+	if response.Task.RootPath != "" {
+		response.Task.RepositoryHandle = response.Task.RootPath
+	} else {
+		response.Task.RepositoryHandle = response.Task.Repository
 	}
 	for _, query := range []taskWorkflowPacketQuery{
 		{Key: "review_request", PacketType: "review_request", Role: "reviewer"},
@@ -174,6 +220,11 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 	}
 	guidanceBackend, guidanceOK := backends["guidance"]
 	guidancePath := "/v1/projects/" + url.PathEscape(projectID) + "/agent-guidance"
+	response.DetailRefs = &reviewContextDetailRefs{
+		Findings: "/v1/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/review/findings",
+		Packets:  "/v1/projects/" + url.PathEscape(projectID) + "/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/packets/latest",
+		Guidance: guidancePath,
+	}
 	if guidanceOK {
 		body, guidanceFailure, guidanceErr := c.taskContextGET(ctx, guidanceBackend, guidancePath, call)
 		if guidanceErr == nil && guidanceFailure == nil {
@@ -191,14 +242,10 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 	} else {
 		response.SourceStatus = append(response.SourceStatus, taskContextSourceStatus{Source: "guidance", State: "unavailable", Handle: "guidance", ErrorCode: "den_backend_config_error", Retryable: false})
 	}
-	if len(response.PriorFindings) > 0 && len(decodeRawArray(summary.OpenFindings)) > len(response.PriorFindings) {
-		response.Truncation.Findings = true
-	}
 	if len(response.Guidance) > 16 {
 		response.Guidance = response.Guidance[:16]
 		response.Truncation.Guidance = true
 	}
-	response.MaterialDigest = reviewContextDigest(response)
 	encoded, err := boundReviewContext(&response)
 	if err != nil {
 		return c.reviewContextTypedError(reviewContextErrorResponse{
@@ -239,17 +286,26 @@ func decodeReviewContextArguments(raw json.RawMessage) (reviewContextArguments, 
 	return arguments, nil
 }
 
-func reviewContextNextState(taskStatus string, round reviewContextRound, summary taskWorkflowReviewSummary) string {
+func reviewContextNextState(taskStatus string, round reviewContextRound, _ taskWorkflowReviewSummary, gate *reviewContextGate) string {
 	if taskStatus != "review" && taskStatus != "in_progress" {
 		return "not_reviewable"
 	}
 	if round.Verdict != "" {
 		return "round_superseded"
 	}
-	if len(summary.OpenFindings) > 0 {
-		return "source_review_ready"
+	if gate == nil {
+		return "gate_pending"
 	}
-	return "gate_pending"
+	switch gate.Status {
+	case "passed":
+		return "source_review_ready"
+	case "failed", "timed_out":
+		return "gate_failed"
+	case "superseded":
+		return "round_superseded"
+	default:
+		return "gate_pending"
+	}
 }
 
 func reviewContextDigest(response reviewContextResponse) string {
@@ -261,6 +317,7 @@ func reviewContextDigest(response reviewContextResponse) string {
 }
 
 func boundReviewContext(response *reviewContextResponse) ([]byte, error) {
+	response.MaterialDigest = reviewContextDigest(*response)
 	encoded, err := json.Marshal(response)
 	if err != nil {
 		return nil, fmt.Errorf("encoding review context: %w", err)
@@ -268,16 +325,90 @@ func boundReviewContext(response *reviewContextResponse) ([]byte, error) {
 	if len(encoded) <= reviewContextMaxBytes {
 		return encoded, nil
 	}
-	response.Truncation = reviewContextTruncation{Findings: len(response.PriorFindings) > 0, Packets: len(response.PacketHeaders) > 0, Guidance: len(response.Guidance) > 0, Bounded: true}
-	response.PriorFindings = nil
-	response.PacketHeaders = nil
+	response.Truncation.Bounded = true
+	response.Truncation.Guidance = len(response.Guidance) > 0
 	response.Guidance = nil
+	for key, header := range response.PacketHeaders {
+		if header == nil {
+			continue
+		}
+		compact := *header
+		compact.Metadata = nil
+		response.PacketHeaders[key] = &compact
+	}
+	response.Truncation.Packets = len(response.PacketHeaders) > 0
 	encoded, err = json.Marshal(response)
 	if err != nil {
 		return nil, fmt.Errorf("encoding bounded review context: %w", err)
 	}
 	if len(encoded) > reviewContextMaxBytes {
+		for index := range response.PriorFindings {
+			response.PriorFindings[index] = compactReviewFinding(response.PriorFindings[index], 96, 96)
+		}
+		encoded, err = json.Marshal(response)
+		if err != nil {
+			return nil, fmt.Errorf("encoding compacted review context: %w", err)
+		}
+	}
+	if len(encoded) > reviewContextMaxBytes {
 		return nil, fmt.Errorf("review context exceeds %d-byte budget after deterministic compaction: %d", reviewContextMaxBytes, len(encoded))
 	}
+	response.MaterialDigest = reviewContextDigest(*response)
+	encoded, err = json.Marshal(response)
+	if err != nil {
+		return nil, fmt.Errorf("encoding compacted review context with digest: %w", err)
+	}
+	if len(encoded) > reviewContextMaxBytes {
+		return nil, fmt.Errorf("review context exceeds %d-byte budget after material digest: %d", reviewContextMaxBytes, len(encoded))
+	}
 	return encoded, nil
+}
+
+func summarizeReviewContextFindings(findings []json.RawMessage, detailRef string) []json.RawMessage {
+	result := make([]json.RawMessage, 0, len(findings))
+	for _, finding := range findings {
+		result = append(result, compactReviewFindingWithRef(finding, 256, 256, detailRef))
+	}
+	return result
+}
+
+func compactReviewFinding(raw json.RawMessage, summaryLimit, notesLimit int) json.RawMessage {
+	return compactReviewFindingWithRef(raw, summaryLimit, notesLimit, "")
+}
+
+func compactReviewFindingWithRef(raw json.RawMessage, summaryLimit, notesLimit int, detailRef string) json.RawMessage {
+	var source map[string]json.RawMessage
+	if json.Unmarshal(raw, &source) != nil {
+		return json.RawMessage(`{"status":"unavailable"}`)
+	}
+	compact := make(map[string]json.RawMessage)
+	for _, key := range []string{"id", "finding_key", "category", "status"} {
+		if value, ok := source[key]; ok {
+			compact[key] = value
+		}
+	}
+	for key, limit := range map[string]int{"summary": summaryLimit, "status_notes": notesLimit, "response_notes": notesLimit} {
+		value, ok := source[key]
+		if !ok {
+			continue
+		}
+		var text string
+		if json.Unmarshal(value, &text) != nil {
+			continue
+		}
+		if len([]rune(text)) > limit {
+			text = string([]rune(text)[:limit])
+		}
+		encoded, _ := json.Marshal(text)
+		compact[key] = encoded
+	}
+	if detailRef != "" {
+		encoded, _ := json.Marshal(detailRef)
+		compact["detail_ref"] = encoded
+	}
+	encoded, err := json.Marshal(compact)
+	if err != nil {
+		return json.RawMessage(`{"status":"unavailable"}`)
+	}
+	return encoded
 }

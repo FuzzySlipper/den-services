@@ -288,6 +288,9 @@ func (s *Store) BeginFinalization(
 	}
 	existing, err := scanFinalization(tx.QueryRow(ctx, getFinalizationByRoundSQL, finalization.ReviewRoundID))
 	if err == nil {
+		if !finalizationMaterialsMatch(existing, finalization) {
+			return nil, nil, nil, conflict(ErrFinalizationConflict, "review_finalization_conflict")
+		}
 		storedPacket, packetErr := scanPacket(tx.QueryRow(ctx, getPacketSQL, existing.PacketID))
 		if packetErr != nil {
 			return nil, nil, nil, fmt.Errorf("getting existing finalization packet: %w", packetErr)

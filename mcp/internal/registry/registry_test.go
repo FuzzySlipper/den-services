@@ -202,13 +202,16 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if len(managed) >= len(direct) {
 		t.Fatalf("managed tool count = %d, want fewer than direct %d", len(managed), len(direct))
 	}
-	for _, name := range []string{"discover_github_checks", "watch_github_checks", "get_github_check_gate", "wait_for_github_checks", "await_github_checks", "request_review", "create_review_round", "finalize_review"} {
+	for _, name := range []string{"discover_github_checks", "watch_github_checks", "get_github_check_gate", "wait_for_github_checks", "await_github_checks", "request_review", "create_review_round"} {
 		if containsListedTool(managed, name) {
 			t.Fatalf("managed profile exposes primitive %s", name)
 		}
 		if _, err := toolRegistry.Resolve(name); err != nil {
 			t.Fatalf("Resolve(%s) error = %v; profile filtering must not remove authority", name, err)
 		}
+	}
+	if !containsListedTool(managed, "finalize_review") {
+		t.Fatal("managed profile hides finalize_review green path")
 	}
 	for _, name := range []string{"get_task", "get_task_context", "list_tasks", "store_document", "update_task"} {
 		if !containsListedTool(managed, name) {

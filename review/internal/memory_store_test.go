@@ -276,6 +276,9 @@ func (s *memoryStore) BeginFinalization(
 		return nil, nil, nil, err
 	}
 	if existing != nil {
+		if !finalizationMaterialsMatch(existing, finalization) {
+			return nil, nil, nil, conflict(ErrFinalizationConflict, "review_finalization_conflict")
+		}
 		storedPacket, packetErr := s.GetPacket(ctx, existing.PacketID)
 		round, roundErr := s.GetRound(ctx, existing.ReviewRoundID)
 		return existing, storedPacket, round, errors.Join(packetErr, roundErr)
