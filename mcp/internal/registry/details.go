@@ -4,7 +4,7 @@ package registry
 // read-only detail reference and whether an argument is safe to encode in it.
 func DetailArgumentAllowed(toolName, argument string) bool {
 	switch toolName {
-	case "get_task", "get_task_workflow_summary":
+	case "get_task", "get_task_workflow_summary", "get_review_context":
 		return argument == "task_id"
 	case "get_document":
 		return argument == "project_id" || argument == "slug"
@@ -31,7 +31,7 @@ func SupportsDetails(toolName string) bool {
 
 func firstDetailArgument(toolName string) string {
 	switch toolName {
-	case "get_task", "get_task_workflow_summary", "get_latest_task_packet", "list_review_rounds", "list_review_findings":
+	case "get_task", "get_task_workflow_summary", "get_review_context", "get_latest_task_packet", "list_review_rounds", "list_review_findings":
 		return "task_id"
 	case "get_document", "get_document_discussion":
 		return "project_id"

@@ -182,6 +182,12 @@ func TestDefaultRegistryExposesFinalizeReviewGreenPath(t *testing.T) {
 	}
 }
 
+func TestReviewContextSupportsOpaqueDetailReference(t *testing.T) {
+	if !SupportsDetails("get_review_context") || !DetailArgumentAllowed("get_review_context", "task_id") {
+		t.Fatal("get_review_context must support task-scoped get_details expansion")
+	}
+}
+
 func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *testing.T) {
 	toolRegistry, err := DefaultRegistry()
 	if err != nil {
