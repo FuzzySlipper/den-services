@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -90,12 +91,31 @@ func TestConciseReadDetailReferenceExpandsAndExpires(t *testing.T) {
 }
 
 func TestReviewContextDetailReferenceExpandsEvidenceAndUsesOpaqueRefs(t *testing.T) {
+	children := make([]map[string]any, 0, 32)
+	repositories := make([]map[string]any, 0, 32)
+	for index := 0; index < 32; index++ {
+		children = append(children, map[string]any{
+			"project_id": "den-services", "task_id": 1000 + index, "review_round_id": 2000 + index,
+			"head_commit": fmt.Sprintf("campaign-child-%d", index), "membership_kind": "campaign_tag", "approved_verdict": "looks_good",
+		})
+		repositories = append(repositories, map[string]any{"repository": fmt.Sprintf("owner/repository-%d", index), "head_sha": fmt.Sprintf("campaign-head-%d", index)})
+	}
+	workflowSummary, err := json.Marshal(map[string]any{
+		"current_round": map[string]any{
+			"id": 88, "project_id": "den-services", "task_id": 42, "round_number": 2, "head_commit": "head",
+			"target_kind": "campaign_reconciliation", "campaign_children": children, "campaign_repositories": repositories,
+		},
+		"open_findings": []map[string]any{{"id": 11, "status": "open", "summary": "bounded finding"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	backendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/tasks/42":
 			_, _ = w.Write([]byte(`{"task":{"id":42,"project_id":"den-services","title":"Review context","status":"review"}}`))
 		case "/v1/projects/den-services/tasks/42/review/workflow-summary":
-			_, _ = w.Write([]byte(`{"current_round":{"id":88,"project_id":"den-services","task_id":42,"round_number":2,"head_commit":"head"},"open_findings":[{"id":11,"status":"open","summary":"bounded finding"}]}`))
+			_, _ = w.Write(workflowSummary)
 		case "/v1/tasks/42/review/findings":
 			_, _ = w.Write([]byte(`[{"id":11,"finding_key":"R42-1","status":"open","summary":"full finding evidence","notes":"full finding notes"}]`))
 		case "/v1/projects/den-services":
@@ -159,12 +179,20 @@ func TestReviewContextDetailReferenceExpandsEvidenceAndUsesOpaqueRefs(t *testing
 	if strings.Contains(content, "/v1/tasks/42/review/findings") {
 		t.Fatalf("content leaked ordinary REST detail ref: %s", content)
 	}
+	currentRound := structured["current_round"].(map[string]any)
+	if len(currentRound["campaign_children"].([]any)) != 8 || len(currentRound["campaign_repositories"].([]any)) != 8 {
+		t.Fatalf("campaign metadata was not bounded: %#v", currentRound)
+	}
+	campaignRef := currentRound["campaign_detail_ref"].(string)
+	if !strings.HasPrefix(campaignRef, "d1.") {
+		t.Fatalf("campaign detail ref is not opaque/signed: %q", campaignRef)
+	}
 	detailed := invokeToolForTest(t, handler, "get_details", map[string]any{"detail_ref": detailRef})
 	if detailed["isError"] != false {
 		t.Fatalf("expanded result is error: %#v", detailed)
 	}
 	detailedText := detailed["content"].([]any)[0].(map[string]any)["text"].(string)
-	for _, want := range []string{"expanded_findings", "full finding evidence", "expanded_packets", "full packet evidence", "expanded_guidance", "full guidance evidence"} {
+	for _, want := range []string{"expanded_findings", "full finding evidence", "expanded_packets", "full packet evidence", "expanded_guidance", "full guidance evidence", "campaign-child-31", "campaign-head-31"} {
 		if !strings.Contains(detailedText, want) {
 			t.Fatalf("expanded result missing %s: %s", want, detailedText)
 		}

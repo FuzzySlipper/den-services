@@ -106,7 +106,34 @@ func replaceReviewContextDetailRefs(structured map[string]json.RawMessage, refer
 		}
 		structured["prior_findings"] = updatedFindings
 	}
+	if currentRound, ok := structured["current_round"]; ok {
+		updatedRound, err := replaceReviewContextCampaignRef(currentRound, reference)
+		if err != nil {
+			return err
+		}
+		structured["current_round"] = updatedRound
+	}
 	return nil
+}
+
+func replaceReviewContextCampaignRef(raw json.RawMessage, reference string) (json.RawMessage, error) {
+	var round map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &round); err != nil {
+		return nil, fmt.Errorf("decoding review context campaign ref: %w", err)
+	}
+	if _, ok := round["campaign_detail_ref"]; !ok {
+		return raw, nil
+	}
+	encoded, err := json.Marshal(reference)
+	if err != nil {
+		return nil, fmt.Errorf("encoding review context campaign ref: %w", err)
+	}
+	round["campaign_detail_ref"] = encoded
+	updated, err := json.Marshal(round)
+	if err != nil {
+		return nil, fmt.Errorf("encoding review context campaign ref: %w", err)
+	}
+	return updated, nil
 }
 
 func replaceReviewContextFindingRefs(raw json.RawMessage, reference string) (json.RawMessage, error) {

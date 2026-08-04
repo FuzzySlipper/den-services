@@ -14,10 +14,12 @@ import (
 )
 
 const (
-	reviewContextSchema         = "den_review.reviewer_context.v1"
-	reviewContextSchemaVersion  = 1
-	reviewContextMaxBytes       = 8192
-	reviewContextDetailMaxBytes = 64 * 1024
+	reviewContextSchema          = "den_review.reviewer_context.v1"
+	reviewContextSchemaVersion   = 1
+	reviewContextMaxBytes        = 8192
+	reviewContextDetailMaxBytes  = 64 * 1024
+	reviewContextCampaignLimit   = 8
+	reviewContextCampaignTextMax = 256
 )
 
 type reviewContextArguments struct {
@@ -26,28 +28,43 @@ type reviewContextArguments struct {
 }
 
 type reviewContextRound struct {
-	ID                      int64           `json:"id"`
-	ProjectID               string          `json:"project_id"`
-	TaskID                  int64           `json:"task_id"`
-	RoundNumber             int             `json:"round_number"`
-	TargetKind              string          `json:"target_kind,omitempty"`
-	Branch                  string          `json:"branch,omitempty"`
-	BaseBranch              string          `json:"base_branch,omitempty"`
-	BaseCommit              string          `json:"base_commit,omitempty"`
-	HeadCommit              string          `json:"head_commit,omitempty"`
-	LastReviewedHeadCommit  string          `json:"last_reviewed_head_commit,omitempty"`
-	PreferredDiffBaseRef    string          `json:"preferred_diff_base_ref,omitempty"`
-	PreferredDiffBaseCommit string          `json:"preferred_diff_base_commit,omitempty"`
-	PreferredDiffHeadRef    string          `json:"preferred_diff_head_ref,omitempty"`
-	PreferredDiffHeadCommit string          `json:"preferred_diff_head_commit,omitempty"`
-	AlternateDiffBaseRef    string          `json:"alternate_diff_base_ref,omitempty"`
-	AlternateDiffBaseCommit string          `json:"alternate_diff_base_commit,omitempty"`
-	AlternateDiffHeadRef    string          `json:"alternate_diff_head_ref,omitempty"`
-	AlternateDiffHeadCommit string          `json:"alternate_diff_head_commit,omitempty"`
-	DeltaBaseCommit         string          `json:"delta_base_commit,omitempty"`
-	CampaignChildren        json.RawMessage `json:"campaign_children,omitempty"`
-	CampaignRepositories    json.RawMessage `json:"campaign_repositories,omitempty"`
-	Verdict                 string          `json:"verdict,omitempty"`
+	ID                      int64                             `json:"id"`
+	ProjectID               string                            `json:"project_id"`
+	TaskID                  int64                             `json:"task_id"`
+	RoundNumber             int                               `json:"round_number"`
+	TargetKind              string                            `json:"target_kind,omitempty"`
+	Branch                  string                            `json:"branch,omitempty"`
+	BaseBranch              string                            `json:"base_branch,omitempty"`
+	BaseCommit              string                            `json:"base_commit,omitempty"`
+	HeadCommit              string                            `json:"head_commit,omitempty"`
+	LastReviewedHeadCommit  string                            `json:"last_reviewed_head_commit,omitempty"`
+	PreferredDiffBaseRef    string                            `json:"preferred_diff_base_ref,omitempty"`
+	PreferredDiffBaseCommit string                            `json:"preferred_diff_base_commit,omitempty"`
+	PreferredDiffHeadRef    string                            `json:"preferred_diff_head_ref,omitempty"`
+	PreferredDiffHeadCommit string                            `json:"preferred_diff_head_commit,omitempty"`
+	AlternateDiffBaseRef    string                            `json:"alternate_diff_base_ref,omitempty"`
+	AlternateDiffBaseCommit string                            `json:"alternate_diff_base_commit,omitempty"`
+	AlternateDiffHeadRef    string                            `json:"alternate_diff_head_ref,omitempty"`
+	AlternateDiffHeadCommit string                            `json:"alternate_diff_head_commit,omitempty"`
+	DeltaBaseCommit         string                            `json:"delta_base_commit,omitempty"`
+	CampaignChildren        []reviewContextCampaignChild      `json:"campaign_children,omitempty"`
+	CampaignRepositories    []reviewContextCampaignRepository `json:"campaign_repositories,omitempty"`
+	CampaignDetailRef       string                            `json:"campaign_detail_ref,omitempty"`
+	Verdict                 string                            `json:"verdict,omitempty"`
+}
+
+type reviewContextCampaignChild struct {
+	ProjectID       string `json:"project_id"`
+	TaskID          int64  `json:"task_id"`
+	ReviewRoundID   int64  `json:"review_round_id"`
+	HeadCommit      string `json:"head_commit,omitempty"`
+	MembershipKind  string `json:"membership_kind,omitempty"`
+	ApprovedVerdict string `json:"approved_verdict,omitempty"`
+}
+
+type reviewContextCampaignRepository struct {
+	Repository string `json:"repository"`
+	HeadSHA    string `json:"head_sha"`
 }
 
 type reviewContextTask struct {
@@ -78,6 +95,7 @@ type reviewContextTruncation struct {
 	Findings bool `json:"findings,omitempty"`
 	Packets  bool `json:"packets,omitempty"`
 	Guidance bool `json:"guidance,omitempty"`
+	Campaign bool `json:"campaign,omitempty"`
 	Bounded  bool `json:"bounded,omitempty"`
 }
 
@@ -164,6 +182,10 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 		var round reviewContextRound
 		if err := json.Unmarshal(summary.CurrentRound, &round); err != nil {
 			return Result{}, nil, fmt.Errorf("parsing review context current round: %w", err)
+		}
+		if !arguments.Verbose && boundReviewContextCampaign(&round) {
+			round.CampaignDetailRef = "/v1/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/review/campaign-details"
+			response.Truncation.Campaign = true
 		}
 		response.CurrentRound = &round
 		allFindings := decodeRawArray(summary.OpenFindings)
@@ -365,9 +387,57 @@ func reviewContextDigest(response reviewContextResponse) string {
 	response.MaterialDigest = ""
 	response.SourceStatus = nil
 	response.DetailRefs = nil
+	if response.CurrentRound != nil {
+		round := *response.CurrentRound
+		round.CampaignDetailRef = ""
+		response.CurrentRound = &round
+	}
 	data, _ := json.Marshal(response)
 	sum := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func boundReviewContextCampaign(round *reviewContextRound) bool {
+	truncated := false
+	if len(round.CampaignChildren) > reviewContextCampaignLimit {
+		round.CampaignChildren = round.CampaignChildren[:reviewContextCampaignLimit]
+		truncated = true
+	}
+	if len(round.CampaignRepositories) > reviewContextCampaignLimit {
+		round.CampaignRepositories = round.CampaignRepositories[:reviewContextCampaignLimit]
+		truncated = true
+	}
+	for index := range round.CampaignChildren {
+		child := &round.CampaignChildren[index]
+		values := []*string{&child.ProjectID, &child.HeadCommit, &child.MembershipKind, &child.ApprovedVerdict}
+		for _, value := range values {
+			clipped := truncateReviewContextText(*value, reviewContextCampaignTextMax)
+			if clipped != *value {
+				*value = clipped
+				truncated = true
+			}
+		}
+	}
+	for index := range round.CampaignRepositories {
+		repository := &round.CampaignRepositories[index]
+		values := []*string{&repository.Repository, &repository.HeadSHA}
+		for _, value := range values {
+			clipped := truncateReviewContextText(*value, reviewContextCampaignTextMax)
+			if clipped != *value {
+				*value = clipped
+				truncated = true
+			}
+		}
+	}
+	return truncated
+}
+
+func truncateReviewContextText(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit])
 }
 
 func boundReviewContext(response *reviewContextResponse, limits ...int) ([]byte, error) {
