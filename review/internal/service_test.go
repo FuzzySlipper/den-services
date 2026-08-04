@@ -2166,6 +2166,7 @@ func fixedReviewTestTime() time.Time {
 }
 
 type fakeTasks struct {
+	mu                           sync.Mutex
 	tasks                        map[int64]TaskContext
 	created                      []CreateFollowUpTaskRequest
 	statusUpdates                []fakeTaskStatusUpdate
@@ -2179,14 +2180,18 @@ type fakeTaskStatusUpdate struct {
 	Status string
 }
 
-func (f fakeTasks) GetTask(_ context.Context, taskID int64) (TaskContext, error) {
+func (f *fakeTasks) GetTask(_ context.Context, taskID int64) (TaskContext, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if task, ok := f.tasks[taskID]; ok {
 		return task, nil
 	}
 	return TaskContext{}, validationError(errors.New("task not found"), "task_not_found", "task_id", "common.task_id")
 }
 
-func (f fakeTasks) GetTaskContext(_ context.Context, projectID string, taskID int64) (TaskContext, error) {
+func (f *fakeTasks) GetTaskContext(_ context.Context, projectID string, taskID int64) (TaskContext, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if task, ok := f.tasks[taskID]; ok {
 		return task, nil
 	}
@@ -2194,6 +2199,8 @@ func (f fakeTasks) GetTaskContext(_ context.Context, projectID string, taskID in
 }
 
 func (f *fakeTasks) SetTaskStatus(_ context.Context, projectID string, taskID int64, agent string, status string) (TaskContext, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	task, ok := f.tasks[taskID]
 	if !ok || task.ProjectID != projectID {
 		return TaskContext{}, validationError(errors.New("task not found"), "task_not_found", "task_id", "common.task_id")
@@ -2217,6 +2224,8 @@ func (f *fakeTasks) TransitionTaskToReview(
 	taskID int64,
 	agent string,
 ) (TaskReviewTransition, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	task, ok := f.tasks[taskID]
 	if !ok || task.ProjectID != projectID {
 		return TaskReviewTransition{}, validationError(errors.New("task not found"), "task_not_found", "task_id", "common.task_id")
@@ -2269,6 +2278,37 @@ type synchronizedFinalizationStore struct {
 type synchronizedRequestStore struct {
 	*memoryStore
 	mu sync.Mutex
+}
+
+func (s *synchronizedFinalizationStore) CreateRound(ctx context.Context, round *ReviewRound) (*ReviewRound, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.memoryStore.CreateRound(ctx, round)
+}
+
+func (s *synchronizedFinalizationStore) ListRounds(ctx context.Context, projectID string, taskID int64) ([]*ReviewRound, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.memoryStore.ListRounds(ctx, projectID, taskID)
+}
+
+func (s *synchronizedFinalizationStore) GetRound(ctx context.Context, roundID int64) (*ReviewRound, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.memoryStore.GetRound(ctx, roundID)
+}
+
+func (s *synchronizedFinalizationStore) SetVerdict(
+	ctx context.Context,
+	roundID int64,
+	verdict string,
+	decidedBy string,
+	notes string,
+	decidedAt time.Time,
+) (*ReviewRound, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.memoryStore.SetVerdict(ctx, roundID, verdict, decidedBy, notes, decidedAt)
 }
 
 func (s *synchronizedRequestStore) CreateRound(ctx context.Context, round *ReviewRound) (*ReviewRound, error) {
