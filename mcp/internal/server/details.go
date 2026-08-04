@@ -55,6 +55,21 @@ func (h *Handler) attachDetailReference(toolName string, arguments, result json.
 		return nil, fmt.Errorf("encoding detail reference field: %w", err)
 	}
 	structured["detail_ref"] = encodedReference
+	if toolName == "get_review_context" {
+		if err := replaceReviewContextDetailRefs(structured, reference); err != nil {
+			return nil, err
+		}
+		for index := range toolResult.Content {
+			if toolResult.Content[index].Type != "text" {
+				continue
+			}
+			updatedText, err := replaceReviewContextDetailRefsInText(toolResult.Content[index].Text, reference)
+			if err != nil {
+				return nil, err
+			}
+			toolResult.Content[index].Text = updatedText
+		}
+	}
 	toolResult.StructuredContent, err = json.Marshal(structured)
 	if err != nil {
 		return nil, fmt.Errorf("encoding structured content with detail reference: %w", err)
@@ -65,6 +80,69 @@ func (h *Handler) attachDetailReference(toolName string, arguments, result json.
 		return nil, fmt.Errorf("encoding tool result with detail reference: %w", err)
 	}
 	return updated, nil
+}
+
+func replaceReviewContextDetailRefs(structured map[string]json.RawMessage, reference string) error {
+	raw, ok := structured["detail_refs"]
+	if !ok {
+		return nil
+	}
+	var refs map[string]string
+	if err := json.Unmarshal(raw, &refs); err != nil {
+		return fmt.Errorf("decoding review context detail refs: %w", err)
+	}
+	for key := range refs {
+		refs[key] = reference
+	}
+	encoded, err := json.Marshal(refs)
+	if err != nil {
+		return fmt.Errorf("encoding review context detail refs: %w", err)
+	}
+	structured["detail_refs"] = encoded
+	if findings, ok := structured["prior_findings"]; ok {
+		updatedFindings, err := replaceReviewContextFindingRefs(findings, reference)
+		if err != nil {
+			return err
+		}
+		structured["prior_findings"] = updatedFindings
+	}
+	return nil
+}
+
+func replaceReviewContextFindingRefs(raw json.RawMessage, reference string) (json.RawMessage, error) {
+	var findings []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &findings); err != nil {
+		return nil, fmt.Errorf("decoding review context finding refs: %w", err)
+	}
+	encodedReference, err := json.Marshal(reference)
+	if err != nil {
+		return nil, fmt.Errorf("encoding review context finding ref: %w", err)
+	}
+	for _, finding := range findings {
+		if _, ok := finding["detail_ref"]; ok {
+			finding["detail_ref"] = encodedReference
+		}
+	}
+	updated, err := json.Marshal(findings)
+	if err != nil {
+		return nil, fmt.Errorf("encoding review context finding refs: %w", err)
+	}
+	return updated, nil
+}
+
+func replaceReviewContextDetailRefsInText(raw, reference string) (string, error) {
+	var structured map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &structured); err != nil {
+		return raw, nil
+	}
+	if err := replaceReviewContextDetailRefs(structured, reference); err != nil {
+		return "", err
+	}
+	updated, err := json.Marshal(structured)
+	if err != nil {
+		return "", fmt.Errorf("encoding review context content detail refs: %w", err)
+	}
+	return string(updated), nil
 }
 
 func (h *Handler) newDetailReference(toolName string, rawArguments json.RawMessage) (string, error) {

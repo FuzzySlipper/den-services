@@ -89,6 +89,88 @@ func TestConciseReadDetailReferenceExpandsAndExpires(t *testing.T) {
 	}
 }
 
+func TestReviewContextDetailReferenceExpandsEvidenceAndUsesOpaqueRefs(t *testing.T) {
+	backendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/tasks/42":
+			_, _ = w.Write([]byte(`{"task":{"id":42,"project_id":"den-services","title":"Review context","status":"review"}}`))
+		case "/v1/projects/den-services/tasks/42/review/workflow-summary":
+			_, _ = w.Write([]byte(`{"current_round":{"id":88,"project_id":"den-services","task_id":42,"round_number":2,"head_commit":"head"},"open_findings":[{"id":11,"status":"open","summary":"bounded finding"}]}`))
+		case "/v1/tasks/42/review/findings":
+			_, _ = w.Write([]byte(`[{"id":11,"finding_key":"R42-1","status":"open","summary":"full finding evidence","notes":"full finding notes"}]`))
+		case "/v1/projects/den-services":
+			_, _ = w.Write([]byte(`{"id":"den-services","root_path":"/home/dev/den-services","settings_json":{"repository":"FuzzySlipper/den-services"}}`))
+		case "/v1/projects/den-services/agent-guidance":
+			_, _ = w.Write([]byte(`{"project_id":"den-services","content_markdown":"full guidance evidence","sources":[{"source_scope":"den-services","document_project_id":"den-services","document_slug":"go-codestyle","document_title":"Go style"}]}`))
+		case "/v1/projects/den-services/tasks/42/packets/latest":
+			_, _ = w.Write([]byte(`{"id":41,"project_id":"den-services","task_id":42,"sender":"reviewer","content":"full packet evidence","intent":"review_request","metadata":{"kind":"review_request"},"created_at":"2026-08-03T01:02:03Z"}`))
+		case "/v1/projects/den-services/tasks/42/review/github-check-gates/head":
+			_, _ = w.Write([]byte(`{"id":9,"repository":"FuzzySlipper/den-services","status":"passed","required_checks":["verify"]}`))
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer backendServer.Close()
+
+	table, err := backend.NewRouteTable([]backend.Route{{
+		Operation: "get_review_context", Backend: "tasks", Method: http.MethodGet, Path: "/v1/tasks/{task_id}/review-context",
+		RequestAdapter: backend.RequestAdapterMCPReviewContextCompose, ResponseAdapter: backend.ResponseAdapterMCPToolResultJSON,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backends := []config.BackendConfig{
+		{Name: "tasks", BaseURL: backendServer.URL, Timeout: time.Second},
+		{Name: "review", BaseURL: backendServer.URL, Timeout: time.Second},
+		{Name: "messages", BaseURL: backendServer.URL, Timeout: time.Second},
+		{Name: "guidance", BaseURL: backendServer.URL, Timeout: time.Second},
+		{Name: "projects", BaseURL: backendServer.URL, Timeout: time.Second},
+	}
+	locator, err := backend.NewLocator(backends, table, backendServer.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolRegistry, err := registry.New([]registry.ToolDefinition{
+		{
+			Name: "get_review_context", Description: "Get bounded review context.", Backend: "tasks", Operation: "get_review_context",
+			InputSchema: registry.ObjectSchema(map[string]registry.Schema{"task_id": registry.IntegerSchema("Task ID")}, "task_id"),
+		},
+		{
+			Name: "get_details", Description: "Expand a detail reference.", Backend: "tasks", Operation: "get_details",
+			InputSchema: registry.ObjectSchema(map[string]registry.Schema{"detail_ref": registry.StringSchema("Detail reference")}, "detail_ref"),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewMCPHandlerWithOptions(toolRegistry, health.BuildInfo{}, locator, HandlerOptions{
+		Clock:              func() time.Time { return time.Date(2026, 8, 4, 8, 0, 0, 0, time.UTC) },
+		DetailReferenceTTL: 15 * time.Minute, DetailReferenceKey: []byte("01234567890123456789012345678901"),
+	})
+
+	concise := invokeToolForTest(t, handler, "get_review_context", map[string]any{"task_id": 42})
+	structured := concise["structuredContent"].(map[string]any)
+	refs := structured["detail_refs"].(map[string]any)
+	detailRef := refs["findings"].(string)
+	if !strings.HasPrefix(detailRef, "d1.") {
+		t.Fatalf("detail ref is not opaque/signed: %q", detailRef)
+	}
+	content := concise["content"].([]any)[0].(map[string]any)["text"].(string)
+	if strings.Contains(content, "/v1/tasks/42/review/findings") {
+		t.Fatalf("content leaked ordinary REST detail ref: %s", content)
+	}
+	detailed := invokeToolForTest(t, handler, "get_details", map[string]any{"detail_ref": detailRef})
+	if detailed["isError"] != false {
+		t.Fatalf("expanded result is error: %#v", detailed)
+	}
+	detailedText := detailed["content"].([]any)[0].(map[string]any)["text"].(string)
+	for _, want := range []string{"expanded_findings", "full finding evidence", "expanded_packets", "full packet evidence", "expanded_guidance", "full guidance evidence"} {
+		if !strings.Contains(detailedText, want) {
+			t.Fatalf("expanded result missing %s: %s", want, detailedText)
+		}
+	}
+}
+
 func TestToolCallLogDistinguishesRequestedAliasFromCanonicalTool(t *testing.T) {
 	toolRegistry, err := registry.New([]registry.ToolDefinition{{
 		Name:             "get_task",

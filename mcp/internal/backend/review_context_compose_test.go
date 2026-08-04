@@ -17,7 +17,7 @@ func TestLocatorComposesBoundedReviewContextWithoutTaskBody(t *testing.T) {
 		case "/v1/tasks/6608":
 			_, _ = w.Write([]byte(`{"task":{"id":6608,"project_id":"den-services","title":"Review context","description":"this must not be copied into the reviewer context","status":"review"}}`))
 		case "/v1/projects/den-services/tasks/6608/review/workflow-summary":
-			_, _ = w.Write([]byte(`{"current_round":{"id":88,"project_id":"den-services","task_id":6608,"round_number":2,"base_commit":"abc","head_commit":"def","delta_base_commit":"abc"},"open_findings":[{"id":11,"status":"open"}]}`))
+			_, _ = w.Write([]byte(`{"current_round":{"id":88,"project_id":"den-services","task_id":6608,"round_number":2,"target_kind":"code_diff","base_branch":"main","base_commit":"abc","head_commit":"def","preferred_diff_base_ref":"main","preferred_diff_base_commit":"abc","preferred_diff_head_ref":"task/6608","preferred_diff_head_commit":"def","alternate_diff_base_ref":"origin/main","alternate_diff_base_commit":"abc","alternate_diff_head_ref":"origin/task/6608","alternate_diff_head_commit":"def","delta_base_commit":"abc","campaign_children":[{"project_id":"den-services","task_id":6607,"review_round_id":87}],"campaign_repositories":[{"repository":"FuzzySlipper/den-services","head_sha":"def"}]},"open_findings":[{"id":11,"status":"open"}]}`))
 		case "/v1/projects/den-services/tasks/6608/review/github-check-gates/def":
 			_, _ = w.Write([]byte(`{"id":9,"repository":"FuzzySlipper/den-services","status":"passed","required_checks":["verify"]}`))
 		case "/v1/projects/den-services":
@@ -56,13 +56,54 @@ func TestLocatorComposesBoundedReviewContextWithoutTaskBody(t *testing.T) {
 	if len(first.Value) > reviewContextMaxBytes {
 		t.Fatalf("review context bytes = %d, want <= %d", len(first.Value), reviewContextMaxBytes)
 	}
-	for _, want := range []string{`"schema":"den_review.reviewer_context.v1"`, `"head_commit":"def"`, `"status":"passed"`, `"next_state":"source_review_ready"`, `"repository":"FuzzySlipper/den-services"`, `"root_path":"/home/dev/den-services"`, `"detail_refs"`, `"document_slug":"go-codestyle"`, `"material_digest":"sha256:`} {
+	for _, want := range []string{`"schema":"den_review.reviewer_context.v1"`, `"head_commit":"def"`, `"preferred_diff_base_ref":"main"`, `"alternate_diff_head_ref":"origin/task/6608"`, `"campaign_children"`, `"campaign_repositories"`, `"status":"passed"`, `"next_state":"source_review_ready"`, `"repository":"FuzzySlipper/den-services"`, `"root_path":"/home/dev/den-services"`, `"detail_refs"`, `"document_slug":"go-codestyle"`, `"material_digest":"sha256:`} {
 		if !strings.Contains(string(first.Value), want) {
 			t.Fatalf("review context missing %s: %s", want, first.Value)
 		}
 	}
 	if strings.Contains(string(first.Value), "this must not be copied") || strings.Contains(string(first.Value), "review_request") == false {
 		t.Fatalf("review context leaked task body or packet identity: %s", first.Value)
+	}
+}
+
+func TestLocatorExpandsReviewContextEvidenceWhenVerbose(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/tasks/6608":
+			_, _ = w.Write([]byte(`{"task":{"id":6608,"project_id":"den-services","title":"Review context","status":"review"}}`))
+		case "/v1/projects/den-services/tasks/6608/review/workflow-summary":
+			_, _ = w.Write([]byte(`{"current_round":{"id":88,"project_id":"den-services","task_id":6608,"round_number":2,"head_commit":"def"},"open_findings":[{"id":11,"status":"open","summary":"bounded finding"}]}`))
+		case "/v1/tasks/6608/review/findings":
+			_, _ = w.Write([]byte(`[{"id":11,"finding_key":"R6608-1","status":"open","summary":"full finding evidence","notes":"full finding notes"}]`))
+		case "/v1/projects/den-services":
+			_, _ = w.Write([]byte(`{"id":"den-services","root_path":"/home/dev/den-services","settings_json":{"repository":"FuzzySlipper/den-services"}}`))
+		case "/v1/projects/den-services/agent-guidance":
+			_, _ = w.Write([]byte(`{"project_id":"den-services","content_markdown":"full guidance evidence","sources":[{"source_scope":"den-services","document_project_id":"den-services","document_slug":"go-codestyle","document_title":"Go style"}]}`))
+		case "/v1/projects/den-services/tasks/6608/packets/latest":
+			_, _ = w.Write([]byte(`{"id":41,"project_id":"den-services","task_id":6608,"sender":"reviewer","content":"full packet evidence","intent":"review_request","metadata":{"kind":"review_request"},"created_at":"2026-08-03T01:02:03Z"}`))
+		case "/v1/projects/den-services/tasks/6608/review/github-check-gates/def":
+			_, _ = w.Write([]byte(`{"id":9,"repository":"FuzzySlipper/den-services","status":"passed","required_checks":["verify"]}`))
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	locator, err := newReviewContextTestLocator(t, server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, failure, err := locator.Call(context.Background(), ToolCall{
+		ToolName: "get_review_context", Operation: "get_review_context", RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"task_id":6608,"verbose":true}`),
+	})
+	if err != nil || failure != nil {
+		t.Fatalf("verbose Call() = %v, %#v", err, failure)
+	}
+	for _, want := range []string{`"expanded_findings"`, `full finding evidence`, `"expanded_packets"`, `full packet evidence`, `"expanded_guidance"`, `full guidance evidence`} {
+		if !strings.Contains(string(result.Value), want) {
+			t.Fatalf("expanded result missing %s: %s", want, result.Value)
+		}
 	}
 }
 
@@ -137,4 +178,13 @@ func TestLocatorReturnsTypedReviewContextUnavailableWithoutCurrentRound(t *testi
 	if !strings.Contains(string(result.Value), `"error_code":"review_context_unavailable"`) || !strings.Contains(string(result.Value), `"reason":"no_current_round"`) {
 		t.Fatalf("missing typed unavailable result: %s", result.Value)
 	}
+}
+
+func newReviewContextTestLocator(t *testing.T, server *httptest.Server) (*Locator, error) {
+	t.Helper()
+	table, err := NewRouteTable([]Route{{Operation: "get_review_context", Backend: "tasks", Method: http.MethodGet, Path: "/v1/tasks/{task_id}/review-context", RequestAdapter: RequestAdapterMCPReviewContextCompose, ResponseAdapter: ResponseAdapterMCPToolResultJSON}})
+	if err != nil {
+		return nil, err
+	}
+	return NewLocator([]config.BackendConfig{testBackend("tasks", server.URL), testBackend("review", server.URL), testBackend("messages", server.URL), testBackend("guidance", server.URL), testBackend("projects", server.URL)}, table, server.Client())
 }

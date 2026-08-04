@@ -14,27 +14,40 @@ import (
 )
 
 const (
-	reviewContextSchema        = "den_review.reviewer_context.v1"
-	reviewContextSchemaVersion = 1
-	reviewContextMaxBytes      = 8192
+	reviewContextSchema         = "den_review.reviewer_context.v1"
+	reviewContextSchemaVersion  = 1
+	reviewContextMaxBytes       = 8192
+	reviewContextDetailMaxBytes = 64 * 1024
 )
 
 type reviewContextArguments struct {
-	TaskID int64 `json:"task_id"`
+	TaskID  int64 `json:"task_id"`
+	Verbose bool  `json:"verbose"`
 }
 
 type reviewContextRound struct {
-	ID                     int64  `json:"id"`
-	ProjectID              string `json:"project_id"`
-	TaskID                 int64  `json:"task_id"`
-	RoundNumber            int    `json:"round_number"`
-	Branch                 string `json:"branch,omitempty"`
-	BaseBranch             string `json:"base_branch,omitempty"`
-	BaseCommit             string `json:"base_commit,omitempty"`
-	HeadCommit             string `json:"head_commit,omitempty"`
-	LastReviewedHeadCommit string `json:"last_reviewed_head_commit,omitempty"`
-	DeltaBaseCommit        string `json:"delta_base_commit,omitempty"`
-	Verdict                string `json:"verdict,omitempty"`
+	ID                      int64           `json:"id"`
+	ProjectID               string          `json:"project_id"`
+	TaskID                  int64           `json:"task_id"`
+	RoundNumber             int             `json:"round_number"`
+	TargetKind              string          `json:"target_kind,omitempty"`
+	Branch                  string          `json:"branch,omitempty"`
+	BaseBranch              string          `json:"base_branch,omitempty"`
+	BaseCommit              string          `json:"base_commit,omitempty"`
+	HeadCommit              string          `json:"head_commit,omitempty"`
+	LastReviewedHeadCommit  string          `json:"last_reviewed_head_commit,omitempty"`
+	PreferredDiffBaseRef    string          `json:"preferred_diff_base_ref,omitempty"`
+	PreferredDiffBaseCommit string          `json:"preferred_diff_base_commit,omitempty"`
+	PreferredDiffHeadRef    string          `json:"preferred_diff_head_ref,omitempty"`
+	PreferredDiffHeadCommit string          `json:"preferred_diff_head_commit,omitempty"`
+	AlternateDiffBaseRef    string          `json:"alternate_diff_base_ref,omitempty"`
+	AlternateDiffBaseCommit string          `json:"alternate_diff_base_commit,omitempty"`
+	AlternateDiffHeadRef    string          `json:"alternate_diff_head_ref,omitempty"`
+	AlternateDiffHeadCommit string          `json:"alternate_diff_head_commit,omitempty"`
+	DeltaBaseCommit         string          `json:"delta_base_commit,omitempty"`
+	CampaignChildren        json.RawMessage `json:"campaign_children,omitempty"`
+	CampaignRepositories    json.RawMessage `json:"campaign_repositories,omitempty"`
+	Verdict                 string          `json:"verdict,omitempty"`
 }
 
 type reviewContextTask struct {
@@ -69,22 +82,25 @@ type reviewContextTruncation struct {
 }
 
 type reviewContextResponse struct {
-	SchemaVersion  int                                  `json:"schema_version"`
-	Schema         string                               `json:"schema"`
-	ProjectID      string                               `json:"project_id"`
-	TaskID         int64                                `json:"task_id"`
-	Task           reviewContextTask                    `json:"task"`
-	CurrentRound   *reviewContextRound                  `json:"current_round,omitempty"`
-	CurrentStatus  string                               `json:"current_status"`
-	NextState      string                               `json:"next_state"`
-	MaterialDigest string                               `json:"material_digest"`
-	PriorFindings  []json.RawMessage                    `json:"prior_findings,omitempty"`
-	Gate           *reviewContextGate                   `json:"gate,omitempty"`
-	PacketHeaders  map[string]*taskWorkflowPacketHeader `json:"packet_headers,omitempty"`
-	Guidance       []taskContextDocHandle               `json:"guidance_handles,omitempty"`
-	DetailRefs     *reviewContextDetailRefs             `json:"detail_refs,omitempty"`
-	SourceStatus   []taskContextSourceStatus            `json:"source_status"`
-	Truncation     reviewContextTruncation              `json:"truncation,omitempty"`
+	SchemaVersion    int                                  `json:"schema_version"`
+	Schema           string                               `json:"schema"`
+	ProjectID        string                               `json:"project_id"`
+	TaskID           int64                                `json:"task_id"`
+	Task             reviewContextTask                    `json:"task"`
+	CurrentRound     *reviewContextRound                  `json:"current_round,omitempty"`
+	CurrentStatus    string                               `json:"current_status"`
+	NextState        string                               `json:"next_state"`
+	MaterialDigest   string                               `json:"material_digest"`
+	PriorFindings    []json.RawMessage                    `json:"prior_findings,omitempty"`
+	Gate             *reviewContextGate                   `json:"gate,omitempty"`
+	PacketHeaders    map[string]*taskWorkflowPacketHeader `json:"packet_headers,omitempty"`
+	Guidance         []taskContextDocHandle               `json:"guidance_handles,omitempty"`
+	DetailRefs       *reviewContextDetailRefs             `json:"detail_refs,omitempty"`
+	ExpandedFindings []json.RawMessage                    `json:"expanded_findings,omitempty"`
+	ExpandedPackets  map[string]json.RawMessage           `json:"expanded_packets,omitempty"`
+	ExpandedGuidance *guidancePacketResponse              `json:"expanded_guidance,omitempty"`
+	SourceStatus     []taskContextSourceStatus            `json:"source_status"`
+	Truncation       reviewContextTruncation              `json:"truncation,omitempty"`
 }
 
 type reviewContextDetailRefs struct {
@@ -220,17 +236,15 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 	}
 	guidanceBackend, guidanceOK := backends["guidance"]
 	guidancePath := "/v1/projects/" + url.PathEscape(projectID) + "/agent-guidance"
-	response.DetailRefs = &reviewContextDetailRefs{
-		Findings: "/v1/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/review/findings",
-		Packets:  "/v1/projects/" + url.PathEscape(projectID) + "/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/packets/latest",
-		Guidance: guidancePath,
-	}
 	if guidanceOK {
 		body, guidanceFailure, guidanceErr := c.taskContextGET(ctx, guidanceBackend, guidancePath, call)
 		if guidanceErr == nil && guidanceFailure == nil {
 			var guidance guidancePacketResponse
 			if err := json.Unmarshal(body, &guidance); err != nil {
 				return Result{}, nil, fmt.Errorf("parsing review context guidance: %w", err)
+			}
+			if arguments.Verbose {
+				response.ExpandedGuidance = &guidance
 			}
 			for _, source := range guidance.Sources {
 				response.Guidance = append(response.Guidance, taskContextDocHandle{SourceScope: source.SourceScope, DocumentProjectID: source.DocumentProjectID, DocumentSlug: source.DocumentSlug, DocumentTitle: source.DocumentTitle, DocumentType: source.DocumentType, DocumentUpdatedAt: source.DocumentUpdatedAt, Visibility: source.Visibility, Tags: source.Tags, Importance: source.Importance, Audience: source.Audience, SortOrder: source.SortOrder, Notes: source.Notes})
@@ -242,11 +256,50 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 	} else {
 		response.SourceStatus = append(response.SourceStatus, taskContextSourceStatus{Source: "guidance", State: "unavailable", Handle: "guidance", ErrorCode: "den_backend_config_error", Retryable: false})
 	}
+	if arguments.Verbose {
+		findingsPath := "/v1/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/review/findings"
+		findingsBody, findingsFailure, findingsErr := c.taskContextGET(ctx, reviewBackend, findingsPath, call)
+		if findingsErr == nil && findingsFailure == nil {
+			var findings []json.RawMessage
+			if err := json.Unmarshal(findingsBody, &findings); err != nil {
+				return Result{}, nil, fmt.Errorf("parsing expanded review findings: %w", err)
+			}
+			response.ExpandedFindings = findings
+		} else if findingsFailure == nil || findingsFailure.StatusCode == nil || *findingsFailure.StatusCode != 404 {
+			response.SourceStatus = append(response.SourceStatus, taskContextStatus("review_findings", findingsPath, findingsFailure, findingsErr))
+		}
+		response.ExpandedPackets = make(map[string]json.RawMessage)
+		for _, query := range []taskWorkflowPacketQuery{
+			{Key: "review_request", PacketType: "review_request", Role: "reviewer"},
+			{Key: "rereview_request", PacketType: "rereview_request", Role: "reviewer"},
+			{Key: "review_findings", PacketType: "review_findings", Role: "reviewer"},
+			{Key: "implementer_response", PacketType: "implementer_response", Role: "implementer"},
+		} {
+			path := "/v1/projects/" + url.PathEscape(projectID) + "/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/packets/latest?packet_type=" + url.QueryEscape(query.PacketType) + "&role=" + url.QueryEscape(query.Role)
+			body, packetFailure, packetErr := c.taskWorkflowOptionalGET(ctx, messagesBackend, path, call)
+			if packetErr == nil && packetFailure == nil {
+				response.ExpandedPackets[query.Key] = body
+			} else if packetFailure == nil || packetFailure.StatusCode == nil || *packetFailure.StatusCode != 404 {
+				response.SourceStatus = append(response.SourceStatus, taskContextStatus("expanded_packets", path, packetFailure, packetErr))
+			}
+		}
+		response.DetailRefs = nil
+	} else {
+		response.DetailRefs = &reviewContextDetailRefs{
+			Findings: "/v1/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/review/findings",
+			Packets:  "/v1/projects/" + url.PathEscape(projectID) + "/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/packets/latest",
+			Guidance: guidancePath,
+		}
+	}
 	if len(response.Guidance) > 16 {
 		response.Guidance = response.Guidance[:16]
 		response.Truncation.Guidance = true
 	}
-	encoded, err := boundReviewContext(&response)
+	byteLimit := reviewContextMaxBytes
+	if arguments.Verbose {
+		byteLimit = reviewContextDetailMaxBytes
+	}
+	encoded, err := boundReviewContext(&response, byteLimit)
 	if err != nil {
 		return c.reviewContextTypedError(reviewContextErrorResponse{
 			SchemaVersion: reviewContextSchemaVersion, Schema: reviewContextSchema, TaskID: arguments.TaskID,
@@ -311,19 +364,27 @@ func reviewContextNextState(taskStatus string, round reviewContextRound, _ taskW
 func reviewContextDigest(response reviewContextResponse) string {
 	response.MaterialDigest = ""
 	response.SourceStatus = nil
+	response.DetailRefs = nil
 	data, _ := json.Marshal(response)
 	sum := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-func boundReviewContext(response *reviewContextResponse) ([]byte, error) {
+func boundReviewContext(response *reviewContextResponse, limits ...int) ([]byte, error) {
+	byteLimit := reviewContextMaxBytes
+	if len(limits) > 0 && limits[0] > 0 {
+		byteLimit = limits[0]
+	}
 	response.MaterialDigest = reviewContextDigest(*response)
 	encoded, err := json.Marshal(response)
 	if err != nil {
 		return nil, fmt.Errorf("encoding review context: %w", err)
 	}
-	if len(encoded) <= reviewContextMaxBytes {
+	if len(encoded) <= byteLimit {
 		return encoded, nil
+	}
+	if response.ExpandedFindings != nil || response.ExpandedPackets != nil || response.ExpandedGuidance != nil {
+		return nil, fmt.Errorf("expanded review context exceeds %d-byte detail budget: %d", byteLimit, len(encoded))
 	}
 	response.Truncation.Bounded = true
 	response.Truncation.Guidance = len(response.Guidance) > 0
@@ -341,7 +402,7 @@ func boundReviewContext(response *reviewContextResponse) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encoding bounded review context: %w", err)
 	}
-	if len(encoded) > reviewContextMaxBytes {
+	if len(encoded) > byteLimit {
 		for index := range response.PriorFindings {
 			response.PriorFindings[index] = compactReviewFinding(response.PriorFindings[index], 96, 96)
 		}
@@ -350,16 +411,16 @@ func boundReviewContext(response *reviewContextResponse) ([]byte, error) {
 			return nil, fmt.Errorf("encoding compacted review context: %w", err)
 		}
 	}
-	if len(encoded) > reviewContextMaxBytes {
-		return nil, fmt.Errorf("review context exceeds %d-byte budget after deterministic compaction: %d", reviewContextMaxBytes, len(encoded))
+	if len(encoded) > byteLimit {
+		return nil, fmt.Errorf("review context exceeds %d-byte budget after deterministic compaction: %d", byteLimit, len(encoded))
 	}
 	response.MaterialDigest = reviewContextDigest(*response)
 	encoded, err = json.Marshal(response)
 	if err != nil {
 		return nil, fmt.Errorf("encoding compacted review context with digest: %w", err)
 	}
-	if len(encoded) > reviewContextMaxBytes {
-		return nil, fmt.Errorf("review context exceeds %d-byte budget after material digest: %d", reviewContextMaxBytes, len(encoded))
+	if len(encoded) > byteLimit {
+		return nil, fmt.Errorf("review context exceeds %d-byte budget after material digest: %d", byteLimit, len(encoded))
 	}
 	return encoded, nil
 }
