@@ -92,8 +92,11 @@ func TestReviewServerFinalizesReview(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &receipt); err != nil {
 		t.Fatalf("decode response: %v body=%s", err, response.Body.String())
 	}
-	if response.Code != http.StatusOK || receipt.State != FinalizationStateComplete || receipt.ResultingTaskStatus != TaskStatusDone {
+	if response.Code != http.StatusOK || receipt.State != FinalizationStateComplete || receipt.ResultingTaskStatus != TaskStatusDone || receipt.Schema != ReviewCompletionReceiptSchema {
 		t.Fatalf("response code=%d receipt=%+v body=%s", response.Code, receipt, response.Body.String())
+	}
+	if bytes.Contains(response.Body.Bytes(), []byte(`"markdown_body"`)) || len(response.Body.Bytes()) > 2048 {
+		t.Fatalf("finalization response is not compact: bytes=%d body=%s", response.Body.Len(), response.Body.String())
 	}
 }
 

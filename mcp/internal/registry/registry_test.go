@@ -18,8 +18,8 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 71 {
-		t.Fatalf("tool count = %d, want 71", len(names))
+	if len(names) != 72 {
+		t.Fatalf("tool count = %d, want 72", len(names))
 	}
 	for _, name := range []string{
 		"search_documents",
@@ -33,6 +33,7 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		"get_github_check_gate",
 		"wait_for_github_checks",
 		"get_task_context",
+		"get_review_context",
 		"get_details",
 		"mark_project_notifications_read",
 		"mark_task_notifications_read",
@@ -171,7 +172,7 @@ func TestDefaultRegistryExposesFinalizeReviewGreenPath(t *testing.T) {
 	if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
 		t.Fatal(err)
 	}
-	if len(schema.Properties) != 7 {
+	if len(schema.Properties) != 9 {
 		t.Fatalf("finalize_review properties = %v", schema.Properties)
 	}
 	for _, required := range []string{"review_round_id", "verdict", "decided_by"} {
@@ -195,8 +196,8 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if err != nil {
 		t.Fatalf("ToolsForProfile(managed-runtime) error = %v", err)
 	}
-	if len(direct) != 71 {
-		t.Fatalf("direct tool count = %d, want 71", len(direct))
+	if len(direct) != 72 {
+		t.Fatalf("direct tool count = %d, want 72", len(direct))
 	}
 	if len(managed) >= len(direct) {
 		t.Fatalf("managed tool count = %d, want fewer than direct %d", len(managed), len(direct))
@@ -297,6 +298,7 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 	for _, tool := range listed[visibleIndex:] {
 		if tool.Name != "await_github_checks" && tool.Name != "discover_github_checks" && tool.Name != "watch_github_checks" &&
 			tool.Name != "get_github_check_gate" && tool.Name != "wait_for_github_checks" && tool.Name != "get_task_context" &&
+			tool.Name != "get_review_context" &&
 			tool.Name != "finalize_review" && tool.Name != "request_campaign_review" &&
 			tool.Name != "get_details" && tool.Name != "mark_project_notifications_read" &&
 			tool.Name != "mark_task_notifications_read" && tool.Name != "ensure_document_discussion" {

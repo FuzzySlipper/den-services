@@ -111,6 +111,9 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 		if taskContextComposeRoute(tool.Name) {
 			wantBackend = "tasks"
 		}
+		if reviewContextComposeRoute(tool.Name) {
+			wantBackend = "tasks"
+		}
 		if tasksRoute(tool.Name) {
 			wantBackend = "tasks"
 		}
@@ -431,6 +434,10 @@ func taskWorkflowSummaryComposeRoute(operation string) bool {
 
 func taskContextComposeRoute(operation string) bool {
 	return operation == "get_task_context"
+}
+
+func reviewContextComposeRoute(operation string) bool {
+	return operation == "get_review_context"
 }
 
 func tasksRoute(operation string) bool {

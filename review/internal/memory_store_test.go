@@ -268,6 +268,7 @@ func (s *memoryStore) BeginFinalization(
 	ctx context.Context,
 	finalization *ReviewFinalization,
 	packet *ReviewPacket,
+	mutation FinalizationMutation,
 	decidedAt time.Time,
 ) (*ReviewFinalization, *ReviewPacket, *ReviewRound, error) {
 	existing, err := s.GetFinalizationByRound(ctx, finalization.ReviewRoundID)
@@ -283,11 +284,49 @@ func (s *memoryStore) BeginFinalization(
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	rounds, err := s.ListRounds(ctx, round.ProjectID, round.TaskID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if len(rounds) == 0 || rounds[len(rounds)-1].ID != round.ID {
+		currentID := int64(0)
+		if len(rounds) > 0 {
+			currentID = rounds[len(rounds)-1].ID
+		}
+		return nil, nil, nil, conflict(fmt.Errorf("%w: round %d is superseded by current round %d", ErrStaleReviewRound, round.ID, currentID), "stale_review_round")
+	}
 	if round.Verdict != "" && (round.Verdict != finalization.Verdict ||
 		round.VerdictBy != "" && round.VerdictBy != finalization.DecidedBy) {
 		return nil, nil, nil, conflict(ErrFinalizationConflict, "review_finalization_conflict")
 	}
+	if err := s.applyFinalizationMutation(ctx, round, finalization, mutation, decidedAt); err != nil {
+		return nil, nil, nil, err
+	}
+	if len(mutation.PriorFindingResolutions) > 0 || len(mutation.NewFindings) > 0 {
+		roundFindings, err := s.ListFindings(ctx, ListFindingsQuery{ProjectID: round.ProjectID, TaskID: round.TaskID, ReviewRoundID: &round.ID})
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		allFindings, err := s.ListFindings(ctx, ListFindingsQuery{ProjectID: round.ProjectID, TaskID: round.TaskID})
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		decidedRound := *round
+		decidedRound.Verdict = finalization.Verdict
+		decidedRound.VerdictBy = finalization.DecidedBy
+		decidedRound.VerdictNotes = finalization.Notes
+		decidedRound.VerdictAt = &decidedAt
+		decidedRound.UpdatedAt = decidedAt
+		packet = reviewFindingsPacket(&decidedRound, roundFindings, unresolvedFindingSummaries(allFindings), PostReviewFindingsRequest{
+			ReviewRoundID: round.ID, Sender: finalization.DecidedBy, ThreadID: finalization.ThreadID, Notes: finalization.Notes,
+			RunID: finalization.RunID, SubagentRole: finalization.SubagentRole,
+		})
+		packet.IdempotencyKey = firstNonEmpty(packet.IdempotencyKey, finalization.PacketIdempotencyKey)
+	}
 	storedPacket, err := s.GetReviewFindingsPacketForRound(ctx, finalization.ReviewRoundID)
+	if len(mutation.PriorFindingResolutions) > 0 || len(mutation.NewFindings) > 0 {
+		storedPacket = nil
+	}
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -305,6 +344,9 @@ func (s *memoryStore) BeginFinalization(
 	finalization.ID = s.nextFinalizationID
 	s.nextFinalizationID++
 	finalization.PacketID = storedPacket.ID
+	if finalization.MaterialDigest == "" {
+		finalization.MaterialDigest = finalization.IdempotencyKey
+	}
 	finalization.PacketIdempotencyKey = storedPacket.IdempotencyKey
 	if storedPacket.MessageID != nil {
 		finalization.MessageID = storedPacket.MessageID
@@ -317,6 +359,35 @@ func (s *memoryStore) BeginFinalization(
 	copied := *finalization
 	s.finalizations[copied.ID] = &copied
 	return &copied, storedPacket, round, nil
+}
+
+func (s *memoryStore) applyFinalizationMutation(ctx context.Context, round *ReviewRound, finalization *ReviewFinalization, mutation FinalizationMutation, now time.Time) error {
+	for _, resolution := range mutation.PriorFindingResolutions {
+		finding, ok := s.findings[resolution.FindingID]
+		if !ok || finding.TaskID != round.TaskID || finding.ProjectID != round.ProjectID {
+			return notFound(fmt.Errorf("finding %d does not belong to this task", resolution.FindingID), "finding_not_found")
+		}
+		finding.ResponseBy = finalization.DecidedBy
+		finding.ResponseNotes = resolution.VerificationNote
+		finding.ResponseAt = &now
+		finding.Status = resolution.Status
+		finding.StatusUpdatedBy = finalization.DecidedBy
+		finding.StatusNotes = resolution.VerificationNote
+		finding.StatusUpdatedAt = &now
+		finding.UpdatedAt = now
+	}
+	for _, input := range mutation.NewFindings {
+		finding := &ReviewFinding{
+			ProjectID: round.ProjectID, TaskID: round.TaskID, ReviewRoundID: round.ID, RoundNumber: round.RoundNumber,
+			CreatedBy: finalization.DecidedBy, Category: input.Category, Summary: input.Summary, Notes: input.Notes,
+			FileReferences: input.FileReferences, TestCommands: input.TestCommands, Status: StatusOpen,
+			RunID: finalization.RunID, SubagentRole: finalization.SubagentRole, CreatedAt: now, UpdatedAt: now,
+		}
+		if _, err := s.CreateFinding(ctx, finding); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *memoryStore) MarkFinalizationPacketPosted(

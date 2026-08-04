@@ -63,3 +63,19 @@ func TestCampaignRoundQueriesPersistTypedImmutableSnapshot(t *testing.T) {
 		}
 	}
 }
+
+func TestFinalizationSerializesRoundCreationAndRejectsStaleRounds(t *testing.T) {
+	if !strings.Contains(lockReviewTaskSQL, "pg_advisory_xact_lock") {
+		t.Fatalf("review task lock must serialize round creation and finalization: %s", lockReviewTaskSQL)
+	}
+	if !strings.Contains(currentRoundForUpdateSQL, "order by round_number desc") ||
+		!strings.Contains(currentRoundForUpdateSQL, "for update") {
+		t.Fatalf("current-round query must lock the latest round: %s", currentRoundForUpdateSQL)
+	}
+}
+
+func TestFinalizationProjectionCarriesMaterialDigest(t *testing.T) {
+	if !strings.Contains(finalizationColumns, "material_digest") || !strings.Contains(insertFinalizationSQL, "material_digest") {
+		t.Fatalf("finalization persistence omits material digest: columns=%s insert=%s", finalizationColumns, insertFinalizationSQL)
+	}
+}

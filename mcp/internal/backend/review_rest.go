@@ -42,6 +42,8 @@ type reviewToolArguments struct {
 	ThreadID                *int64          `json:"thread_id"`
 	RunID                   string          `json:"run_id"`
 	SubagentRole            string          `json:"subagent_role"`
+	PriorFindingResolutions json.RawMessage `json:"prior_finding_resolutions"`
+	NewFindings             json.RawMessage `json:"new_findings"`
 	Sender                  string          `json:"sender"`
 	CreatedBy               string          `json:"created_by"`
 	Category                string          `json:"category"`
@@ -157,13 +159,15 @@ type reviewVerdictBody struct {
 }
 
 type finalizeReviewBody struct {
-	ReviewRoundID int64  `json:"review_round_id"`
-	Verdict       string `json:"verdict"`
-	DecidedBy     string `json:"decided_by"`
-	Notes         string `json:"notes,omitempty"`
-	ThreadID      *int64 `json:"thread_id,omitempty"`
-	RunID         string `json:"run_id,omitempty"`
-	SubagentRole  string `json:"subagent_role,omitempty"`
+	ReviewRoundID           int64           `json:"review_round_id"`
+	Verdict                 string          `json:"verdict"`
+	DecidedBy               string          `json:"decided_by"`
+	Notes                   string          `json:"notes,omitempty"`
+	ThreadID                *int64          `json:"thread_id,omitempty"`
+	RunID                   string          `json:"run_id,omitempty"`
+	SubagentRole            string          `json:"subagent_role,omitempty"`
+	PriorFindingResolutions json.RawMessage `json:"prior_finding_resolutions,omitempty"`
+	NewFindings             json.RawMessage `json:"new_findings,omitempty"`
 }
 
 type respondReviewFindingBody struct {
@@ -345,7 +349,8 @@ func reviewRESTRequestBody(operation string, arguments reviewToolArguments) ([]b
 			ReviewRoundID: arguments.ReviewRoundID, Verdict: strings.TrimSpace(arguments.Verdict),
 			DecidedBy: strings.TrimSpace(arguments.DecidedBy), Notes: strings.TrimSpace(arguments.Notes),
 			ThreadID: arguments.ThreadID, RunID: strings.TrimSpace(arguments.RunID),
-			SubagentRole: strings.TrimSpace(arguments.SubagentRole),
+			SubagentRole:            strings.TrimSpace(arguments.SubagentRole),
+			PriorFindingResolutions: nonEmptyJSON(arguments.PriorFindingResolutions), NewFindings: nonEmptyJSON(arguments.NewFindings),
 		})
 	case "respond_to_review_finding":
 		return json.Marshal(respondReviewFindingBody{
@@ -470,4 +475,12 @@ func expandReviewPath(path string, arguments reviewToolArguments) (string, error
 		result = strings.ReplaceAll(result, "{commit_sha}", url.PathEscape(strings.TrimSpace(arguments.CommitSHA)))
 	}
 	return result, nil
+}
+
+func nonEmptyJSON(raw json.RawMessage) json.RawMessage {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) || bytes.Equal(trimmed, []byte("[]")) {
+		return nil
+	}
+	return trimmed
 }

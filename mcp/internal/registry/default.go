@@ -81,6 +81,7 @@ func DefaultTools() ([]ToolDefinition, error) {
 	tools = append(tools, reviewFinalizationTools()...)
 	tools = append(tools, campaignReviewTools()...)
 	tools = append(tools, taskContextTools()...)
+	tools = append(tools, reviewContextTools()...)
 	tools = append(tools, contractErgonomicsTools()...)
 	return tools, nil
 }
@@ -200,6 +201,18 @@ func taskContextTools() []ToolDefinition {
 	}}
 }
 
+func reviewContextTools() []ToolDefinition {
+	return []ToolDefinition{{
+		Name:        "get_review_context",
+		Description: "Compose a bounded, read-only exact review startup context from the canonical task, current review round, gate, packet headers, and guidance handles. It fails closed when no current review round exists and never falls back to the broad task context.",
+		Backend:     "tasks", Operation: "get_review_context",
+		WorkflowTier: WorkflowTierGreenPath,
+		InputSchema: ObjectSchema(map[string]Schema{
+			"task_id": IntegerSchema("Canonical task ID whose current review context should be composed."),
+		}, "task_id"),
+	}}
+}
+
 func githubCheckGateTools() []ToolDefinition {
 	discoverySchema := ObjectSchema(map[string]Schema{
 		"repository":      StringSchema("GitHub repository as owner/name."),
@@ -262,13 +275,15 @@ func reviewFinalizationTools() []ToolDefinition {
 		Operation:    "finalize_review",
 		WorkflowTier: WorkflowTierPrimitive,
 		InputSchema: ObjectSchema(map[string]Schema{
-			"review_round_id": IntegerSchema("Existing review round to finalize."),
-			"verdict":         StringSchema("Green-path verdict: looks_good or changes_requested."),
-			"decided_by":      StringSchema("Agent or user making the review decision and task transition."),
-			"notes":           NullableStringSchema("Optional final review notes included in the canonical packet."),
-			"thread_id":       NullableIntegerSchema("Optional existing task-thread root for the canonical packet."),
-			"run_id":          NullableStringSchema("Optional run correlation identifier."),
-			"subagent_role":   NullableStringSchema("Optional subagent role for correlation."),
+			"review_round_id":           IntegerSchema("Existing review round to finalize."),
+			"verdict":                   StringSchema("Green-path verdict: looks_good or changes_requested."),
+			"decided_by":                StringSchema("Agent or user making the review decision and task transition."),
+			"notes":                     NullableStringSchema("Optional final review notes included in the canonical packet."),
+			"thread_id":                 NullableIntegerSchema("Optional existing task-thread root for the canonical packet."),
+			"run_id":                    NullableStringSchema("Optional run correlation identifier."),
+			"subagent_role":             NullableStringSchema("Optional subagent role for correlation."),
+			"prior_finding_resolutions": AnySchema("Optional JSON array of {finding_id, status, verification_note} terminal prior-finding resolutions."),
+			"new_findings":              AnySchema("Optional JSON array of structured current-round findings; each has category, summary, notes, file_references, and test_commands."),
 		}, "review_round_id", "verdict", "decided_by"),
 	}}
 }

@@ -90,6 +90,125 @@ func TestServiceSetVerdictRejectsGreenPathVerdicts(t *testing.T) {
 	}
 }
 
+func TestFinalizeReviewRejectsSupersededRoundBeforeMutation(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
+	}}
+	service := newTestService(store, messages, tasks)
+	first, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
+		RequestedBy: "reviewer", Branch: "task/first", BaseBranch: "main", BaseCommit: "base", HeadCommit: "first",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
+		RequestedBy: "reviewer", Branch: "task/second", BaseBranch: "main", BaseCommit: "first", HeadCommit: "second",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.RoundNumber != first.RoundNumber+1 {
+		t.Fatalf("round numbers = %d, %d", first.RoundNumber, second.RoundNumber)
+	}
+
+	receipt, err := service.FinalizeReview(ctx, FinalizeReviewRequest{
+		ReviewRoundID: first.ID, Verdict: VerdictLooksGood, DecidedBy: "reviewer",
+	})
+	if err == nil || !errors.Is(err, ErrStaleReviewRound) {
+		t.Fatalf("FinalizeReview() error = %v, want stale round", err)
+	}
+	if receipt != nil {
+		t.Fatalf("stale finalization returned receipt: %+v", receipt)
+	}
+	if len(messages.appended) != 0 || len(store.finalizations) != 0 {
+		t.Fatalf("stale finalization mutated external/durable state: messages=%d finalizations=%d", len(messages.appended), len(store.finalizations))
+	}
+	firstStored, err := store.GetRound(ctx, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstStored.Verdict != "" {
+		t.Fatalf("stale finalization wrote verdict %q", firstStored.Verdict)
+	}
+}
+
+func TestFinalizeReviewCreatesCurrentFindingsAtomically(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
+	}}
+	service := newTestService(store, messages, tasks)
+	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
+		RequestedBy: "reviewer", Branch: "task/findings", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := service.FinalizeReview(ctx, FinalizeReviewRequest{
+		ReviewRoundID: round.ID, Verdict: VerdictChangesRequested, DecidedBy: "reviewer", Notes: "needs one fix",
+		NewFindings: []FinalizeNewFinding{{Category: CategoryBlockingBug, Summary: "A blocking behavior", TestCommands: []string{"go test ./review/..."}}},
+	})
+	if err != nil {
+		t.Fatalf("FinalizeReview() error = %v", err)
+	}
+	if receipt.Finalization.MaterialDigest == "" || receipt.Finalization.State != FinalizationStateComplete || receipt.TaskStatus != TaskStatusInProgress {
+		t.Fatalf("finalization receipt = %+v", receipt.Finalization)
+	}
+	findings, err := store.ListFindings(ctx, ListFindingsQuery{ProjectID: "den-services", TaskID: 42, ReviewRoundID: &round.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 || findings[0].Status != StatusOpen || !strings.Contains(receipt.Packet.MarkdownBody, findings[0].FindingKey) {
+		t.Fatalf("atomic finding/packet state = findings=%+v packet=%q", findings, receipt.Packet.MarkdownBody)
+	}
+	if len(messages.appended) != 1 {
+		t.Fatalf("message count = %d, want 1", len(messages.appended))
+	}
+}
+
+func TestFinalizeReviewResolvesPriorFindingAndNormalizesDigest(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
+	}}
+	service := newTestService(store, &fakeMessages{}, tasks)
+	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
+		RequestedBy: "reviewer", Branch: "task/resolve", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding, err := service.CreateFinding(ctx, round.ID, CreateReviewFindingRequest{
+		CreatedBy: "reviewer", Category: CategoryAcceptanceGap, Summary: "Needs a regression",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := service.FinalizeReview(ctx, FinalizeReviewRequest{
+		ReviewRoundID: round.ID, Verdict: VerdictLooksGood, DecidedBy: "reviewer",
+		PriorFindingResolutions: []FinalizeFindingResolution{{FindingID: finding.ID, Status: StatusVerifiedFixed, VerificationNote: "Regression added"}},
+	})
+	if err != nil {
+		t.Fatalf("first FinalizeReview() error = %v", err)
+	}
+	reordered, err := service.FinalizeReview(ctx, FinalizeReviewRequest{
+		ReviewRoundID: round.ID, Verdict: VerdictLooksGood, DecidedBy: "reviewer",
+		PriorFindingResolutions: []FinalizeFindingResolution{{FindingID: finding.ID, Status: StatusVerifiedFixed, VerificationNote: "Regression added"}},
+	})
+	if err != nil {
+		t.Fatalf("identical FinalizeReview() error = %v", err)
+	}
+	if first.Finalization.ID != reordered.Finalization.ID || first.Finalization.MaterialDigest != reordered.Finalization.MaterialDigest || tasks.tasks[42].Status != TaskStatusDone {
+		t.Fatalf("retry identity/task state = first=%+v retry=%+v task=%+v", first.Finalization, reordered.Finalization, tasks.tasks[42])
+	}
+}
+
 func TestRequestReviewMetadataUsesCanonicalPacketKind(t *testing.T) {
 	ctx := context.Background()
 	messages := &fakeMessages{}

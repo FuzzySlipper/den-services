@@ -13,6 +13,7 @@ const (
 	RequestAdapterMCPProjectSummaryCompose            = "mcp_project_summary_compose"
 	RequestAdapterMCPTaskWorkflowSummaryCompose       = "mcp_task_workflow_summary_compose"
 	RequestAdapterMCPTaskContextCompose               = "mcp_task_context_compose"
+	RequestAdapterMCPReviewContextCompose             = "mcp_review_context_compose"
 	RequestAdapterMCPTasksREST                        = "mcp_tasks_rest"
 	RequestAdapterMCPMessagesREST                     = "mcp_messages_rest"
 	RequestAdapterMCPDocumentsREST                    = "mcp_documents_rest"

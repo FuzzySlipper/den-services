@@ -63,13 +63,29 @@ type SetReviewVerdictRequest struct {
 }
 
 type FinalizeReviewRequest struct {
-	ReviewRoundID int64  `json:"review_round_id"`
-	Verdict       string `json:"verdict"`
-	DecidedBy     string `json:"decided_by"`
-	Notes         string `json:"notes,omitempty"`
-	ThreadID      *int64 `json:"thread_id,omitempty"`
-	RunID         string `json:"run_id,omitempty"`
-	SubagentRole  string `json:"subagent_role,omitempty"`
+	ReviewRoundID           int64                       `json:"review_round_id"`
+	Verdict                 string                      `json:"verdict"`
+	DecidedBy               string                      `json:"decided_by"`
+	Notes                   string                      `json:"notes,omitempty"`
+	ThreadID                *int64                      `json:"thread_id,omitempty"`
+	RunID                   string                      `json:"run_id,omitempty"`
+	SubagentRole            string                      `json:"subagent_role,omitempty"`
+	PriorFindingResolutions []FinalizeFindingResolution `json:"prior_finding_resolutions,omitempty"`
+	NewFindings             []FinalizeNewFinding        `json:"new_findings,omitempty"`
+}
+
+type FinalizeFindingResolution struct {
+	FindingID        int64  `json:"finding_id"`
+	Status           string `json:"status"`
+	VerificationNote string `json:"verification_note"`
+}
+
+type FinalizeNewFinding struct {
+	Category       string   `json:"category"`
+	Summary        string   `json:"summary"`
+	Notes          string   `json:"notes,omitempty"`
+	FileReferences []string `json:"file_references,omitempty"`
+	TestCommands   []string `json:"test_commands,omitempty"`
 }
 
 type RespondToFindingRequest struct {
@@ -230,31 +246,45 @@ type ReviewPacketResponse struct {
 }
 
 type ReviewFinalizationResponse struct {
-	ID                     int64                `json:"id"`
-	ProjectID              string               `json:"project_id"`
-	TaskID                 int64                `json:"task_id"`
-	ReviewRoundID          int64                `json:"review_round_id"`
-	Verdict                string               `json:"verdict"`
-	DecidedBy              string               `json:"decided_by"`
-	Notes                  string               `json:"notes,omitempty"`
-	ThreadID               *int64               `json:"thread_id,omitempty"`
-	RunID                  string               `json:"run_id,omitempty"`
-	SubagentRole           string               `json:"subagent_role,omitempty"`
-	TargetTaskStatus       string               `json:"target_task_status"`
-	IdempotencyKey         string               `json:"idempotency_key"`
-	State                  string               `json:"state"`
-	Packet                 ReviewPacketResponse `json:"packet"`
-	MessageID              *int64               `json:"message_id,omitempty"`
-	PacketPostedAt         *time.Time           `json:"packet_posted_at,omitempty"`
-	TaskTransitionedAt     *time.Time           `json:"task_transitioned_at,omitempty"`
-	CompletedAt            *time.Time           `json:"completed_at,omitempty"`
-	LastErrorStep          string               `json:"last_error_step,omitempty"`
-	LastError              string               `json:"last_error,omitempty"`
-	MessageAttempts        int                  `json:"message_attempts"`
-	TaskTransitionAttempts int                  `json:"task_transition_attempts"`
-	ResultingTaskStatus    string               `json:"resulting_task_status"`
-	CreatedAt              time.Time            `json:"created_at"`
-	UpdatedAt              time.Time            `json:"updated_at"`
+	Schema                 string                      `json:"schema"`
+	SchemaVersion          int                         `json:"schema_version"`
+	ID                     int64                       `json:"id"`
+	ProjectID              string                      `json:"project_id"`
+	TaskID                 int64                       `json:"task_id"`
+	ReviewRoundID          int64                       `json:"review_round_id"`
+	Verdict                string                      `json:"verdict"`
+	DecidedBy              string                      `json:"decided_by"`
+	Notes                  string                      `json:"notes,omitempty"`
+	ThreadID               *int64                      `json:"thread_id,omitempty"`
+	RunID                  string                      `json:"run_id,omitempty"`
+	SubagentRole           string                      `json:"subagent_role,omitempty"`
+	TargetTaskStatus       string                      `json:"target_task_status"`
+	IdempotencyKey         string                      `json:"idempotency_key"`
+	MaterialDigest         string                      `json:"material_digest"`
+	State                  string                      `json:"state"`
+	PacketID               int64                       `json:"packet_id"`
+	PacketMessageID        *int64                      `json:"packet_message_id,omitempty"`
+	PacketKind             string                      `json:"packet_kind"`
+	ExactHeadCommit        string                      `json:"exact_head_commit,omitempty"`
+	FindingStatuses        []FinalizationFindingStatus `json:"finding_statuses,omitempty"`
+	Reason                 string                      `json:"reason"`
+	MessageID              *int64                      `json:"message_id,omitempty"`
+	PacketPostedAt         *time.Time                  `json:"packet_posted_at,omitempty"`
+	TaskTransitionedAt     *time.Time                  `json:"task_transitioned_at,omitempty"`
+	CompletedAt            *time.Time                  `json:"completed_at,omitempty"`
+	LastErrorStep          string                      `json:"last_error_step,omitempty"`
+	LastError              string                      `json:"last_error,omitempty"`
+	MessageAttempts        int                         `json:"message_attempts"`
+	TaskTransitionAttempts int                         `json:"task_transition_attempts"`
+	ResultingTaskStatus    string                      `json:"resulting_task_status"`
+	CreatedAt              time.Time                   `json:"created_at"`
+	UpdatedAt              time.Time                   `json:"updated_at"`
+}
+
+type FinalizationFindingStatus struct {
+	FindingID  int64  `json:"finding_id"`
+	FindingKey string `json:"finding_key"`
+	Status     string `json:"status"`
 }
 
 type GitHubCheckGateResponse struct {

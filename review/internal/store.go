@@ -32,6 +32,9 @@ func (s *Store) CreateRound(ctx context.Context, round *ReviewRound) (*ReviewRou
 		return nil, fmt.Errorf("beginning create review round: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, lockReviewTaskSQL, round.ProjectID, round.TaskID); err != nil {
+		return nil, fmt.Errorf("locking review task for round creation: %w", err)
+	}
 	var previousHead string
 	var roundNumber int
 	err = tx.QueryRow(ctx, latestRoundSQL, round.ProjectID, round.TaskID).Scan(&roundNumber, &previousHead)
@@ -108,6 +111,9 @@ func (s *Store) CreateFinding(ctx context.Context, finding *ReviewFinding) (*Rev
 		return nil, fmt.Errorf("beginning create finding: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, lockReviewTaskSQL, finding.ProjectID, finding.TaskID); err != nil {
+		return nil, fmt.Errorf("locking review task for finding creation: %w", err)
+	}
 	var findingNumber int
 	if err := tx.QueryRow(ctx, nextFindingNumberSQL, finding.ProjectID, finding.TaskID).Scan(&findingNumber); err != nil {
 		return nil, fmt.Errorf("getting next finding number: %w", err)
@@ -261,6 +267,7 @@ func (s *Store) BeginFinalization(
 	ctx context.Context,
 	finalization *ReviewFinalization,
 	packet *ReviewPacket,
+	mutation FinalizationMutation,
 	decidedAt time.Time,
 ) (*ReviewFinalization, *ReviewPacket, *ReviewRound, error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
@@ -268,6 +275,9 @@ func (s *Store) BeginFinalization(
 		return nil, nil, nil, fmt.Errorf("beginning review finalization: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, lockReviewTaskSQL, finalization.ProjectID, finalization.TaskID); err != nil {
+		return nil, nil, nil, fmt.Errorf("locking review task for finalization: %w", err)
+	}
 
 	round, err := scanRound(tx.QueryRow(ctx, getRoundForUpdateSQL, finalization.ReviewRoundID))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -290,9 +300,43 @@ func (s *Store) BeginFinalization(
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, nil, fmt.Errorf("checking existing review finalization: %w", err)
 	}
+	currentRound, err := scanRound(tx.QueryRow(ctx, currentRoundForUpdateSQL, round.ProjectID, round.TaskID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, nil, fmt.Errorf("current review round disappeared while finalizing %d", round.ID)
+	}
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("loading current review round for finalization: %w", err)
+	}
+	if currentRound.ID != round.ID {
+		return nil, nil, nil, conflict(fmt.Errorf("%w: round %d is superseded by current round %d", ErrStaleReviewRound, round.ID, currentRound.ID), "stale_review_round")
+	}
 	if round.Verdict != "" && (round.Verdict != finalization.Verdict ||
 		round.VerdictBy != "" && round.VerdictBy != finalization.DecidedBy) {
 		return nil, nil, nil, conflict(ErrFinalizationConflict, "review_finalization_conflict")
+	}
+	if err := s.applyFinalizationMutationTx(ctx, tx, round, finalization, mutation, decidedAt); err != nil {
+		return nil, nil, nil, err
+	}
+	if len(mutation.PriorFindingResolutions) > 0 || len(mutation.NewFindings) > 0 {
+		roundFindings, err := listFindingsTx(ctx, tx, round.ProjectID, round.TaskID, &round.ID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		allFindings, err := listFindingsTx(ctx, tx, round.ProjectID, round.TaskID, nil)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		decidedRound := *round
+		decidedRound.Verdict = finalization.Verdict
+		decidedRound.VerdictBy = finalization.DecidedBy
+		decidedRound.VerdictNotes = finalization.Notes
+		decidedRound.VerdictAt = &decidedAt
+		decidedRound.UpdatedAt = decidedAt
+		packet = reviewFindingsPacket(&decidedRound, roundFindings, unresolvedFindingSummaries(allFindings), PostReviewFindingsRequest{
+			ReviewRoundID: round.ID, Sender: finalization.DecidedBy, ThreadID: finalization.ThreadID, Notes: finalization.Notes,
+			RunID: finalization.RunID, SubagentRole: finalization.SubagentRole,
+		})
+		packet.IdempotencyKey = firstNonEmpty(packet.IdempotencyKey, finalization.PacketIdempotencyKey)
 	}
 
 	storedPacket, err := scanPacket(tx.QueryRow(ctx, getReviewFindingsPacketForRoundSQL, finalization.ReviewRoundID))
@@ -312,6 +356,7 @@ func (s *Store) BeginFinalization(
 	}
 
 	finalization.PacketID = storedPacket.ID
+	finalization.MaterialDigest = firstNonEmpty(finalization.MaterialDigest, finalization.IdempotencyKey)
 	finalization.PacketIdempotencyKey = storedPacket.IdempotencyKey
 	finalization.State = FinalizationStatePending
 	if storedPacket.MessageID != nil {
@@ -326,7 +371,7 @@ func (s *Store) BeginFinalization(
 		finalization.ProjectID, finalization.TaskID, finalization.ReviewRoundID, finalization.Verdict,
 		finalization.DecidedBy, emptyToNil(finalization.Notes), finalization.ThreadID, emptyToNil(finalization.RunID),
 		emptyToNil(finalization.SubagentRole), finalization.TargetTaskStatus, finalization.PacketID,
-		finalization.IdempotencyKey, finalization.PacketIdempotencyKey, finalization.State, finalization.MessageID,
+		finalization.IdempotencyKey, emptyToNil(finalization.MaterialDigest), finalization.PacketIdempotencyKey, finalization.State, finalization.MessageID,
 		finalization.PacketPostedAt, finalization.CreatedAt, finalization.UpdatedAt))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("creating review finalization: %w", err)
@@ -585,11 +630,65 @@ func writeFindingEvent(ctx context.Context, tx pgx.Tx, finding *ReviewFinding, k
 }
 
 func getFindingTx(ctx context.Context, tx pgx.Tx, id int64) (*ReviewFinding, error) {
-	finding, err := scanFinding(tx.QueryRow(ctx, getFindingSQL, id))
+	finding, err := scanFinding(tx.QueryRow(ctx, getFindingForUpdateSQL, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, notFound(fmt.Errorf("%w: %d", ErrMissingFinding, id), "finding_not_found")
 	}
 	return finding, err
+}
+
+func (s *Store) applyFinalizationMutationTx(ctx context.Context, tx pgx.Tx, round *ReviewRound, finalization *ReviewFinalization, mutation FinalizationMutation, now time.Time) error {
+	for _, resolution := range mutation.PriorFindingResolutions {
+		current, err := getFindingTx(ctx, tx, resolution.FindingID)
+		if err != nil {
+			return err
+		}
+		if current.ProjectID != round.ProjectID || current.TaskID != round.TaskID {
+			return notFound(fmt.Errorf("finding %d does not belong to this task", resolution.FindingID), "finding_not_found")
+		}
+		updated, err := scanFinding(tx.QueryRow(ctx, respondFindingSQL, resolution.FindingID, finalization.DecidedBy,
+			emptyToNil(resolution.VerificationNote), resolution.Status, resolution.VerificationNote, nil,
+			emptyToNil(finalization.RunID), emptyToNil(finalization.SubagentRole), now))
+		if err != nil {
+			return fmt.Errorf("applying finalization finding resolution %d: %w", resolution.FindingID, err)
+		}
+		if err := writeFindingEvent(ctx, tx, updated, "review_finalization_resolution", finalization.DecidedBy,
+			current.Status, updated.Status, resolution.VerificationNote, resolution.VerificationNote, nil,
+			finalization.RunID, finalization.SubagentRole, now); err != nil {
+			return err
+		}
+	}
+	for _, input := range mutation.NewFindings {
+		var findingNumber int
+		if err := tx.QueryRow(ctx, nextFindingNumberSQL, round.ProjectID, round.TaskID).Scan(&findingNumber); err != nil {
+			return fmt.Errorf("getting next finalization finding number: %w", err)
+		}
+		findingKey := fmt.Sprintf("R%d-%d", round.TaskID, findingNumber)
+		created, err := scanFinding(tx.QueryRow(ctx, createFindingSQL, round.ProjectID, findingKey, round.TaskID, round.ID,
+			findingNumber, finalization.DecidedBy, input.Category, input.Summary, emptyToNil(input.Notes), jsonOrNil(input.FileReferences),
+			jsonOrNil(input.TestCommands), StatusOpen, emptyToNil(finalization.RunID), emptyToNil(finalization.SubagentRole), now, now))
+		if err != nil {
+			return fmt.Errorf("creating finalization finding: %w", err)
+		}
+		if err := writeFindingEvent(ctx, tx, created, "review_finalization_finding_created", finalization.DecidedBy,
+			"", created.Status, "", "", nil, finalization.RunID, finalization.SubagentRole, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func listFindingsTx(ctx context.Context, tx pgx.Tx, projectID string, taskID int64, roundID *int64) ([]*ReviewFinding, error) {
+	rows, err := tx.Query(ctx, listFindingsSQL, projectID, taskID, roundID, []string(nil), (*bool)(nil))
+	if err != nil {
+		return nil, fmt.Errorf("listing finalization findings: %w", err)
+	}
+	defer rows.Close()
+	findings, err := scanFindings(rows)
+	if err != nil {
+		return nil, fmt.Errorf("scanning finalization findings: %w", err)
+	}
+	return findings, nil
 }
 
 func buildWorkflowSummary(rounds []*ReviewRound, findings []*ReviewFinding) WorkflowSummary {
@@ -741,7 +840,7 @@ func scanFinalization(row rowScanner) (*ReviewFinalization, error) {
 		&finalization.ID, &finalization.ProjectID, &finalization.TaskID, &finalization.ReviewRoundID,
 		&finalization.Verdict, &finalization.DecidedBy, &finalization.Notes, &finalization.ThreadID,
 		&finalization.RunID, &finalization.SubagentRole, &finalization.TargetTaskStatus,
-		&finalization.PacketID, &finalization.IdempotencyKey, &finalization.PacketIdempotencyKey,
+		&finalization.PacketID, &finalization.IdempotencyKey, &finalization.MaterialDigest, &finalization.PacketIdempotencyKey,
 		&finalization.State, &finalization.MessageID, &finalization.PacketPostedAt,
 		&finalization.TaskTransitionedAt, &finalization.CompletedAt, &finalization.LastErrorStep,
 		&finalization.LastError, &finalization.MessageAttempts, &finalization.TaskTransitionAttempts,
@@ -840,20 +939,22 @@ const (
 	roundColumns                = `id, project_id, task_id, round_number, requested_by, coalesce(target_kind, 'code_diff'), coalesce(campaign_children, '[]'::jsonb), coalesce(campaign_repositories, '[]'::jsonb), coalesce(branch, ''), coalesce(base_branch, ''), coalesce(base_commit, ''), coalesce(head_commit, ''), coalesce(last_reviewed_head_commit, ''), commits_since_last_review, coalesce(tests_run, '[]'::jsonb), coalesce(notes, ''), coalesce(preferred_diff_base_ref, ''), coalesce(preferred_diff_base_commit, ''), coalesce(preferred_diff_head_ref, ''), coalesce(preferred_diff_head_commit, ''), coalesce(alternate_diff_base_ref, ''), coalesce(alternate_diff_base_commit, ''), coalesce(alternate_diff_head_ref, ''), coalesce(alternate_diff_head_commit, ''), coalesce(delta_base_commit, ''), inherited_commit_count, task_local_commit_count, coalesce(verdict, ''), coalesce(verdict_by, ''), coalesce(verdict_notes, ''), requested_at, verdict_at, created_at, updated_at`
 	findingColumns              = `f.id, f.project_id, f.finding_key, f.task_id, f.review_round_id, r.round_number, f.finding_number, f.created_by, f.category, f.summary, coalesce(f.notes, ''), coalesce(f.file_references, '[]'::jsonb), coalesce(f.test_commands, '[]'::jsonb), f.status, coalesce(f.status_updated_by, ''), coalesce(f.status_notes, ''), f.status_updated_at, coalesce(f.response_by, ''), coalesce(f.response_notes, ''), f.response_at, f.follow_up_task_id, coalesce(f.run_id, ''), coalesce(f.subagent_role, ''), f.created_at, f.updated_at`
 	packetColumns               = `id, project_id, task_id, review_round_id, packet_kind, sender, message_id, front_matter, typed_envelope, markdown_body, source_markdown, validation_status, coalesce(validation_errors, '[]'::jsonb), coalesce(idempotency_key, ''), created_at, accepted_at`
-	finalizationColumns         = `id, project_id, task_id, review_round_id, verdict, decided_by, coalesce(notes, ''), thread_id, coalesce(run_id, ''), coalesce(subagent_role, ''), target_task_status, packet_id, idempotency_key, packet_idempotency_key, state, message_id, packet_posted_at, task_transitioned_at, completed_at, coalesce(last_error_step, ''), coalesce(last_error, ''), message_attempts, task_transition_attempts, created_at, updated_at`
+	finalizationColumns         = `id, project_id, task_id, review_round_id, verdict, decided_by, coalesce(notes, ''), thread_id, coalesce(run_id, ''), coalesce(subagent_role, ''), target_task_status, packet_id, idempotency_key, coalesce(material_digest, ''), packet_idempotency_key, state, message_id, packet_posted_at, task_transitioned_at, completed_at, coalesce(last_error_step, ''), coalesce(last_error, ''), message_attempts, task_transition_attempts, created_at, updated_at`
 	githubCheckGateColumns      = `id, project_id, task_id, repository, commit_sha, ref, coalesce(required_checks, '[]'::jsonb), status, requested_by, coalesce(agent_profile, ''), coalesce(agent_instance_id, ''), coalesce(session_key, ''), timeout_at, poll_interval_seconds, next_poll_at, last_checked_at, completed_at, coalesce(status_url, ''), coalesce(summary, ''), coalesce(check_runs, '[]'::jsonb), coalesce(failure_summary, ''), coalesce(terminal_reason, ''), coalesce(missing_required_checks, '[]'::jsonb), coalesce(observed_check_runs, '[]'::jsonb), evidence_message_status, evidence_message_id, coalesce(evidence_message_error, ''), evidence_message_attempted_at, created_at, updated_at`
 	githubCheckGateEventColumns = `id, schema, schema_version, gate_id, project_id, task_id, repository, commit_sha, ref, status, terminal_reason, required_checks, check_runs, observed_check_runs, missing_required_checks, coalesce(summary, ''), coalesce(failure_summary, ''), requested_by, coalesce(agent_profile, ''), coalesce(agent_instance_id, ''), coalesce(session_key, ''), gate_created_at, completed_at, created_at`
 )
 
 const (
-	latestRoundSQL       = `select round_number, coalesce(head_commit, '') from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number desc limit 1`
-	createRoundSQL       = `insert into den_review.review_rounds(project_id, task_id, round_number, requested_by, target_kind, campaign_children, campaign_repositories, branch, base_branch, base_commit, head_commit, last_reviewed_head_commit, commits_since_last_review, tests_run, notes, preferred_diff_base_ref, preferred_diff_base_commit, preferred_diff_head_ref, preferred_diff_head_commit, alternate_diff_base_ref, alternate_diff_base_commit, alternate_diff_head_ref, alternate_diff_head_commit, delta_base_commit, inherited_commit_count, task_local_commit_count, requested_at, created_at, updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) returning ` + roundColumns
-	listRoundsSQL        = `select ` + roundColumns + ` from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number asc`
-	getRoundSQL          = `select ` + roundColumns + ` from den_review.review_rounds where id = $1`
-	getRoundForUpdateSQL = `select ` + roundColumns + ` from den_review.review_rounds where id = $1 for update`
-	setVerdictSQL        = `update den_review.review_rounds set verdict = $2, verdict_by = $3, verdict_notes = $4, verdict_at = $5, updated_at = $6 where id = $1 returning ` + roundColumns
-	nextFindingNumberSQL = `select coalesce(max(finding_number), 0) + 1 from den_review.review_findings where project_id = $1 and task_id = $2`
-	createFindingSQL     = `
+	latestRoundSQL           = `select round_number, coalesce(head_commit, '') from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number desc limit 1`
+	createRoundSQL           = `insert into den_review.review_rounds(project_id, task_id, round_number, requested_by, target_kind, campaign_children, campaign_repositories, branch, base_branch, base_commit, head_commit, last_reviewed_head_commit, commits_since_last_review, tests_run, notes, preferred_diff_base_ref, preferred_diff_base_commit, preferred_diff_head_ref, preferred_diff_head_commit, alternate_diff_base_ref, alternate_diff_base_commit, alternate_diff_head_ref, alternate_diff_head_commit, delta_base_commit, inherited_commit_count, task_local_commit_count, requested_at, created_at, updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) returning ` + roundColumns
+	listRoundsSQL            = `select ` + roundColumns + ` from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number asc`
+	getRoundSQL              = `select ` + roundColumns + ` from den_review.review_rounds where id = $1`
+	getRoundForUpdateSQL     = `select ` + roundColumns + ` from den_review.review_rounds where id = $1 for update`
+	currentRoundForUpdateSQL = `select ` + roundColumns + ` from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number desc, id desc limit 1 for update`
+	lockReviewTaskSQL        = `select pg_advisory_xact_lock(hashtextextended($1 || ':' || $2::text, 0))`
+	setVerdictSQL            = `update den_review.review_rounds set verdict = $2, verdict_by = $3, verdict_notes = $4, verdict_at = $5, updated_at = $6 where id = $1 returning ` + roundColumns
+	nextFindingNumberSQL     = `select coalesce(max(finding_number), 0) + 1 from den_review.review_findings where project_id = $1 and task_id = $2`
+	createFindingSQL         = `
 with inserted as (
 	insert into den_review.review_findings(project_id, finding_key, task_id, review_round_id, finding_number, created_by, category, summary, notes, file_references, test_commands, status, run_id, subagent_role, created_at, updated_at)
 	values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
@@ -865,9 +966,10 @@ join den_review.review_rounds r on r.id = f.review_round_id`
 )
 
 const (
-	listFindingsSQL   = `select ` + findingColumns + ` from den_review.review_findings f join den_review.review_rounds r on r.id = f.review_round_id where f.project_id = $1 and f.task_id = $2 and ($3::bigint is null or f.review_round_id = $3) and (coalesce(cardinality($4::text[]), 0) = 0 or f.status = any($4)) and ($5::bool is null or ($5 = true and f.status in ('verified_fixed','superseded','split_to_follow_up')) or ($5 = false and f.status not in ('verified_fixed','superseded','split_to_follow_up'))) order by f.finding_number asc`
-	getFindingSQL     = `select ` + findingColumns + ` from den_review.review_findings f join den_review.review_rounds r on r.id = f.review_round_id where f.id = $1`
-	respondFindingSQL = `
+	listFindingsSQL        = `select ` + findingColumns + ` from den_review.review_findings f join den_review.review_rounds r on r.id = f.review_round_id where f.project_id = $1 and f.task_id = $2 and ($3::bigint is null or f.review_round_id = $3) and (coalesce(cardinality($4::text[]), 0) = 0 or f.status = any($4)) and ($5::bool is null or ($5 = true and f.status in ('verified_fixed','superseded','split_to_follow_up')) or ($5 = false and f.status not in ('verified_fixed','superseded','split_to_follow_up'))) order by f.finding_number asc`
+	getFindingSQL          = `select ` + findingColumns + ` from den_review.review_findings f join den_review.review_rounds r on r.id = f.review_round_id where f.id = $1`
+	getFindingForUpdateSQL = `select ` + findingColumns + ` from den_review.review_findings f join den_review.review_rounds r on r.id = f.review_round_id where f.id = $1 for update`
+	respondFindingSQL      = `
 with updated as (
 	update den_review.review_findings
 	set response_by = $2,
@@ -922,9 +1024,9 @@ const (
 	insertFinalizationSQL       = `
 insert into den_review.review_finalizations(
 	project_id, task_id, review_round_id, verdict, decided_by, notes, thread_id, run_id, subagent_role,
-	target_task_status, packet_id, idempotency_key, packet_idempotency_key, state, message_id,
+	target_task_status, packet_id, idempotency_key, material_digest, packet_idempotency_key, state, message_id,
 	packet_posted_at, created_at, updated_at)
-values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
 returning ` + finalizationColumns
 	markFinalizationPacketPostedSQL = `
 update den_review.review_finalizations

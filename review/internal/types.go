@@ -26,12 +26,13 @@ const (
 	StatusSuperseded      = "superseded"
 	StatusSplitToFollowUp = "split_to_follow_up"
 
-	PacketSchema              = "den_review_packet"
-	PacketKindReviewRequest   = "review_request"
-	PacketKindRereviewRequest = "rereview_request"
-	PacketKindReviewFindings  = "review_findings"
-	PacketKindResponse        = "implementer_response"
-	PacketKindCompletion      = "completion_evidence"
+	PacketSchema                  = "den_review_packet"
+	ReviewCompletionReceiptSchema = "den_review.completion_receipt.v1"
+	PacketKindReviewRequest       = "review_request"
+	PacketKindRereviewRequest     = "rereview_request"
+	PacketKindReviewFindings      = "review_findings"
+	PacketKindResponse            = "implementer_response"
+	PacketKindCompletion          = "completion_evidence"
 
 	PacketStatusValid                = "valid"
 	PacketStatusAccepted             = "accepted"
@@ -105,6 +106,8 @@ var (
 	ErrProjectScopeClientUnset = errors.New("projects client is not configured") //nolint:gochecknoglobals
 	ErrGitHubChecksUnset       = errors.New("github check provider is not configured")
 	ErrFinalizationConflict    = errors.New("review round was finalized with different decision identity")
+	ErrStaleReviewRound        = errors.New("review round is no longer current")
+	ErrReviewRequestTooLarge   = errors.New("review request exceeds the bounded payload budget")
 	ErrUnresolvedFindings      = errors.New("looks_good requires no unresolved findings for the task")
 	ErrActionableFinding       = errors.New("changes_requested requires an actionable finding in the current review round")
 	ErrMissingCampaignChild    = errors.New("campaign child is missing")
@@ -271,6 +274,7 @@ type ReviewFinalization struct {
 	TargetTaskStatus       string
 	PacketID               int64
 	IdempotencyKey         string
+	MaterialDigest         string
 	PacketIdempotencyKey   string
 	State                  string
 	MessageID              *int64

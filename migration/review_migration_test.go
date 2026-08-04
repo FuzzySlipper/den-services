@@ -97,3 +97,19 @@ func TestReviewCampaignTargetsMigrationDiscovered(t *testing.T) {
 	}
 	t.Fatal("den_review version 6 migration not discovered")
 }
+
+func TestReviewFinalizationDigestMigrationDiscovered(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	for i := range migrations {
+		if migrations[i].Schema == "den_review" && migrations[i].Version == 7 {
+			if !strings.Contains(migrations[i].SQL, "add column if not exists material_digest") {
+				t.Fatalf("review finalization digest migration missing material_digest: %s", migrations[i].SQL)
+			}
+			return
+		}
+	}
+	t.Fatal("den_review version 7 migration not discovered")
+}

@@ -183,6 +183,7 @@ func findingMetadata(findings []*ReviewFinding) []map[string]any {
 	result := make([]map[string]any, 0, len(findings))
 	for _, finding := range findings {
 		entry := map[string]any{
+			"id":                  finding.ID,
 			"finding_key":         finding.FindingKey,
 			"review_round_number": finding.RoundNumber,
 			"category":            finding.Category,

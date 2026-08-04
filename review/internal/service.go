@@ -2,6 +2,9 @@ package review
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -57,7 +60,7 @@ type ReviewStore interface {
 	GetPacketByIdempotency(ctx context.Context, projectID string, idempotencyKey string) (*ReviewPacket, error)
 	GetReviewFindingsPacketForRound(ctx context.Context, roundID int64) (*ReviewPacket, error)
 	GetFinalizationByRound(ctx context.Context, roundID int64) (*ReviewFinalization, error)
-	BeginFinalization(ctx context.Context, finalization *ReviewFinalization, packet *ReviewPacket, decidedAt time.Time) (*ReviewFinalization, *ReviewPacket, *ReviewRound, error)
+	BeginFinalization(ctx context.Context, finalization *ReviewFinalization, packet *ReviewPacket, mutation FinalizationMutation, decidedAt time.Time) (*ReviewFinalization, *ReviewPacket, *ReviewRound, error)
 	MarkFinalizationPacketPosted(ctx context.Context, id int64, messageID int64, postedAt time.Time) (*ReviewFinalization, *ReviewPacket, error)
 	MarkFinalizationTaskTransitioned(ctx context.Context, id int64, transitionedAt time.Time) (*ReviewFinalization, error)
 	CompleteFinalization(ctx context.Context, id int64, completedAt time.Time) (*ReviewFinalization, error)
@@ -144,6 +147,11 @@ type CreateFollowUpTaskRequest struct {
 	AssignedTo     string
 	Tags           []string
 	IdempotencyKey string
+}
+
+type FinalizationMutation struct {
+	PriorFindingResolutions []FinalizeFindingResolution
+	NewFindings             []FinalizeNewFinding
 }
 
 type AppendMessageRequest struct {
@@ -702,12 +710,21 @@ func (s *Service) SetVerdict(ctx context.Context, roundID int64, req SetReviewVe
 }
 
 func (s *Service) FinalizeReview(ctx context.Context, req FinalizeReviewRequest) (*ReviewFinalizationReceipt, error) {
+	if encoded, err := json.Marshal(req); err != nil {
+		return nil, fmt.Errorf("encoding finalization request: %w", err)
+	} else if len(encoded) > 4096 {
+		return nil, validationError(ErrReviewRequestTooLarge, "review_request_too_large", "review_request", "review_findings.finalize")
+	}
 	req.ReviewRoundID = max(req.ReviewRoundID, 0)
 	req.Verdict = strings.TrimSpace(req.Verdict)
 	req.DecidedBy = strings.TrimSpace(req.DecidedBy)
 	req.Notes = strings.TrimSpace(req.Notes)
 	req.RunID = strings.TrimSpace(req.RunID)
 	req.SubagentRole = strings.TrimSpace(req.SubagentRole)
+	mutation, err := normalizeFinalizationMutation(&req)
+	if err != nil {
+		return nil, err
+	}
 	if req.ReviewRoundID == 0 {
 		return nil, validationError(ErrMissingRound, "missing_review_round_id", "review_round_id", "review_findings.review_round_id")
 	}
@@ -718,12 +735,20 @@ func (s *Service) FinalizeReview(ctx context.Context, req FinalizeReviewRequest)
 		return nil, validationError(ErrMissingActor, "missing_actor", "decided_by", "review_findings.decided_by")
 	}
 
+	round, err := s.store.GetRound(ctx, req.ReviewRoundID)
+	if err != nil {
+		return nil, err
+	}
+	digest, err := finalizationMaterialDigest(round, req)
+	if err != nil {
+		return nil, fmt.Errorf("building finalization material digest: %w", err)
+	}
 	existing, err := s.store.GetFinalizationByRound(ctx, req.ReviewRoundID)
 	if err != nil {
 		return nil, err
 	}
 	if existing != nil {
-		if existing.Verdict != req.Verdict || existing.DecidedBy != req.DecidedBy {
+		if existing.Verdict != req.Verdict || existing.DecidedBy != req.DecidedBy || existing.MaterialDigest != "" && existing.MaterialDigest != digest {
 			return nil, conflict(ErrFinalizationConflict, "review_finalization_conflict")
 		}
 		packet, err := s.store.GetPacket(ctx, existing.PacketID)
@@ -739,10 +764,6 @@ func (s *Service) FinalizeReview(ctx context.Context, req FinalizeReviewRequest)
 		})
 	}
 
-	round, err := s.store.GetRound(ctx, req.ReviewRoundID)
-	if err != nil {
-		return nil, err
-	}
 	task, err := s.validateTask(ctx, round.ProjectID, round.TaskID, TaskStatusReview)
 	if err != nil {
 		return nil, err
@@ -757,7 +778,11 @@ func (s *Service) FinalizeReview(ctx context.Context, req FinalizeReviewRequest)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateFinalizationFindings(req.Verdict, roundFindings, allFindings); err != nil {
+	projectedRoundFindings, projectedAllFindings, err := projectFinalizationFindings(roundFindings, allFindings, mutation)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateFinalizationFindings(req.Verdict, projectedRoundFindings, projectedAllFindings); err != nil {
 		return nil, err
 	}
 
@@ -768,20 +793,20 @@ func (s *Service) FinalizeReview(ctx context.Context, req FinalizeReviewRequest)
 	decidedRound.VerdictNotes = req.Notes
 	decidedRound.VerdictAt = &now
 	decidedRound.UpdatedAt = now
-	packet := reviewFindingsPacket(&decidedRound, roundFindings, unresolvedFindingSummaries(allFindings), PostReviewFindingsRequest{
+	packet := reviewFindingsPacket(&decidedRound, projectedRoundFindings, unresolvedFindingSummaries(projectedAllFindings), PostReviewFindingsRequest{
 		ReviewRoundID: round.ID, Sender: req.DecidedBy, ThreadID: req.ThreadID, Notes: req.Notes,
 		RunID: req.RunID, SubagentRole: req.SubagentRole,
 	})
-	packet.IdempotencyKey = finalizationPacketKey(round.ID, req.Verdict, req.DecidedBy)
+	packet.IdempotencyKey = finalizationPacketKey(round.ID, digest)
 	finalization := &ReviewFinalization{
 		ProjectID: round.ProjectID, TaskID: round.TaskID, ReviewRoundID: round.ID,
 		Verdict: req.Verdict, DecidedBy: req.DecidedBy, Notes: req.Notes, ThreadID: req.ThreadID,
 		RunID: req.RunID, SubagentRole: req.SubagentRole, TargetTaskStatus: taskStatusForVerdict(req.Verdict),
-		IdempotencyKey:       finalizationKey(round.ID, req.Verdict, req.DecidedBy),
+		IdempotencyKey: finalizationKey(round.ID, digest), MaterialDigest: digest,
 		PacketIdempotencyKey: packet.IdempotencyKey, State: FinalizationStatePending,
 		CreatedAt: now, UpdatedAt: now,
 	}
-	stored, storedPacket, updatedRound, err := s.store.BeginFinalization(ctx, finalization, packet, now)
+	stored, storedPacket, updatedRound, err := s.store.BeginFinalization(ctx, finalization, packet, mutation, now)
 	if err != nil {
 		return nil, err
 	}
@@ -1563,6 +1588,133 @@ func validateFinalizationFindings(verdict string, roundFindings []*ReviewFinding
 	return nil
 }
 
+func normalizeFinalizationMutation(req *FinalizeReviewRequest) (FinalizationMutation, error) {
+	mutation := FinalizationMutation{
+		PriorFindingResolutions: append([]FinalizeFindingResolution(nil), req.PriorFindingResolutions...),
+		NewFindings:             append([]FinalizeNewFinding(nil), req.NewFindings...),
+	}
+	for i := range mutation.PriorFindingResolutions {
+		resolution := &mutation.PriorFindingResolutions[i]
+		resolution.Status = strings.TrimSpace(resolution.Status)
+		resolution.VerificationNote = strings.TrimSpace(resolution.VerificationNote)
+		if resolution.FindingID <= 0 {
+			return FinalizationMutation{}, validationError(fmt.Errorf("finding_id must be positive"), "invalid_finding_id", "prior_finding_resolutions", "review_findings.finalize")
+		}
+		if !validFindingStatus(resolution.Status) || resolution.Status == StatusOpen || resolution.Status == StatusClaimedFixed {
+			return FinalizationMutation{}, validationError(fmt.Errorf("resolution status must be terminal: %s", resolution.Status), "invalid_resolution_status", "prior_finding_resolutions", "review_findings.finalize")
+		}
+		if resolution.VerificationNote == "" {
+			return FinalizationMutation{}, validationError(fmt.Errorf("verification_note is required"), "missing_verification_note", "prior_finding_resolutions", "review_findings.finalize")
+		}
+	}
+	sort.Slice(mutation.PriorFindingResolutions, func(i, j int) bool {
+		return mutation.PriorFindingResolutions[i].FindingID < mutation.PriorFindingResolutions[j].FindingID
+	})
+	for i := 1; i < len(mutation.PriorFindingResolutions); i++ {
+		if mutation.PriorFindingResolutions[i-1].FindingID == mutation.PriorFindingResolutions[i].FindingID {
+			return FinalizationMutation{}, validationError(fmt.Errorf("finding_id %d is repeated", mutation.PriorFindingResolutions[i].FindingID), "duplicate_finding_resolution", "prior_finding_resolutions", "review_findings.finalize")
+		}
+	}
+	for i := range mutation.NewFindings {
+		finding := &mutation.NewFindings[i]
+		finding.Category = strings.TrimSpace(finding.Category)
+		finding.Summary = strings.TrimSpace(finding.Summary)
+		finding.Notes = strings.TrimSpace(finding.Notes)
+		finding.FileReferences = trimSlice(finding.FileReferences)
+		finding.TestCommands = trimSlice(finding.TestCommands)
+		if !validCategory(finding.Category) {
+			return FinalizationMutation{}, validationError(fmt.Errorf("%w: %s", ErrInvalidCategory, finding.Category), "invalid_category", "new_findings.category", "review_findings.finalize")
+		}
+		if finding.Summary == "" {
+			return FinalizationMutation{}, validationError(fmt.Errorf("summary is required"), "missing_summary", "new_findings.summary", "review_findings.finalize")
+		}
+	}
+	sort.SliceStable(mutation.NewFindings, func(i, j int) bool {
+		left, right := mutation.NewFindings[i], mutation.NewFindings[j]
+		if left.Category != right.Category {
+			return left.Category < right.Category
+		}
+		if left.Summary != right.Summary {
+			return left.Summary < right.Summary
+		}
+		if left.Notes != right.Notes {
+			return left.Notes < right.Notes
+		}
+		return strings.Join(left.FileReferences, "\x00")+strings.Join(left.TestCommands, "\x00") < strings.Join(right.FileReferences, "\x00")+strings.Join(right.TestCommands, "\x00")
+	})
+	req.PriorFindingResolutions = mutation.PriorFindingResolutions
+	req.NewFindings = mutation.NewFindings
+	return mutation, nil
+}
+
+func projectFinalizationFindings(roundFindings, allFindings []*ReviewFinding, mutation FinalizationMutation) ([]*ReviewFinding, []*ReviewFinding, error) {
+	byID := make(map[int64]*ReviewFinding, len(allFindings))
+	for _, finding := range allFindings {
+		copied := *finding
+		copied.FileReferences = append([]string(nil), finding.FileReferences...)
+		copied.TestCommands = append([]string(nil), finding.TestCommands...)
+		byID[finding.ID] = &copied
+	}
+	for _, resolution := range mutation.PriorFindingResolutions {
+		finding, ok := byID[resolution.FindingID]
+		if !ok {
+			return nil, nil, notFound(fmt.Errorf("finding %d does not belong to this task", resolution.FindingID), "finding_not_found")
+		}
+		finding.Status = resolution.Status
+		finding.StatusNotes = resolution.VerificationNote
+	}
+	projectedAll := make([]*ReviewFinding, 0, len(byID)+len(mutation.NewFindings))
+	for _, finding := range byID {
+		projectedAll = append(projectedAll, finding)
+	}
+	projectedRound := make([]*ReviewFinding, 0, len(roundFindings)+len(mutation.NewFindings))
+	for _, finding := range roundFindings {
+		projectedRound = append(projectedRound, byID[finding.ID])
+	}
+	for i, input := range mutation.NewFindings {
+		projected := &ReviewFinding{
+			ID: int64(-(i + 1)), FindingKey: fmt.Sprintf("new-%d", i+1), TaskID: roundFindingsTaskID(roundFindings, allFindings),
+			Category: input.Category, Summary: input.Summary, Notes: input.Notes, FileReferences: input.FileReferences,
+			TestCommands: input.TestCommands, Status: StatusOpen,
+		}
+		projectedRound = append(projectedRound, projected)
+		projectedAll = append(projectedAll, projected)
+	}
+	sort.Slice(projectedAll, func(i, j int) bool { return projectedAll[i].FindingNumber < projectedAll[j].FindingNumber })
+	return projectedRound, projectedAll, nil
+}
+
+func roundFindingsTaskID(roundFindings, allFindings []*ReviewFinding) int64 {
+	for _, finding := range roundFindings {
+		return finding.TaskID
+	}
+	for _, finding := range allFindings {
+		return finding.TaskID
+	}
+	return 0
+}
+
+func finalizationMaterialDigest(round *ReviewRound, req FinalizeReviewRequest) (string, error) {
+	material := struct {
+		ReviewRoundID int64                       `json:"review_round_id"`
+		HeadCommit    string                      `json:"head_commit"`
+		Verdict       string                      `json:"verdict"`
+		DecidedBy     string                      `json:"decided_by"`
+		Notes         string                      `json:"notes"`
+		ThreadID      *int64                      `json:"thread_id,omitempty"`
+		RunID         string                      `json:"run_id"`
+		SubagentRole  string                      `json:"subagent_role"`
+		Resolutions   []FinalizeFindingResolution `json:"prior_finding_resolutions,omitempty"`
+		NewFindings   []FinalizeNewFinding        `json:"new_findings,omitempty"`
+	}{round.ID, round.HeadCommit, req.Verdict, req.DecidedBy, req.Notes, req.ThreadID, req.RunID, req.SubagentRole, req.PriorFindingResolutions, req.NewFindings}
+	data, err := json.Marshal(material)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
 func validFinalizationVerdict(verdict string) bool {
 	return verdict == VerdictLooksGood || verdict == VerdictChangesRequested
 }
@@ -1578,12 +1730,12 @@ func taskStatusForVerdict(verdict string) string {
 	return TaskStatusInProgress
 }
 
-func finalizationPacketKey(roundID int64, verdict string, decidedBy string) string {
-	return "review-finalization-packet:" + finalizationKey(roundID, verdict, decidedBy)
+func finalizationPacketKey(roundID int64, digest string) string {
+	return "review-finalization-packet:" + finalizationKey(roundID, digest)
 }
 
-func finalizationKey(roundID int64, verdict string, decidedBy string) string {
-	return fmt.Sprintf("%d:%s:%s", roundID, verdict, decidedBy)
+func finalizationKey(roundID int64, digest string) string {
+	return fmt.Sprintf("%d:%s", roundID, digest)
 }
 
 func cloneStringMap(input map[string]any) map[string]any {
