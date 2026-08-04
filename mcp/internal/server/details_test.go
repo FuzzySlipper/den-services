@@ -91,14 +91,18 @@ func TestConciseReadDetailReferenceExpandsAndExpires(t *testing.T) {
 }
 
 func TestReviewContextDetailReferenceExpandsEvidenceAndUsesOpaqueRefs(t *testing.T) {
+	campaignValue := func(prefix string, index int) string {
+		suffix := fmt.Sprintf("-%s-%d", prefix, index)
+		return strings.Repeat("x", 256-len(suffix)) + suffix
+	}
 	children := make([]map[string]any, 0, 32)
 	repositories := make([]map[string]any, 0, 32)
 	for index := 0; index < 32; index++ {
 		children = append(children, map[string]any{
 			"project_id": "den-services", "task_id": 1000 + index, "review_round_id": 2000 + index,
-			"head_commit": fmt.Sprintf("campaign-child-%d", index), "membership_kind": "campaign_tag", "approved_verdict": "looks_good",
+			"head_commit": campaignValue("campaign-child", index), "membership_kind": campaignValue("membership", index), "approved_verdict": campaignValue("verdict", index),
 		})
-		repositories = append(repositories, map[string]any{"repository": fmt.Sprintf("owner/repository-%d", index), "head_sha": fmt.Sprintf("campaign-head-%d", index)})
+		repositories = append(repositories, map[string]any{"repository": campaignValue("owner/repository", index), "head_sha": campaignValue("campaign-head", index)})
 	}
 	workflowSummary, err := json.Marshal(map[string]any{
 		"current_round": map[string]any{
@@ -178,6 +182,9 @@ func TestReviewContextDetailReferenceExpandsEvidenceAndUsesOpaqueRefs(t *testing
 	content := concise["content"].([]any)[0].(map[string]any)["text"].(string)
 	if strings.Contains(content, "/v1/tasks/42/review/findings") {
 		t.Fatalf("content leaked ordinary REST detail ref: %s", content)
+	}
+	if len(content) > 8192 {
+		t.Fatalf("normal review context exceeded byte budget: %d", len(content))
 	}
 	currentRound := structured["current_round"].(map[string]any)
 	if len(currentRound["campaign_children"].([]any)) != 8 || len(currentRound["campaign_repositories"].([]any)) != 8 {

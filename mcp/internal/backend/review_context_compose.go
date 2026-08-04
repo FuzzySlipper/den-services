@@ -14,12 +14,13 @@ import (
 )
 
 const (
-	reviewContextSchema          = "den_review.reviewer_context.v1"
-	reviewContextSchemaVersion   = 1
-	reviewContextMaxBytes        = 8192
-	reviewContextDetailMaxBytes  = 64 * 1024
-	reviewContextCampaignLimit   = 8
-	reviewContextCampaignTextMax = 256
+	reviewContextSchema           = "den_review.reviewer_context.v1"
+	reviewContextSchemaVersion    = 1
+	reviewContextMaxBytes         = 8192
+	reviewContextDetailMaxBytes   = 64 * 1024
+	reviewContextCampaignLimit    = 8
+	reviewContextCampaignTextMax  = 256
+	reviewContextCampaignMaxBytes = 2 * 1024
 )
 
 type reviewContextArguments struct {
@@ -407,11 +408,31 @@ func boundReviewContextCampaign(round *reviewContextRound) bool {
 		round.CampaignRepositories = round.CampaignRepositories[:reviewContextCampaignLimit]
 		truncated = true
 	}
+	truncated = compactReviewContextCampaignText(round, reviewContextCampaignTextMax) || truncated
+	for _, limit := range []int{128, 64, 32, 16, 8, 4, 1} {
+		if reviewContextCampaignBytes(round) <= reviewContextCampaignMaxBytes {
+			return truncated
+		}
+		truncated = compactReviewContextCampaignText(round, limit) || truncated
+	}
+	for reviewContextCampaignBytes(round) > reviewContextCampaignMaxBytes && (len(round.CampaignChildren) > 1 || len(round.CampaignRepositories) > 1) {
+		if len(round.CampaignChildren) >= len(round.CampaignRepositories) && len(round.CampaignChildren) > 1 {
+			round.CampaignChildren = round.CampaignChildren[:len(round.CampaignChildren)-1]
+		} else {
+			round.CampaignRepositories = round.CampaignRepositories[:len(round.CampaignRepositories)-1]
+		}
+		truncated = true
+	}
+	return truncated
+}
+
+func compactReviewContextCampaignText(round *reviewContextRound, limit int) bool {
+	truncated := false
 	for index := range round.CampaignChildren {
 		child := &round.CampaignChildren[index]
 		values := []*string{&child.ProjectID, &child.HeadCommit, &child.MembershipKind, &child.ApprovedVerdict}
 		for _, value := range values {
-			clipped := truncateReviewContextText(*value, reviewContextCampaignTextMax)
+			clipped := truncateReviewContextText(*value, limit)
 			if clipped != *value {
 				*value = clipped
 				truncated = true
@@ -422,7 +443,7 @@ func boundReviewContextCampaign(round *reviewContextRound) bool {
 		repository := &round.CampaignRepositories[index]
 		values := []*string{&repository.Repository, &repository.HeadSHA}
 		for _, value := range values {
-			clipped := truncateReviewContextText(*value, reviewContextCampaignTextMax)
+			clipped := truncateReviewContextText(*value, limit)
 			if clipped != *value {
 				*value = clipped
 				truncated = true
@@ -430,6 +451,14 @@ func boundReviewContextCampaign(round *reviewContextRound) bool {
 		}
 	}
 	return truncated
+}
+
+func reviewContextCampaignBytes(round *reviewContextRound) int {
+	encoded, _ := json.Marshal(struct {
+		Children     []reviewContextCampaignChild      `json:"campaign_children,omitempty"`
+		Repositories []reviewContextCampaignRepository `json:"campaign_repositories,omitempty"`
+	}{Children: round.CampaignChildren, Repositories: round.CampaignRepositories})
+	return len(encoded)
 }
 
 func truncateReviewContextText(value string, limit int) string {
