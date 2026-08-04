@@ -954,7 +954,7 @@ const (
 	getRoundSQL              = `select ` + roundColumns + ` from den_review.review_rounds where id = $1`
 	getRoundForUpdateSQL     = `select ` + roundColumns + ` from den_review.review_rounds where id = $1 for update`
 	currentRoundForUpdateSQL = `select ` + roundColumns + ` from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number desc, id desc limit 1 for update`
-	lockReviewTaskSQL        = `select pg_advisory_xact_lock(hashtextextended($1 || ':' || $2::text, 0))`
+	lockReviewTaskSQL        = `select pg_advisory_xact_lock(hashtextextended($1 || ':' || ($2::bigint)::text, 0))`
 	setVerdictSQL            = `update den_review.review_rounds set verdict = $2, verdict_by = $3, verdict_notes = $4, verdict_at = $5, updated_at = $6 where id = $1 returning ` + roundColumns
 	nextFindingNumberSQL     = `select coalesce(max(finding_number), 0) + 1 from den_review.review_findings where project_id = $1 and task_id = $2`
 	createFindingSQL         = `
