@@ -466,7 +466,12 @@ func truncateReviewContextText(value string, limit int) string {
 	if len(runes) <= limit {
 		return value
 	}
-	return string(runes[:limit])
+	if limit <= 1 {
+		return string(runes[:limit])
+	}
+	prefixLength := (limit - 1) / 2
+	suffixLength := limit - prefixLength - 1
+	return string(runes[:prefixLength]) + "~" + string(runes[len(runes)-suffixLength:])
 }
 
 func boundReviewContext(response *reviewContextResponse, limits ...int) ([]byte, error) {

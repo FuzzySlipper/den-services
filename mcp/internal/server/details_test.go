@@ -187,8 +187,20 @@ func TestReviewContextDetailReferenceExpandsEvidenceAndUsesOpaqueRefs(t *testing
 		t.Fatalf("normal review context exceeded byte budget: %d", len(content))
 	}
 	currentRound := structured["current_round"].(map[string]any)
-	if len(currentRound["campaign_children"].([]any)) != 8 || len(currentRound["campaign_repositories"].([]any)) != 8 {
+	normalChildren := currentRound["campaign_children"].([]any)
+	normalRepositories := currentRound["campaign_repositories"].([]any)
+	if len(normalChildren) != 8 || len(normalRepositories) != 8 {
 		t.Fatalf("campaign metadata was not bounded: %#v", currentRound)
+	}
+	childZero := normalChildren[0].(map[string]any)
+	childOne := normalChildren[1].(map[string]any)
+	if childZero["head_commit"] == childOne["head_commit"] {
+		t.Fatalf("normal campaign child identities collapsed: %#v %#v", childZero, childOne)
+	}
+	repositoryZero := normalRepositories[0].(map[string]any)
+	repositoryOne := normalRepositories[1].(map[string]any)
+	if repositoryZero["repository"] == repositoryOne["repository"] || repositoryZero["head_sha"] == repositoryOne["head_sha"] {
+		t.Fatalf("normal campaign repository identities collapsed: %#v %#v", repositoryZero, repositoryOne)
 	}
 	campaignRef := currentRound["campaign_detail_ref"].(string)
 	if !strings.HasPrefix(campaignRef, "d1.") {
@@ -199,7 +211,7 @@ func TestReviewContextDetailReferenceExpandsEvidenceAndUsesOpaqueRefs(t *testing
 		t.Fatalf("expanded result is error: %#v", detailed)
 	}
 	detailedText := detailed["content"].([]any)[0].(map[string]any)["text"].(string)
-	for _, want := range []string{"expanded_findings", "full finding evidence", "expanded_packets", "full packet evidence", "expanded_guidance", "full guidance evidence", "campaign-child-31", "campaign-head-31"} {
+	for _, want := range []string{"expanded_findings", "full finding evidence", "expanded_packets", "full packet evidence", "expanded_guidance", "full guidance evidence", campaignValue("campaign-child", 31), campaignValue("campaign-head", 31)} {
 		if !strings.Contains(detailedText, want) {
 			t.Fatalf("expanded result missing %s: %s", want, detailedText)
 		}
