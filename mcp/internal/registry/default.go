@@ -83,7 +83,31 @@ func DefaultTools() ([]ToolDefinition, error) {
 	tools = append(tools, taskContextTools()...)
 	tools = append(tools, reviewContextTools()...)
 	tools = append(tools, contractErgonomicsTools()...)
+	tools = append(tools, handoffTools()...)
 	return tools, nil
+}
+
+func handoffTools() []ToolDefinition {
+	label := StringSchema("Exact case-sensitive handoff label, such as den-services, task/6651, or campaign:gateway-cutover.")
+	return []ToolDefinition{
+		{
+			Name:        "set_handoff",
+			Description: "Create or silently replace the one current non-executable Markdown handoff for an exact arbitrary label. The service records UTC timestamps and returns the resulting revision; caller Markdown is never rewritten.",
+			Backend:     "handoff",
+			Operation:   "set_handoff",
+			InputSchema: ObjectSchema(map[string]Schema{
+				"label":         label,
+				"body_markdown": StringSchema("Complete Markdown resume note. Maximum 64 KiB; frontmatter, if present, remains caller-owned and unchanged."),
+			}, "label", "body_markdown"),
+		},
+		{
+			Name:        "get_handoff",
+			Description: "Retrieve the complete current Markdown handoff and server-owned revision/timestamp metadata for an exact label. Reading a handoff never wakes an agent or executes work.",
+			Backend:     "handoff",
+			Operation:   "get_handoff",
+			InputSchema: ObjectSchema(map[string]Schema{"label": label}, "label"),
+		},
+	}
 }
 
 func campaignReviewTools() []ToolDefinition {
@@ -358,11 +382,11 @@ var retiredToolPolicies = map[string]retiredToolPolicy{
 	"get_agent_stream_entry":    {message: "agent-stream Core readback is retired from the default MCP facade pending a successor observation surface."},
 	"list_agent_stream":         {message: "agent-stream Core readback is retired from the default MCP facade pending a successor observation surface."},
 
-	"store_blackboard_entry":     {message: "blackboard tools are retired from the MCP facade; use project documents, task messages, or knowledge entries with explicit ownership instead."},
-	"get_blackboard_entry":       {message: "blackboard tools are retired from the MCP facade; use project documents, task messages, or knowledge entries with explicit ownership instead."},
-	"list_blackboard_entries":    {message: "blackboard tools are retired from the MCP facade; use project documents, task messages, or knowledge entries with explicit ownership instead."},
-	"delete_blackboard_entry":    {message: "blackboard tools are retired from the MCP facade; use project documents, task messages, or knowledge entries with explicit ownership instead."},
-	"cleanup_blackboard_entries": {message: "blackboard tools are retired from the MCP facade; use project documents, task messages, or knowledge entries with explicit ownership instead."},
+	"store_blackboard_entry":     {message: "blackboard tools are retired from the MCP facade; use set_handoff for mutable latest-value resume context, or project documents, task messages, and knowledge entries for durable history."},
+	"get_blackboard_entry":       {message: "blackboard tools are retired from the MCP facade; use get_handoff for mutable latest-value resume context, or project documents, task messages, and knowledge entries for durable history."},
+	"list_blackboard_entries":    {message: "blackboard tools are retired from the MCP facade; handoffs intentionally have no list surface. Use exact-label get_handoff or a durable owned surface."},
+	"delete_blackboard_entry":    {message: "blackboard tools are retired from the MCP facade; handoffs intentionally have no delete surface. Replace the exact label or use a durable owned surface."},
+	"cleanup_blackboard_entries": {message: "blackboard tools are retired from the MCP facade; handoffs intentionally have no cleanup lifecycle."},
 
 	"legacy_get_dispatch":                {message: "legacy dispatch tools are retired from the default MCP facade; dispatch is archive-only historical state."},
 	"legacy_approve_dispatch":            {message: "legacy dispatch mutation is retired; use review/task/message successor workflow instead."},

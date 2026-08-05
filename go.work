@@ -11,6 +11,7 @@ use (
 	./documents
 	./gateway
 	./guidance
+	./handoff
 	./integration
 	./knowledge
 	./librarian

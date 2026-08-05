@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"den-services/mcp/internal/config"
 )
 
 func mustJSON(t *testing.T, value any) json.RawMessage {
@@ -1557,4 +1560,53 @@ func librarianRouteForTest(operation string, method string, path string) Route {
 		RequestAdapter:  RequestAdapterMCPLibrarianREST,
 		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
 	}
+}
+
+func TestHandoffRESTAdapterSetsExactMarkdown(t *testing.T) {
+	var sawBody handoffSetBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/handoffs" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer handoff-token" {
+			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+		}
+		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"label":"task/6651","revision":2,"updated_at":"2026-08-05T08:00:00Z"}`))
+	}))
+	defer server.Close()
+	client := NewClient(server.Client())
+	result, failure, err := client.Call(context.Background(), config.BackendConfig{Name: "handoff", BaseURL: server.URL, ServiceToken: "handoff-token", Timeout: time.Second}, handoffRouteForTest("set_handoff", http.MethodPost), ToolCall{
+		ToolName: "set_handoff", Operation: "set_handoff",
+		Arguments: json.RawMessage(`{"label":" task/6651 ","body_markdown":"---\ndatetime: unchanged\n---\nbody"}`),
+	})
+	if err != nil || failure != nil {
+		t.Fatalf("Call() result/failure/error = %s, %#v, %v", result.Value, failure, err)
+	}
+	if sawBody.Label != "task/6651" || sawBody.BodyMarkdown != "---\ndatetime: unchanged\n---\nbody" {
+		t.Fatalf("body = %#v", sawBody)
+	}
+}
+
+func TestHandoffRESTAdapterGetsLabelAsQuery(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/handoffs" || r.URL.Query().Get("label") != "task/6651" {
+			t.Fatalf("request = %s %s?%s", r.Method, r.URL.Path, r.URL.RawQuery)
+		}
+		_, _ = w.Write([]byte(`{"label":"task/6651","body_markdown":"complete","revision":2}`))
+	}))
+	defer server.Close()
+	client := NewClient(server.Client())
+	result, failure, err := client.Call(context.Background(), config.BackendConfig{Name: "handoff", BaseURL: server.URL, Timeout: time.Second}, handoffRouteForTest("get_handoff", http.MethodGet), ToolCall{
+		ToolName: "get_handoff", Operation: "get_handoff", Arguments: json.RawMessage(`{"label":"task/6651"}`),
+	})
+	if err != nil || failure != nil || !bytes.Contains(result.Value, []byte(`"body_markdown":"complete"`)) {
+		t.Fatalf("Call() result/failure/error = %s, %#v, %v", result.Value, failure, err)
+	}
+}
+
+func handoffRouteForTest(operation string, method string) Route {
+	return Route{Operation: operation, Backend: "handoff", Method: method, Path: "/v1/handoffs", RequestAdapter: RequestAdapterMCPHandoffREST, ResponseAdapter: ResponseAdapterMCPToolResultJSON}
 }

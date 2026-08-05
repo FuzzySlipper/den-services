@@ -135,6 +135,9 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 		if librarianRoute(tool.Name) {
 			wantBackend = "librarian"
 		}
+		if handoffRoute(tool.Name) {
+			wantBackend = "handoff"
+		}
 		if route.Backend != wantBackend {
 			t.Fatalf("route %s backend = %q, want %s", tool.Name, route.Backend, wantBackend)
 		}
@@ -550,6 +553,15 @@ func guidanceRoute(operation string) bool {
 func librarianRoute(operation string) bool {
 	switch operation {
 	case "query_librarian":
+		return true
+	default:
+		return false
+	}
+}
+
+func handoffRoute(operation string) bool {
+	switch operation {
+	case "set_handoff", "get_handoff":
 		return true
 	default:
 		return false

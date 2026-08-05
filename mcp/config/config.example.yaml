@@ -66,3 +66,8 @@ backends:
     health_path: "/health"
     timeout: "3s"
     service_token_env: "DEN_LIBRARIAN_SERVICE_TOKEN"
+  - name: "handoff"
+    base_url: "http://127.0.0.1:8099"
+    health_path: "/health"
+    timeout: "3s"
+    service_token_env: "DEN_HANDOFF_SERVICE_TOKEN"

@@ -2,6 +2,18 @@
 # Generated from the live den-mcp tools/list compatibility snapshot for #3554.
 
 routes:
+  - operation: "set_handoff"
+    backend: "handoff"
+    method: "POST"
+    path: "/v1/handoffs"
+    request_adapter: "mcp_handoff_rest"
+    response_adapter: "mcp_tool_result_json"
+  - operation: "get_handoff"
+    backend: "handoff"
+    method: "GET"
+    path: "/v1/handoffs"
+    request_adapter: "mcp_handoff_rest"
+    response_adapter: "mcp_tool_result_json"
   - operation: "update_topic"
     backend: "den-core"
     method: "POST"

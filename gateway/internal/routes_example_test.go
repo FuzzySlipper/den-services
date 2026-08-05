@@ -12,6 +12,7 @@ func TestDeployableRouteExampleCoversBrowserOwners(t *testing.T) {
 		"DEN_GATEWAY_TASKS_UPSTREAM_TOKEN",
 		"DEN_GATEWAY_MESSAGES_UPSTREAM_TOKEN",
 		"DEN_GATEWAY_DOCUMENTS_UPSTREAM_TOKEN",
+		"DEN_GATEWAY_HANDOFF_UPSTREAM_TOKEN",
 		"DEN_GATEWAY_GUIDANCE_UPSTREAM_TOKEN",
 		"DEN_GATEWAY_REVIEW_UPSTREAM_TOKEN",
 		"DEN_GATEWAY_ARTIFACTS_UPSTREAM_TOKEN",
@@ -55,6 +56,7 @@ func TestDeployableRouteExampleCoversBrowserOwners(t *testing.T) {
 		{"GET", "/v1/artifacts/12/content", "127.0.0.1:8090"},
 		{"POST", "/v1/visual-contracts/compare", "127.0.0.1:8086"},
 		{"POST", "/v1/projects/den-web/librarian/query", "127.0.0.1:8098"},
+		{"GET", "/v1/handoffs", "127.0.0.1:8099"},
 		{"GET", "/v1/conversation/channels", "127.0.0.1:8084"},
 		{"GET", "/v1/timeline/projects/den-web/stream", "127.0.0.1:8085"},
 	}
