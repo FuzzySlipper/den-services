@@ -51,6 +51,9 @@ func TestStorePostgresConcurrentReplacement(t *testing.T) {
 	if current.Revision() != writers {
 		t.Fatalf("revision = %d, want %d", current.Revision(), writers)
 	}
+	if current.UpdatedAt().Before(current.CreatedAt()) {
+		t.Fatalf("updated_at %s precedes created_at %s", current.UpdatedAt(), current.CreatedAt())
+	}
 	var historyCount int
 	if err := pool.QueryRow(ctx, "select count(*) from den_handoff.handoff_revisions where label = $1", label).Scan(&historyCount); err != nil {
 		t.Fatalf("count revisions: %v", err)

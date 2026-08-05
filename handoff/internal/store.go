@@ -83,7 +83,7 @@ values ($1, $2, 1, $4, $4, $3)
 on conflict (label) do update set
     body_markdown = excluded.body_markdown,
     revision = den_handoff.handoffs.revision + 1,
-    updated_at = excluded.updated_at,
+    updated_at = greatest(den_handoff.handoffs.updated_at, excluded.updated_at),
     updated_by = excluded.updated_by
 returning ` + handoffColumns
 

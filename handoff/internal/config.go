@@ -7,6 +7,7 @@ import (
 	"time"
 
 	sharedconfig "den-services/shared/config"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -71,6 +72,7 @@ func (c *Config) validate() error {
 	}
 	return nil
 }
+
 func configPath() string {
 	if path := os.Getenv("HANDOFF_CONFIG_PATH"); path != "" {
 		return path
