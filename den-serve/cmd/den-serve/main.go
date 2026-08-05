@@ -30,6 +30,8 @@ func run(args []string) error {
 	switch args[0] {
 	case "up":
 		return runUp(args[1:])
+	case "restart":
+		return runRestart(args[1:])
 	case "status":
 		return runStatus(args[1:])
 	case "list":
@@ -44,6 +46,12 @@ func run(args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+type restartManager interface {
+	Status(context.Context, devserver.StatusOptions) (devserver.SessionState, error)
+	Stop(context.Context, devserver.StopOptions) (devserver.StopResult, error)
+	Up(context.Context, devserver.UpOptions) (devserver.UpResult, error)
 }
 
 func runUp(args []string) error {
@@ -75,6 +83,54 @@ func runUp(args []string) error {
 		printSessionPacket(result.Session)
 	}
 	return err
+}
+
+func runRestart(args []string) error {
+	project, rest := splitProjectArg(args)
+	var cfgPath string
+	var repoRoot string
+	var manifestPath string
+	var publicHost string
+	flags := flag.NewFlagSet("den-serve restart", flag.ContinueOnError)
+	flags.StringVar(&cfgPath, "config", os.Getenv(configPathEnv), "config path")
+	flags.StringVar(&repoRoot, "repo", "", "repo root containing the manifest")
+	flags.StringVar(&manifestPath, "manifest", "", "manifest path")
+	flags.StringVar(&project, "project-id", project, "manifest project id")
+	flags.StringVar(&publicHost, "public-host", "", "LAN host/IP to print when auto-detection is wrong")
+	if err := flags.Parse(rest); err != nil {
+		return err
+	}
+	manager, err := newManager(cfgPath)
+	if err != nil {
+		return err
+	}
+	result, err := restart(context.Background(), manager, devserver.UpOptions{
+		Project:            project,
+		RepoRoot:           repoRoot,
+		ManifestPath:       manifestPath,
+		PublicHostOverride: publicHost,
+	})
+	if result.Session.Project != "" {
+		printSessionPacket(result.Session)
+	}
+	return err
+}
+
+func restart(ctx context.Context, manager restartManager, options devserver.UpOptions) (devserver.UpResult, error) {
+	session, err := manager.Status(ctx, devserver.StatusOptions{Project: options.Project, RepoRoot: options.RepoRoot})
+	switch {
+	case errors.Is(err, devserver.ErrSessionNotFound):
+		// Nothing is up yet, so restart has the same result as up.
+	case err != nil:
+		return devserver.UpResult{}, err
+	case session.Ownership != "broker_owned" && session.Status != "stopped":
+		return devserver.UpResult{}, errors.New("session is not broker-owned; refusing to restart an external process")
+	case session.Status != "stopped":
+		if _, err := manager.Stop(ctx, devserver.StopOptions{Project: options.Project, RepoRoot: options.RepoRoot}); err != nil {
+			return devserver.UpResult{}, err
+		}
+	}
+	return manager.Up(ctx, options)
 }
 
 func runStatus(args []string) error {
@@ -260,6 +316,7 @@ func printTail(path string) {
 func printUsage() {
 	name := filepath.Base(os.Args[0])
 	fmt.Printf("usage: %s up <project> -repo /path/to/repo [--public-host ip]\n", name)
+	fmt.Printf("       %s restart <project> -repo /path/to/repo [--public-host ip]\n", name)
 	fmt.Printf("       %s status <project> [-repo /path/to/repo]\n", name)
 	fmt.Printf("       %s list\n", name)
 	fmt.Printf("       %s stop <project> [-repo /path/to/repo]\n", name)

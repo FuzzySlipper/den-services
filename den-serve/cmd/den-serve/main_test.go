@@ -1,12 +1,35 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	devserver "den-services/devserver-broker"
 )
+
+type fakeRestartManager struct {
+	session   devserver.SessionState
+	statusErr error
+	calls     []string
+}
+
+func (m *fakeRestartManager) Status(context.Context, devserver.StatusOptions) (devserver.SessionState, error) {
+	m.calls = append(m.calls, "status")
+	return m.session, m.statusErr
+}
+
+func (m *fakeRestartManager) Stop(context.Context, devserver.StopOptions) (devserver.StopResult, error) {
+	m.calls = append(m.calls, "stop")
+	return devserver.StopResult{}, nil
+}
+
+func (m *fakeRestartManager) Up(context.Context, devserver.UpOptions) (devserver.UpResult, error) {
+	m.calls = append(m.calls, "up")
+	return devserver.UpResult{Session: devserver.SessionState{Project: "alpha"}}, nil
+}
 
 func TestNewManagerUsesBuiltInDefaultsWhenConfigPathIsEmpty(t *testing.T) {
 	if _, err := newManager(""); err != nil {
@@ -45,5 +68,44 @@ func TestFormatSessionPacketExposesLaunchFreshness(t *testing.T) {
 		if !strings.Contains(packet, marker) {
 			t.Fatalf("packet missing %q:\n%s", marker, packet)
 		}
+	}
+}
+
+func TestRestartStopsRunningBrokerOwnedSessionBeforeUp(t *testing.T) {
+	manager := &fakeRestartManager{session: devserver.SessionState{Status: "running", Ownership: "broker_owned"}}
+	if _, err := restart(context.Background(), manager, devserver.UpOptions{Project: "alpha"}); err != nil {
+		t.Fatalf("restart() error = %v", err)
+	}
+	if got := strings.Join(manager.calls, ","); got != "status,stop,up" {
+		t.Fatalf("calls = %q, want status,stop,up", got)
+	}
+}
+
+func TestRestartActsLikeUpWhenNoSessionExists(t *testing.T) {
+	manager := &fakeRestartManager{statusErr: devserver.ErrSessionNotFound}
+	if _, err := restart(context.Background(), manager, devserver.UpOptions{Project: "alpha"}); err != nil {
+		t.Fatalf("restart() error = %v", err)
+	}
+	if got := strings.Join(manager.calls, ","); got != "status,up" {
+		t.Fatalf("calls = %q, want status,up", got)
+	}
+}
+
+func TestRestartRefusesUnownedSession(t *testing.T) {
+	manager := &fakeRestartManager{session: devserver.SessionState{Status: "unowned", Ownership: "unowned"}}
+	_, err := restart(context.Background(), manager, devserver.UpOptions{Project: "alpha"})
+	if err == nil || !strings.Contains(err.Error(), "not broker-owned") {
+		t.Fatalf("restart() error = %v, want broker ownership error", err)
+	}
+	if got := strings.Join(manager.calls, ","); got != "status" {
+		t.Fatalf("calls = %q, want status", got)
+	}
+}
+
+func TestRestartReturnsUnexpectedStatusError(t *testing.T) {
+	manager := &fakeRestartManager{statusErr: errors.New("status failed")}
+	_, err := restart(context.Background(), manager, devserver.UpOptions{Project: "alpha"})
+	if err == nil || err.Error() != "status failed" {
+		t.Fatalf("restart() error = %v, want status failed", err)
 	}
 }

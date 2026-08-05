@@ -33,11 +33,16 @@ The LAN URL is the one to give the human.
 
 ```bash
 den-serve up <project-id> -repo /path/to/repo
+den-serve restart <project-id> -repo /path/to/repo
 den-serve status <project-id> [-repo /path/to/repo]
 den-serve list
 den-serve logs <project-id> [-repo /path/to/repo]
 den-serve stop <project-id> [-repo /path/to/repo]
 ```
+
+`restart` stops a running broker-owned session and starts it again. If no
+session exists (or the previous session is already stopped), it behaves like
+`up`. It refuses to stop an explicitly reused external process.
 
 Use `--public-host <ip-or-host>` only when automatic LAN IP detection chooses the wrong address. There is intentionally no prominent `--host` flag: started dev servers bind LAN-facing by default.
 
