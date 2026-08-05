@@ -5,7 +5,6 @@ import "time"
 type SetHandoffRequest struct {
 	Label        string `json:"label"`
 	BodyMarkdown string `json:"body_markdown"`
-	UpdatedBy    string `json:"updated_by,omitempty"`
 }
 
 type HandoffResponse struct {

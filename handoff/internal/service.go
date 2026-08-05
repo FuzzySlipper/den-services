@@ -12,12 +12,13 @@ type HandoffStore interface {
 }
 
 type Service struct {
-	store HandoffStore
-	clock func() time.Time
+	store     HandoffStore
+	clock     func() time.Time
+	updatedBy string
 }
 
 func NewService(store HandoffStore, clock func() time.Time) *Service {
-	return &Service{store: store, clock: clock}
+	return &Service{store: store, clock: clock, updatedBy: "handoff-service"}
 }
 
 func (s *Service) CheckStore(ctx context.Context) error { return s.store.Ping(ctx) }
@@ -25,7 +26,7 @@ func (s *Service) CheckStore(ctx context.Context) error { return s.store.Ping(ct
 func (s *Service) Set(ctx context.Context, request SetHandoffRequest) (*Handoff, error) {
 	now := s.clock().UTC()
 	value, err := NewHandoff(NewHandoffParams{
-		Label: request.Label, BodyMarkdown: request.BodyMarkdown, UpdatedBy: request.UpdatedBy,
+		Label: request.Label, BodyMarkdown: request.BodyMarkdown, UpdatedBy: s.updatedBy,
 		CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {

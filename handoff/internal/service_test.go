@@ -22,7 +22,7 @@ func TestSetReplacesCurrentValueAndPreservesCallerMarkdown(t *testing.T) {
 		t.Fatalf("first = %#v", first)
 	}
 	now = now.Add(time.Minute)
-	second, err := service.Set(context.Background(), SetHandoffRequest{Label: "den-services", BodyMarkdown: "second", UpdatedBy: "codex"})
+	second, err := service.Set(context.Background(), SetHandoffRequest{Label: "den-services", BodyMarkdown: "second"})
 	if err != nil {
 		t.Fatalf("Set(second) error = %v", err)
 	}
@@ -30,8 +30,13 @@ func TestSetReplacesCurrentValueAndPreservesCallerMarkdown(t *testing.T) {
 		t.Fatalf("second revision/times = %d %s %s", second.Revision(), second.CreatedAt(), second.UpdatedAt())
 	}
 	current, err := service.Get(context.Background(), "den-services")
-	if err != nil || current.BodyMarkdown() != "second" || current.UpdatedBy() != "codex" {
+	if err != nil || current.BodyMarkdown() != "second" || current.UpdatedBy() != "handoff-service" {
 		t.Fatalf("Get() = %#v, %v", current, err)
+	}
+	for index, revision := range store.history["den-services"] {
+		if revision.UpdatedBy() != "handoff-service" {
+			t.Fatalf("history[%d].UpdatedBy() = %q, want handoff-service", index, revision.UpdatedBy())
+		}
 	}
 	if len(store.history["den-services"]) != 2 {
 		t.Fatalf("history count = %d, want 2", len(store.history["den-services"]))
