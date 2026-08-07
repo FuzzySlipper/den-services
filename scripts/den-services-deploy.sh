@@ -300,6 +300,45 @@ PY
   fi
 }
 
+ensure_gateway_knowledge_route() {
+  local routes_target="${service_root}/config/routes.yaml"
+  local staged_routes=""
+  local write_target="${routes_target}"
+
+  [[ "${service}" == "gateway" ]] || return 0
+  [[ -f "${routes_target}" ]] || return 0
+  if grep -Eq '^[[:space:]]*- name:.*knowledge-routes' "${routes_target}" ||
+    grep -Eq "^[[:space:]]*path_pattern:[[:space:]]*\"/v1/knowledge" "${routes_target}"; then
+    return 0
+  fi
+
+  backup_config_file "${routes_target}" "routes.yaml"
+  if [[ ! -w "${routes_target}" ]]; then
+    staged_routes="$(mktemp /tmp/den-gateway-routes.XXXXXX)"
+    cp "${routes_target}" "${staged_routes}"
+    write_target="${staged_routes}"
+  fi
+
+  cat >> "${write_target}" <<'ROUTE'
+
+  - name: "knowledge-routes"
+    path_pattern: "/v1/knowledge"
+    methods: ["GET", "POST"]
+    legacy_upstream_url: "http://127.0.0.1:8095"
+    successor_upstream_url: "http://127.0.0.1:8095"
+    successor_mode: "always"
+    caller_auth:
+      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
+    successor_auth:
+      bearer_token: "${DEN_GATEWAY_KNOWLEDGE_UPSTREAM_TOKEN}"
+ROUTE
+
+  if [[ -n "${staged_routes}" ]]; then
+    run_systemctl install -m 0644 "${staged_routes}" "${routes_target}"
+    rm -f "${staged_routes}"
+  fi
+}
+
 install_mcp_routes() {
   local routes_target="${service_root}/config/routes.yaml"
 
@@ -432,6 +471,7 @@ fi
 if [[ "${service}" == "gateway" && -f gateway/config/routes.example.yaml && ! -f "${service_root}/config/routes.yaml" ]]; then
   install -m 0644 gateway/config/routes.example.yaml "${service_root}/config/routes.yaml"
 fi
+ensure_gateway_knowledge_route
 if [[ "${service}" == "mcp" && -f mcp/routes.example.yaml ]]; then
   install_mcp_routes
 fi

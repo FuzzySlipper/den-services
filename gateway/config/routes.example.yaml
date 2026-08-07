@@ -104,6 +104,17 @@ routes:
     successor_auth:
       bearer_token: "${DEN_GATEWAY_DOCUMENTS_UPSTREAM_TOKEN}"
 
+  - name: "knowledge-routes"
+    path_pattern: "/v1/knowledge"
+    methods: ["GET", "POST"]
+    legacy_upstream_url: "http://127.0.0.1:8095"
+    successor_upstream_url: "http://127.0.0.1:8095"
+    successor_mode: "always"
+    caller_auth:
+      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
+    successor_auth:
+      bearer_token: "${DEN_GATEWAY_KNOWLEDGE_UPSTREAM_TOKEN}"
+
   - name: "handoff-routes"
     path_pattern: "/v1/handoffs"
     methods: ["GET", "POST"]
