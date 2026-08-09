@@ -3,7 +3,9 @@ package backend
 import (
 	"errors"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -141,6 +143,17 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 		if route.Backend != wantBackend {
 			t.Fatalf("route %s backend = %q, want %s", tool.Name, route.Backend, wantBackend)
 		}
+	}
+}
+
+func TestDeployMigratesCampaignReviewRouteForPreservedConfig(t *testing.T) {
+	deployScript, err := os.ReadFile(filepath.Join("..", "..", "..", "scripts", "den-services-deploy.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `append_mcp_route_if_missing "${routes_target}" "request_campaign_review" "review" "POST"`
+	if !strings.Contains(string(deployScript), want) {
+		t.Fatalf("deploy script does not migrate request_campaign_review into preserved MCP route configs")
 	}
 }
 
