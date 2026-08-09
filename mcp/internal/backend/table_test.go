@@ -531,7 +531,8 @@ func knowledgeRoute(operation string) bool {
 	case "den_knowledge_search",
 		"den_knowledge_get",
 		"den_knowledge_guide",
-		"den_knowledge_store":
+		"den_knowledge_store",
+		"den_knowledge_delete":
 		return true
 	default:
 		return false

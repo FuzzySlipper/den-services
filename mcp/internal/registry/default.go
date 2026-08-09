@@ -84,7 +84,20 @@ func DefaultTools() ([]ToolDefinition, error) {
 	tools = append(tools, reviewContextTools()...)
 	tools = append(tools, contractErgonomicsTools()...)
 	tools = append(tools, handoffTools()...)
+	tools = append(tools, knowledgeTools()...)
 	return tools, nil
+}
+
+func knowledgeTools() []ToolDefinition {
+	return []ToolDefinition{{
+		Name:        "den_knowledge_delete",
+		Description: "Permanently delete one Knowledge entry by exact slug, including its revision history, tags, and links. This is irreversible and should be used only for deliberate curation of obsolete, duplicate, or low-value records; do not archive entries selected for removal.",
+		Backend:     "knowledge",
+		Operation:   "den_knowledge_delete",
+		InputSchema: ObjectSchema(map[string]Schema{
+			"slug": StringSchema("Exact Knowledge entry slug to hard delete."),
+		}, "slug"),
+	}}
 }
 
 func handoffTools() []ToolDefinition {

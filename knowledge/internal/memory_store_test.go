@@ -20,6 +20,26 @@ func newMemoryStore() *memoryStore {
 
 func (s *memoryStore) Ping(context.Context) error { return nil }
 
+func (s *memoryStore) DeleteEntry(_ context.Context, slug string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index, entry := range s.entries {
+		if entry.Slug() != slug {
+			continue
+		}
+		s.entries = append(s.entries[:index], s.entries[index+1:]...)
+		kept := s.revisions[:0]
+		for _, revision := range s.revisions {
+			if revision.EntryID != entry.ID() {
+				kept = append(kept, revision)
+			}
+		}
+		s.revisions = kept
+		return nil
+	}
+	return entryNotFound(slug)
+}
+
 func (s *memoryStore) UpsertEntry(_ context.Context, entry *Entry, changeNote string) (*Entry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

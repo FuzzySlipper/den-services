@@ -11,6 +11,7 @@ import (
 type KnowledgeUseCases interface {
 	CheckStore(ctx context.Context) error
 	StoreEntry(ctx context.Context, req StoreEntryRequest) (*Entry, error)
+	DeleteEntry(ctx context.Context, slug string) error
 	GetEntry(ctx context.Context, slug string, includeArchived bool) (*Entry, error)
 	ListEntries(ctx context.Context, query ListQuery) ([]EntrySummary, error)
 	SearchEntries(ctx context.Context, query SearchQuery) ([]SearchResult, error)
@@ -30,9 +31,19 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/knowledge/entries", h.storeEntry)
 	mux.HandleFunc("GET /v1/knowledge/entries", h.listEntries)
 	mux.HandleFunc("GET /v1/knowledge/entries/{slug}", h.getEntry)
+	mux.HandleFunc("DELETE /v1/knowledge/entries/{slug}", h.deleteEntry)
 	mux.HandleFunc("GET /v1/knowledge/entries/{slug}/revisions", h.listRevisions)
 	mux.HandleFunc("POST /v1/knowledge/search", h.searchEntries)
 	mux.HandleFunc("POST /v1/knowledge/guide", h.guide)
+}
+
+func (h *Handler) deleteEntry(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	if err := h.service.DeleteEntry(r.Context(), slug); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, DeleteEntryResponse{Deleted: true, Slug: slug})
 }
 
 func (h *Handler) storeEntry(w http.ResponseWriter, r *http.Request) {

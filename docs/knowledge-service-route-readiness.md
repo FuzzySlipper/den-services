@@ -11,6 +11,7 @@ Role: `den_knowledge_app`
 - `POST /v1/knowledge/entries`
 - `GET /v1/knowledge/entries`
 - `GET /v1/knowledge/entries/{slug}`
+- `DELETE /v1/knowledge/entries/{slug}`
 - `GET /v1/knowledge/entries/{slug}/revisions`
 - `POST /v1/knowledge/search`
 - `POST /v1/knowledge/guide`
@@ -25,8 +26,9 @@ responses in MCP `tools/call` result envelopes:
 - `den_knowledge_get` -> `GET /v1/knowledge/entries/{slug}`
 - `den_knowledge_guide` -> `POST /v1/knowledge/guide`
 - `den_knowledge_store` -> `POST /v1/knowledge/entries`
+- `den_knowledge_delete` -> `DELETE /v1/knowledge/entries/{slug}`
 
-`mcp/routes.example.yaml` and the deployed MCP route table now route these four
+`mcp/routes.example.yaml` and the deployed MCP route table now route these five
 operations to the `knowledge` backend with `mcp_knowledge_rest` and
 `mcp_tool_result_json`. The previous Core route remains the rollback target.
 
@@ -41,6 +43,7 @@ operations to the `knowledge` backend with `mcp_knowledge_rest` and
 - `required_tags` is strict AND gating.
 - `any_tags` is OR gating.
 - `den_knowledge_get` returns full `body_markdown`; search results do not.
+- `den_knowledge_delete` permanently removes the entry, revisions, tags, and links; it does not create an archived or legacy tombstone.
 - Guide responses are extractive and citation-backed. The service does not make
   LLM calls and reports uncertainty when no reviewed entries match.
 - Knowledge is separate from document search. Do not route `search_documents`,

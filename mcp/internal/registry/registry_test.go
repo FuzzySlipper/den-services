@@ -18,12 +18,13 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 74 {
-		t.Fatalf("tool count = %d, want 74", len(names))
+	if len(names) != 75 {
+		t.Fatalf("tool count = %d, want 75", len(names))
 	}
 	for _, name := range []string{
 		"search_documents",
 		"den_knowledge_search",
+		"den_knowledge_delete",
 		"comment_on_document",
 		"get_task",
 		"store_document",
@@ -204,8 +205,8 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if err != nil {
 		t.Fatalf("ToolsForProfile(managed-runtime) error = %v", err)
 	}
-	if len(direct) != 74 {
-		t.Fatalf("direct tool count = %d, want 74", len(direct))
+	if len(direct) != 75 {
+		t.Fatalf("direct tool count = %d, want 75", len(direct))
 	}
 	if len(managed) >= len(direct) {
 		t.Fatalf("managed tool count = %d, want fewer than direct %d", len(managed), len(direct))
@@ -313,7 +314,7 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 			tool.Name != "finalize_review" && tool.Name != "request_campaign_review" &&
 			tool.Name != "get_details" && tool.Name != "mark_project_notifications_read" &&
 			tool.Name != "mark_task_notifications_read" && tool.Name != "ensure_document_discussion" &&
-			tool.Name != "set_handoff" && tool.Name != "get_handoff" {
+			tool.Name != "set_handoff" && tool.Name != "get_handoff" && tool.Name != "den_knowledge_delete" {
 			t.Fatalf("unexpected non-snapshot tool %q", tool.Name)
 		}
 	}

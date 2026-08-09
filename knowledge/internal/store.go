@@ -26,6 +26,27 @@ func (s *Store) Ping(ctx context.Context) error {
 	return nil
 }
 
+func (s *Store) DeleteEntry(ctx context.Context, slug string) error {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("beginning knowledge delete: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, deleteInboundLinksSQL, slug); err != nil {
+		return fmt.Errorf("deleting inbound knowledge links: %w", err)
+	}
+	var deletedID int64
+	if err := tx.QueryRow(ctx, deleteEntrySQL, slug).Scan(&deletedID); errors.Is(err, pgx.ErrNoRows) {
+		return entryNotFound(slug)
+	} else if err != nil {
+		return fmt.Errorf("deleting knowledge entry %s: %w", slug, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing knowledge delete: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) UpsertEntry(ctx context.Context, entry *Entry, changeNote string) (*Entry, error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -484,6 +505,10 @@ from den_knowledge.knowledge_entry_revisions kr
 join den_knowledge.knowledge_entries ke on ke.id = kr.entry_id
 where ke.slug = $1
 order by kr.revision_number desc`
+
+const deleteInboundLinksSQL = `delete from den_knowledge.knowledge_entry_links where to_entry_slug = $1`
+
+const deleteEntrySQL = `delete from den_knowledge.knowledge_entries where slug = $1 returning id`
 
 const (
 	deleteTagsSQL     = `delete from den_knowledge.knowledge_entry_tags where entry_id = $1`

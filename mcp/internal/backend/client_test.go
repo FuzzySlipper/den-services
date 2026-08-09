@@ -1405,6 +1405,35 @@ func TestClientCallsKnowledgeRESTGetEscapesSlug(t *testing.T) {
 	}
 }
 
+func TestClientCallsKnowledgeRESTDeleteEscapesSlug(t *testing.T) {
+	var sawPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.EscapedPath()
+		if r.Method != http.MethodDelete {
+			t.Fatalf("method = %s, want DELETE", r.Method)
+		}
+		_, _ = w.Write([]byte(`{"deleted":true,"slug":"topic/a"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("knowledge", server.URL), knowledgeRouteForTest("den_knowledge_delete", http.MethodDelete, "/v1/knowledge/entries/{slug}"), ToolCall{
+		ToolName:  "den_knowledge_delete",
+		Operation: "den_knowledge_delete",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"slug":"topic/a"}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawPath != "/v1/knowledge/entries/topic%2Fa" {
+		t.Fatalf("path = %q, want escaped slug", sawPath)
+	}
+}
+
 func TestClientCallsLibrarianRESTQuery(t *testing.T) {
 	var sawPath string
 	var sawBody librarianQueryBody

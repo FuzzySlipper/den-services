@@ -181,7 +181,7 @@ func knowledgeRESTRequestBody(operation string, arguments knowledgeToolArguments
 			ContextBudget: contextBudget, IncludeFollowUps: arguments.IncludeFollowUps, IncludeDeprecated: arguments.IncludeDeprecated,
 			IncludeUnreviewed: arguments.IncludeUnreviewed,
 		})
-	case "den_knowledge_get":
+	case "den_knowledge_get", "den_knowledge_delete":
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("%w: knowledge operation %s", ErrUnsupportedAdapter, operation)

@@ -2,6 +2,7 @@ package knowledge
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ func TestStorePostgresKnowledgeFTSRepresentativeFlow(t *testing.T) {
 	}
 	defer pool.Close()
 	store := NewStore(pool)
+	_ = store.DeleteEntry(ctx, "fts-knowledge")
 	now := time.Now().UTC()
 	entry, err := NewEntry(NewEntryParams{
 		Slug:          "fts-knowledge",
@@ -46,5 +48,11 @@ func TestStorePostgresKnowledgeFTSRepresentativeFlow(t *testing.T) {
 	}
 	if len(results) == 0 {
 		t.Fatal("SearchEntries() returned no results")
+	}
+	if err := store.DeleteEntry(ctx, "fts-knowledge"); err != nil {
+		t.Fatalf("DeleteEntry() error = %v", err)
+	}
+	if _, err := store.GetEntry(ctx, "fts-knowledge", true); !errors.Is(err, ErrEntryNotFound) {
+		t.Fatalf("GetEntry() after delete error = %v, want ErrEntryNotFound", err)
 	}
 }

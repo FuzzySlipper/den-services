@@ -2,6 +2,11 @@ package knowledge
 
 import "time"
 
+type DeleteEntryResponse struct {
+	Deleted bool   `json:"deleted"`
+	Slug    string `json:"slug"`
+}
+
 type StoreEntryRequest struct {
 	Slug            string      `json:"slug"`
 	Title           string      `json:"title"`

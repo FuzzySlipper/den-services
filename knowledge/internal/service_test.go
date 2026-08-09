@@ -2,11 +2,59 @@ package knowledge
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestServiceHardDeletesEntryAndRevisionHistory(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	service := NewService(store, fixedClock())
+	seedEntry(t, service, "remove-me", "Remove Me", StatusReviewed, []string{"delete"}, "remove this entry")
+	seedEntry(t, service, "remove-me", "Remove Me Updated", StatusReviewed, []string{"delete"}, "updated body")
+
+	if err := service.DeleteEntry(ctx, " remove-me "); err != nil {
+		t.Fatalf("DeleteEntry() error = %v", err)
+	}
+	if _, err := service.GetEntry(ctx, "remove-me", true); !errors.Is(err, ErrEntryNotFound) {
+		t.Fatalf("GetEntry() error = %v, want ErrEntryNotFound", err)
+	}
+	revisions, err := service.ListRevisions(ctx, "remove-me")
+	if err != nil {
+		t.Fatalf("ListRevisions() error = %v", err)
+	}
+	if len(revisions) != 0 {
+		t.Fatalf("revisions after hard delete = %#v", revisions)
+	}
+	if err := service.DeleteEntry(ctx, "remove-me"); !errors.Is(err, ErrEntryNotFound) {
+		t.Fatalf("second DeleteEntry() error = %v, want ErrEntryNotFound", err)
+	}
+}
+
+func TestHandlerDeletesKnowledgeEntry(t *testing.T) {
+	service := NewService(newMemoryStore(), fixedClock())
+	seedEntry(t, service, "remove-me", "Remove Me", StatusReviewed, nil, "body")
+	mux := http.NewServeMux()
+	NewHandler(service).RegisterRoutes(mux)
+
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, httptest.NewRequest(http.MethodDelete, "/v1/knowledge/entries/remove-me", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("DELETE status = %d body = %s", response.Code, response.Body.String())
+	}
+	var receipt DeleteEntryResponse
+	if err := json.NewDecoder(response.Body).Decode(&receipt); err != nil {
+		t.Fatalf("decoding delete receipt: %v", err)
+	}
+	if !receipt.Deleted || receipt.Slug != "remove-me" {
+		t.Fatalf("delete receipt = %#v", receipt)
+	}
+}
 
 func TestServiceKnowledgeReviewedDefaultsAndTagGates(t *testing.T) {
 	ctx := context.Background()

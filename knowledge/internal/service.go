@@ -10,10 +10,19 @@ import (
 type KnowledgeStore interface {
 	Ping(ctx context.Context) error
 	UpsertEntry(ctx context.Context, entry *Entry, changeNote string) (*Entry, error)
+	DeleteEntry(ctx context.Context, slug string) error
 	GetEntry(ctx context.Context, slug string, includeArchived bool) (*Entry, error)
 	ListEntries(ctx context.Context, query ListQuery) ([]EntrySummary, error)
 	SearchEntries(ctx context.Context, query SearchQuery) ([]SearchResult, error)
 	ListRevisions(ctx context.Context, slug string) ([]RevisionSummary, error)
+}
+
+func (s *Service) DeleteEntry(ctx context.Context, slug string) error {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return validationFailed(ErrMissingSlug)
+	}
+	return s.store.DeleteEntry(ctx, slug)
 }
 
 type Service struct {
