@@ -2045,6 +2045,37 @@ func TestPollGitHubCheckGatesBacksOffGitHubRateLimit(t *testing.T) {
 	}
 }
 
+func TestPollGitHubCheckGatesBacksOffGitHubPermissionDenial(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	service := newTestService(store, &fakeMessages{}, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+	}})
+	service.ConfigureGitHubChecks(&fakeGitHubChecks{err: &GitHubHTTPError{
+		Status: "403 Forbidden", StatusCode: http.StatusForbidden, Message: "Resource not accessible by personal access token",
+		RateLimitRemaining: 4971, RateLimitRemainingSet: true,
+	}}, GitHubCheckOptions{DefaultTimeout: 2 * time.Hour, MaxTimeout: 2 * time.Hour, PollInterval: 30 * time.Second})
+	gate, _, err := store.RegisterGitHubCheckGate(ctx, &GitHubCheckGate{
+		ProjectID: "den-services", TaskID: 42, Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567",
+		Ref: "main", RequiredChecks: []string{"ci"}, Status: GitHubCheckGateStatusPending, RequestedBy: "codex",
+		TimeoutAt: fixedReviewTestTime().Add(2 * time.Hour), PollIntervalSeconds: 30, NextPollAt: fixedReviewTestTime().Add(-time.Minute),
+		CreatedAt: fixedReviewTestTime(), UpdatedAt: fixedReviewTestTime(),
+	}, fixedReviewTestTime())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.PollGitHubCheckGates(ctx, 10); err != nil {
+		t.Fatalf("PollGitHubCheckGates() error = %v", err)
+	}
+	updated := store.githubCheckGates[gate.ID]
+	if want := fixedReviewTestTime().Add(defaultGitHubPermissionBackoff); !updated.NextPollAt.Equal(want) {
+		t.Fatalf("next_poll_at = %s, want %s", updated.NextPollAt, want)
+	}
+	if !strings.Contains(updated.Summary, "Classification: permission_denied") || strings.Contains(updated.Summary, "rate limit reset") {
+		t.Fatalf("summary = %q", updated.Summary)
+	}
+}
+
 func TestFrequentWatcherScansPreservePerGateGitHubPollCadence(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()

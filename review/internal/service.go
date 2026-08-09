@@ -19,6 +19,7 @@ const (
 	defaultGitHubCheckPollInterval = 30 * time.Second
 	defaultGitHubMissingCheckGrace = 2 * time.Minute
 	defaultGitHubHTTPErrorBackoff  = 15 * time.Minute
+	defaultGitHubPermissionBackoff = 30 * time.Minute
 	defaultGitHubEventWaitMax      = 55 * time.Second
 	defaultGitHubEventWaitPoll     = 500 * time.Millisecond
 	defaultGitHubToolWaitMax       = 50 * time.Second
@@ -1256,7 +1257,8 @@ func (s *Service) evaluateGitHubCheckGate(ctx context.Context, gate *GitHubCheck
 	if err != nil {
 		var githubErr *GitHubHTTPError
 		if errors.As(err, &githubErr) && delayableGitHubHTTPStatus(githubErr.StatusCode) {
-			slog.Warn("github check gate throttled", "gate_id", gate.ID, "status_code", githubErr.StatusCode,
+			slog.Warn("github check gate request deferred", "gate_id", gate.ID, "status_code", githubErr.StatusCode,
+				"classification", githubErr.Classification(),
 				"request_id", githubErr.RequestID, "api_duration_ms", requestDuration.Milliseconds())
 			return s.delayGitHubCheckGateAfterGitHubHTTPError(ctx, gate, githubErr, now)
 		}
@@ -1367,15 +1369,21 @@ func delayableGitHubHTTPStatus(statusCode int) bool {
 
 func nextGitHubHTTPErrorPollAt(now time.Time, timeoutAt time.Time, githubErr *GitHubHTTPError) time.Time {
 	next := now.Add(defaultGitHubHTTPErrorBackoff)
-	if githubErr.RetryAfterSet {
+	classification := githubErr.Classification()
+	if classification == GitHubHTTPErrorPermissionDenied {
+		next = now.Add(defaultGitHubPermissionBackoff)
+	} else if githubErr.RetryAfterSet {
 		next = now.Add(githubErr.RetryAfter)
-	} else if githubErr.RateLimitResetSet && (!githubErr.RateLimitRemainingSet || githubErr.RateLimitRemaining == 0) && githubErr.RateLimitReset.After(now) {
+	} else if classification == GitHubHTTPErrorPrimaryRateLimit && githubErr.RateLimitResetSet && githubErr.RateLimitReset.After(now) {
 		next = githubErr.RateLimitReset.Add(time.Minute)
 	}
 	if !timeoutAt.IsZero() && timeoutAt.After(now) && next.After(timeoutAt) {
 		return timeoutAt
 	}
 	if !next.After(now) {
+		if classification == GitHubHTTPErrorPermissionDenied {
+			return now.Add(defaultGitHubPermissionBackoff)
+		}
 		return now.Add(defaultGitHubHTTPErrorBackoff)
 	}
 	return next
@@ -1387,10 +1395,11 @@ func githubHTTPErrorSummary(githubErr *GitHubHTTPError, nextPollAt time.Time) st
 		status = fmt.Sprintf("HTTP %d", githubErr.StatusCode)
 	}
 	summary := "GitHub check polling delayed after GitHub returned " + status + "."
+	summary += " Classification: " + string(githubErr.Classification()) + "."
 	if message := strings.TrimSpace(githubErr.Message); message != "" {
 		summary += " " + message
 	}
-	if githubErr.RateLimitResetSet {
+	if githubErr.Classification() == GitHubHTTPErrorPrimaryRateLimit && githubErr.RateLimitResetSet {
 		summary += " GitHub rate limit reset is " + githubErr.RateLimitReset.Format(time.RFC3339) + "."
 	}
 	summary += " Next poll is " + nextPollAt.Format(time.RFC3339) + "."

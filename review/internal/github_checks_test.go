@@ -55,6 +55,108 @@ func TestGitHubClientReturnsHTTPErrorDetails(t *testing.T) {
 	if githubErr.RequestID != "request-1" {
 		t.Fatalf("request id not parsed: %+v", githubErr)
 	}
+	if got := githubErr.Classification(); got != GitHubHTTPErrorPrimaryRateLimit {
+		t.Fatalf("classification = %q, want %q", got, GitHubHTTPErrorPrimaryRateLimit)
+	}
+}
+
+func TestGitHubHTTPErrorClassification(t *testing.T) {
+	tests := []struct {
+		name string
+		err  GitHubHTTPError
+		want GitHubHTTPErrorClassification
+	}{
+		{
+			name: "permission denial with quota remaining",
+			err: GitHubHTTPError{
+				StatusCode: http.StatusForbidden, Message: "Resource not accessible by personal access token",
+				RateLimitRemaining: 4971, RateLimitRemainingSet: true,
+			},
+			want: GitHubHTTPErrorPermissionDenied,
+		},
+		{
+			name: "primary rate limit",
+			err: GitHubHTTPError{
+				StatusCode: http.StatusForbidden, Message: "API rate limit exceeded",
+				RateLimitRemaining: 0, RateLimitRemainingSet: true,
+			},
+			want: GitHubHTTPErrorPrimaryRateLimit,
+		},
+		{
+			name: "secondary rate limit",
+			err:  GitHubHTTPError{StatusCode: http.StatusForbidden, Message: "You have exceeded a secondary rate limit", RetryAfter: time.Minute, RetryAfterSet: true},
+			want: GitHubHTTPErrorSecondaryRateLimit,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.err.Classification(); got != test.want {
+				t.Fatalf("Classification() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestGitHubClientFallsBackToActionsWhenChecksPermissionDenied(t *testing.T) {
+	const commitSHA = "0123456789abcdef0123456789abcdef01234567"
+	var checkRunsCalls, workflowRunsCalls, jobsCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		switch r.URL.Path {
+		case "/repos/owner/repo/commits/" + commitSHA + "/check-runs":
+			checkRunsCalls++
+			w.Header().Set("x-ratelimit-remaining", "4971")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"message":"Resource not accessible by personal access token"}`))
+		case "/repos/owner/repo/actions/runs":
+			workflowRunsCalls++
+			if got := r.URL.Query().Get("head_sha"); got != commitSHA {
+				t.Errorf("head_sha = %q, want %q", got, commitSHA)
+			}
+			_, _ = w.Write([]byte(`{"workflow_runs":[{"id":123,"head_sha":"` + commitSHA + `"}]}`))
+		case "/repos/owner/repo/actions/runs/123/jobs":
+			jobsCalls++
+			_, _ = w.Write([]byte(`{"jobs":[{"id":456,"name":"ci","status":"completed","conclusion":"failure","html_url":"https://github.test/job/456","started_at":"2026-08-09T05:00:32Z","completed_at":"2026-08-09T05:04:10Z"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	result, err := NewGitHubClient(server.URL, "token", time.Second).CheckCommit(context.Background(), "owner/repo", commitSHA, []string{"ci"})
+	if err != nil {
+		t.Fatalf("CheckCommit() error = %v", err)
+	}
+	if result.Status != GitHubCheckGateStatusFailed || result.TerminalReason != GitHubCheckTerminalReasonChecksFailed {
+		t.Fatalf("result = %+v", result)
+	}
+	if len(result.CheckRuns) != 1 || result.CheckRuns[0].Name != "ci" || result.CheckRuns[0].Conclusion != "failure" {
+		t.Fatalf("check runs = %+v", result.CheckRuns)
+	}
+	if checkRunsCalls != 1 || workflowRunsCalls != 1 || jobsCalls != 1 {
+		t.Fatalf("calls: checks=%d workflows=%d jobs=%d", checkRunsCalls, workflowRunsCalls, jobsCalls)
+	}
+}
+
+func TestGitHubClientDoesNotFallbackToActionsOnPrimaryRateLimit(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("content-type", "application/json")
+		w.Header().Set("x-ratelimit-remaining", "0")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"API rate limit exceeded"}`))
+	}))
+	defer server.Close()
+
+	_, err := NewGitHubClient(server.URL, "token", time.Second).CheckCommit(context.Background(), "owner/repo", "0123456789abcdef0123456789abcdef01234567", []string{"ci"})
+	var githubErr *GitHubHTTPError
+	if !errors.As(err, &githubErr) || githubErr.Classification() != GitHubHTTPErrorPrimaryRateLimit {
+		t.Fatalf("error = %T %v", err, err)
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1", calls)
+	}
 }
 
 func TestEvaluateGitHubCheckRunsReportsMissingAndObservedNames(t *testing.T) {

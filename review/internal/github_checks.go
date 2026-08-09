@@ -3,6 +3,7 @@ package review
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -35,10 +36,56 @@ func (c *GitHubClient) CheckCommit(ctx context.Context, repository string, commi
 	if c.baseURL == "" {
 		return GitHubCheckResult{}, NewServiceError(ErrGitHubChecksUnset, "github_checks_unconfigured", http.StatusInternalServerError)
 	}
-	requestURL := c.baseURL + "/repos/" + repository + "/commits/" + url.PathEscape(commitSHA) + "/check-runs?per_page=100"
+	result, err := c.checkCommitWithCheckRuns(ctx, repository, commitSHA, requiredChecks)
+	if err == nil {
+		return result, nil
+	}
+	var githubErr *GitHubHTTPError
+	if !errors.As(err, &githubErr) || githubErr.Classification() != GitHubHTTPErrorPermissionDenied {
+		return GitHubCheckResult{}, err
+	}
+	return c.checkCommitWithActions(ctx, repository, commitSHA, requiredChecks)
+}
+
+func (c *GitHubClient) checkCommitWithCheckRuns(ctx context.Context, repository string, commitSHA string, requiredChecks []string) (GitHubCheckResult, error) {
+	var payload githubCheckRunsResponse
+	requestPath := "/repos/" + repository + "/commits/" + url.PathEscape(commitSHA) + "/check-runs?per_page=100"
+	if err := c.getJSON(ctx, requestPath, &payload); err != nil {
+		return GitHubCheckResult{}, err
+	}
+	return evaluateGitHubCheckRuns(payload.CheckRuns, requiredChecks), nil
+}
+
+func (c *GitHubClient) checkCommitWithActions(ctx context.Context, repository string, commitSHA string, requiredChecks []string) (GitHubCheckResult, error) {
+	query := url.Values{"head_sha": []string{commitSHA}, "per_page": []string{"100"}}
+	var runs githubWorkflowRunsResponse
+	if err := c.getJSON(ctx, "/repos/"+repository+"/actions/runs?"+query.Encode(), &runs); err != nil {
+		return GitHubCheckResult{}, err
+	}
+	checkRuns := make([]githubCheckRunResponse, 0)
+	for _, run := range runs.WorkflowRuns {
+		if run.HeadSHA != commitSHA {
+			continue
+		}
+		var jobs githubWorkflowJobsResponse
+		if err := c.getJSON(ctx, fmt.Sprintf("/repos/%s/actions/runs/%d/jobs?per_page=100", repository, run.ID), &jobs); err != nil {
+			return GitHubCheckResult{}, err
+		}
+		for _, job := range jobs.Jobs {
+			checkRuns = append(checkRuns, githubCheckRunResponse{
+				ID: job.ID, Name: job.Name, Status: job.Status, Conclusion: job.Conclusion, HTMLURL: job.HTMLURL,
+				CreatedAt: job.CreatedAt, StartedAt: job.StartedAt, CompletedAt: job.CompletedAt,
+			})
+		}
+	}
+	return evaluateGitHubCheckRuns(checkRuns, requiredChecks), nil
+}
+
+func (c *GitHubClient) getJSON(ctx context.Context, requestPath string, target any) error {
+	requestURL := c.baseURL + requestPath
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
-		return GitHubCheckResult{}, fmt.Errorf("building github checks request: %w", err)
+		return fmt.Errorf("building github API request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -47,22 +94,30 @@ func (c *GitHubClient) CheckCommit(ctx context.Context, repository string, commi
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return GitHubCheckResult{}, fmt.Errorf("requesting github checks: %w", err)
+		return fmt.Errorf("requesting github API: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		if readErr != nil {
-			return GitHubCheckResult{}, fmt.Errorf("reading github checks error response: %w", readErr)
+			return fmt.Errorf("reading github API error response: %w", readErr)
 		}
-		return GitHubCheckResult{}, newGitHubHTTPError(resp, body)
+		return newGitHubHTTPError(resp, body)
 	}
-	var payload githubCheckRunsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return GitHubCheckResult{}, fmt.Errorf("decoding github checks: %w", err)
+	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+		return fmt.Errorf("decoding github API response: %w", err)
 	}
-	return evaluateGitHubCheckRuns(payload.CheckRuns, requiredChecks), nil
+	return nil
 }
+
+type GitHubHTTPErrorClassification string
+
+const (
+	GitHubHTTPErrorPermissionDenied   GitHubHTTPErrorClassification = "permission_denied"
+	GitHubHTTPErrorPrimaryRateLimit   GitHubHTTPErrorClassification = "primary_rate_limit"
+	GitHubHTTPErrorSecondaryRateLimit GitHubHTTPErrorClassification = "secondary_rate_limit"
+	GitHubHTTPErrorOther              GitHubHTTPErrorClassification = "http_error"
+)
 
 type GitHubHTTPError struct {
 	Status                string
@@ -82,6 +137,24 @@ func (e *GitHubHTTPError) Error() string {
 		return fmt.Sprintf("github checks request failed: %s: %s", e.Status, e.Message)
 	}
 	return fmt.Sprintf("github checks request failed: %s", e.Status)
+}
+
+func (e *GitHubHTTPError) Classification() GitHubHTTPErrorClassification {
+	if e.RateLimitRemainingSet && e.RateLimitRemaining == 0 {
+		return GitHubHTTPErrorPrimaryRateLimit
+	}
+	message := strings.ToLower(strings.TrimSpace(e.Message))
+	if (e.StatusCode == http.StatusForbidden || e.StatusCode == http.StatusTooManyRequests) &&
+		(e.RetryAfterSet || strings.Contains(message, "secondary rate limit") || strings.Contains(message, "abuse detection")) {
+		return GitHubHTTPErrorSecondaryRateLimit
+	}
+	if e.StatusCode == http.StatusTooManyRequests {
+		return GitHubHTTPErrorSecondaryRateLimit
+	}
+	if e.StatusCode == http.StatusForbidden {
+		return GitHubHTTPErrorPermissionDenied
+	}
+	return GitHubHTTPErrorOther
 }
 
 func newGitHubHTTPError(resp *http.Response, body []byte) *GitHubHTTPError {
@@ -134,6 +207,30 @@ func parseGitHubRetryAfter(value string) (time.Duration, bool) {
 
 type githubCheckRunsResponse struct {
 	CheckRuns []githubCheckRunResponse `json:"check_runs"`
+}
+
+type githubWorkflowRunsResponse struct {
+	WorkflowRuns []githubWorkflowRunResponse `json:"workflow_runs"`
+}
+
+type githubWorkflowRunResponse struct {
+	ID      int64  `json:"id"`
+	HeadSHA string `json:"head_sha"`
+}
+
+type githubWorkflowJobsResponse struct {
+	Jobs []githubWorkflowJobResponse `json:"jobs"`
+}
+
+type githubWorkflowJobResponse struct {
+	ID          int64      `json:"id"`
+	Name        string     `json:"name"`
+	Status      string     `json:"status"`
+	Conclusion  string     `json:"conclusion"`
+	HTMLURL     string     `json:"html_url"`
+	CreatedAt   *time.Time `json:"created_at"`
+	StartedAt   *time.Time `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at"`
 }
 
 type githubCheckRunResponse struct {

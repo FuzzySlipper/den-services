@@ -6,7 +6,7 @@ Task #4245 adds a Review-owned GitHub check gate for the low-ceremony agent flow
 commit -> push -> register gate -> resume only on failure or completion evidence
 ```
 
-Den does not run CI. GitHub Actions remains the CI runner. The Review service records a durable gate for an exact commit SHA, polls GitHub check runs for that SHA, and appends task-thread evidence when the gate passes, fails, times out, or is superseded.
+Den does not run CI. GitHub Actions remains the CI runner. The Review service records a durable gate for an exact commit SHA, polls GitHub check runs for that SHA, and appends task-thread evidence when the gate passes, fails, times out, or is superseded. A fine-grained GitHub token with repository `Checks: read` is the preferred credential. If that token can read `Actions` but GitHub denies the check-runs endpoint, Review falls back to the exact-SHA workflow-run jobs endpoint; required names still match job names exactly.
 
 ## MCP tools
 
@@ -118,6 +118,8 @@ configured for MCP/backend callers.
 Review scans its database for due gates on `github.scan_interval` (5 seconds by default). Each gate retains its own `next_poll_at` and `poll_interval_seconds` (at least 30 seconds), so faster local scans reduce timer-alignment delay without increasing GitHub API frequency. Due gates are drained across batches; a transport failure is recorded on that gate with a future retry and does not stop unrelated gates.
 
 GitHub evaluation completes before task-message evidence retries run. A Messages outage can delay the human projection but cannot block polling or terminal event creation for other gates. Structured logs report scan backlog/duration, API results, throttling and retry reasons, check queue/run time, Review detection lag, and evidence lag.
+
+Review classifies GitHub HTTP failures before selecting a bounded retry. A 403 with exhausted primary quota follows the primary reset header; a primary/secondary throttle follows `Retry-After` when supplied; and a 403 with quota remaining is a permission denial, not a rate limit. Permission failures use a separate bounded backoff and are reported as `permission_denied`, while a readable Actions fallback continues terminal reconciliation without waiting for credential changes.
 
 Terminal gates append task-thread messages with one of these intents:
 
