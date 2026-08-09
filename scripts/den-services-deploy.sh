@@ -385,10 +385,10 @@ install_mcp_routes() {
     "/v1/projects/{project_id}/tasks/{task_id}/user-notifications/read" "mcp_messages_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "set_handoff" "handoff" "POST" \
     "/v1/handoffs" "mcp_handoff_rest" "mcp_tool_result_json"
-	append_mcp_route_if_missing "${routes_target}" "get_handoff" "handoff" "GET" \
-		"/v1/handoffs" "mcp_handoff_rest" "mcp_tool_result_json"
-	append_mcp_route_if_missing "${routes_target}" "den_knowledge_delete" "knowledge" "DELETE" \
-		"/v1/knowledge/entries/{slug}" "mcp_knowledge_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "get_handoff" "handoff" "GET" \
+    "/v1/handoffs" "mcp_handoff_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "den_knowledge_delete" "knowledge" "DELETE" \
+    "/v1/knowledge/entries/{slug}" "mcp_knowledge_rest" "mcp_tool_result_json"
 }
 
 cd "${repo_root}"
