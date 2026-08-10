@@ -1,5 +1,11 @@
 # GitHub Check Gates Agent Usage
 
+Use Den document `den-services/review-pointer-first-contract` for end-to-end
+review routing. A Rusty Crew managed submission owns its exact-SHA gate and
+watcher; do not separately register `watch_github_checks` for the same
+task/SHA. The operations below are the deliberate direct/unmanaged Den path and
+the typed operator readback/recovery surface.
+
 Task #4245 adds a Review-owned GitHub check gate for the low-ceremony agent flow:
 
 ```text

@@ -63,8 +63,13 @@ staleness/coalescing rules live in
 [`docs/review-pointer-first-contract.md`](../docs/review-pointer-first-contract.md).
 The important boundary is that MCP exposes Den Review facts and handles; it
 does not become the Rusty Crew wake/reply authority. Managed runtimes use their
-own submission and routed-closeout green paths, while direct sessions retain
-typed Review/GitHub primitives for recovery.
+own `submit_task_for_review` / `rusty_crew.submit_task_for_review` and
+`complete_routed_review` / `rusty_crew.complete_routed_review` green paths,
+while direct sessions retain typed Review/GitHub primitives for deliberate
+direct review and recovery. Generic messaging, app-thread steering, and an
+`@reviewer` address do not create managed submission authority. Discovery
+filtering is ergonomic rather than authorization and must not strand completion
+of persisted work.
 
 ## Concise results and intentional details
 

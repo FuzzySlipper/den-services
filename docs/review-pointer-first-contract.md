@@ -1,4 +1,4 @@
-# Pointer-first review contract
+# Den review routing and pointer-first contract
 
 This document defines the runtime-neutral review envelope used by the normal
 Den review workflow. It is a contract between Den Review/MCP, managed runtimes
@@ -6,22 +6,50 @@ such as Rusty Crew, and procedural clients such as the Codex `den-review`
 skill. It is not a second review authority and it does not make a distributed
 transaction claim.
 
+The Den document `den-services/review-pointer-first-contract` is the canonical
+guidance source. This checked-in contract carries the implementation-facing
+envelope details and must remain faithful to that Den decision tree.
+
+## Submission and closeout decision tree
+
+- Built-in Rusty Crew brain: `submit_task_for_review`.
+- Crew-managed Codex: `rusty_crew.submit_task_for_review` when projected by the
+  managed runtime.
+- External/unmanaged caller using Crew: the role-bound
+  `npm run review:cli -- submit` and `status` commands.
+- Deliberate direct/unmanaged Den fallback: `request_review`.
+
+Generic `send_agent_message`, `agent_round`, raw `reply_agent_message`, and
+Codex app thread steering are not managed-review submission or closeout tools.
+An ordinary message to `@reviewer` remains direct/unmanaged unless Crew attaches
+an explicit `ReviewSubmissionRecord`.
+
+A reviewer certifies the envelope before closeout. An explicit managed Crew
+submission uses `complete_routed_review` / `rusty_crew.complete_routed_review`
+exactly once and does not call Den `finalize_review` first. A direct Den packet
+uses `finalize_review` once and sends no Crew reply.
+
 ## Normal green path
 
 ```text
-managed implementer  submit_task_for_review
+managed implementer   submit_task_for_review | rusty_crew.submit_task_for_review
+external implementer  role-bound review:cli submit/status
 direct implementer    request_review
-reviewer              get_review_context
-reviewer              inspect the exact diff and focused probes
-reviewer              finalize_review
-routed closeout       complete_routed_review
-manual closeout       return the compact receipt in chat
+reviewer              get_review_context + exact target inspection
+managed closeout      complete_routed_review | rusty_crew.complete_routed_review
+direct closeout       finalize_review + compact receipt in chat
 ```
 
 `submit_task_for_review` is the managed Rusty Crew entry point. `request_review`
 is the direct/unmanaged Den fallback. Neither path is a synonym for the other,
 and a reviewer must not reconstruct a submission by calling low-level tools
 one at a time during normal work.
+
+Every code submission identifies current Den task/review context, repository
+and pushed ref, exact pushed 40-character head SHA, intentional 40-character
+base/diff SHA, every exact required GitHub job/check-run name, a useful handoff,
+and stable task/SHA/material idempotency. Accepted, `gate_pending`, or reviewer
+delivery is durable progress, not review completion.
 
 ## Ownership
 
@@ -246,6 +274,22 @@ read-only.
    typed recovery paths. They do not use managed wake/reply ownership.
 8. Manual review returns its receipt in chat and sends no Crew reply. Routed
    review sends exactly one correlated Crew reply after durable finalization.
+9. Crew managed phases are `gate_pending`, `reviewer_dispatched`,
+   `den_finalization_pending`, `reply_pending`, and `review_terminal`.
+   Authoritative completion requires the exact Crew submission plus Den
+   round/task/gate readback; Codex app thread state is observational.
+10. Repeat managed completion only after an explicit pre-persistence local
+    validation rejection that says no result was persisted. After persistence,
+    a Den attempt, a missing/ambiguous receipt, adapter error, or reply failure,
+    reconcile the same submission and Den round rather than issuing another
+    completion or finalization.
+11. Crew configures no Den project allowlist. Den validates the caller-supplied
+    project and task.
+
+Operator readback includes the role-bound review-submission status route,
+`GET /v1/admin/diagnostics/review-submissions`,
+`GET /v1/admin/diagnostics/review-submission-scope`,
+`GET /v1/admin/diagnostics/review-den-authority`, and Den review/workflow reads.
 
 ## Verification contract
 
