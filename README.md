@@ -46,3 +46,11 @@ For a new, empty instance with PostgreSQL and all services on one machine, use
 the [single-machine deployment guide](deployment/new-instance.md). Its Fedora
 path and local-agent security profile were validated during the first
 clean-machine deployment.
+
+For repeatable updates on the external Den machines, use the [fleet update
+helper](deployment/fleet-update.md):
+
+```sh
+scripts/update-den-fleet.sh --target m5 --preflight
+scripts/update-den-fleet.sh --target m5
+```

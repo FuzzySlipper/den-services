@@ -101,6 +101,11 @@ func TestHauntRegressionCoverage(t *testing.T) {
 			sourceFile: filepath.Join("..", "delivery", "internal", "service_test.go"),
 			testFunc:   "TestCutoverWatermarkDisplayOnlyIntentCannotExecute",
 		},
+		{
+			name:       "deployment migration prerequisites and rollback are tested",
+			sourceFile: filepath.Join("..", "deployment_contract_test.go"),
+			testFunc:   "TestDeploymentSafetyRegression",
+		},
 	}
 
 	for _, tt := range tests {

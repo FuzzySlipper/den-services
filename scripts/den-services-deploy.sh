@@ -20,6 +20,8 @@ USAGE
 }
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/deploy-safety.sh
+source "${script_dir}/lib/deploy-safety.sh"
 if [[ -f "${script_dir}/../go.mod" ]]; then
   repo_root="$(cd "${script_dir}/.." && pwd)"
 elif [[ -f /data/services/den-services/go.mod ]]; then
@@ -161,18 +163,49 @@ json_field() {
 }
 
 rollback() {
+  local routes_snapshot="${stage_dir}/rollback/routes.yaml"
+  local config_snapshot="${stage_dir}/rollback/config.yaml"
+  if [[ -f "${routes_snapshot}" ]]; then
+    run_systemctl install -m 0644 "${routes_snapshot}" "${service_root}/config/routes.yaml"
+  elif [[ -f "${routes_snapshot}.absent" ]]; then
+    run_systemctl rm -f "${service_root}/config/routes.yaml"
+  fi
+  if [[ -f "${config_snapshot}" ]]; then
+    run_systemctl install -m 0644 "${config_snapshot}" "${service_root}/config/config.yaml"
+  elif [[ -f "${config_snapshot}.absent" ]]; then
+    run_systemctl rm -f "${service_root}/config/config.yaml"
+  fi
   if [[ -x "${service_root}/bin/${binary_name}.previous" ]]; then
     echo "Smoke failed; rolling back ${unit}" >&2
     install -m 0755 "${service_root}/bin/${binary_name}.previous" "${service_root}/bin/${binary_name}"
-    run_systemctl /bin/systemctl restart "${unit}"
   fi
+  run_systemctl /bin/systemctl reset-failed "${unit}" || true
+  run_systemctl /bin/systemctl restart "${unit}"
 }
 
 backup_config_file() {
   local path="$1"
   local name="$2"
 
-  install -m 0644 "${path}" "${service_root}/backups/${name}.${built_at//[:-]/}"
+  den_unique_backup "${path}" "${service_root}/backups" "${name}.${built_at//[:-]/}" >/dev/null
+}
+
+validate_deployment_prerequisites() {
+  local env_file="/etc/den-services/${service}.env"
+  if [[ "${service}" == "gateway" ]]; then
+    den_require_env_assignment "${env_file}" DEN_GATEWAY_KNOWLEDGE_UPSTREAM_TOKEN
+  fi
+  if [[ "${service}" == "mcp" ]]; then
+    den_require_env_assignment "${env_file}" DEN_HANDOFF_SERVICE_TOKEN
+    den_mcp_backend_configured "${service_root}/config/config.yaml" handoff || {
+      echo "missing required handoff backend in ${service_root}/config/config.yaml" >&2
+      return 1
+    }
+    /bin/systemctl is-active --quiet den-go@handoff.service || {
+      echo "den-go@handoff.service must be active before deploying MCP" >&2
+      return 1
+    }
+  fi
 }
 
 route_operation_exists() {
@@ -412,6 +445,7 @@ fi
 commit="$(git rev-parse --short=12 HEAD)"
 built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 stage_dir="$(mktemp -d "/tmp/den-services-${service}.XXXXXX")"
+trap 'rm -rf "${stage_dir}"' EXIT
 
 echo "Testing ${service} from ${repo_root}"
 go test "./${module}/..."
@@ -453,6 +487,10 @@ install -d -m 0755 \
   "${service_root}/logs" \
   "${service_root}/tmp" \
   "${service_root}/backups"
+
+validate_deployment_prerequisites
+den_snapshot_file "${service_root}/config/routes.yaml" "${stage_dir}/rollback/routes.yaml"
+den_snapshot_file "${service_root}/config/config.yaml" "${stage_dir}/rollback/config.yaml"
 
 release_dir="${service_root}/releases/${built_at//[:-]/}"
 install -d -m 0755 "${release_dir}"

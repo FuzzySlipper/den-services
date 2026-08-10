@@ -1,0 +1,32 @@
+# Copy this file to ~/.config/den-fleet.conf and edit only the Lore values
+# after its SSH account and deployment layout have been confirmed. This file
+# contains no credentials or Cloudflare tokens.
+
+# Nephew agentbox / m5. The Cloudflare SSH wrapper and key are documented in
+# den-network/nephew-agentbox-cloudflare-ssh-access-2026-06-05.
+DEN_FLEET_NEPHEW_SSH_CONFIG="${HOME}/.ssh/nephew-agentbox.conf"
+DEN_FLEET_NEPHEW_SSH_TARGET="nephew-agentbox"
+DEN_FLEET_NEPHEW_DEN_REPO="/data/services/den-services"
+DEN_FLEET_NEPHEW_DEN_WEB_REPO="/data/dev/den-web"
+DEN_FLEET_NEPHEW_DEN_WEB_ROOT="/data/services/den-web"
+DEN_FLEET_NEPHEW_DEN_WEB_URL="http://127.0.0.1:18080"
+# CI/review owns the full browser suite; the fleet publish still builds and
+# runs the live 35-check smoke. Set to 0 to repeat den-web's full local gates.
+DEN_FLEET_NEPHEW_DEN_WEB_SKIP_CHECKS="1"
+DEN_FLEET_NEPHEW_DEN_WEB_SKIP_INSTALL="0"
+DEN_FLEET_NEPHEW_RUSTY_UPDATER="/usr/local/sbin/update-rusty-stack"
+DEN_FLEET_NEPHEW_RUSTY_ROOT="/data/services/rusty-stack"
+
+# Lore / lore-desktop. The inventory records 192.168.1.25. Lore uses one
+# user-level Rusty Crew service, unlike m5's dual native instances.
+DEN_FLEET_LORE_SSH_CONFIG="${HOME}/.ssh/lore-desktop.conf"
+DEN_FLEET_LORE_SSH_TARGET="lore-desktop"
+DEN_FLEET_LORE_SSH_IDENTITY_FILE="${HOME}/.ssh/id_ed25519_lan"
+DEN_FLEET_LORE_DEN_REPO="/data/services/den-services"
+DEN_FLEET_LORE_DEN_WEB_REPO="/data/dev/den-web"
+DEN_FLEET_LORE_DEN_WEB_ROOT="/data/services/den-web"
+DEN_FLEET_LORE_DEN_WEB_URL="http://127.0.0.1:18080"
+DEN_FLEET_LORE_DEN_WEB_SKIP_CHECKS="1"
+DEN_FLEET_LORE_DEN_WEB_SKIP_INSTALL="0"
+DEN_FLEET_LORE_RUSTY_UPDATER="/data/services/rusty-crew/bin/update-rusty-stack"
+DEN_FLEET_LORE_RUSTY_ROOT="/data/services/rusty-crew"

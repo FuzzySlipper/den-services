@@ -41,6 +41,46 @@ func TestDeployableServicesContract(t *testing.T) {
 	}
 }
 
+func TestDeploymentSafetyRegression(t *testing.T) {
+	command := exec.Command("bash", "scripts/tests/deploy-safety-test.sh")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("deploy safety regression failed: %v\n%s", err, output)
+	}
+
+	deployScript, err := os.ReadFile("scripts/den-services-deploy.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(deployScript)
+	for _, required := range []string{
+		"DEN_GATEWAY_KNOWLEDGE_UPSTREAM_TOKEN",
+		"DEN_HANDOFF_SERVICE_TOKEN",
+		"den-go@handoff.service must be active",
+		"rollback/routes.yaml",
+		"systemctl reset-failed",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("deploy script missing safety contract %q", required)
+		}
+	}
+
+	fleetScript, err := os.ReadFile("scripts/update-den-fleet.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fleetText := string(fleetScript)
+	for _, required := range []string{
+		"DEN_GATEWAY_KNOWLEDGE_UPSTREAM_TOKEN",
+		"den-go@handoff.service is not active",
+		"mcp_config",
+		"review librarian handoff",
+	} {
+		if !strings.Contains(fleetText, required) {
+			t.Fatalf("fleet script missing preflight contract %q", required)
+		}
+	}
+}
+
 func loadServiceRegistry(t *testing.T) serviceRegistry {
 	t.Helper()
 	data, err := os.ReadFile("deployment/services.yaml")
