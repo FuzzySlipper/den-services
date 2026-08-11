@@ -24,6 +24,11 @@ If the compatible manifest is not named `.den-playwright.json`, the parent
 mission must supply its absolute path. Keep the scenario as a concise mission
 packet, not a second test framework or product specification.
 
+Both packet files must live inside the repository they claim to adopt, after
+resolving symlinks. The deterministic checker rejects cross-repository packet
+attribution so evidence cannot accidentally name one checkout while reading
+another checkout's manifest or mission.
+
 Check the adoption packet deterministically:
 
 ```bash

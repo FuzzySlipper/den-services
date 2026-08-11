@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { readFileSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 function fail(message) {
   console.error(`product-playtest adoption check failed: ${message}`);
@@ -21,17 +21,41 @@ if (!repoArgument || !manifestArgument || !scenarioArgument) {
   fail("usage: check-product-playtest-adoption.mjs REPO MANIFEST SCENARIO");
 }
 
-const repo = resolve(repoArgument);
-const manifestPath = resolve(manifestArgument);
-const scenarioPath = resolve(scenarioArgument);
+const repoInput = resolve(repoArgument);
 
 try {
-  if (!statSync(repo).isDirectory()) {
-    fail(`repository path is not a directory: ${repo}`);
+  if (!statSync(repoInput).isDirectory()) {
+    fail(`repository path is not a directory: ${repoInput}`);
   }
 } catch (error) {
-  fail(`repository path is unavailable: ${repo}: ${error.message}`);
+  fail(`repository path is unavailable: ${repoInput}: ${error.message}`);
 }
+
+const repo = realpathSync(repoInput);
+
+function resolveOwnedFile(argument, label) {
+  const input = resolve(argument);
+  let path;
+  try {
+    if (!statSync(input).isFile()) {
+      fail(`${label} path is not a file: ${input}`);
+    }
+    path = realpathSync(input);
+  } catch (error) {
+    fail(`${label} path is unavailable: ${input}: ${error.message}`);
+  }
+
+  const fromRepo = relative(repo, path);
+  const outsideRepo = fromRepo === "" || fromRepo === ".." ||
+    fromRepo.startsWith(`..${sep}`) || isAbsolute(fromRepo);
+  if (outsideRepo) {
+    fail(`${label} must be owned by repository ${repo}: ${path}`);
+  }
+  return path;
+}
+
+const manifestPath = resolveOwnedFile(manifestArgument, "manifest");
+const scenarioPath = resolveOwnedFile(scenarioArgument, "scenario");
 
 const manifest = readJSON(manifestPath, "manifest");
 const scenario = readJSON(scenarioPath, "scenario");
