@@ -8,6 +8,7 @@ DEN_MCP_SMOKE_SSH_HOST ?= den-srv
 
 test:
 	node --test scripts/check-product-playtest-adoption.test.mjs
+	node --test playwright-broker/driver/playtest-diagnostics.test.mjs
 	GOCACHE=$(GOCACHE) go test ./...
 	@for service in $(SERVICES); do \
 		echo "testing $$service"; \

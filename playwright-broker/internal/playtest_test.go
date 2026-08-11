@@ -1,11 +1,13 @@
 package broker
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -55,12 +57,17 @@ func TestPlaytestCallFailsOpenWhenDriverIsUnavailable(t *testing.T) {
 	listener.Close()
 
 	manager := NewPlaytestManager(playtestTestConfig(t))
+	artifactRoot := t.TempDir()
 	session := PlaytestSession{
-		SessionID: "gone-driver",
-		Status:    "running",
-		Endpoint:  endpoint,
-		DriverPID: 999999999,
-		IndexPath: filepath.Join(t.TempDir(), "playtest-index.json"),
+		SchemaVersion: PlaytestSchemaVersion,
+		SessionID:     "gone-driver",
+		Project:       "fixture",
+		Status:        "running",
+		Endpoint:      endpoint,
+		DriverPID:     999999999,
+		ArtifactRoot:  artifactRoot,
+		IndexPath:     filepath.Join(artifactRoot, "playtest-index.json"),
+		StartedAt:     time.Now().UTC(),
 	}
 	if err := manager.saveSession(session); err != nil {
 		t.Fatalf("saveSession() error = %v", err)
@@ -76,6 +83,62 @@ func TestPlaytestCallFailsOpenWhenDriverIsUnavailable(t *testing.T) {
 	if !ok || len(diagnostics) != 1 || diagnostics[0]["code"] != "driver_call_error" {
 		t.Fatalf("discrepancies = %#v", result["discrepancies"])
 	}
+	requests := readJSONLines(t, filepath.Join(artifactRoot, "requests.jsonl"))
+	if len(requests) != 1 || requests[0]["source"] != "manager_fallback" {
+		t.Fatalf("requests = %#v", requests)
+	}
+	request, _ := requests[0]["request"].(map[string]any)
+	if request["kind"] != "inspect" {
+		t.Fatalf("retained request = %#v", request)
+	}
+	index := readIndex(t, session.IndexPath)
+	assertIndexDiagnostic(t, index, "driver_call_error")
+	timeline, _ := index["timeline"].([]any)
+	if len(timeline) != 1 || timeline[0].(map[string]any)["kind"] != "manager_call_failure" {
+		t.Fatalf("timeline = %#v", timeline)
+	}
+}
+
+func TestFinishHostCleanupPersistsManagerDiagnostics(t *testing.T) {
+	artifactRoot := t.TempDir()
+	blockedStateDir := filepath.Join(t.TempDir(), "state-file")
+	if err := os.WriteFile(blockedStateDir, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	cfg := playtestTestConfig(t)
+	cfg.StateDir = blockedStateDir
+	manager := NewPlaytestManager(cfg)
+	session := PlaytestSession{
+		SchemaVersion: PlaytestSchemaVersion,
+		SessionID:     "cleanup-failure",
+		Project:       "fixture",
+		Status:        "running",
+		DriverPID:     999999999,
+		ServerPID:     999999998,
+		ArtifactRoot:  artifactRoot,
+		IndexPath:     filepath.Join(artifactRoot, "playtest-index.json"),
+		StartedAt:     time.Now().UTC(),
+	}
+	manager.finishHostCleanup(&session, "finish")
+
+	index := readIndex(t, session.IndexPath)
+	assertIndexDiagnostic(t, index, "lease_lock_error")
+	assertIndexDiagnostic(t, index, "session_save_error")
+	cleanup, _ := index["cleanup"].(map[string]any)
+	if cleanup["dev_server_stopped"] != true {
+		t.Fatalf("cleanup = %#v", cleanup)
+	}
+	artifacts, _ := index["artifacts"].([]any)
+	foundSidecar := false
+	for _, artifact := range artifacts {
+		foundSidecar = foundSidecar || artifact == "host-cleanup.jsonl"
+	}
+	if !foundSidecar {
+		t.Fatalf("artifacts = %#v", artifacts)
+	}
+	if lines := readJSONLines(t, filepath.Join(artifactRoot, "host-cleanup.jsonl")); len(lines) == 0 {
+		t.Fatal("host cleanup sidecar is empty")
+	}
 }
 
 func playtestTestConfig(t *testing.T) *Config {
@@ -85,4 +148,51 @@ func playtestTestConfig(t *testing.T) *Config {
 		Timeouts: TimeoutConfig{LockTimeout: time.Second, ShutdownTimeout: 50 * time.Millisecond},
 		Playtest: PlaytestConfig{CommandTimeout: 250 * time.Millisecond},
 	}
+}
+
+func readIndex(t *testing.T, path string) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", path, err)
+	}
+	var index map[string]any
+	if err := json.Unmarshal(data, &index); err != nil {
+		t.Fatalf("Unmarshal(%s) error = %v", path, err)
+	}
+	return index
+}
+
+func readJSONLines(t *testing.T, path string) []map[string]any {
+	t.Helper()
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("Open(%s) error = %v", path, err)
+	}
+	defer file.Close()
+	lines := []map[string]any{}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		var line map[string]any
+		if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
+			t.Fatalf("Unmarshal line error = %v", err)
+		}
+		lines = append(lines, line)
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("Scan(%s) error = %v", path, err)
+	}
+	return lines
+}
+
+func assertIndexDiagnostic(t *testing.T, index map[string]any, code string) {
+	t.Helper()
+	diagnostics, _ := index["discrepancies"].([]any)
+	for _, value := range diagnostics {
+		diagnostic, _ := value.(map[string]any)
+		if diagnostic["code"] == code {
+			return
+		}
+	}
+	t.Fatalf("diagnostic %q not found in %#v", code, diagnostics)
 }

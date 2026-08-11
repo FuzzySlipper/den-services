@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { chromium } from "@playwright/test";
+import { inputStateDiscrepancies, lifecycleDiscrepancies } from "./playtest-diagnostics.mjs";
 
 const options = JSON.parse(process.env.DEN_PLAYTEST_DRIVER_OPTIONS || "{}");
 const artifactRoot = options.artifactRoot;
@@ -16,6 +17,7 @@ const events = { console: [], pageErrors: [], requests: [], responses: [], webso
 const timeline = [];
 const discrepancies = [];
 let nextSequence = 1;
+let lastOperation = "start";
 let status = "starting";
 let finishedAt = null;
 let browser;
@@ -91,24 +93,39 @@ async function record(kind, data = {}) {
 }
 
 function noteDiscrepancies(request) {
-  const found = [];
-  if (request.owner && options.owner && request.owner !== options.owner) {
-    found.push({ code: "owner_mismatch", expected: options.owner, received: request.owner });
-  }
-  if (request.sequence === undefined || request.sequence === null) {
-    found.push({ code: "sequence_missing", expected: nextSequence });
-  } else if (request.sequence !== nextSequence) {
-    found.push({ code: request.sequence < nextSequence ? "sequence_stale" : "sequence_gap", expected: nextSequence, received: request.sequence });
-  }
-  if (status !== "running" && request.kind !== "finish" && request.kind !== "cancel") {
-    found.push({ code: "unexpected_session_state", state: status, requested_kind: request.kind });
-  }
+  const result = lifecycleDiscrepancies(request, {
+    owner: options.owner,
+    nextSequence,
+    status,
+    lastOperation
+  });
+  const found = result.found;
   for (const discrepancy of found) {
     const item = { at: new Date().toISOString(), ...discrepancy, continued: true };
     discrepancies.push(item);
   }
-  const numericSequence = Number(request.sequence);
-  nextSequence = Number.isFinite(numericSequence) ? Math.max(nextSequence + 1, numericSequence + 1) : nextSequence + 1;
+  nextSequence = result.nextSequence;
+  return found;
+}
+
+async function noteInputStateDiscrepancies(request) {
+  const hasExpectation = request.expected_focus !== undefined || request.expectedFocus !== undefined ||
+    request.expected_pointer_lock !== undefined || request.expectedPointerLock !== undefined;
+  if (!hasExpectation) return [];
+
+  const found = [];
+  let state;
+  try {
+    state = await commonState();
+  } catch (error) {
+    found.push({ code: "input_state_unavailable", error: String(error) });
+    discrepancies.push({ at: new Date().toISOString(), ...found[0], continued: true });
+    return found;
+  }
+  found.push(...inputStateDiscrepancies(request, state));
+  for (const discrepancy of found) {
+    discrepancies.push({ at: new Date().toISOString(), ...discrepancy, continued: true });
+  }
   return found;
 }
 
@@ -367,6 +384,7 @@ async function handle(request) {
     discrepancies.push({ at: new Date().toISOString(), code: "recovery_error", error: String(error), continued: false });
     return [];
   });
+  found.push(...await noteInputStateDiscrepancies(request));
   let result;
   try {
     switch (request.kind) {
@@ -385,6 +403,7 @@ async function handle(request) {
   }
   await record("command", { request, discrepancies: found, recovery, result });
   await persist();
+  lastOperation = request.kind;
   return { ok: !result?.error, continued: true, session_id: options.sessionId, next_sequence: nextSequence, discrepancies: found, recovery, result, index_path: indexPath };
 }
 

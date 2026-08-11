@@ -194,13 +194,19 @@ func (m *PlaytestManager) Call(ctx context.Context, sessionID string, request ma
 		}
 	}
 	if callErr != nil {
+		diagnostic := map[string]any{"code": "driver_call_error", "error": callErr.Error(), "continued": processAlive(session.DriverPID)}
 		result = map[string]any{
 			"ok":            false,
-			"continued":     processAlive(session.DriverPID),
+			"continued":     diagnostic["continued"],
 			"session_id":    session.SessionID,
 			"index_path":    session.IndexPath,
 			"result":        map[string]any{"partial": true, "error": callErr.Error()},
-			"discrepancies": []map[string]any{{"code": "driver_call_error", "error": callErr.Error()}},
+			"discrepancies": []map[string]any{diagnostic},
+		}
+		if persistErr := m.persistManagerCallFailure(session, request, result, diagnostic); persistErr != nil {
+			result["discrepancies"] = append(result["discrepancies"].([]map[string]any), map[string]any{
+				"code": "evidence_persist_error", "error": persistErr.Error(), "continued": false,
+			})
 		}
 	}
 	if kind == "finish" || kind == "cancel" {
@@ -325,38 +331,64 @@ func (m *PlaytestManager) waitForDriver(ctx context.Context, endpoint string, pi
 }
 
 func (m *PlaytestManager) finishHostCleanup(session *PlaytestSession, kind string) {
+	diagnostics := []map[string]any{}
 	driverDeadline := m.clock().Add(m.cfg.Timeouts.ShutdownTimeout)
 	for processAlive(session.DriverPID) && m.clock().Before(driverDeadline) {
 		time.Sleep(25 * time.Millisecond)
 	}
 	if processAlive(session.DriverPID) {
-		_ = stopProcessGroup(session.DriverPID, m.cfg.Timeouts.ShutdownTimeout)
+		if err := stopProcessGroup(session.DriverPID, m.cfg.Timeouts.ShutdownTimeout); err != nil {
+			diagnostics = append(diagnostics, cleanupDiagnostic("driver_cleanup_error", err))
+		}
 	}
 	serverStopped := session.ServerReused || session.ServerPID <= 0
 	if !session.ServerReused && session.ServerPID > 0 {
-		serverStopped = stopProcessGroup(session.ServerPID, m.cfg.Timeouts.ShutdownTimeout) == nil
+		if err := stopProcessGroup(session.ServerPID, m.cfg.Timeouts.ShutdownTimeout); err != nil {
+			diagnostics = append(diagnostics, cleanupDiagnostic("dev_server_cleanup_error", err))
+			serverStopped = false
+		} else {
+			serverStopped = true
+		}
 	}
 	registry := NewLeaseRegistry(m.cfg.StateDir)
-	if registry.Lock(context.Background(), m.cfg.Timeouts.LockTimeout) == nil {
-		if leases, err := registry.Load(); err == nil {
-			_ = registry.Save(removeLease(leases, session.SessionID))
+	if err := registry.Lock(context.Background(), m.cfg.Timeouts.LockTimeout); err != nil {
+		diagnostics = append(diagnostics, cleanupDiagnostic("lease_lock_error", err))
+	} else {
+		if leases, err := registry.Load(); err != nil {
+			diagnostics = append(diagnostics, cleanupDiagnostic("lease_load_error", err))
+		} else if err := registry.Save(removeLease(leases, session.SessionID)); err != nil {
+			diagnostics = append(diagnostics, cleanupDiagnostic("lease_save_error", err))
 		}
-		_ = registry.Unlock()
+		if err := registry.Unlock(); err != nil {
+			diagnostics = append(diagnostics, cleanupDiagnostic("lease_unlock_error", err))
+		}
 	}
 	session.Status = kind
 	session.FinishedAt = m.clock()
-	_ = m.saveSession(*session)
-	m.patchCleanupIndex(*session, serverStopped)
+	if err := m.saveSession(*session); err != nil {
+		diagnostics = append(diagnostics, cleanupDiagnostic("session_save_error", err))
+	}
+	cleanupEvent := map[string]any{
+		"at": m.clock().Format(time.RFC3339Nano), "kind": kind, "server_stopped": serverStopped,
+		"driver_pid": session.DriverPID, "server_pid": session.ServerPID, "diagnostics": diagnostics,
+	}
+	sidecarErr := appendJSONLine(filepath.Join(session.ArtifactRoot, "host-cleanup.jsonl"), cleanupEvent)
+	if sidecarErr != nil {
+		diagnostics = append(diagnostics, cleanupDiagnostic("cleanup_sidecar_error", sidecarErr))
+	}
+	if err := m.patchCleanupIndex(*session, serverStopped, diagnostics, cleanupEvent); err != nil {
+		fallback := map[string]any{
+			"at": m.clock().Format(time.RFC3339Nano), "kind": kind,
+			"diagnostics": []map[string]any{cleanupDiagnostic("cleanup_index_error", err)},
+		}
+		_ = appendJSONLine(filepath.Join(session.ArtifactRoot, "host-cleanup.jsonl"), fallback)
+	}
 }
 
-func (m *PlaytestManager) patchCleanupIndex(session PlaytestSession, serverStopped bool) {
-	data, err := os.ReadFile(session.IndexPath)
+func (m *PlaytestManager) patchCleanupIndex(session PlaytestSession, serverStopped bool, diagnostics []map[string]any, event map[string]any) error {
+	index, err := loadOrCreatePlaytestIndex(session)
 	if err != nil {
-		return
-	}
-	var index map[string]any
-	if json.Unmarshal(data, &index) != nil {
-		return
+		return err
 	}
 	cleanup, _ := index["cleanup"].(map[string]any)
 	if cleanup == nil {
@@ -366,10 +398,129 @@ func (m *PlaytestManager) patchCleanupIndex(session PlaytestSession, serverStopp
 	cleanup["dev_server_stopped"] = serverStopped
 	cleanup["dev_server_pid"] = session.ServerPID
 	index["cleanup"] = cleanup
-	encoded, err := json.MarshalIndent(index, "", "  ")
-	if err == nil {
-		_ = os.WriteFile(session.IndexPath, append(encoded, '\n'), 0o600)
+	appendIndexItems(index, "discrepancies", diagnostics...)
+	appendIndexItems(index, "timeline", event)
+	appendArtifact(index, "host-cleanup.jsonl")
+	if err := appendJSONLine(filepath.Join(session.ArtifactRoot, "timeline.jsonl"), event); err != nil {
+		return fmt.Errorf("appending host cleanup timeline: %w", err)
 	}
+	return writePlaytestIndex(session.IndexPath, index)
+}
+
+func (m *PlaytestManager) persistManagerCallFailure(session PlaytestSession, request map[string]any, result map[string]any, diagnostic map[string]any) error {
+	requestEntry := map[string]any{"at": m.clock().Format(time.RFC3339Nano), "request": request, "source": "manager_fallback"}
+	if err := appendJSONLine(filepath.Join(session.ArtifactRoot, "requests.jsonl"), requestEntry); err != nil {
+		return fmt.Errorf("persisting failed driver request: %w", err)
+	}
+	index, err := loadOrCreatePlaytestIndex(session)
+	if err != nil {
+		return err
+	}
+	timelineItems, _ := index["timeline"].([]any)
+	event := map[string]any{
+		"offset": len(timelineItems), "at": m.clock().Format(time.RFC3339Nano), "kind": "manager_call_failure",
+		"request": request, "discrepancies": []map[string]any{diagnostic}, "result": result,
+	}
+	if err := appendJSONLine(filepath.Join(session.ArtifactRoot, "timeline.jsonl"), event); err != nil {
+		return fmt.Errorf("persisting failed driver timeline: %w", err)
+	}
+	appendIndexItems(index, "timeline", event)
+	appendIndexItems(index, "discrepancies", diagnostic)
+	appendArtifact(index, "requests.jsonl")
+	appendArtifact(index, "timeline.jsonl")
+	return writePlaytestIndex(session.IndexPath, index)
+}
+
+func loadOrCreatePlaytestIndex(session PlaytestSession) (map[string]any, error) {
+	data, err := os.ReadFile(session.IndexPath)
+	if err == nil {
+		var index map[string]any
+		if err := json.Unmarshal(data, &index); err != nil {
+			return nil, fmt.Errorf("parsing playtest index: %w", err)
+		}
+		return index, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("reading playtest index: %w", err)
+	}
+	revision := map[string]any{}
+	if strings.TrimSpace(session.RepoRoot) != "" {
+		revision = readRevision(session.RepoRoot)
+	}
+	return map[string]any{
+		"schema_version": PlaytestSchemaVersion, "session_id": session.SessionID, "project": session.Project,
+		"repository": session.RepoRoot, "scenario": session.Scenario, "status": session.Status,
+		"revision":   revision,
+		"started_at": session.StartedAt, "timeline": []any{}, "discrepancies": []any{}, "artifacts": []any{},
+		"cleanup": map[string]any{"browser_closed": false, "driver_stopped": !processAlive(session.DriverPID)},
+	}, nil
+}
+
+func appendIndexItems(index map[string]any, key string, items ...map[string]any) {
+	existing, _ := index[key].([]any)
+	for _, item := range items {
+		existing = append(existing, item)
+	}
+	index[key] = existing
+}
+
+func appendArtifact(index map[string]any, artifact string) {
+	existing, _ := index["artifacts"].([]any)
+	for _, value := range existing {
+		if value == artifact {
+			return
+		}
+	}
+	index["artifacts"] = append(existing, artifact)
+}
+
+func appendJSONLine(path string, value any) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = file.Write(append(data, '\n'))
+	return err
+}
+
+func writePlaytestIndex(path string, index map[string]any) error {
+	data, err := json.MarshalIndent(index, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".playtest-index-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(append(data, '\n')); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
+}
+
+func cleanupDiagnostic(code string, err error) map[string]any {
+	return map[string]any{"code": code, "error": err.Error(), "continued": true}
 }
 
 func (m *PlaytestManager) cleanupStartedServer(registry *LeaseRegistry, leases []LeaseRecord, sessionID string, server preparedServer) {

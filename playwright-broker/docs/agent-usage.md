@@ -10,6 +10,13 @@ start -> observe / act / inspect (repeat in any order) -> finish or cancel
 
 The order is a helpful convention, not an enforcement mechanism. Every request is copied verbatim to `requests.jsonl`. Missing/stale sequence values, owner-label mismatches, unexpected order, inactive focus/pointer lock, unknown fields, and action errors become structured discrepancies. The driver continues with later actions and calls whenever the browser remains usable.
 
+Callers may declare advisory expectations with `expected_previous_kind`,
+`expected_focus`, and `expected_pointer_lock` (camel-case aliases are also
+accepted). A mismatch records `unexpected_operation_order`, `focus_inactive`
+or `focus_unexpected`, and `pointer_lock_inactive` or
+`pointer_lock_unexpected`. These hints never reject or suppress an operation;
+omit them when focus, pointer lock, or call order is irrelevant to the test.
+
 ## Start
 
 ```bash
@@ -126,6 +133,13 @@ Captured event data includes console messages, page errors/crashes, request head
 
 Finish/cancel stops tracing, closes the browser, terminates the local driver, attempts precise dev-server cleanup, releases the lease record, and updates cleanup fields. Repeating cleanup is harmless. Cleanup errors are evidence rather than reasons to discard the packet.
 
+If the driver cannot receive a request, the manager appends the exact request,
+`driver_call_error`, and a chronological fallback event directly to the same
+packet before returning. Host cleanup also writes `host-cleanup.jsonl` before
+patching the index; lease, session, process, sidecar, and index failures receive
+distinct diagnostic codes. The sidecar remains a recovery record if the main
+index itself cannot be rewritten.
+
 ## Evidence packet
 
 Each session writes:
@@ -139,6 +153,7 @@ Each session writes:
   driver.stderr.log
   server.stdout.log
   server.stderr.log
+  host-cleanup.jsonl
   screenshots/*.png
   video/*                 # when requested
   trace.zip
