@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -210,7 +211,11 @@ func (m *PlaytestManager) Call(ctx context.Context, sessionID string, request ma
 		}
 	}
 	if kind == "finish" || kind == "cancel" {
-		m.finishHostCleanup(&session, kind)
+		finalStatus := kind
+		if outcome, ok := request["outcome"].(string); ok && strings.TrimSpace(outcome) != "" {
+			finalStatus = outcome
+		}
+		m.finishHostCleanup(&session, kind, finalStatus)
 	}
 	return result, nil
 }
@@ -330,13 +335,13 @@ func (m *PlaytestManager) waitForDriver(ctx context.Context, endpoint string, pi
 	return fmt.Errorf("playtest driver startup timed out after %s", m.cfg.Playtest.DriverStartupTimeout)
 }
 
-func (m *PlaytestManager) finishHostCleanup(session *PlaytestSession, kind string) {
+func (m *PlaytestManager) finishHostCleanup(session *PlaytestSession, kind string, finalStatus string) {
 	diagnostics := []map[string]any{}
 	driverDeadline := m.clock().Add(m.cfg.Timeouts.ShutdownTimeout)
 	for processAlive(session.DriverPID) && m.clock().Before(driverDeadline) {
 		time.Sleep(25 * time.Millisecond)
 	}
-	if processAlive(session.DriverPID) {
+	if processGroupAlive(session.DriverPID) {
 		if err := stopProcessGroup(session.DriverPID, m.cfg.Timeouts.ShutdownTimeout); err != nil {
 			diagnostics = append(diagnostics, cleanupDiagnostic("driver_cleanup_error", err))
 		}
@@ -363,7 +368,7 @@ func (m *PlaytestManager) finishHostCleanup(session *PlaytestSession, kind strin
 			diagnostics = append(diagnostics, cleanupDiagnostic("lease_unlock_error", err))
 		}
 	}
-	session.Status = kind
+	session.Status = finalStatus
 	session.FinishedAt = m.clock()
 	if err := m.saveSession(*session); err != nil {
 		diagnostics = append(diagnostics, cleanupDiagnostic("session_save_error", err))
@@ -397,13 +402,20 @@ func (m *PlaytestManager) patchCleanupIndex(session PlaytestSession, serverStopp
 	cleanup["dev_server_reused"] = session.ServerReused
 	cleanup["dev_server_stopped"] = serverStopped
 	cleanup["dev_server_pid"] = session.ServerPID
+	cleanup["driver_stopped"] = !processGroupAlive(session.DriverPID)
 	index["cleanup"] = cleanup
+	index["status"] = session.Status
+	index["finished_at"] = session.FinishedAt
 	appendIndexItems(index, "discrepancies", diagnostics...)
 	appendIndexItems(index, "timeline", event)
 	appendArtifact(index, "host-cleanup.jsonl")
 	if err := appendJSONLine(filepath.Join(session.ArtifactRoot, "timeline.jsonl"), event); err != nil {
 		return fmt.Errorf("appending host cleanup timeline: %w", err)
 	}
+	if err := refreshArtifactIndex(index, session.ArtifactRoot); err != nil {
+		return fmt.Errorf("refreshing cleanup artifacts: %w", err)
+	}
+	appendArtifact(index, relativeArtifactPath(session.ArtifactRoot, session.IndexPath))
 	return writePlaytestIndex(session.IndexPath, index)
 }
 
@@ -428,6 +440,10 @@ func (m *PlaytestManager) persistManagerCallFailure(session PlaytestSession, req
 	appendIndexItems(index, "discrepancies", diagnostic)
 	appendArtifact(index, "requests.jsonl")
 	appendArtifact(index, "timeline.jsonl")
+	if err := refreshArtifactIndex(index, session.ArtifactRoot); err != nil {
+		return fmt.Errorf("refreshing failed-call artifacts: %w", err)
+	}
+	appendArtifact(index, relativeArtifactPath(session.ArtifactRoot, session.IndexPath))
 	return writePlaytestIndex(session.IndexPath, index)
 }
 
@@ -465,6 +481,9 @@ func appendIndexItems(index map[string]any, key string, items ...map[string]any)
 }
 
 func appendArtifact(index map[string]any, artifact string) {
+	if artifact == "" {
+		return
+	}
 	existing, _ := index["artifacts"].([]any)
 	for _, value := range existing {
 		if value == artifact {
@@ -472,6 +491,45 @@ func appendArtifact(index map[string]any, artifact string) {
 		}
 	}
 	index["artifacts"] = append(existing, artifact)
+}
+
+func relativeArtifactPath(artifactRoot string, path string) string {
+	relative, err := filepath.Rel(artifactRoot, path)
+	if err != nil || relative == "." || strings.HasPrefix(relative, "..") {
+		return ""
+	}
+	return filepath.ToSlash(relative)
+}
+
+func refreshArtifactIndex(index map[string]any, artifactRoot string) error {
+	artifacts := []string{}
+	err := filepath.WalkDir(artifactRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(artifactRoot, path)
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(filepath.Base(relative), ".playtest-index-") {
+			return nil
+		}
+		artifacts = append(artifacts, filepath.ToSlash(relative))
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	sort.Strings(artifacts)
+	values := make([]any, len(artifacts))
+	for index := range artifacts {
+		values[index] = artifacts[index]
+	}
+	index["artifacts"] = values
+	return nil
 }
 
 func appendJSONLine(path string, value any) error {

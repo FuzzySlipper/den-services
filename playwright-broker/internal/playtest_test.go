@@ -119,7 +119,7 @@ func TestFinishHostCleanupPersistsManagerDiagnostics(t *testing.T) {
 		IndexPath:     filepath.Join(artifactRoot, "playtest-index.json"),
 		StartedAt:     time.Now().UTC(),
 	}
-	manager.finishHostCleanup(&session, "finish")
+	manager.finishHostCleanup(&session, "finish", "infrastructure_error")
 
 	index := readIndex(t, session.IndexPath)
 	assertIndexDiagnostic(t, index, "lease_lock_error")
@@ -127,6 +127,9 @@ func TestFinishHostCleanupPersistsManagerDiagnostics(t *testing.T) {
 	cleanup, _ := index["cleanup"].(map[string]any)
 	if cleanup["dev_server_stopped"] != true {
 		t.Fatalf("cleanup = %#v", cleanup)
+	}
+	if cleanup["driver_stopped"] != true || index["status"] != "infrastructure_error" {
+		t.Fatalf("status/cleanup = %#v / %#v", index["status"], cleanup)
 	}
 	artifacts, _ := index["artifacts"].([]any)
 	foundSidecar := false
