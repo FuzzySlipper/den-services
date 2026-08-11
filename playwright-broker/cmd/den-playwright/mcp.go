@@ -214,12 +214,7 @@ func toolResultWithImages(value any, isError bool, artifactRoot string, relative
 			warnings = append(warnings, fmt.Sprintf("omitted %d image(s) after attachment limit %d", len(relativePaths)-index, maxImages))
 			break
 		}
-		path, err := boundedArtifactPath(artifactRoot, relativePath)
-		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("%s: %v", relativePath, err))
-			continue
-		}
-		data, err := os.ReadFile(path)
+		data, err := readBoundedArtifact(artifactRoot, relativePath)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("%s: %v", relativePath, err))
 			continue
@@ -270,23 +265,21 @@ func playtestObservationImagePaths(value any) []string {
 	return paths
 }
 
-func boundedArtifactPath(artifactRoot string, relativePath string) (string, error) {
-	root, err := filepath.Abs(artifactRoot)
+func readBoundedArtifact(artifactRoot string, relativePath string) ([]byte, error) {
+	localPath := filepath.Clean(filepath.FromSlash(relativePath))
+	if !filepath.IsLocal(localPath) {
+		return nil, errors.New("path is outside the session artifact root")
+	}
+	root, err := os.OpenRoot(artifactRoot)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("opening session artifact root: %w", err)
 	}
-	candidate, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(relativePath)))
+	defer root.Close()
+	data, err := root.ReadFile(localPath)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("reading artifact within session root: %w", err)
 	}
-	relative, err := filepath.Rel(root, candidate)
-	if err != nil {
-		return "", err
-	}
-	if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
-		return "", errors.New("path is outside the session artifact root")
-	}
-	return candidate, nil
+	return data, nil
 }
 
 func appendToolResultWarning(result map[string]any, warning string) {

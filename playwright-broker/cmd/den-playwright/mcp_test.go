@@ -78,6 +78,42 @@ func TestToolResultWithImagesRetainsStructuredResultOnAttachmentFailure(t *testi
 	}
 }
 
+func TestToolResultWithImagesRejectsSymlinkOutsideArtifactRoot(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	writeTestPNG(t, outside, "outside.png", []byte("outside"))
+	if err := os.MkdirAll(filepath.Join(root, "screenshots"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "outside.png"), filepath.Join(root, "screenshots", "linked.png")); err != nil {
+		t.Fatal(err)
+	}
+	assertRejectedImageRetainsStructuredResult(t, root, "screenshots/linked.png")
+}
+
+func TestToolResultWithImagesRejectsSymlinkedDirectoryOutsideArtifactRoot(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	writeTestPNG(t, outside, "outside.png", []byte("outside"))
+	if err := os.Symlink(outside, filepath.Join(root, "screenshots")); err != nil {
+		t.Fatal(err)
+	}
+	assertRejectedImageRetainsStructuredResult(t, root, "screenshots/outside.png")
+}
+
+func assertRejectedImageRetainsStructuredResult(t *testing.T, root string, relativePath string) {
+	t.Helper()
+	value := map[string]any{"ok": true, "result": map[string]any{"screenshot": relativePath}}
+	result := toolResultWithImages(value, false, root, playtestObservationImagePaths(value))
+	content := result["content"].([]map[string]any)
+	if !reflect.DeepEqual(result["structuredContent"], value) || len(content) != 2 || content[1]["type"] != "text" {
+		t.Fatalf("result = %#v", result)
+	}
+	if !strings.Contains(content[1]["text"].(string), "playtest image attachment warning") {
+		t.Fatalf("warning = %q", content[1]["text"])
+	}
+}
+
 func writeTestPNG(t *testing.T, root string, relativePath string, suffix []byte) {
 	t.Helper()
 	path := filepath.Join(root, relativePath)
