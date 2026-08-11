@@ -47,9 +47,17 @@ one at a time during normal work.
 
 Every code submission identifies current Den task/review context, repository
 and pushed ref, exact pushed 40-character head SHA, intentional 40-character
-base/diff SHA, every exact required GitHub job/check-run name, a useful handoff,
-and stable task/SHA/material idempotency. Accepted, `gate_pending`, or reviewer
-delivery is durable progress, not review completion.
+base/diff SHA, the repository's declared review mode, a useful handoff, and
+stable task/SHA/material idempotency. A checked mode includes every exact
+required GitHub job/check-run name. An explicitly checkless repository skips
+only GitHub gate registration; it still creates the exact-SHA Den round and
+uses the same managed reviewer/finalization path. Accepted, `gate_pending`, or
+reviewer delivery is durable progress, not review completion.
+
+External clients read `.rusty-crew-review.json` when present. A non-empty
+`requiredChecks` array selects the normal exact-name GitHub gate. An empty array
+selects explicit `--no-checks` mode. Clients must not infer successful CI from
+local commands or invent a workflow merely to make review transport proceed.
 
 ## Ownership
 
@@ -150,6 +158,11 @@ meaning of `delta_base_commit` is the prior reviewed head when one exists,
 otherwise the submitted base. `review_summary_md`, test logs, full guidance bodies, and full packet Markdown
 do not belong in this envelope. They remain in the canonical packet and are
 opened by handle when a reviewer needs them.
+
+For explicit checkless mode, `gate` is absent and the managed submission
+records `gate_status=passed` with `terminal_reason=no_required_checks` before
+entering `reviewer_dispatch_pending`. This is workflow evidence that no gate
+was configured, not evidence that GitHub checks ran.
 
 ### Reviewer context envelope
 
@@ -274,8 +287,10 @@ read-only.
    typed recovery paths. They do not use managed wake/reply ownership.
 8. Manual review returns its receipt in chat and sends no Crew reply. Routed
    review sends exactly one correlated Crew reply after durable finalization.
-9. Crew managed phases are `gate_pending`, `reviewer_dispatched`,
-   `den_finalization_pending`, `reply_pending`, and `review_terminal`.
+9. Crew managed phases are `gate_pending` when checks are declared, then
+   `reviewer_dispatched`, `den_finalization_pending`, `reply_pending`, and
+   `review_terminal`. Explicit checkless submissions move from the Den handoff
+   directly to reviewer dispatch with `terminal_reason=no_required_checks`.
    Authoritative completion requires the exact Crew submission plus Den
    round/task/gate readback; Codex app thread state is observational.
 10. Repeat managed completion only after an explicit pre-persistence local

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "repository": "FuzzySlipper/den-services",
+  "requiredChecks": [],
+  "localVerification": ["make test"],
+  "notes": "This repository intentionally has no GitHub check-run gate. External Rusty Crew reviews use --no-checks and include useful local verification in the handoff."
+}
