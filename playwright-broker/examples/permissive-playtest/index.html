@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Permissive Playtest Fixture</title>
+  <style>
+    body { margin: 0; font: 16px system-ui; background: #101522; color: #e8eeff; }
+    main { max-width: 920px; margin: 20px auto; }
+    canvas { width: 920px; height: 420px; background: linear-gradient(#243858, #111827); outline: 2px solid #7094d8; }
+    output { display: block; padding: 12px 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Permissive Playtest Fixture</h1>
+    <p>Click the canvas for pointer lock. Use WASD or injected test operations.</p>
+    <canvas id="world" width="920" height="420" tabindex="0" aria-label="Interactive test world"></canvas>
+    <output id="state" aria-live="polite"></output>
+  </main>
+  <script type="module">
+    const canvas = document.querySelector("#world");
+    const output = document.querySelector("#state");
+    const context = canvas.getContext("2d");
+    window.gameState = { x: 100, y: 210, yaw: 0, moves: 0, injected: false };
+    window.testHooks = {
+      teleport(x, y) { window.gameState.x = x; window.gameState.y = y; draw(); },
+      snapshot() { return structuredClone(window.gameState); }
+    };
+    const data = await fetch("./test-data.json").then(response => response.json());
+    window.fixtureData = data;
+    function draw() {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = "#74d3ff";
+      context.beginPath();
+      context.arc(window.gameState.x, window.gameState.y, 14, 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = "#ffcf70";
+      context.beginPath();
+      context.moveTo(window.gameState.x, window.gameState.y);
+      context.lineTo(window.gameState.x + Math.cos(window.gameState.yaw) * 36, window.gameState.y + Math.sin(window.gameState.yaw) * 36);
+      context.stroke();
+      output.value = JSON.stringify({ ...window.gameState, pointerLock: document.pointerLockElement === canvas, data });
+    }
+    canvas.addEventListener("click", () => canvas.requestPointerLock());
+    document.addEventListener("pointerlockchange", draw);
+    document.addEventListener("mousemove", event => {
+      if (document.pointerLockElement === canvas) window.gameState.yaw += event.movementX / 80;
+      draw();
+    });
+    document.addEventListener("keydown", event => {
+      const delta = 12;
+      if (event.key.toLowerCase() === "w") window.gameState.y -= delta;
+      if (event.key.toLowerCase() === "s") window.gameState.y += delta;
+      if (event.key.toLowerCase() === "a") window.gameState.x -= delta;
+      if (event.key.toLowerCase() === "d") window.gameState.x += delta;
+      window.gameState.moves += 1;
+      draw();
+    });
+    draw();
+  </script>
+</body>
+</html>

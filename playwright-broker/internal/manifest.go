@@ -10,9 +10,18 @@ import (
 )
 
 type manifestFile struct {
-	Project string            `json:"project"`
-	Serve   serveManifestFile `json:"serve"`
-	Tests   testManifestFile  `json:"tests"`
+	Project  string               `json:"project"`
+	Serve    serveManifestFile    `json:"serve"`
+	Tests    testManifestFile     `json:"tests"`
+	Playtest playtestManifestFile `json:"playtest"`
+}
+
+type playtestManifestFile struct {
+	StartPath   string            `json:"startPath"`
+	Viewport    Viewport          `json:"viewport"`
+	Headed      bool              `json:"headed"`
+	RecordVideo bool              `json:"recordVideo"`
+	Environment map[string]string `json:"env"`
 }
 
 type serveManifestFile struct {
@@ -86,7 +95,25 @@ func (f manifestFile) toManifest(repoRoot string, cfg *Config) (*Manifest, error
 		RepoRoot: filepath.Clean(repoRoot),
 		Serve:    serve,
 		Tests:    tests,
+		Playtest: f.Playtest.toManifest(),
 	}, nil
+}
+
+func (f playtestManifestFile) toManifest() PlaytestManifest {
+	viewport := f.Viewport
+	if viewport.Width <= 0 {
+		viewport.Width = 1280
+	}
+	if viewport.Height <= 0 {
+		viewport.Height = 720
+	}
+	return PlaytestManifest{
+		StartPath:   valueOrDefault(f.StartPath, "/"),
+		Viewport:    viewport,
+		Headed:      f.Headed,
+		RecordVideo: f.RecordVideo,
+		Environment: copyMap(f.Environment),
+	}
 }
 
 func (f serveManifestFile) toManifest(cfg *Config) (ServeManifest, error) {

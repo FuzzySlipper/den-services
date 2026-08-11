@@ -1,173 +1,183 @@
-# Playwright Broker Agent Usage
+# Persistent Playtest Agent Usage
 
-Use `den-playwright` when an agent needs to run Playwright against a live dev server. Do not hand-pick a fixed port, reuse a random server that happens to answer, or kill an unknown process on a port. The broker owns the boring operational work: choose a safe port, start or safely reuse the right server, pass `BASE_URL`, run Playwright, and write evidence.
+Use `den-playwright playtest` when testing benefits from a real page that survives across multiple model turns. The surface is designed for trusted local experimentation and broad debugging access, including application/browser internals and caller-defined mutations.
 
-This broker is local-run infrastructure. It lives in `den-services` for discoverability, but it is not a den-srv systemd service and is not listed in `deployment/services.yaml`.
+## Lifecycle
 
-## Quick Start
+```text
+start -> observe / act / inspect (repeat in any order) -> finish or cancel
+```
 
-From `/home/dev/den-services`:
+The order is a helpful convention, not an enforcement mechanism. Every request is copied verbatim to `requests.jsonl`. Missing/stale sequence values, owner-label mismatches, unexpected order, inactive focus/pointer lock, unknown fields, and action errors become structured discrepancies. The driver continues with later actions and calls whenever the browser remains usable.
+
+## Start
 
 ```bash
-export DEN_PLAYWRIGHT_BROKER_CONFIG_PATH=/home/dev/den-services/playwright-broker/config/config.example.yaml
-go run ./playwright-broker/cmd/den-playwright run <project-id> -repo /path/to/repo -- --reporter=list
+den-playwright playtest start <project-id> \
+  -config /path/to/config.yaml \
+  -repo /path/to/repo \
+  -owner optional-correlation-label \
+  -scenario scenario-name \
+  -den-project den-project-id \
+  -den-task 6783 \
+  -metadata '{"caller_note":"anything useful"}'
 ```
 
-If `den-playwright` has already been built onto your `PATH`, the equivalent is:
+Optional `-headed`, `-video`, and `-viewport WIDTHxHEIGHT` flags override manifest defaults. Invalid optional metadata/viewport text is retained as a discrepancy where possible.
 
-```bash
-export DEN_PLAYWRIGHT_BROKER_CONFIG_PATH=/home/dev/den-services/playwright-broker/config/config.example.yaml
-den-playwright run <project-id> -repo /path/to/repo -- --reporter=list
-```
+The start result reports the session, base URL, driver/dev-server PIDs, artifact root, evidence index, and state file. The browser and page stay alive after the CLI exits.
 
-Useful task-linked form:
+## Act
 
-```bash
-den-playwright run rusty-view \
-  -repo /home/dev/rusty-view \
-  -den-project rusty-view \
-  -den-task 1234 \
-  --grep @live-agent
-```
+One `act` request may contain any number of actions. Each action produces its own success/error result and a failure does not prevent later actions from running.
 
-The command prints the evidence path, selected base URL, and final status when a run is created.
+Typed action names:
 
-## Repo Manifest
-
-Each repo opts in with one manifest at the repo root. Lookup order:
-
-- `.den-playwright.json`
-- `.playwright-service.json`
-- `den-playwright.json`
-
-You can also pass `-manifest /path/to/manifest.json`.
-
-Minimal manifest:
-
-```json
-{
-  "project": "rusty-view",
-  "serve": {
-    "command": "pnpm exec nx run rusty-view:serve -- --host {host} --port {port}",
-    "preferredPort": 4200,
-    "healthUrl": "/",
-    "readyText": "rusty-view",
-    "reusePolicy": "broker_owned"
-  },
-  "tests": {
-    "command": "pnpm exec playwright test",
-    "config": "apps/rusty-view-e2e/playwright.config.mts",
-    "artifactPolicy": "live-ui"
-  }
-}
-```
-
-Template variables available in commands and manifest env values:
-
-- `{project}`: manifest project id.
-- `{repo_root}`: repo path passed with `-repo`.
-- `{host}`: selected bind host.
-- `{port}`: selected port.
-- `{base_url}`: selected base URL.
-- `{artifact_root}`: run artifact directory.
-
-## Common Flags
-
-- `-repo /path/to/repo`: repo root containing the manifest. Defaults to current directory.
-- `-manifest /path/to/file.json`: explicit manifest path.
-- `-config /path/to/config.yaml`: broker config path. Usually use `DEN_PLAYWRIGHT_BROKER_CONFIG_PATH`.
-- `--grep <expr>`: forwarded to Playwright as `--grep`.
-- `--headed`: forwarded to Playwright as `--headed`.
-- `--pw-project <name>`: forwarded to Playwright as `--project`.
-- `--test <file-or-title>`: appended as a Playwright test argument.
-- `-den-project <id>` and `-den-task <id>`: copied into the evidence packet for handoff.
-- Arguments after `--` are passed through to the Playwright command.
-
-## Safety Rules
-
-The broker never kills arbitrary user processes.
-
-If `preferredPort` is occupied:
-
-- matching health + broker-owned lease: reuse is allowed;
-- matching health + `"reusePolicy": "explicit"`: reuse is allowed;
-- matching health + default `"broker_owned"` but no broker lease: broker chooses another port;
-- wrong health, wrong text, wrong identity header, or dead lease: broker chooses another port.
-
-Broker-owned dev servers are started in their own process group and stopped after the run. Stale broker lock files are recovered only when their recorded owner PID is no longer alive.
-
-Use `"reusePolicy": "explicit"` only for servers that are intentionally reusable and have a reliable identity check.
-
-## Health And Identity
-
-A server is considered the right app only when the health response matches the manifest.
-
-Supported checks:
-
-- `healthUrl`: path to request on the selected port.
-- `readyText`: text that must appear in the response body.
-- `identityHeader`: response header whose value must equal the manifest `project`.
-
-Use at least `readyText` or `identityHeader`. Prefer both for repos where multiple apps can answer on similar routes.
+- `keyboard_press`, `keyboard_down`, `keyboard_up`
+- `mouse_move`, `mouse_click`, `mouse_down`, `mouse_up`, `mouse_wheel`
+- `wait`, `viewport`, `goto`
+- `click`, `dblclick`, `fill`, `type`, `focus`, `hover`, `select_option`, `set_input_files`
+- `dispatch`, `evaluate`, `evaluate_handle`, `add_script`, `add_style`
+- `request`, `cdp`, `screenshot`
 
 Example:
 
 ```json
 {
-  "serve": {
-    "healthUrl": "/",
-    "readyText": "Asha Studio",
-    "identityHeader": "X-Den-Project"
+  "owner": "vision-worker-1",
+  "sequence": 12,
+  "any_new_field": { "retained": true },
+  "actions": [
+    { "type": "click", "selector": "canvas" },
+    { "type": "keyboard_press", "key": "KeyW" },
+    {
+      "type": "evaluate",
+      "expression": "() => { window.game.debug = true; return window.game.snapshot(); }"
+    },
+    {
+      "type": "dispatch",
+      "selector": "canvas",
+      "event": "test-input",
+      "eventInit": { "detail": { "strength": 1 } }
+    },
+    {
+      "type": "cdp",
+      "method": "Runtime.evaluate",
+      "params": { "expression": "window.renderer", "returnByValue": true }
+    }
+  ]
+}
+```
+
+An unknown action with an `expression` field is interpreted as JavaScript evaluation. An unknown action without one is logged as `action_error`; subsequent actions continue.
+
+## Observe
+
+Observation can combine any of these in one call:
+
+```json
+{
+  "screenshot": true,
+  "label": "after-move",
+  "dom": true,
+  "text": true,
+  "accessibility": true,
+  "storage": true,
+  "expressions": [
+    "() => window.gameState",
+    "() => window.store.getState()"
+  ],
+  "frameBurst": { "count": 5, "intervalMs": 40 }
+}
+```
+
+The response also contains URL/title, viewport, focus, active element, pointer-lock element, scroll position, visibility, and event counts.
+
+## Inspect
+
+`inspect` is the open-ended readback path:
+
+```json
+{
+  "expression": "() => ({ store: window.store, renderer: window.renderer })",
+  "selector": "#app canvas",
+  "dom": true,
+  "events": true,
+  "cdp": {
+    "method": "Performance.getMetrics",
+    "params": {}
   }
 }
 ```
 
-## Evidence
+Captured event data includes console messages, page errors/crashes, request headers and post bodies, response headers and bodies, and WebSocket frames.
 
-Every created run writes a machine-readable `run-index.json` under the configured artifact root, usually:
+## Finish and cancel
 
-```text
-~/.cache/den-playwright/runs/<project>/<run-id>/run-index.json
+```json
+{
+  "outcome": "pass",
+  "annotation": "free-form summary",
+  "assertions": [
+    { "name": "movement persisted", "pass": true, "artifact": "timeline offset 4" }
+  ]
+}
 ```
 
-The packet includes:
+Finish/cancel stops tracing, closes the browser, terminates the local driver, attempts precise dev-server cleanup, releases the lease record, and updates cleanup fields. Repeating cleanup is harmless. Cleanup errors are evidence rather than reasons to discard the packet.
 
-- project id and repo path;
-- selected host, port, and `BASE_URL`;
-- dev-server command, owned PID, reuse source, and health result;
-- Playwright command, args, exit code, duration, stdout/stderr log paths;
-- artifact root and discovered artifact file paths;
-- Den project/task metadata when supplied;
-- `human_inspection_required` for live UI policies.
+## Evidence packet
 
-The broker also sets these environment variables for the Playwright command:
+Each session writes:
 
-- `BASE_URL`
-- `PLAYWRIGHT_BROKER_BASE_URL`
-- `PLAYWRIGHT_BROKER_ARTIFACT_ROOT`
-- `PLAYWRIGHT_BROKER_EVIDENCE_PATH`
+```text
+<artifact-root>/<project>/<session-id>/
+  playtest-index.json
+  requests.jsonl
+  timeline.jsonl
+  driver.stdout.log
+  driver.stderr.log
+  server.stdout.log
+  server.stderr.log
+  screenshots/*.png
+  video/*                 # when requested
+  trace.zip
+```
 
-Configure Playwright screenshots, traces, and videos to land under `PLAYWRIGHT_BROKER_ARTIFACT_ROOT` when possible.
+`playtest-index.json` includes:
 
-## Human Inspection
+- repo path, exact Git SHA/origin when available, and dirty-state details;
+- Den/scenario/caller metadata;
+- browser/version/viewport and timestamps;
+- original request and interpreted timeline offsets;
+- discrepancies and per-action partial results;
+- DOM/accessibility/application/storage observations;
+- console/page/network/WebSocket capture;
+- screenshots, frame bursts, video, trace, and cleanup results.
 
-`artifactPolicy: "live-ui"` sets `human_inspection_required: true`. A passing Playwright result does not replace visual inspection when the acceptance criteria are subjective, layout-heavy, animation-heavy, or otherwise visually ambiguous.
+This is testing/review evidence. Model judgement and caller-supplied outcomes remain labelled rather than becoming automatic merge decisions.
 
-For live UI work, attach or mention:
+## MCP stdio
 
-- the `run-index.json` path;
-- screenshot, trace, or video paths from the artifact root;
-- whether you inspected the evidence yourself;
-- any visual uncertainty that remains.
+Build the CLI, then configure an MCP client to launch:
 
-## Troubleshooting
+```text
+/absolute/path/to/den-playwright mcp -config /absolute/path/to/config.yaml
+```
 
-If the broker picks a different port than expected, that is usually correct. It means the preferred port was busy, unsafe to reuse, or failed identity checks. Use the evidence packet's `server.health` and `server.reuse_source` fields before touching processes.
+The server exposes the eight `playtest_*` tools described above. All tool input schemas accept additional properties. The MCP result includes both text and structured content.
 
-If a run fails before printing evidence, setup failed before a run directory existed. Check the config path, manifest path, and manifest `project` value.
+## Den completion note
 
-If Playwright cannot reach the app, confirm the test reads `BASE_URL` or `PLAYWRIGHT_BROKER_BASE_URL` instead of a hardcoded localhost port.
+Compact evidence template:
 
-If a broker lock times out, another live broker run may be active. Do not delete lock files unless you have verified the recorded PID is gone; the broker already recovers stale locks for dead PIDs.
+```text
+Playtest: <scenario> at exact SHA <sha> (<clean|dirty>)
+Outcome: <pass|fail|uncertain|infrastructure_error|caller-defined>
+Discrepancies: <count and relevant codes>
+Evidence: <absolute playtest-index.json path>
+Key offsets/artifacts: <timeline offsets, screenshots, trace>
+Judgement: <what was model judgement vs deterministic assertion>
+```
 
-If artifacts are missing, check whether the repo's Playwright config writes traces/screenshots/videos into `PLAYWRIGHT_BROKER_ARTIFACT_ROOT`. The broker indexes files that exist under the artifact root; it does not rewrite Playwright's artifact policy by itself.
+Persistent model-driven sessions are on-demand completion/review/nightly/release evidence. Ordinary CI should keep to deterministic lifecycle/schema/cleanup tests.

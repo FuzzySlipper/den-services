@@ -22,11 +22,15 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: den-playwright run <project> [flags] [-- playwright args...]")
+		return errors.New("usage: den-playwright run|playtest|mcp ...")
 	}
 	switch args[0] {
 	case "run":
 		return runProject(args[1:])
+	case "playtest":
+		return runPlaytest(args[1:])
+	case "mcp":
+		return runMCP(args[1:])
 	case "help", "-h", "--help":
 		printUsage()
 		return nil
@@ -98,6 +102,10 @@ func splitProjectArg(args []string) (string, []string) {
 
 func printUsage() {
 	fmt.Println("usage: den-playwright run <project> [flags] [-- playwright args...]")
+	fmt.Println("       den-playwright playtest start <project> [flags]")
+	fmt.Println("       den-playwright playtest observe|act|inspect|finish|cancel <session> [flags]")
+	fmt.Println("       den-playwright playtest get|list [session] [flags]")
+	fmt.Println("       den-playwright mcp -config <path>")
 	fmt.Println("set " + configPathEnv + " or pass -config")
 	fmt.Println("den task ids are copied into the run evidence, not posted automatically")
 }

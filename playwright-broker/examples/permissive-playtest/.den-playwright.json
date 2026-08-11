@@ -1,0 +1,19 @@
+{
+  "project": "permissive-playtest-fixture",
+  "serve": {
+    "command": "python3 -m http.server {port} --bind {host}",
+    "preferredPort": 0,
+    "healthUrl": "/",
+    "readyText": "Permissive Playtest Fixture",
+    "reusePolicy": "broker_owned"
+  },
+  "playtest": {
+    "startPath": "/",
+    "viewport": { "width": 960, "height": 600 },
+    "recordVideo": false
+  },
+  "tests": {
+    "command": "npx playwright test",
+    "artifactPolicy": "live-ui"
+  }
+}

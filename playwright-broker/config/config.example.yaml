@@ -17,3 +17,9 @@ timeouts:
   health_interval: "250ms"                       # Poll interval while waiting for a server to become healthy.
   shutdown_timeout: "5s"                         # Grace period before killing a broker-owned process group.
   run_timeout: "20m"                             # Maximum Playwright command duration.
+
+playtest:
+  node_command: "node"
+  driver_script: "/home/dev/den-services/playwright-broker/driver/playtest-driver.mjs"
+  driver_startup_timeout: "30s"
+  command_timeout: "2m"

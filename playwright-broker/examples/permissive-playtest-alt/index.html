@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Alternate Playtest Fixture</title></head>
+<body>
+  <h1>Alternate Playtest Fixture</h1>
+  <button id="increment">Increment persistent state</button>
+  <output id="value">0</output>
+  <script>
+    window.altState = { value: 0, fixture: "alternate" };
+    document.querySelector("#increment").addEventListener("click", () => {
+      window.altState.value += 1;
+      document.querySelector("#value").value = window.altState.value;
+    });
+  </script>
+</body>
+</html>

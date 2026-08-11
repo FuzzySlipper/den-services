@@ -12,11 +12,19 @@ import (
 )
 
 type configFile struct {
-	StateDir     string        `yaml:"state_dir"`
-	ArtifactRoot string        `yaml:"artifact_root"`
-	Host         string        `yaml:"host"`
-	PortRange    portRangeFile `yaml:"port_range"`
-	Timeouts     timeoutFile   `yaml:"timeouts"`
+	StateDir     string             `yaml:"state_dir"`
+	ArtifactRoot string             `yaml:"artifact_root"`
+	Host         string             `yaml:"host"`
+	PortRange    portRangeFile      `yaml:"port_range"`
+	Timeouts     timeoutFile        `yaml:"timeouts"`
+	Playtest     playtestConfigFile `yaml:"playtest"`
+}
+
+type playtestConfigFile struct {
+	NodeCommand          string `yaml:"node_command"`
+	DriverScript         string `yaml:"driver_script"`
+	DriverStartupTimeout string `yaml:"driver_startup_timeout"`
+	CommandTimeout       string `yaml:"command_timeout"`
 }
 
 type portRangeFile struct {
@@ -65,6 +73,10 @@ func (f configFile) toConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	playtest, err := f.Playtest.toConfig()
+	if err != nil {
+		return nil, err
+	}
 	return &Config{
 		StateDir:     stateDir,
 		ArtifactRoot: artifactRoot,
@@ -74,6 +86,28 @@ func (f configFile) toConfig() (*Config, error) {
 			End:   f.PortRange.End,
 		},
 		Timeouts: timeouts,
+		Playtest: playtest,
+	}, nil
+}
+
+func (f playtestConfigFile) toConfig() (PlaytestConfig, error) {
+	driverScript, err := cleanConfiguredPath("playtest.driver_script", valueOrDefault(f.DriverScript, "playwright-broker/driver/playtest-driver.mjs"))
+	if err != nil {
+		return PlaytestConfig{}, err
+	}
+	startup, err := parseRequiredDuration("playtest.driver_startup_timeout", valueOrDefault(f.DriverStartupTimeout, "30s"))
+	if err != nil {
+		return PlaytestConfig{}, err
+	}
+	command, err := parseRequiredDuration("playtest.command_timeout", valueOrDefault(f.CommandTimeout, "2m"))
+	if err != nil {
+		return PlaytestConfig{}, err
+	}
+	return PlaytestConfig{
+		NodeCommand:          valueOrDefault(f.NodeCommand, "node"),
+		DriverScript:         driverScript,
+		DriverStartupTimeout: startup,
+		CommandTimeout:       command,
 	}, nil
 }
 
