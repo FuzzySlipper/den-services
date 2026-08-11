@@ -78,6 +78,16 @@ for a headed browser and confirms a display is available.
 8. Use `playtest_get` when needed to confirm the final evidence index and
    cleanup fields.
 
+When the parent explicitly requests a verbose action trace, set
+`verbose_trace: true` on start. For each cycle, put a concise `trace` object on
+the act with `cycle_id`, `observe`, `hypothesis`, `intent`, and
+`expected_effect`; put the same `cycle_id` plus `observed_effect`,
+`matched_expectation`, `confidence`, and `plan_update` on the following
+observe. These are short user-facing decision summaries, not private
+chain-of-thought. They link to the existing action and screenshot/frame burst,
+so do not take extra screenshots solely for tracing. Leave tracing off for
+normal playtests.
+
 Use the broker's exact typed action names. Do not guess framework-style aliases:
 
 ```json
@@ -117,9 +127,20 @@ prose report:
   "annotation": "visible before/after judgement and bounded diagnostics",
   "assertions": [
     { "name": "mission result", "pass": true, "artifact": "timeline offset 3" }
-  ]
+  ],
+  "exit_interview": {
+    "difficulties": ["free-form operating difficulty"],
+    "failed_approaches": ["failed probe and any workaround"],
+    "confidence": "high, medium, low, or free-form",
+    "suggestions": ["game, controls, mission, or harness improvement"]
+  }
 }
 ```
+
+The exit interview is optional. Include it when the parent asks for tester
+feedback or when a concrete control, prompt, navigation, or harness difficulty
+would help the next run. Partial and uncertain feedback is useful; do not
+invent suggestions to fill fields.
 
 If start fails before a live session exists, use only `playtest_list` or
 `playtest_get` for bounded persisted-record confirmation, then return

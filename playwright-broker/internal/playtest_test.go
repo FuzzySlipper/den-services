@@ -99,6 +99,66 @@ func TestPlaytestCallFailsOpenWhenDriverIsUnavailable(t *testing.T) {
 	}
 }
 
+func TestPlaytestFinishRoundTripsOptionalExitInterviewThroughGet(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"ok":true,"continued":true,"result":{"status":"pass"}}`))
+	}))
+	defer server.Close()
+
+	manager := NewPlaytestManager(playtestTestConfig(t))
+	artifactRoot := t.TempDir()
+	session := PlaytestSession{
+		SchemaVersion: PlaytestSchemaVersion,
+		SessionID:     "exit-interview",
+		Project:       "fixture",
+		Status:        "running",
+		Endpoint:      server.URL,
+		ArtifactRoot:  artifactRoot,
+		IndexPath:     filepath.Join(artifactRoot, "playtest-index.json"),
+		StartedAt:     time.Now().UTC(),
+	}
+	if err := manager.saveSession(session); err != nil {
+		t.Fatalf("saveSession() error = %v", err)
+	}
+	feedback := map[string]any{
+		"difficulties": []any{"The interaction key was not visible."},
+		"confidence":   "medium",
+		"suggestions":  []any{"Show the interaction key near the gate."},
+	}
+	result, err := manager.Call(t.Context(), session.SessionID, map[string]any{
+		"kind": "finish", "outcome": "pass", "exit_interview": feedback,
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if result["exit_interview"].(map[string]any)["confidence"] != "medium" {
+		t.Fatalf("result = %#v", result)
+	}
+	persisted, err := manager.Get(session.SessionID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if persisted.ExitInterview.(map[string]any)["suggestions"].([]any)[0] != "Show the interaction key near the gate." {
+		t.Fatalf("persisted exit interview = %#v", persisted.ExitInterview)
+	}
+}
+
+func TestPlaytestGetAcceptsExistingSessionWithoutExitInterview(t *testing.T) {
+	manager := NewPlaytestManager(playtestTestConfig(t))
+	session := PlaytestSession{SchemaVersion: PlaytestSchemaVersion, SessionID: "legacy-session", Status: "pass"}
+	if err := manager.saveSession(session); err != nil {
+		t.Fatalf("saveSession() error = %v", err)
+	}
+	persisted, err := manager.Get(session.SessionID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if persisted.ExitInterview != nil {
+		t.Fatalf("ExitInterview = %#v, want nil", persisted.ExitInterview)
+	}
+}
+
 func TestFinishHostCleanupPersistsManagerDiagnostics(t *testing.T) {
 	artifactRoot := t.TempDir()
 	blockedStateDir := filepath.Join(t.TempDir(), "state-file")

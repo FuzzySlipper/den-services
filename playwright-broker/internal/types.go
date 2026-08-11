@@ -164,6 +164,7 @@ type PlaytestSession struct {
 	IndexPath     string    `json:"index_path"`
 	StatePath     string    `json:"state_path"`
 	Warnings      []string  `json:"warnings,omitempty"`
+	ExitInterview any       `json:"exit_interview,omitempty"`
 }
 
 var (

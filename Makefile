@@ -9,6 +9,7 @@ DEN_MCP_SMOKE_SSH_HOST ?= den-srv
 test:
 	node --test scripts/check-product-playtest-adoption.test.mjs
 	node --test playwright-broker/driver/playtest-diagnostics.test.mjs
+	node --test playwright-broker/driver/playtest-decision-trace.test.mjs
 	@mkdir -p $(GOCACHE)
 	GOCACHE=$(GOCACHE) go build -o $(GOCACHE)/playtest-x11-input-test ./playwright-broker/cmd/playtest-x11-input
 	DEN_PLAYTEST_INPUT_HELPER=$(GOCACHE)/playtest-x11-input-test node --test playwright-broker/driver/playtest-virtual-input.test.mjs

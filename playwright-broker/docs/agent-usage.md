@@ -135,6 +135,53 @@ The response also contains URL/title, viewport, focus, active element, pointer-l
 
 Captured event data includes console messages, page errors/crashes, request headers and post bodies, response headers and bodies, and WebSocket frames.
 
+## Optional decision trace
+
+Set `"verbose_trace": true` on `playtest_start` only when a playtest is hard to
+understand or a human expects to debug the tester's control strategy. Normal
+sessions do not create a decision-trace artifact and need no extra fields.
+Verbose tracing stores concise, explicitly supplied user-facing summaries—not
+private chain-of-thought—in `decision-trace.jsonl` and the index.
+
+Use one stable `cycle_id` for an act and its following observation:
+
+```json
+{
+  "sequence": 12,
+  "actions": [{ "type": "keyboard_down", "key": "w" }, { "type": "wait", "ms": 500 }, { "type": "keyboard_up", "key": "w" }],
+  "trace": {
+    "cycle_id": "approach-gate",
+    "observe": "A closed gate is centered and appears several steps away.",
+    "hypothesis": "W moves toward the current view direction.",
+    "intent": "Walk forward briefly to approach the gate.",
+    "expected_effect": "The gate should grow larger while remaining centered."
+  }
+}
+```
+
+Then attach the visible verification to the ordinary observation:
+
+```json
+{
+  "sequence": 13,
+  "screenshot": true,
+  "frameBurst": { "count": 5, "intervalMs": 100 },
+  "trace": {
+    "cycle_id": "approach-gate",
+    "observed_effect": "The gate grew larger and remained centered.",
+    "matched_expectation": true,
+    "confidence": "high",
+    "plan_update": "Probe the documented interaction key next."
+  }
+}
+```
+
+Trace entries retain request sequence, operation phase, timeline offset, the
+actual action/result or observation artifact paths, and the supplied summary.
+No extra screenshot is taken for tracing: it links whatever the normal observe
+call already captured. Five or more cycles can be useful when diagnosing why a
+tester repeatedly got lost; routine smoke playtests should leave the mode off.
+
 ## Finish and cancel
 
 ```json
@@ -143,9 +190,23 @@ Captured event data includes console messages, page errors/crashes, request head
   "annotation": "free-form summary",
   "assertions": [
     { "name": "movement persisted", "pass": true, "artifact": "timeline offset 4" }
-  ]
+  ],
+  "exit_interview": {
+    "difficulties": ["The interaction key was not visible in the game."],
+    "confusing_controls": ["Mouse capture was clear; the gate action was not."],
+    "failed_approaches": ["Tried walking into the gate before finding E in the mission."],
+    "blockers": [],
+    "confidence": "medium",
+    "suggestions": ["Show the interaction key when the gate is targeted."]
+  }
 }
 ```
+
+`exit_interview` is an optional free-form suggestion box. It is retained in the
+index, returned by finish, and copied into the persisted session returned by
+`playtest_get`. Missing, partial, fuzzy, or low-confidence feedback is valid and
+never changes outcome or cleanup. The camel-case `exitInterview` and
+`tester_feedback` aliases are also accepted for existing experimental callers.
 
 Finish/cancel stops tracing, closes the browser, terminates the local driver, attempts precise dev-server cleanup, releases the lease record, and updates cleanup fields. Repeating cleanup is harmless. Cleanup errors are evidence rather than reasons to discard the packet.
 
@@ -165,6 +226,7 @@ Each session writes:
   playtest-index.json
   requests.jsonl
   timeline.jsonl
+  decision-trace.jsonl   # only when verbose_trace=true and trace summaries exist
   driver.stdout.log
   driver.stderr.log
   server.stdout.log
@@ -181,6 +243,7 @@ Each session writes:
 - Den/scenario/caller metadata;
 - browser/version/viewport and timestamps;
 - original request and interpreted timeline offsets;
+- optional sequence-aligned decision summaries and exit interview;
 - discrepancies and per-action partial results;
 - DOM/accessibility/application/storage observations;
 - console/page/network/WebSocket capture;

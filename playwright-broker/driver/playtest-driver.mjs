@@ -6,6 +6,7 @@ import path from "node:path";
 import process from "node:process";
 import { chromium } from "@playwright/test";
 import { inputStateDiscrepancies, lifecycleDiscrepancies } from "./playtest-diagnostics.mjs";
+import { DecisionTrace } from "./playtest-decision-trace.mjs";
 import { startVirtualDisplay, VirtualMouse } from "./playtest-virtual-input.mjs";
 
 const options = JSON.parse(process.env.DEN_PLAYTEST_DRIVER_OPTIONS || "{}");
@@ -13,10 +14,13 @@ const artifactRoot = options.artifactRoot;
 const indexPath = path.join(artifactRoot, "playtest-index.json");
 const timelinePath = path.join(artifactRoot, "timeline.jsonl");
 const requestPath = path.join(artifactRoot, "requests.jsonl");
+const decisionTracePath = path.join(artifactRoot, "decision-trace.jsonl");
 const startedAt = new Date().toISOString();
 const events = { console: [], pageErrors: [], requests: [], responses: [], websockets: [] };
 const timeline = [];
 const discrepancies = [];
+const verboseTrace = options.metadata?.verbose_trace === true || options.metadata?.verboseTrace === true;
+const decisionTrace = new DecisionTrace({ enabled: verboseTrace, append: entry => appendJSONL(decisionTracePath, entry) });
 let nextSequence = 1;
 let lastOperation = "start";
 let status = "starting";
@@ -53,6 +57,10 @@ const index = {
   events,
   cleanup: { browser_closed: false, driver_stopped: false }
 };
+if (verboseTrace) {
+  index.decision_trace_file = decisionTracePath;
+  index.decision_trace = decisionTrace.entries;
+}
 
 await fs.mkdir(artifactRoot, { recursive: true });
 
@@ -374,6 +382,8 @@ async function finish(request) {
   status = request.kind === "cancel" ? "cancelled" : (request.outcome || "finished");
   if (request.annotation) index.metadata.final_annotation = request.annotation;
   if (request.assertions) index.metadata.assertions = request.assertions;
+  const exitInterview = request.exit_interview ?? request.exitInterview ?? request.tester_feedback ?? request.testerFeedback;
+  if (exitInterview !== undefined) index.metadata.exit_interview = jsonSafe(exitInterview);
   try {
     await context?.tracing.stop({ path: path.join(artifactRoot, "trace.zip") });
     index.artifacts.push("trace.zip");
@@ -393,7 +403,7 @@ async function finish(request) {
   index.artifacts = [...new Set(await collectArtifacts())].sort();
   await persist();
   setTimeout(() => server.close(() => process.exit(0)), 25);
-  return { status, index_path: indexPath, cleanup: index.cleanup };
+  return { status, index_path: indexPath, cleanup: index.cleanup, exit_interview: index.metadata.exit_interview };
 }
 
 async function handle(request) {
@@ -421,7 +431,8 @@ async function handle(request) {
     result = { partial: true, error: String(error), state: page && !page.isClosed() ? await commonState() : null };
     discrepancies.push({ at: new Date().toISOString(), code: "operation_error", operation: request.kind, error: String(error), continued: true });
   }
-  await record("command", { request, discrepancies: found, recovery, result });
+  const commandEntry = await record("command", { request, discrepancies: found, recovery, result });
+  await decisionTrace.record(request, result, commandEntry.offset);
   await persist();
   lastOperation = request.kind;
   return { ok: !result?.error, continued: true, session_id: options.sessionId, next_sequence: nextSequence, discrepancies: found, recovery, result, index_path: indexPath };

@@ -212,6 +212,10 @@ func (m *PlaytestManager) Call(ctx context.Context, sessionID string, request ma
 		}
 	}
 	if kind == "finish" || kind == "cancel" {
+		session.ExitInterview = firstPresent(request, "exit_interview", "exitInterview", "tester_feedback", "testerFeedback")
+		if session.ExitInterview != nil {
+			result["exit_interview"] = session.ExitInterview
+		}
 		finalStatus := kind
 		if outcome, ok := request["outcome"].(string); ok && strings.TrimSpace(outcome) != "" {
 			finalStatus = outcome
@@ -346,6 +350,9 @@ func (m *PlaytestManager) finishHostCleanup(session *PlaytestSession, kind strin
 		if err := stopProcessGroup(session.DriverPID, m.cfg.Timeouts.ShutdownTimeout); err != nil {
 			diagnostics = append(diagnostics, cleanupDiagnostic("driver_cleanup_error", err))
 		}
+		for processGroupAlive(session.DriverPID) && m.clock().Before(driverDeadline) {
+			time.Sleep(25 * time.Millisecond)
+		}
 	}
 	serverStopped := session.ServerReused || session.ServerPID <= 0
 	if !session.ServerReused && session.ServerPID > 0 {
@@ -389,6 +396,15 @@ func (m *PlaytestManager) finishHostCleanup(session *PlaytestSession, kind strin
 		}
 		_ = appendJSONLine(filepath.Join(session.ArtifactRoot, "host-cleanup.jsonl"), fallback)
 	}
+}
+
+func firstPresent(values map[string]any, keys ...string) any {
+	for _, key := range keys {
+		if value, ok := values[key]; ok {
+			return value
+		}
+	}
+	return nil
 }
 
 func (m *PlaytestManager) patchCleanupIndex(session PlaytestSession, serverStopped bool, diagnostics []map[string]any, event map[string]any) error {
