@@ -24,6 +24,16 @@ type TaskStore interface {
 	NextTask(ctx context.Context, projectID string, assignedTo string) (*Task, error)
 	History(ctx context.Context, taskID int64) ([]TaskHistoryEntry, error)
 	ListTaskChanges(ctx context.Context, query TaskChangeQuery) ([]TaskChangeEvent, error)
+	RecordHumanAcceptance(ctx context.Context, command HumanAcceptanceCommand) (HumanAcceptanceMutation, error)
+}
+
+type HumanAcceptanceCommand struct {
+	TaskID                int64
+	IdempotencyKey        string
+	RequestFingerprint    string
+	Facts                 humanAcceptanceFacts
+	ExpectedTaskUpdatedAt *time.Time
+	CreatedAt             time.Time
 }
 
 type ListTasksQuery struct {
@@ -200,6 +210,35 @@ func (s *Service) NextTask(ctx context.Context, projectID string, assignedTo str
 
 func (s *Service) History(ctx context.Context, taskID int64) ([]TaskHistoryEntry, error) {
 	return s.store.History(ctx, taskID)
+}
+
+func (s *Service) RecordHumanAcceptance(
+	ctx context.Context,
+	taskID int64,
+	req RecordHumanAcceptanceRequest,
+) (HumanAcceptanceMutation, error) {
+	current, err := s.store.GetTask(ctx, taskID)
+	if err != nil {
+		return HumanAcceptanceMutation{}, err
+	}
+	if err := s.projects.AssertWritable(ctx, current.ProjectID()); err != nil {
+		return HumanAcceptanceMutation{}, err
+	}
+	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
+	if idempotencyKey == "" {
+		return HumanAcceptanceMutation{}, validationFailed(ErrMissingIdempotencyKey)
+	}
+	facts, fingerprint, err := normalizeHumanAcceptance(req)
+	if err != nil {
+		return HumanAcceptanceMutation{}, validationFailed(err)
+	}
+	if facts.ReviewedRevision != "" && req.ExpectedTaskUpdatedAt == nil {
+		return HumanAcceptanceMutation{}, conflict(ErrAcceptanceReconciliationRequired, "human_acceptance_reconciliation_required")
+	}
+	return s.store.RecordHumanAcceptance(ctx, HumanAcceptanceCommand{
+		TaskID: taskID, IdempotencyKey: idempotencyKey, RequestFingerprint: fingerprint,
+		Facts: facts, ExpectedTaskUpdatedAt: req.ExpectedTaskUpdatedAt, CreatedAt: s.clock().UTC(),
+	})
 }
 
 func (s *Service) ListTaskChanges(ctx context.Context, projectID string, afterID int64, limit int) ([]TaskChangeEvent, error) {

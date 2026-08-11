@@ -20,6 +20,7 @@ type TaskUseCases interface {
 	NextTask(ctx context.Context, projectID string, assignedTo string) (*Task, error)
 	History(ctx context.Context, taskID int64) ([]TaskHistoryEntry, error)
 	ListTaskChanges(ctx context.Context, projectID string, afterID int64, limit int) ([]TaskChangeEvent, error)
+	RecordHumanAcceptance(ctx context.Context, taskID int64, req RecordHumanAcceptanceRequest) (HumanAcceptanceMutation, error)
 }
 
 type Handler struct {
@@ -38,16 +39,48 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/changes/stream", h.taskChangesStream)
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/next", h.nextTask)
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}", h.getProjectTask)
+	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/human-acceptance-reviews", h.recordProjectHumanAcceptance)
 	mux.HandleFunc("PATCH /v1/projects/{project_id}/tasks/{task_id}", h.updateProjectTask)
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/transitions/review", h.transitionTaskToReview)
 	mux.HandleFunc("POST /v1/projects/{project_id}/tasks/{task_id}/dependencies", h.addProjectDependency)
 	mux.HandleFunc("DELETE /v1/projects/{project_id}/tasks/{task_id}/dependencies/{depends_on}", h.removeProjectDependency)
 
 	mux.HandleFunc("GET /v1/tasks/{task_id}", h.getTask)
+	mux.HandleFunc("POST /v1/tasks/{task_id}/human-acceptance-reviews", h.recordHumanAcceptance)
 	mux.HandleFunc("PATCH /v1/tasks/{task_id}", h.updateTask)
 	mux.HandleFunc("POST /v1/tasks/{task_id}/dependencies", h.addDependency)
 	mux.HandleFunc("DELETE /v1/tasks/{task_id}/dependencies/{depends_on}", h.removeDependency)
 	mux.HandleFunc("GET /v1/tasks/{task_id}/history", h.history)
+}
+
+func (h *Handler) recordProjectHumanAcceptance(w http.ResponseWriter, r *http.Request) {
+	h.recordHumanAcceptanceWithProjectCheck(w, r, true)
+}
+
+func (h *Handler) recordHumanAcceptance(w http.ResponseWriter, r *http.Request) {
+	h.recordHumanAcceptanceWithProjectCheck(w, r, false)
+}
+
+func (h *Handler) recordHumanAcceptanceWithProjectCheck(w http.ResponseWriter, r *http.Request, checkProject bool) {
+	taskID, err := pathInt64(r, "task_id")
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	if checkProject && !h.projectMatches(w, r, taskID) {
+		return
+	}
+	var req RecordHumanAcceptanceRequest
+	if err := api.DecodeJSON(r, &req); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	result, err := h.service.RecordHumanAcceptance(r.Context(), taskID, req)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, toRecordHumanAcceptanceResponse(result))
 }
 
 func (h *Handler) transitionTaskToReview(w http.ResponseWriter, r *http.Request) {

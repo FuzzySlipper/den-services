@@ -105,7 +105,11 @@ func (s *Store) GetDetail(ctx context.Context, id int64) (TaskDetail, error) {
 	if err != nil {
 		return TaskDetail{}, err
 	}
-	return TaskDetail{Task: task, Dependencies: dependencies, Subtasks: subtasks, History: history}, nil
+	acceptances, err := s.humanAcceptanceReviews(ctx, id)
+	if err != nil {
+		return TaskDetail{}, err
+	}
+	return TaskDetail{Task: task, Dependencies: dependencies, Subtasks: subtasks, History: history, HumanAcceptanceReviews: acceptances}, nil
 }
 
 func (s *Store) ListTasks(ctx context.Context, query ListTasksQuery) ([]TaskSummary, error) {

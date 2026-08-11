@@ -2,6 +2,12 @@
 # Generated from the live den-mcp tools/list compatibility snapshot for #3554.
 
 routes:
+  - operation: "record_human_acceptance_review"
+    backend: "tasks"
+    method: "POST"
+    path: "/v1/tasks/{task_id}/human-acceptance-reviews"
+    request_adapter: "mcp_tasks_rest"
+    response_adapter: "mcp_tool_result_json"
   - operation: "set_handoff"
     backend: "handoff"
     method: "POST"

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"den-services/mcp/internal/config"
 )
@@ -39,6 +40,16 @@ type tasksToolArguments struct {
 	PriorityFilter               *int            `json:"-"`
 	IncludeVerboseCompatibility  bool            `json:"verbose"`
 	UnneededCompatibilityPadding string          `json:"-"`
+	ReviewerIdentity             string          `json:"reviewer_identity"`
+	Verdict                      string          `json:"verdict"`
+	Rationale                    string          `json:"rationale"`
+	ReviewedRevision             string          `json:"reviewed_revision"`
+	ReviewedBuild                string          `json:"reviewed_build"`
+	ReviewedEnvironment          string          `json:"reviewed_environment"`
+	EvidenceLinks                json.RawMessage `json:"evidence_links"`
+	LifecycleEffect              string          `json:"lifecycle_effect"`
+	IdempotencyKey               string          `json:"idempotency_key"`
+	ExpectedTaskUpdatedAt        *time.Time      `json:"expected_task_updated_at"`
 }
 
 type createTaskBody struct {
@@ -70,6 +81,19 @@ type updateTaskBody struct {
 
 type addDependencyBody struct {
 	DependsOn int64 `json:"depends_on"`
+}
+
+type recordHumanAcceptanceBody struct {
+	ReviewerIdentity      string     `json:"reviewer_identity"`
+	Verdict               string     `json:"verdict,omitempty"`
+	Rationale             string     `json:"rationale,omitempty"`
+	ReviewedRevision      string     `json:"reviewed_revision,omitempty"`
+	ReviewedBuild         string     `json:"reviewed_build,omitempty"`
+	ReviewedEnvironment   string     `json:"reviewed_environment,omitempty"`
+	EvidenceLinks         []string   `json:"evidence_links,omitempty"`
+	LifecycleEffect       string     `json:"lifecycle_effect,omitempty"`
+	IdempotencyKey        string     `json:"idempotency_key"`
+	ExpectedTaskUpdatedAt *time.Time `json:"expected_task_updated_at,omitempty"`
 }
 
 func (c *Client) callTasksREST(ctx context.Context, backend config.BackendConfig, route Route, call ToolCall) (Result, *Failure, error) {
@@ -200,6 +224,18 @@ func tasksRESTRequestBody(operation string, arguments tasksToolArguments) ([]byt
 			return nil, err
 		}
 		return json.Marshal(addDependencyBody{DependsOn: dependsOn})
+	case "record_human_acceptance_review":
+		evidenceLinks, err := parseStringList(arguments.EvidenceLinks)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(recordHumanAcceptanceBody{
+			ReviewerIdentity: strings.TrimSpace(arguments.ReviewerIdentity), Verdict: strings.TrimSpace(arguments.Verdict),
+			Rationale: strings.TrimSpace(arguments.Rationale), ReviewedRevision: strings.TrimSpace(arguments.ReviewedRevision),
+			ReviewedBuild: strings.TrimSpace(arguments.ReviewedBuild), ReviewedEnvironment: strings.TrimSpace(arguments.ReviewedEnvironment),
+			EvidenceLinks: evidenceLinks, LifecycleEffect: strings.TrimSpace(arguments.LifecycleEffect),
+			IdempotencyKey: strings.TrimSpace(arguments.IdempotencyKey), ExpectedTaskUpdatedAt: arguments.ExpectedTaskUpdatedAt,
+		})
 	case "get_task", "list_tasks", "next_task", "remove_dependency":
 		return nil, nil
 	default:

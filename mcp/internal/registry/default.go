@@ -339,6 +339,25 @@ func workflowTierForTool(name string) WorkflowTier {
 func contractErgonomicsTools() []ToolDefinition {
 	return []ToolDefinition{
 		{
+			Name:        "record_human_acceptance_review",
+			Description: "Record a trusted human's affirmative task acceptance without creating or satisfying an agent review round or GitHub gate. The Tasks authority stores an immutable supplied-fact note, applies only the explicit lifecycle effect, and returns authoritative task/parent readback.",
+			Backend:     "tasks",
+			Operation:   "record_human_acceptance_review",
+			InputSchema: ObjectSchema(map[string]Schema{
+				"task_id":                  IntegerSchema("Canonical task receiving the human acceptance record."),
+				"reviewer_identity":        StringSchema("Authenticated or trusted-caller-reconciled human reviewer identity."),
+				"verdict":                  NullableStringSchema("Affirmative verdict. Omit for looks_good; no other verdict is accepted."),
+				"rationale":                NullableStringSchema("Short hands-on observation or rationale. Omit for the plain Looks good easy path."),
+				"reviewed_revision":        NullableStringSchema("Optional exact revision or version actually reviewed."),
+				"reviewed_build":           NullableStringSchema("Optional build identity actually reviewed."),
+				"reviewed_environment":     NullableStringSchema("Optional environment actually reviewed."),
+				"evidence_links":           AnySchema("Optional JSON array or comma-separated evidence links supplied by the human."),
+				"lifecycle_effect":         NullableStringSchema("Explicit effect: record_only, complete_task, or complete_task_and_parent. Defaults to record_only; parent completion is never implicit."),
+				"idempotency_key":          StringSchema("Caller-generated retry key scoped to this task and acceptance facts."),
+				"expected_task_updated_at": NullableStringSchema("Optional RFC3339 task updated_at readback used to reject stale confirmation."),
+			}, "task_id", "reviewer_identity", "idempotency_key"),
+		},
+		{
 			Name:        "get_details",
 			Description: "Intentionally expand one concise read result using its opaque detail_ref. Detail reads are allowlisted, read-only, and preserve the original backend authorization path.",
 			Backend:     "mcp-facade",

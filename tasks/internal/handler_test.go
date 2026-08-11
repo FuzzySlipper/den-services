@@ -154,6 +154,44 @@ func TestHTTPReviewTransitionEndpoint(t *testing.T) {
 	}
 }
 
+func TestHTTPHumanAcceptanceEasyPathAndDetailProjection(t *testing.T) {
+	server := testServer(t)
+	createResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(createResponse, authedJSONRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{"title":"Human reviewed"}`))
+	var task TaskResponse
+	decodeJSON(t, createResponse.Body, &task)
+
+	acceptResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(acceptResponse, authedJSONRequest(
+		http.MethodPost,
+		"/v1/projects/den-services/tasks/"+int64String(&task.ID)+"/human-acceptance-reviews",
+		`{"reviewer_identity":"user","idempotency_key":"easy-path","lifecycle_effect":"complete_task"}`,
+	))
+	if acceptResponse.Code != http.StatusOK {
+		t.Fatalf("accept status = %d body = %s", acceptResponse.Code, acceptResponse.Body.String())
+	}
+	var accepted RecordHumanAcceptanceResponse
+	decodeJSON(t, acceptResponse.Body, &accepted)
+	if accepted.Task.Status != StatusDone || accepted.Acceptance.Rationale != "Looks good." ||
+		accepted.IndependentReviewState.AgentReviewRoundsChanged {
+		t.Fatalf("accepted = %+v", accepted)
+	}
+	if len(accepted.Warnings) != 1 || !strings.Contains(accepted.Warnings[0], "does not create or satisfy") {
+		t.Fatalf("warnings = %+v", accepted.Warnings)
+	}
+	if accepted.AuditHandle == "" {
+		t.Fatal("acceptance response omitted audit handle")
+	}
+
+	detailResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(detailResponse, authedJSONRequest(http.MethodGet, "/v1/tasks/"+int64String(&task.ID), ""))
+	var detail TaskDetailResponse
+	decodeJSON(t, detailResponse.Body, &detail)
+	if len(detail.HumanAcceptanceReviews) != 1 || detail.HumanAcceptanceReviews[0].Verdict != HumanAcceptanceVerdictLooksGood {
+		t.Fatalf("detail acceptance = %+v", detail.HumanAcceptanceReviews)
+	}
+}
+
 func TestHTTPCrossProjectDependencyBlocksAndProjectsOwner(t *testing.T) {
 	server := testServer(t)
 

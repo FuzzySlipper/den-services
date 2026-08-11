@@ -507,6 +507,37 @@ func TestClientCallsTasksRESTRemoveDependencyPath(t *testing.T) {
 	}
 }
 
+func TestClientCallsTasksRESTRecordHumanAcceptance(t *testing.T) {
+	var received recordHumanAcceptanceBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/tasks/6810/human-acceptance-reviews" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{"acceptance":{"id":1,"verdict":"looks_good"},"task":{"id":6810}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("tasks", server.URL), Route{
+		Operation: "record_human_acceptance_review", Backend: "tasks", Method: http.MethodPost,
+		Path: "/v1/tasks/{task_id}/human-acceptance-reviews", RequestAdapter: RequestAdapterMCPTasksREST,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}, ToolCall{
+		ToolName: "record_human_acceptance_review", Operation: "record_human_acceptance_review", RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"task_id":6810,"reviewer_identity":"user","rationale":"Used it","evidence_links":["run://one"],"lifecycle_effect":"complete_task","idempotency_key":"accept-6810"}`),
+	})
+	if err != nil || failure != nil {
+		t.Fatalf("Call() error = %v failure = %#v", err, failure)
+	}
+	if received.ReviewerIdentity != "user" || received.LifecycleEffect != "complete_task" ||
+		received.IdempotencyKey != "accept-6810" || len(received.EvidenceLinks) != 1 {
+		t.Fatalf("received = %+v", received)
+	}
+}
+
 func TestClientAppliesRouteTimeoutToMessagesREST(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/projects/den-services/messages/wait" {

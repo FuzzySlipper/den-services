@@ -464,7 +464,8 @@ func tasksRoute(operation string) bool {
 		"update_task",
 		"next_task",
 		"add_dependency",
-		"remove_dependency":
+		"remove_dependency",
+		"record_human_acceptance_review":
 		return true
 	default:
 		return false

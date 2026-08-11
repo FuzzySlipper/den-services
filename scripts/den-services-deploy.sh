@@ -412,6 +412,8 @@ install_mcp_routes() {
   set_mcp_route_timeout "${routes_target}" "wait_for_messages" "65s"
   append_mcp_route_if_missing "${routes_target}" "get_task_context" "tasks" "GET" \
     "/v1/tasks/{task_id}/context" "mcp_task_context_compose" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "record_human_acceptance_review" "tasks" "POST" \
+    "/v1/tasks/{task_id}/human-acceptance-reviews" "mcp_tasks_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "ensure_document_discussion" "documents" "POST" \
     "/v1/projects/{project_id}/documents/{slug}/discussion/ensure" "mcp_documents_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "mark_project_notifications_read" "messages" "POST" \

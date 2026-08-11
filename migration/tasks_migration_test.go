@@ -31,3 +31,28 @@ func TestTasksMigrationDiscovered(t *testing.T) {
 		}
 	}
 }
+
+func TestHumanAcceptanceMigrationDiscovered(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	for index := range migrations {
+		migration := migrations[index]
+		if migration.Schema != "den_tasks" || migration.Version != 3 {
+			continue
+		}
+		for _, want := range []string{
+			"create table den_tasks.human_acceptance_reviews",
+			"unique (task_id, idempotency_key)",
+			"revoke update, delete on den_tasks.human_acceptance_reviews from den_tasks_app",
+			"grant select, insert on den_tasks.human_acceptance_reviews to den_tasks_app",
+		} {
+			if !strings.Contains(migration.SQL, want) {
+				t.Fatalf("human acceptance migration missing %q", want)
+			}
+		}
+		return
+	}
+	t.Fatal("den_tasks version 3 migration not discovered")
+}

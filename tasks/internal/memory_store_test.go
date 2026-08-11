@@ -10,23 +10,26 @@ import (
 )
 
 type memoryStore struct {
-	mu            sync.Mutex
-	nextTaskID    int64
-	nextHistoryID int64
-	nextEventID   int64
-	tasks         map[int64]*Task
-	dependencies  map[int64]map[int64]bool
-	history       []TaskHistoryEntry
-	changes       []TaskChangeEvent
+	mu               sync.Mutex
+	nextTaskID       int64
+	nextHistoryID    int64
+	nextEventID      int64
+	nextAcceptanceID int64
+	tasks            map[int64]*Task
+	dependencies     map[int64]map[int64]bool
+	history          []TaskHistoryEntry
+	changes          []TaskChangeEvent
+	acceptances      []*HumanAcceptanceReview
 }
 
 func newMemoryStore() *memoryStore {
 	return &memoryStore{
-		nextTaskID:    1,
-		nextHistoryID: 1,
-		nextEventID:   1,
-		tasks:         make(map[int64]*Task),
-		dependencies:  make(map[int64]map[int64]bool),
+		nextTaskID:       1,
+		nextHistoryID:    1,
+		nextEventID:      1,
+		nextAcceptanceID: 1,
+		tasks:            make(map[int64]*Task),
+		dependencies:     make(map[int64]map[int64]bool),
 	}
 }
 
@@ -95,11 +98,164 @@ func (s *memoryStore) GetDetail(_ context.Context, id int64) (TaskDetail, error)
 		return TaskDetail{}, notFound(id)
 	}
 	return TaskDetail{
-		Task:         cloneTask(task),
-		Dependencies: s.dependenciesLocked(id),
-		Subtasks:     s.listLocked(ListTasksQuery{ProjectID: task.ProjectID(), ParentID: &id}),
-		History:      s.historyLocked(id),
+		Task:                   cloneTask(task),
+		Dependencies:           s.dependenciesLocked(id),
+		Subtasks:               s.listLocked(ListTasksQuery{ProjectID: task.ProjectID(), ParentID: &id}),
+		History:                s.historyLocked(id),
+		HumanAcceptanceReviews: s.humanAcceptancesLocked(id),
 	}, nil
+}
+
+func (s *memoryStore) RecordHumanAcceptance(_ context.Context, command HumanAcceptanceCommand) (HumanAcceptanceMutation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current := s.tasks[command.TaskID]
+	if current == nil {
+		return HumanAcceptanceMutation{}, notFound(command.TaskID)
+	}
+	for _, existing := range s.acceptances {
+		if existing.TaskID != command.TaskID || existing.IdempotencyKey != command.IdempotencyKey {
+			continue
+		}
+		if existing.RequestFingerprint != command.RequestFingerprint {
+			return HumanAcceptanceMutation{}, conflict(ErrAcceptanceIdempotencyConflict, "human_acceptance_idempotency_conflict")
+		}
+		var parent *Task
+		changed := make([]int64, 0, 2)
+		unchanged := make([]int64, 0, 2)
+		if existing.TaskStatusBefore != existing.TaskStatusAfter {
+			changed = append(changed, current.ID())
+		} else {
+			unchanged = append(unchanged, current.ID())
+		}
+		if existing.ParentTaskID != nil {
+			parent = s.tasks[*existing.ParentTaskID]
+			if existing.ParentStatusBefore != existing.ParentStatusAfter {
+				changed = append(changed, *existing.ParentTaskID)
+			} else {
+				unchanged = append(unchanged, *existing.ParentTaskID)
+			}
+		}
+		return HumanAcceptanceMutation{
+			Review: cloneHumanAcceptance(existing), Task: cloneTask(current), Parent: cloneOptionalTask(parent),
+			ChangedTaskIDs: changed, UnchangedTaskIDs: unchanged,
+		}, nil
+	}
+	if command.ExpectedTaskUpdatedAt != nil && !current.UpdatedAt().Equal(command.ExpectedTaskUpdatedAt.UTC()) {
+		return HumanAcceptanceMutation{}, conflict(ErrAcceptanceTaskChanged, "human_acceptance_task_changed")
+	}
+	if current.Status() == StatusCancelled && command.Facts.LifecycleEffect != HumanAcceptanceRecordOnly {
+		return HumanAcceptanceMutation{}, conflict(ErrAcceptanceTaskCancelled, "human_acceptance_task_cancelled")
+	}
+	taskBefore := current.Status()
+	changed := make([]int64, 0, 2)
+	unchanged := make([]int64, 0, 2)
+	var parent *Task
+	var parentBefore string
+	if command.Facts.LifecycleEffect == HumanAcceptanceCompleteTaskAndParent {
+		parentID := current.ParentID()
+		if parentID == nil {
+			return HumanAcceptanceMutation{}, conflict(ErrAcceptanceParentMissing, "human_acceptance_parent_missing")
+		}
+		parent = s.tasks[*parentID]
+		if parent == nil || parent.Status() == StatusCancelled || !s.parentEligibleLocked(parent.ID(), current.ID()) {
+			return HumanAcceptanceMutation{}, conflict(ErrAcceptanceParentIneligible, "human_acceptance_parent_ineligible")
+		}
+		parentBefore = parent.Status()
+	}
+	if command.Facts.LifecycleEffect != HumanAcceptanceRecordOnly && current.Status() != StatusDone {
+		current = s.completeTaskLocked(current, command.Facts.ReviewerIdentity, command.CreatedAt)
+		changed = append(changed, current.ID())
+	} else {
+		unchanged = append(unchanged, current.ID())
+	}
+
+	if command.Facts.LifecycleEffect == HumanAcceptanceCompleteTaskAndParent {
+		if parent.Status() != StatusDone {
+			parent = s.completeTaskLocked(parent, command.Facts.ReviewerIdentity, command.CreatedAt)
+			changed = append(changed, parent.ID())
+		} else {
+			unchanged = append(unchanged, parent.ID())
+		}
+	}
+	review := &HumanAcceptanceReview{
+		ID: s.nextAcceptanceID, TaskID: current.ID(), ProjectID: current.ProjectID(),
+		IdempotencyKey: command.IdempotencyKey, RequestFingerprint: command.RequestFingerprint,
+		ReviewerIdentity: command.Facts.ReviewerIdentity, Verdict: command.Facts.Verdict,
+		Rationale: command.Facts.Rationale, ReviewedRevision: command.Facts.ReviewedRevision,
+		ReviewedBuild: command.Facts.ReviewedBuild, ReviewedEnvironment: command.Facts.ReviewedEnvironment,
+		EvidenceLinks: append([]string(nil), command.Facts.EvidenceLinks...), LifecycleEffect: command.Facts.LifecycleEffect,
+		NoteMarkdown: humanAcceptanceNote(command.Facts), TaskStatusBefore: taskBefore, TaskStatusAfter: current.Status(),
+		ParentStatusBefore: parentBefore, CreatedAt: command.CreatedAt,
+	}
+	if parent != nil {
+		review.ParentTaskID = int64PtrValue(parent.ID())
+		review.ParentStatusAfter = parent.Status()
+	}
+	s.nextAcceptanceID++
+	s.acceptances = append(s.acceptances, review)
+	s.appendChangeLocked("human_acceptance_recorded", current.ID(), command.CreatedAt)
+	return HumanAcceptanceMutation{
+		Review: cloneHumanAcceptance(review), Task: cloneTask(current), Parent: cloneOptionalTask(parent),
+		ChangedTaskIDs: changed, UnchangedTaskIDs: unchanged,
+	}, nil
+}
+
+func (s *memoryStore) completeTaskLocked(task *Task, reviewer string, at time.Time) *Task {
+	updated := cloneTask(task)
+	updated.status = StatusDone
+	updated.updatedAt = at
+	updated.blockerSummary = ""
+	updated.blockerReason = ""
+	updated.blockerAttemptedRemedies = ""
+	updated.blockerSuggestedNextStep = ""
+	updated.blockerRequiresHumanInput = false
+	s.tasks[updated.ID()] = updated
+	s.appendHistoryLocked(updated.ID(), "status", task.Status(), StatusDone, reviewer, at)
+	s.appendChangeLocked("updated", updated.ID(), at)
+	return updated
+}
+
+func (s *memoryStore) parentEligibleLocked(parentID int64, completingChildID int64) bool {
+	for _, task := range s.tasks {
+		if task.ParentID() != nil && *task.ParentID() == parentID && task.ID() != completingChildID && task.Status() != StatusDone && task.Status() != StatusCancelled {
+			return false
+		}
+	}
+	for dependencyID := range s.dependencies[parentID] {
+		dependency := s.tasks[dependencyID]
+		if dependency != nil && !dependencySatisfiedStatus(dependency.Status()) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *memoryStore) humanAcceptancesLocked(taskID int64) []*HumanAcceptanceReview {
+	result := make([]*HumanAcceptanceReview, 0)
+	for index := len(s.acceptances) - 1; index >= 0; index-- {
+		if s.acceptances[index].TaskID == taskID {
+			result = append(result, cloneHumanAcceptance(s.acceptances[index]))
+		}
+	}
+	return result
+}
+
+func cloneHumanAcceptance(review *HumanAcceptanceReview) *HumanAcceptanceReview {
+	if review == nil {
+		return nil
+	}
+	clone := *review
+	clone.ParentTaskID = cloneInt64(review.ParentTaskID)
+	clone.EvidenceLinks = append([]string(nil), review.EvidenceLinks...)
+	return &clone
+}
+
+func cloneOptionalTask(task *Task) *Task {
+	if task == nil {
+		return nil
+	}
+	return cloneTask(task)
 }
 
 func (s *memoryStore) ListTasks(_ context.Context, query ListTasksQuery) ([]TaskSummary, error) {

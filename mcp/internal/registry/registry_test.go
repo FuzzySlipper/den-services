@@ -18,8 +18,8 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 75 {
-		t.Fatalf("tool count = %d, want 75", len(names))
+	if len(names) != 76 {
+		t.Fatalf("tool count = %d, want 76", len(names))
 	}
 	for _, name := range []string{
 		"search_documents",
@@ -41,6 +41,7 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		"ensure_document_discussion",
 		"set_handoff",
 		"get_handoff",
+		"record_human_acceptance_review",
 	} {
 		if !containsName(names, name) {
 			t.Fatalf("visible tools missing %s", name)
@@ -205,8 +206,8 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if err != nil {
 		t.Fatalf("ToolsForProfile(managed-runtime) error = %v", err)
 	}
-	if len(direct) != 75 {
-		t.Fatalf("direct tool count = %d, want 75", len(direct))
+	if len(direct) != 76 {
+		t.Fatalf("direct tool count = %d, want 76", len(direct))
 	}
 	if len(managed) >= len(direct) {
 		t.Fatalf("managed tool count = %d, want fewer than direct %d", len(managed), len(direct))
@@ -222,7 +223,7 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if !containsListedTool(managed, "finalize_review") {
 		t.Fatal("managed profile hides finalize_review green path")
 	}
-	for _, name := range []string{"get_task", "get_task_context", "list_tasks", "store_document", "update_task"} {
+	for _, name := range []string{"get_task", "get_task_context", "list_tasks", "store_document", "update_task", "record_human_acceptance_review"} {
 		if !containsListedTool(managed, name) {
 			t.Fatalf("managed profile hides normal operator tool %s", name)
 		}
@@ -314,7 +315,8 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 			tool.Name != "finalize_review" && tool.Name != "request_campaign_review" &&
 			tool.Name != "get_details" && tool.Name != "mark_project_notifications_read" &&
 			tool.Name != "mark_task_notifications_read" && tool.Name != "ensure_document_discussion" &&
-			tool.Name != "set_handoff" && tool.Name != "get_handoff" && tool.Name != "den_knowledge_delete" {
+			tool.Name != "record_human_acceptance_review" && tool.Name != "set_handoff" &&
+			tool.Name != "get_handoff" && tool.Name != "den_knowledge_delete" {
 			t.Fatalf("unexpected non-snapshot tool %q", tool.Name)
 		}
 	}

@@ -203,10 +203,11 @@ func (s TaskSummary) Availability() string {
 }
 
 type TaskDetail struct {
-	Task         *Task
-	Dependencies []DependencyInfo
-	Subtasks     []TaskSummary
-	History      []TaskHistoryEntry
+	Task                   *Task
+	Dependencies           []DependencyInfo
+	Subtasks               []TaskSummary
+	History                []TaskHistoryEntry
+	HumanAcceptanceReviews []*HumanAcceptanceReview
 }
 
 type TaskHistoryEntry struct {

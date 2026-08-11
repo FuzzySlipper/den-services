@@ -1,6 +1,9 @@
 package tasks
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 type CreateTaskRequest struct {
 	Title       string   `json:"title"`
@@ -59,6 +62,57 @@ type ReviewTransitionResponse struct {
 	ResultingTaskStatus string       `json:"resulting_task_status"`
 }
 
+type RecordHumanAcceptanceRequest struct {
+	ReviewerIdentity      string                         `json:"reviewer_identity"`
+	Verdict               HumanAcceptanceVerdict         `json:"verdict,omitempty"`
+	Rationale             string                         `json:"rationale,omitempty"`
+	ReviewedRevision      string                         `json:"reviewed_revision,omitempty"`
+	ReviewedBuild         string                         `json:"reviewed_build,omitempty"`
+	ReviewedEnvironment   string                         `json:"reviewed_environment,omitempty"`
+	EvidenceLinks         []string                       `json:"evidence_links,omitempty"`
+	LifecycleEffect       HumanAcceptanceLifecycleEffect `json:"lifecycle_effect,omitempty"`
+	IdempotencyKey        string                         `json:"idempotency_key"`
+	ExpectedTaskUpdatedAt *time.Time                     `json:"expected_task_updated_at,omitempty"`
+}
+
+type HumanAcceptanceReviewResponse struct {
+	ID                  int64                          `json:"id"`
+	TaskID              int64                          `json:"task_id"`
+	ProjectID           string                         `json:"project_id"`
+	ReviewerIdentity    string                         `json:"reviewer_identity"`
+	Verdict             HumanAcceptanceVerdict         `json:"verdict"`
+	Rationale           string                         `json:"rationale"`
+	ReviewedRevision    string                         `json:"reviewed_revision,omitempty"`
+	ReviewedBuild       string                         `json:"reviewed_build,omitempty"`
+	ReviewedEnvironment string                         `json:"reviewed_environment,omitempty"`
+	EvidenceLinks       []string                       `json:"evidence_links,omitempty"`
+	LifecycleEffect     HumanAcceptanceLifecycleEffect `json:"lifecycle_effect"`
+	NoteMarkdown        string                         `json:"note_markdown"`
+	TaskStatusBefore    string                         `json:"task_status_before"`
+	TaskStatusAfter     string                         `json:"task_status_after"`
+	ParentTaskID        *int64                         `json:"parent_task_id,omitempty"`
+	ParentStatusBefore  string                         `json:"parent_status_before,omitempty"`
+	ParentStatusAfter   string                         `json:"parent_status_after,omitempty"`
+	CreatedAt           time.Time                      `json:"created_at"`
+}
+
+type HumanAcceptanceIndependenceResponse struct {
+	AgentReviewRoundsChanged bool `json:"agent_review_rounds_changed"`
+	AgentFindingsChanged     bool `json:"agent_findings_changed"`
+	GitHubGatesChanged       bool `json:"github_gates_changed"`
+}
+
+type RecordHumanAcceptanceResponse struct {
+	Acceptance             HumanAcceptanceReviewResponse       `json:"acceptance"`
+	Task                   TaskResponse                        `json:"task"`
+	Parent                 *TaskResponse                       `json:"parent,omitempty"`
+	ChangedTaskIDs         []int64                             `json:"changed_task_ids"`
+	UnchangedTaskIDs       []int64                             `json:"unchanged_task_ids"`
+	IndependentReviewState HumanAcceptanceIndependenceResponse `json:"independent_review_state"`
+	Warnings               []string                            `json:"warnings"`
+	AuditHandle            string                              `json:"audit_handle"`
+}
+
 type TaskResponse struct {
 	ID                        int64     `json:"id"`
 	ProjectID                 string    `json:"project_id"`
@@ -87,10 +141,11 @@ type TaskSummaryResponse struct {
 }
 
 type TaskDetailResponse struct {
-	Task         TaskResponse               `json:"task"`
-	Dependencies []DependencyInfoResponse   `json:"dependencies"`
-	Subtasks     []TaskSummaryResponse      `json:"subtasks"`
-	History      []TaskHistoryEntryResponse `json:"history"`
+	Task                   TaskResponse                    `json:"task"`
+	Dependencies           []DependencyInfoResponse        `json:"dependencies"`
+	Subtasks               []TaskSummaryResponse           `json:"subtasks"`
+	History                []TaskHistoryEntryResponse      `json:"history"`
+	HumanAcceptanceReviews []HumanAcceptanceReviewResponse `json:"human_acceptance_reviews"`
 }
 
 type DependencyInfoResponse struct {
@@ -172,10 +227,47 @@ func toTaskSummaryResponses(summaries []TaskSummary) []TaskSummaryResponse {
 
 func toTaskDetailResponse(detail TaskDetail) TaskDetailResponse {
 	return TaskDetailResponse{
-		Task:         toTaskResponse(detail.Task),
-		Dependencies: toDependencyResponses(detail.Dependencies),
-		Subtasks:     toTaskSummaryResponses(detail.Subtasks),
-		History:      toHistoryResponses(detail.History),
+		Task:                   toTaskResponse(detail.Task),
+		Dependencies:           toDependencyResponses(detail.Dependencies),
+		Subtasks:               toTaskSummaryResponses(detail.Subtasks),
+		History:                toHistoryResponses(detail.History),
+		HumanAcceptanceReviews: toHumanAcceptanceResponses(detail.HumanAcceptanceReviews),
+	}
+}
+
+func toHumanAcceptanceResponse(review *HumanAcceptanceReview) HumanAcceptanceReviewResponse {
+	return HumanAcceptanceReviewResponse{
+		ID: review.ID, TaskID: review.TaskID, ProjectID: review.ProjectID,
+		ReviewerIdentity: review.ReviewerIdentity, Verdict: review.Verdict, Rationale: review.Rationale,
+		ReviewedRevision: review.ReviewedRevision, ReviewedBuild: review.ReviewedBuild,
+		ReviewedEnvironment: review.ReviewedEnvironment, EvidenceLinks: append([]string(nil), review.EvidenceLinks...),
+		LifecycleEffect: review.LifecycleEffect, NoteMarkdown: review.NoteMarkdown,
+		TaskStatusBefore: review.TaskStatusBefore, TaskStatusAfter: review.TaskStatusAfter,
+		ParentTaskID: cloneInt64(review.ParentTaskID), ParentStatusBefore: review.ParentStatusBefore,
+		ParentStatusAfter: review.ParentStatusAfter, CreatedAt: review.CreatedAt,
+	}
+}
+
+func toHumanAcceptanceResponses(reviews []*HumanAcceptanceReview) []HumanAcceptanceReviewResponse {
+	result := make([]HumanAcceptanceReviewResponse, 0, len(reviews))
+	for _, review := range reviews {
+		result = append(result, toHumanAcceptanceResponse(review))
+	}
+	return result
+}
+
+func toRecordHumanAcceptanceResponse(result HumanAcceptanceMutation) RecordHumanAcceptanceResponse {
+	var parent *TaskResponse
+	if result.Parent != nil {
+		value := toTaskResponse(result.Parent)
+		parent = &value
+	}
+	return RecordHumanAcceptanceResponse{
+		Acceptance: toHumanAcceptanceResponse(result.Review), Task: toTaskResponse(result.Task), Parent: parent,
+		ChangedTaskIDs: result.ChangedTaskIDs, UnchangedTaskIDs: result.UnchangedTaskIDs,
+		IndependentReviewState: HumanAcceptanceIndependenceResponse{},
+		Warnings:               []string{"Human acceptance does not create or satisfy agent review rounds, resolve agent findings, or change GitHub/exact-revision gates."},
+		AuditHandle:            fmt.Sprintf("tasks/human-acceptance-reviews/%d", result.Review.ID),
 	}
 }
 

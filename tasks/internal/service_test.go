@@ -3,6 +3,7 @@ package tasks
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -130,6 +131,97 @@ func TestServiceTransitionTaskToReviewIsConditionalAndIdempotent(t *testing.T) {
 	}
 	if detail.Task.Status() != StatusDone {
 		t.Fatalf("rejected transition changed status to %q", detail.Task.Status())
+	}
+}
+
+func TestServiceRecordsHumanAcceptanceAndExplicitlyCompletesEligibleParent(t *testing.T) {
+	service := newTestService()
+	ctx := context.Background()
+	parent, err := service.CreateTask(ctx, "den-services", CreateTaskRequest{Title: "Playtest campaign"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := service.CreateTask(ctx, "den-services", CreateTaskRequest{Title: "Hands-on playtest", ParentID: int64Ptr(parent.ID())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readAt := child.UpdatedAt()
+	result, err := service.RecordHumanAcceptance(ctx, child.ID(), RecordHumanAcceptanceRequest{
+		ReviewerIdentity: "user", Rationale: "Used the pointer-lock flow and it feels correct.",
+		ReviewedRevision: "786010d68f434487ed01b8d0acba0db8a05dce8c",
+		EvidenceLinks:    []string{"run://playtest/one"}, LifecycleEffect: HumanAcceptanceCompleteTaskAndParent,
+		IdempotencyKey: "human-acceptance-6783", ExpectedTaskUpdatedAt: &readAt,
+	})
+	if err != nil {
+		t.Fatalf("RecordHumanAcceptance() error = %v", err)
+	}
+	if result.Task.Status() != StatusDone || result.Parent == nil || result.Parent.Status() != StatusDone {
+		t.Fatalf("result task/parent = %+v/%+v", result.Task, result.Parent)
+	}
+	if len(result.ChangedTaskIDs) != 2 || result.Review.Verdict != HumanAcceptanceVerdictLooksGood {
+		t.Fatalf("result = %+v", result)
+	}
+	if !strings.Contains(result.Review.NoteMarkdown, "Used the pointer-lock flow") ||
+		strings.Contains(result.Review.NoteMarkdown, "tests passed") {
+		t.Fatalf("generated note invented or lost facts: %s", result.Review.NoteMarkdown)
+	}
+	detail, err := service.GetTask(ctx, child.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.HumanAcceptanceReviews) != 1 || detail.HumanAcceptanceReviews[0].ReviewerIdentity != "user" {
+		t.Fatalf("human acceptance projection = %+v", detail.HumanAcceptanceReviews)
+	}
+	retry, err := service.RecordHumanAcceptance(ctx, child.ID(), RecordHumanAcceptanceRequest{
+		ReviewerIdentity: "user", Rationale: "Used the pointer-lock flow and it feels correct.",
+		ReviewedRevision: "786010d68f434487ed01b8d0acba0db8a05dce8c",
+		EvidenceLinks:    []string{"run://playtest/one"}, LifecycleEffect: HumanAcceptanceCompleteTaskAndParent,
+		IdempotencyKey: "human-acceptance-6783", ExpectedTaskUpdatedAt: &readAt,
+	})
+	if err != nil || retry.Review.ID != result.Review.ID {
+		t.Fatalf("idempotent retry = %+v, error = %v", retry, err)
+	}
+	detail, _ = service.GetTask(ctx, child.ID())
+	if len(detail.HumanAcceptanceReviews) != 1 {
+		t.Fatalf("retry duplicated acceptance: %+v", detail.HumanAcceptanceReviews)
+	}
+}
+
+func TestServiceHumanAcceptanceReconciliationAndParentEligibility(t *testing.T) {
+	service := newTestService()
+	ctx := context.Background()
+	parent, _ := service.CreateTask(ctx, "den-services", CreateTaskRequest{Title: "Parent"})
+	child, _ := service.CreateTask(ctx, "den-services", CreateTaskRequest{Title: "Child", ParentID: int64Ptr(parent.ID())})
+	_, _ = service.CreateTask(ctx, "den-services", CreateTaskRequest{Title: "Still open", ParentID: int64Ptr(parent.ID())})
+	stale := child.UpdatedAt().Add(-time.Minute)
+	_, err := service.RecordHumanAcceptance(ctx, child.ID(), RecordHumanAcceptanceRequest{
+		ReviewerIdentity: "user", IdempotencyKey: "stale", ExpectedTaskUpdatedAt: &stale,
+	})
+	var serviceErr *ServiceError
+	if !errors.As(err, &serviceErr) || serviceErr.Code() != "human_acceptance_task_changed" {
+		t.Fatalf("stale readback error = %#v", err)
+	}
+	_, err = service.RecordHumanAcceptance(ctx, child.ID(), RecordHumanAcceptanceRequest{
+		ReviewerIdentity: "user", IdempotencyKey: "parent", LifecycleEffect: HumanAcceptanceCompleteTaskAndParent,
+	})
+	if !errors.As(err, &serviceErr) || serviceErr.Code() != "human_acceptance_parent_ineligible" {
+		t.Fatalf("ineligible parent error = %#v", err)
+	}
+	detail, _ := service.GetTask(ctx, child.ID())
+	if detail.Task.Status() == StatusDone || len(detail.HumanAcceptanceReviews) != 0 {
+		t.Fatalf("failed parent mutation was not atomic: %+v", detail)
+	}
+	_, err = service.RecordHumanAcceptance(ctx, child.ID(), RecordHumanAcceptanceRequest{
+		ReviewerIdentity: "user", Rationale: "First", IdempotencyKey: "same-key",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.RecordHumanAcceptance(ctx, child.ID(), RecordHumanAcceptanceRequest{
+		ReviewerIdentity: "user", Rationale: "Different", IdempotencyKey: "same-key",
+	})
+	if !errors.As(err, &serviceErr) || serviceErr.Code() != "human_acceptance_idempotency_conflict" {
+		t.Fatalf("idempotency conflict = %#v", err)
 	}
 }
 
