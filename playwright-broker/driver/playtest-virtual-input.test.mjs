@@ -43,10 +43,11 @@ test("virtual mouse uses genuine button events without a pointer-lock reposition
     exec: async (_file, args) => commands.push(args)
   });
 
+  await mouse.move(590, 360);
+  commands.length = 0;
   await mouse.click(640, 360, { button: "right" });
 
   assert.deepEqual(commands, [
-    ["move-relative", "0", "0"],
     ["button", "3", "down"],
     ["button", "3", "up"]
   ]);
@@ -90,12 +91,15 @@ test("X11 input delivers bounded relative movement through Chromium pointer lock
     await mouse.move(590, 360);
     await page.waitForFunction(() => moves.length > 0);
     const moves = await page.evaluate(() => window.moves);
-    await mouse.click(590, 360, { button: "right" });
+    await page.evaluate(() => { moves.length = 0; });
+    await mouse.click(640, 360, { button: "right" });
 
+    const clickMoves = await page.evaluate(() => window.moves);
     const buttons = await page.evaluate(() => window.buttons);
     assert.equal(moves.reduce((sum, [x]) => sum + x, 0), -50);
     assert.ok(Math.abs(moves.reduce((sum, [, y]) => sum + y, 0)) <= 20, JSON.stringify(moves));
     assert.ok(moves.every(([x, y]) => Math.abs(x) <= 50 && Math.abs(y) <= 50), JSON.stringify(moves));
+    assert.deepEqual(clickMoves, []);
     assert.deepEqual(buttons.slice(-2), [[2, "down"], [2, "up"]]);
   } finally {
     await browser?.close();

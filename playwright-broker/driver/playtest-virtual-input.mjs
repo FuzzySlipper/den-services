@@ -76,7 +76,10 @@ export class VirtualMouse {
   }
 
   async click(x, y, options = {}) {
-    await this.move(x, y, options);
+    // Pointer lock turns movement into camera deltas, so click coordinates no
+    // longer identify a screen position. Keep the last virtual coordinate and
+    // emit only button events until pointer lock is released.
+    if (!(await this.pointerLocked())) await this.move(x, y, options);
     const button = options.button || "left";
     const count = Math.max(1, Math.round(Number(options.clickCount) || 1));
     for (let click = 0; click < count; click += 1) {
