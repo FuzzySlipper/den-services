@@ -80,7 +80,7 @@ async function collectArtifacts(directory = artifactRoot) {
     if (entry.isDirectory()) collected.push(...await collectArtifacts(absolute));
     else collected.push(path.relative(artifactRoot, absolute));
   }
-  index.artifacts = [...new Set(collected)].sort();
+  return collected;
 }
 
 async function record(kind, data = {}) {
@@ -353,7 +353,7 @@ async function finish(request) {
   try { await browser?.close(); } catch {}
   finishedAt = new Date().toISOString();
   index.cleanup.driver_stopped = true;
-  await collectArtifacts();
+  index.artifacts = [...new Set(await collectArtifacts())].sort();
   await persist();
   setTimeout(() => server.close(() => process.exit(0)), 25);
   return { status, index_path: indexPath, cleanup: index.cleanup };
