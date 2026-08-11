@@ -146,25 +146,26 @@ type PlaytestStartOptions struct {
 }
 
 type PlaytestSession struct {
-	SchemaVersion string    `json:"schema_version"`
-	SessionID     string    `json:"session_id"`
-	Project       string    `json:"project"`
-	RepoRoot      string    `json:"repo_root"`
-	Owner         string    `json:"owner,omitempty"`
-	Scenario      string    `json:"scenario,omitempty"`
-	Status        string    `json:"status"`
-	StartedAt     time.Time `json:"started_at"`
-	FinishedAt    time.Time `json:"finished_at,omitempty"`
-	Endpoint      string    `json:"endpoint"`
-	DriverPID     int       `json:"driver_pid"`
-	ServerPID     int       `json:"server_pid,omitempty"`
-	ServerReused  bool      `json:"server_reused"`
-	BaseURL       string    `json:"base_url"`
-	ArtifactRoot  string    `json:"artifact_root"`
-	IndexPath     string    `json:"index_path"`
-	StatePath     string    `json:"state_path"`
-	Warnings      []string  `json:"warnings,omitempty"`
-	ExitInterview any       `json:"exit_interview,omitempty"`
+	SchemaVersion     string    `json:"schema_version"`
+	SessionID         string    `json:"session_id"`
+	Project           string    `json:"project"`
+	RepoRoot          string    `json:"repo_root"`
+	Owner             string    `json:"owner,omitempty"`
+	Scenario          string    `json:"scenario,omitempty"`
+	Status            string    `json:"status"`
+	StartedAt         time.Time `json:"started_at"`
+	FinishedAt        time.Time `json:"finished_at,omitempty"`
+	Endpoint          string    `json:"endpoint"`
+	DriverPID         int       `json:"driver_pid"`
+	ServerPID         int       `json:"server_pid,omitempty"`
+	ServerReused      bool      `json:"server_reused"`
+	BaseURL           string    `json:"base_url"`
+	ArtifactRoot      string    `json:"artifact_root"`
+	IndexPath         string    `json:"index_path"`
+	DecisionTracePath string    `json:"decision_trace_path,omitempty"`
+	StatePath         string    `json:"state_path"`
+	Warnings          []string  `json:"warnings,omitempty"`
+	ExitInterview     any       `json:"exit_interview,omitempty"`
 }
 
 var (

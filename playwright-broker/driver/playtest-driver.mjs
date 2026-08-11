@@ -7,7 +7,7 @@ import process from "node:process";
 import { chromium } from "@playwright/test";
 import { inputStateDiscrepancies, lifecycleDiscrepancies } from "./playtest-diagnostics.mjs";
 import { DecisionTrace } from "./playtest-decision-trace.mjs";
-import { startVirtualDisplay, VirtualMouse } from "./playtest-virtual-input.mjs";
+import { isCoordinateClick, startVirtualDisplay, VirtualMouse } from "./playtest-virtual-input.mjs";
 
 const options = JSON.parse(process.env.DEN_PLAYTEST_DRIVER_OPTIONS || "{}");
 const artifactRoot = options.artifactRoot;
@@ -304,7 +304,9 @@ async function runAction(action) {
     case "wait": return page.waitForTimeout(action.ms || 0);
     case "viewport": return page.setViewportSize({ width: action.width, height: action.height });
     case "goto": return page.goto(action.url, action.options || {});
-    case "click": return page.locator(action.selector).click(action.options || {});
+    case "click":
+      if (isCoordinateClick(action)) return virtualMouse ? virtualMouse.click(action.x, action.y, action.options || {}) : page.mouse.click(action.x, action.y, action.options || {});
+      return page.locator(action.selector).click(action.options || {});
     case "dblclick": return page.locator(action.selector).dblclick(action.options || {});
     case "fill": return page.locator(action.selector).fill(action.value, action.options || {});
     case "type": return page.locator(action.selector).pressSequentially(action.text, action.options || {});

@@ -155,6 +155,9 @@ func (m *PlaytestManager) Start(ctx context.Context, options PlaytestStartOption
 		IndexPath:     filepath.Join(artifactRoot, "playtest-index.json"),
 		Warnings:      warnings,
 	}
+	if boolMetadata(options.Metadata, "verbose_trace", "verboseTrace") {
+		session.DecisionTracePath = filepath.Join(artifactRoot, "decision-trace.jsonl")
+	}
 	session.StatePath = m.sessionPath(sessionID)
 	if err := m.saveSession(session); err != nil {
 		_ = stopProcessGroup(driverPID, m.cfg.Timeouts.ShutdownTimeout)
@@ -350,6 +353,7 @@ func (m *PlaytestManager) finishHostCleanup(session *PlaytestSession, kind strin
 		if err := stopProcessGroup(session.DriverPID, m.cfg.Timeouts.ShutdownTimeout); err != nil {
 			diagnostics = append(diagnostics, cleanupDiagnostic("driver_cleanup_error", err))
 		}
+		driverDeadline = m.clock().Add(m.cfg.Timeouts.ShutdownTimeout)
 		for processGroupAlive(session.DriverPID) && m.clock().Before(driverDeadline) {
 			time.Sleep(25 * time.Millisecond)
 		}
@@ -405,6 +409,15 @@ func firstPresent(values map[string]any, keys ...string) any {
 		}
 	}
 	return nil
+}
+
+func boolMetadata(values map[string]any, keys ...string) bool {
+	for _, key := range keys {
+		if value, ok := values[key].(bool); ok && value {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *PlaytestManager) patchCleanupIndex(session PlaytestSession, serverStopped bool, diagnostics []map[string]any, event map[string]any) error {

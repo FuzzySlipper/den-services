@@ -90,6 +90,11 @@ then request `(590, 360)` for 50 pixels left and `(640, 360)` for 50 pixels
 right. Pointer-locked clicks use genuine XTest button events and do not move the
 virtual cursor.
 
+For clicks, `mouse_click` with numeric `x`/`y` is the canonical coordinate
+form, while `click` with a `selector` is the locator form. Because models often
+use generic browser vocabulary, `click` with numeric coordinates and no
+selector is accepted as a coordinate-click shorthand rather than rejected.
+
 The configured `playtest.input_helper` must be the repository's
 `playtest-x11-input` binary. The Codex installer builds and validates it. Manual
 Linux installations also require `Xvfb`, X11, and XTest runtime libraries.

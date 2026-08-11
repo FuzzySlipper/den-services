@@ -159,6 +159,18 @@ func TestPlaytestGetAcceptsExistingSessionWithoutExitInterview(t *testing.T) {
 	}
 }
 
+func TestBoolMetadataRecognizesOnlyEnabledTraceAliases(t *testing.T) {
+	if !boolMetadata(map[string]any{"verbose_trace": true}, "verbose_trace", "verboseTrace") {
+		t.Fatal("verbose_trace=true was not recognized")
+	}
+	if !boolMetadata(map[string]any{"verboseTrace": true}, "verbose_trace", "verboseTrace") {
+		t.Fatal("verboseTrace=true was not recognized")
+	}
+	if boolMetadata(map[string]any{"verbose_trace": false, "verboseTrace": "true"}, "verbose_trace", "verboseTrace") {
+		t.Fatal("disabled or non-boolean metadata enabled tracing")
+	}
+}
+
 func TestFinishHostCleanupPersistsManagerDiagnostics(t *testing.T) {
 	artifactRoot := t.TempDir()
 	blockedStateDir := filepath.Join(t.TempDir(), "state-file")

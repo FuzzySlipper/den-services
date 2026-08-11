@@ -104,6 +104,11 @@ Use the broker's exact typed action names. Do not guess framework-style aliases:
 }
 ```
 
+Use `mouse_click` with numeric `x`/`y` for a viewport-coordinate click such as
+canvas capture. `click` with a `selector` is a locator action. The broker also
+accepts `click` with numeric coordinates as a recovery shorthand, but do not
+combine selector and coordinate forms.
+
 For a frame sequence, request `frameBurst` exactly:
 
 ```json

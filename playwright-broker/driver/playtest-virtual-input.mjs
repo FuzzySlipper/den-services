@@ -6,6 +6,10 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const buttonNumbers = { left: 1, middle: 2, right: 3, back: 8, forward: 9 };
 
+export function isCoordinateClick(action) {
+  return action?.type === "click" && action.selector === undefined && Number.isFinite(action.x) && Number.isFinite(action.y);
+}
+
 export async function startVirtualDisplay({ viewport, stderr }) {
   if (process.platform !== "linux") return null;
   const width = Number(viewport?.width) || 1280;

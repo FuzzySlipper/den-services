@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import process from "node:process";
 import { chromium } from "@playwright/test";
-import { startVirtualDisplay, VirtualMouse } from "./playtest-virtual-input.mjs";
+import { isCoordinateClick, startVirtualDisplay, VirtualMouse } from "./playtest-virtual-input.mjs";
+
+test("coordinate click shorthand is distinguished from locator click", () => {
+  assert.equal(isCoordinateClick({ type: "click", x: 640, y: 360 }), true);
+  assert.equal(isCoordinateClick({ type: "click", selector: "canvas" }), false);
+  assert.equal(isCoordinateClick({ type: "mouse_click", x: 640, y: 360 }), false);
+});
 
 test("virtual mouse preserves absolute coordinates then emits relative pointer-lock deltas", async () => {
   let locked = false;
