@@ -1,0 +1,23 @@
+# Rendered by scripts/install-codex-playtester.sh.
+# Local trusted-playtest state and evidence remain host-local.
+state_dir: @STATE_DIR_YAML@
+artifact_root: @ARTIFACT_ROOT_YAML@
+host: "127.0.0.1"
+
+port_range:
+  start: 37100
+  end: 37250
+
+timeouts:
+  lock_timeout: "10s"
+  startup_timeout: "45s"
+  health_timeout: "2s"
+  health_interval: "250ms"
+  shutdown_timeout: "5s"
+  run_timeout: "20m"
+
+playtest:
+  node_command: "node"
+  driver_script: @DRIVER_SCRIPT_YAML@
+  driver_startup_timeout: "30s"
+  command_timeout: "2m"

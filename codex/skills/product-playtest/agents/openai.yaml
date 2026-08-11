@@ -1,0 +1,4 @@
+interface:
+  display_name: "Product Playtest"
+  short_description: "Run persistent evidence-backed product playtests"
+  default_prompt: "Use $product-playtest to test this product through its visible application and return indexed evidence."

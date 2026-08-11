@@ -167,6 +167,9 @@ Build the CLI, then configure an MCP client to launch:
 
 The server exposes the eight `playtest_*` tools described above. All tool input schemas accept additional properties. The MCP result includes both text and structured content.
 
+For a repository-owned Codex skill and `gpt-5.6-luna` custom playtester that
+uses this stdio surface, see [Codex Luna playtester](codex-playtester.md).
+
 ## Den completion note
 
 Compact evidence template:

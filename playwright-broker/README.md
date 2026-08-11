@@ -93,7 +93,9 @@ The JSON CLI accepts `-request '{...}'`, `-request @file.json`, or `-request -` 
 
 `den-playwright mcp -config <path>` exposes the same lifecycle as an MCP stdio server with `playtest_start`, `playtest_observe`, `playtest_act`, `playtest_inspect`, `playtest_finish`, `playtest_cancel`, `playtest_get`, and `playtest_list`. Tool schemas keep `additionalProperties: true`, so experimental caller fields are retained instead of rejected.
 
-See [agent usage](docs/agent-usage.md) for the operation catalog and evidence packet.
+See [agent usage](docs/agent-usage.md) for the operation catalog and evidence
+packet. For the repository-owned Luna/max custom agent, installer, parent spawn
+prompt, and troubleshooting, see [Codex Luna playtester](docs/codex-playtester.md).
 
 ## One-shot Playwright runs
 
