@@ -62,6 +62,10 @@ The playtester defaults to headless Chromium because screenshots and frame
 bursts are its visible evidence surface. Request headed execution only when the
 host has a display. The worker trusts the mission packet and uses only the
 eight `playtest_*` tools; it does not inspect repository or harness source.
+`playtest_observe` returns captured screenshots and frame bursts as model image
+inputs while retaining their indexed artifact paths. If an observation returns
+only text, treat that as an MCP/image-attachment infrastructure error rather
+than attempting to read artifact files with shell or filesystem tools.
 
 The broker auto-discovers `.den-playwright.json`. Existing products that expose
 the compatible serve contract under another filename, such as

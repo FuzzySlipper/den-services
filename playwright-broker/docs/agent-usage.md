@@ -180,7 +180,7 @@ Build the CLI, then configure an MCP client to launch:
 /absolute/path/to/den-playwright mcp -config /absolute/path/to/config.yaml
 ```
 
-The server exposes the eight `playtest_*` tools described above. All tool input schemas accept additional properties. The MCP result includes both text and structured content.
+The server exposes the eight `playtest_*` tools described above. All tool input schemas accept additional properties. Every MCP result includes text and structured content. A successful `playtest_observe` additionally returns the screenshot and current frame-burst files as MCP `image` content blocks, in capture order, so vision clients receive the same pixels retained by the evidence packet. Image attachment warnings are appended as text without discarding the structured observation.
 
 For a repository-owned Codex skill and `gpt-5.6-luna` custom playtester that
 uses this stdio surface, see [Codex Luna playtester](codex-playtester.md).

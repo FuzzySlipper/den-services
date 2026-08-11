@@ -3,11 +3,14 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	broker "den-services/playwright-broker/internal"
@@ -91,7 +94,16 @@ func handleMCPRequest(ctx context.Context, manager *broker.PlaytestManager, requ
 			response.Result = toolResult(map[string]any{"ok": false, "error": err.Error(), "continued": false}, true)
 			return response
 		}
-		response.Result = toolResult(value, false)
+		result := toolResult(value, false)
+		if params.Name == "playtest_observe" {
+			session, sessionErr := manager.Get(stringValue(params.Arguments["session_id"]))
+			if sessionErr != nil {
+				appendToolResultWarning(result, fmt.Sprintf("playtest image attachment unavailable: %v", sessionErr))
+			} else {
+				result = toolResultWithImages(value, false, session.ArtifactRoot, playtestObservationImagePaths(value))
+			}
+		}
+		response.Result = result
 	default:
 		response.Error = &mcpError{Code: -32601, Message: "method not found"}
 	}
@@ -188,6 +200,98 @@ func toolResult(value any, isError bool) map[string]any {
 		"structuredContent": value,
 		"isError":           isError,
 	}
+}
+
+func toolResultWithImages(value any, isError bool, artifactRoot string, relativePaths []string) map[string]any {
+	result := toolResult(value, isError)
+	content := result["content"].([]map[string]any)
+	const maxImages = 16
+	const maxTotalBytes = 32 * 1024 * 1024
+	totalBytes := 0
+	warnings := []string{}
+	for index, relativePath := range relativePaths {
+		if index >= maxImages {
+			warnings = append(warnings, fmt.Sprintf("omitted %d image(s) after attachment limit %d", len(relativePaths)-index, maxImages))
+			break
+		}
+		path, err := boundedArtifactPath(artifactRoot, relativePath)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("%s: %v", relativePath, err))
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("%s: %v", relativePath, err))
+			continue
+		}
+		if totalBytes+len(data) > maxTotalBytes {
+			warnings = append(warnings, fmt.Sprintf("%s: omitted after %d-byte attachment limit", relativePath, maxTotalBytes))
+			continue
+		}
+		mimeType := http.DetectContentType(data)
+		if !strings.HasPrefix(mimeType, "image/") {
+			warnings = append(warnings, fmt.Sprintf("%s: unsupported content type %s", relativePath, mimeType))
+			continue
+		}
+		totalBytes += len(data)
+		content = append(content, map[string]any{
+			"type":     "image",
+			"data":     base64.StdEncoding.EncodeToString(data),
+			"mimeType": mimeType,
+		})
+	}
+	result["content"] = content
+	for _, warning := range warnings {
+		appendToolResultWarning(result, "playtest image attachment warning: "+warning)
+	}
+	return result
+}
+
+func playtestObservationImagePaths(value any) []string {
+	response, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	observation, ok := response["result"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	paths := []string{}
+	if screenshot, ok := observation["screenshot"].(string); ok && strings.TrimSpace(screenshot) != "" {
+		paths = append(paths, screenshot)
+	}
+	if frames, ok := observation["frames"].([]any); ok {
+		for _, frame := range frames {
+			if path, ok := frame.(string); ok && strings.TrimSpace(path) != "" {
+				paths = append(paths, path)
+			}
+		}
+	}
+	return paths
+}
+
+func boundedArtifactPath(artifactRoot string, relativePath string) (string, error) {
+	root, err := filepath.Abs(artifactRoot)
+	if err != nil {
+		return "", err
+	}
+	candidate, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(relativePath)))
+	if err != nil {
+		return "", err
+	}
+	relative, err := filepath.Rel(root, candidate)
+	if err != nil {
+		return "", err
+	}
+	if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return "", errors.New("path is outside the session artifact root")
+	}
+	return candidate, nil
+}
+
+func appendToolResultWarning(result map[string]any, warning string) {
+	content, _ := result["content"].([]map[string]any)
+	result["content"] = append(content, map[string]any{"type": "text", "text": warning})
 }
 
 func copyAnyMap(source map[string]any) map[string]any {
