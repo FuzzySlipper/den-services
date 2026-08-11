@@ -38,6 +38,9 @@ are loaded when a task starts; an existing task does not gain them dynamically.
 
 ## Parent green path
 
+The canonical adoption packet, judgement boundary, review checklist, and Den
+completion block live in [product playtest green path](product-playtest-green-path.md).
+
 Use one prompt with concrete mission inputs:
 
 ```text

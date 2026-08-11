@@ -96,6 +96,9 @@ The JSON CLI accepts `-request '{...}'`, `-request @file.json`, or `-request -` 
 See [agent usage](docs/agent-usage.md) for the operation catalog and evidence
 packet. For the repository-owned Luna/max custom agent, installer, parent spawn
 prompt, and troubleshooting, see [Codex Luna playtester](docs/codex-playtester.md).
+For the canonical repository adoption packet, judgement boundary, completion
+checklist, and Den evidence block, see the
+[product playtest green path](docs/product-playtest-green-path.md).
 
 ## One-shot Playwright runs
 

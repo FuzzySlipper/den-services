@@ -172,6 +172,10 @@ uses this stdio surface, see [Codex Luna playtester](codex-playtester.md).
 
 ## Den completion note
 
+Use the full repository-facing checklist and completion block in
+[product playtest green path](product-playtest-green-path.md) for task or review
+evidence. The compact form below remains useful for manual diagnostics.
+
 Compact evidence template:
 
 ```text

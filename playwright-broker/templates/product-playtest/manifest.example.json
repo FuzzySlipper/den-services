@@ -1,0 +1,20 @@
+{
+  "project": "replace-with-project-id",
+  "serve": {
+    "command": "replace-with-server-command --host {host} --port {port}",
+    "preferredPort": 0,
+    "healthUrl": "/",
+    "readyText": "replace-with-stable-ready-text",
+    "reusePolicy": "broker_owned",
+    "startupTimeout": "120s"
+  },
+  "playtest": {
+    "startPath": "/",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "headed": false,
+    "recordVideo": false
+  }
+}

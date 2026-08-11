@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "project": "replace-with-project-id",
+  "scenario": "replace-with-scenario-label",
+  "mission": "Replace with one concrete visible user outcome to attempt.",
+  "controls": [
+    {
+      "input": "Replace with an ordinary keyboard or mouse input",
+      "purpose": "Replace with the visible action it should perform"
+    }
+  ],
+  "artifacts": {
+    "screenshots": "before-and-after",
+    "frameBurst": {
+      "count": 5,
+      "intervalMs": 100
+    },
+    "trace": true,
+    "video": false
+  },
+  "reproductionLimit": 1,
+  "notes": "Visible observations own product judgement. Label any diagnostic influence."
+}
