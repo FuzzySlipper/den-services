@@ -46,6 +46,7 @@ config_template="${repo_root}/codex/playtester/config.yaml.template"
 installed_skill="${codex_root}/skills/product-playtest"
 installed_agent="${codex_root}/agents/playtester.toml"
 installed_binary="${codex_root}/bin/den-playwright"
+installed_input_helper="${codex_root}/bin/den-playwright-x11-input"
 installed_config="${codex_root}/playtester/config.yaml"
 state_dir="${codex_root}/playtester/state"
 artifact_root="${codex_root}/playtester/runs"
@@ -83,6 +84,15 @@ has_owned_binary() {
   expected_hash="$(sed -n 's/^binary_sha256=//p' "${owner_record}")"
   [[ -n "${expected_hash}" ]] || return 1
   [[ "$(sha256sum "${installed_binary}" | awk '{print $1}')" == "${expected_hash}" ]]
+}
+
+has_owned_input_helper() {
+  [[ -f "${installed_input_helper}" && ! -L "${installed_input_helper}" ]] || return 1
+  has_owner_record || return 1
+  local expected_hash
+  expected_hash="$(sed -n 's/^input_helper_sha256=//p' "${owner_record}")"
+  [[ -n "${expected_hash}" ]] || return 1
+  [[ "$(sha256sum "${installed_input_helper}" | awk '{print $1}')" == "${expected_hash}" ]]
 }
 
 is_legacy_owned_install() {
@@ -167,16 +177,22 @@ preflight_install_targets() {
     && [[ "${legacy_owned}" != "true" ]]; then
     refuse_unowned_target "${installed_binary}" "binary"
   fi
+  if path_exists "${installed_input_helper}" \
+    && ! has_owned_input_helper \
+    && [[ "${legacy_owned}" != "true" ]]; then
+    refuse_unowned_target "${installed_input_helper}" "X11 input helper"
+  fi
   if path_exists "${owner_record}" && ! has_owner_record; then
     refuse_unowned_target "${owner_record}" "ownership record"
   fi
 }
 
 write_owner_record() {
-  printf '%s\n%s\n%s\n' \
+  printf '%s\n%s\n%s\n%s\n' \
     'den-services-codex-playtester-v1' \
     "repo_root=${repo_root}" \
     "binary_sha256=$(sha256sum "${installed_binary}" | awk '{print $1}')" \
+    "input_helper_sha256=$(sha256sum "${installed_input_helper}" | awk '{print $1}')" \
     > "${owner_record}"
 }
 
@@ -185,7 +201,7 @@ render_templates() {
     "${agent_template}" "${installed_agent}" \
     "${config_template}" "${installed_config}" \
     "${installed_skill}/SKILL.md" "${installed_binary}" \
-    "${repo_root}" "${state_dir}" "${artifact_root}" "${driver_script}" <<'PY'
+    "${repo_root}" "${state_dir}" "${artifact_root}" "${driver_script}" "${installed_input_helper}" <<'PY'
 import json
 import pathlib
 import sys
@@ -201,6 +217,7 @@ import sys
     state_dir,
     artifact_root,
     driver_script,
+    input_helper,
 ) = map(pathlib.Path, sys.argv[1:])
 
 agent = agent_template.read_text()
@@ -218,6 +235,7 @@ for marker, value in {
     "@STATE_DIR_YAML@": state_dir,
     "@ARTIFACT_ROOT_YAML@": artifact_root,
     "@DRIVER_SCRIPT_YAML@": driver_script,
+    "@INPUT_HELPER_YAML@": input_helper,
 }.items():
     config = config.replace(marker, json.dumps(str(value)))
 installed_config.write_text(config)
@@ -243,6 +261,7 @@ validate_installation() {
   require_file "${installed_agent}"
   require_file "${installed_config}"
   [[ -x "${installed_binary}" ]] || { echo "binary is not executable: ${installed_binary}" >&2; exit 1; }
+  [[ -x "${installed_input_helper}" ]] || { echo "input helper is not executable: ${installed_input_helper}" >&2; exit 1; }
   [[ -L "${installed_skill}" ]] || { echo "skill is not linked: ${installed_skill}" >&2; exit 1; }
   [[ "$(readlink -f "${installed_skill}")" == "$(readlink -f "${source_skill}")" ]] || {
     echo "skill link does not resolve to repository source" >&2
@@ -258,14 +277,14 @@ validate_installation() {
 
   python3 - \
     "${installed_agent}" "${installed_config}" "${installed_skill}/SKILL.md" \
-    "${installed_binary}" "${driver_script}" "${validation_dir}/mcp.jsonl" <<'PY'
+    "${installed_binary}" "${driver_script}" "${installed_input_helper}" "${validation_dir}/mcp.jsonl" <<'PY'
 import json
 import pathlib
 import re
 import sys
 import tomllib
 
-agent_path, config_path, skill_path, binary_path, driver_path, mcp_path = map(pathlib.Path, sys.argv[1:])
+agent_path, config_path, skill_path, binary_path, driver_path, input_helper_path, mcp_path = map(pathlib.Path, sys.argv[1:])
 agent = tomllib.loads(agent_path.read_text())
 expected_tools = {
     "playtest_start", "playtest_observe", "playtest_act", "playtest_inspect",
@@ -285,6 +304,9 @@ config = config_path.read_text()
 match = re.search(r'^\s*driver_script:\s*(.+?)\s*$', config, re.MULTILINE)
 assert match, "rendered config lacks driver_script"
 assert pathlib.Path(json.loads(match.group(1))) == driver_path
+match = re.search(r'^\s*input_helper:\s*(.+?)\s*$', config, re.MULTILINE)
+assert match, "rendered config lacks input_helper"
+assert pathlib.Path(json.loads(match.group(1))) == input_helper_path
 
 responses = [json.loads(line) for line in mcp_path.read_text().splitlines() if line.strip()]
 assert responses[0]["result"]["serverInfo"]["name"] == "den-playwright-playtest"
@@ -308,8 +330,10 @@ if [[ "${mode}" == "install" ]]; then
   (
     cd "${repo_root}"
     go build -o "${build_dir}/den-playwright" ./playwright-broker/cmd/den-playwright
+    go build -o "${build_dir}/den-playwright-x11-input" ./playwright-broker/cmd/playtest-x11-input
   )
   install -m 0755 "${build_dir}/den-playwright" "${installed_binary}"
+  install -m 0755 "${build_dir}/den-playwright-x11-input" "${installed_input_helper}"
   render_templates
   write_owner_record
   rm -rf "${build_dir}"

@@ -6,6 +6,7 @@ import path from "node:path";
 import process from "node:process";
 import { chromium } from "@playwright/test";
 import { inputStateDiscrepancies, lifecycleDiscrepancies } from "./playtest-diagnostics.mjs";
+import { startVirtualDisplay, VirtualMouse } from "./playtest-virtual-input.mjs";
 
 const options = JSON.parse(process.env.DEN_PLAYTEST_DRIVER_OPTIONS || "{}");
 const artifactRoot = options.artifactRoot;
@@ -24,6 +25,8 @@ let browser;
 let context;
 let page;
 let server;
+let virtualDisplay;
+let virtualMouse;
 
 const index = {
   schema_version: "den-playwright-playtest/v1",
@@ -39,7 +42,7 @@ const index = {
   finished_at: null,
   status,
   base_url: options.baseURL,
-  browser: { name: "chromium", version: "", headed: Boolean(options.headed) },
+  browser: { name: "chromium", version: "", headed: Boolean(options.headed), virtual_display: false },
   viewport: options.viewport,
   requests_file: requestPath,
   timeline_file: timelinePath,
@@ -180,7 +183,16 @@ async function ensurePage() {
   if (browser?.isConnected() && page && !page.isClosed()) return [];
   const recovery = [];
   if (!browser?.isConnected()) {
-    browser = await chromium.launch({ headless: !options.headed });
+    if (!options.headed && !virtualDisplay) {
+      virtualDisplay = await startVirtualDisplay({ viewport: options.viewport, stderr: process.stderr });
+      index.browser.virtual_display = Boolean(virtualDisplay);
+    }
+    const display = virtualDisplay?.display || process.env.DISPLAY;
+    browser = await chromium.launch({
+      headless: !options.headed && !virtualDisplay,
+      env: display ? { ...process.env, DISPLAY: display } : process.env,
+      args: virtualDisplay ? ["--window-position=0,0", `--window-size=${options.viewport?.width || 1280},${(options.viewport?.height || 720) + 200}`] : []
+    });
     index.browser.version = browser.version();
     context = null;
     page = null;
@@ -194,6 +206,13 @@ async function ensurePage() {
     recovery.push("context_created");
   }
   page = await context.newPage();
+  const display = virtualDisplay?.display || process.env.DISPLAY;
+  virtualMouse = display && options.inputHelper ? new VirtualMouse({
+    page,
+    helperPath: options.inputHelper,
+    display,
+    viewport: options.viewport || { width: 1280, height: 720 }
+  }) : null;
   attachPageEvents(page);
   await page.goto(options.startURL || options.baseURL, { waitUntil: "domcontentloaded" }).catch(async error => {
     await record("navigation_error", { error: String(error), continued: true });
@@ -269,10 +288,10 @@ async function runAction(action) {
     case "keyboard_press": return page.keyboard.press(action.key, action.options || {});
     case "keyboard_down": return page.keyboard.down(action.key);
     case "keyboard_up": return page.keyboard.up(action.key);
-    case "mouse_move": return page.mouse.move(action.x, action.y, action.options || {});
-    case "mouse_click": return page.mouse.click(action.x, action.y, action.options || {});
-    case "mouse_down": return page.mouse.down(action.options || {});
-    case "mouse_up": return page.mouse.up(action.options || {});
+    case "mouse_move": return virtualMouse ? virtualMouse.move(action.x, action.y, action.options || {}) : page.mouse.move(action.x, action.y, action.options || {});
+    case "mouse_click": return virtualMouse ? virtualMouse.click(action.x, action.y, action.options || {}) : page.mouse.click(action.x, action.y, action.options || {});
+    case "mouse_down": return virtualMouse ? virtualMouse.down(action.options || {}) : page.mouse.down(action.options || {});
+    case "mouse_up": return virtualMouse ? virtualMouse.up(action.options || {}) : page.mouse.up(action.options || {});
     case "mouse_wheel": return page.mouse.wheel(action.deltaX || 0, action.deltaY || 0);
     case "wait": return page.waitForTimeout(action.ms || 0);
     case "viewport": return page.setViewportSize({ width: action.width, height: action.height });
@@ -368,6 +387,7 @@ async function finish(request) {
     discrepancies.push({ at: new Date().toISOString(), code: "browser_cleanup_error", error: String(error), continued: true });
   }
   try { await browser?.close(); } catch {}
+  try { await virtualDisplay?.stop(); index.cleanup.virtual_display_stopped = true; } catch {}
   finishedAt = new Date().toISOString();
   index.cleanup.driver_stopped = true;
   index.artifacts = [...new Set(await collectArtifacts())].sort();
@@ -439,6 +459,7 @@ process.on("SIGTERM", async () => {
   if (!finishedAt) finishedAt = new Date().toISOString();
   try { await context?.tracing.stop({ path: path.join(artifactRoot, "trace.zip") }); } catch {}
   try { await browser?.close(); index.cleanup.browser_closed = true; } catch {}
+  try { await virtualDisplay?.stop(); index.cleanup.virtual_display_stopped = true; } catch {}
   index.cleanup.driver_stopped = true;
   await persist().catch(() => {});
   process.exit(0);
@@ -449,6 +470,7 @@ await initialize().catch(async error => {
   finishedAt = new Date().toISOString();
   discrepancies.push({ at: finishedAt, code: "startup_error", error: String(error), continued: false });
   await persist();
+  try { await virtualDisplay?.stop(); } catch {}
   console.error(error);
   process.exit(1);
 });

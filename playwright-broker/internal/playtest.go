@@ -118,6 +118,7 @@ func (m *PlaytestManager) Start(ctx context.Context, options PlaytestStartOption
 		"headed":       headed,
 		"viewport":     viewport,
 		"recordVideo":  recordVideo,
+		"inputHelper":  m.cfg.Playtest.InputHelper,
 		"metadata":     options.Metadata,
 		"revision":     readRevision(repoRoot),
 	}

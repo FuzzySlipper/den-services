@@ -23,6 +23,7 @@ type configFile struct {
 type playtestConfigFile struct {
 	NodeCommand          string `yaml:"node_command"`
 	DriverScript         string `yaml:"driver_script"`
+	InputHelper          string `yaml:"input_helper"`
 	DriverStartupTimeout string `yaml:"driver_startup_timeout"`
 	CommandTimeout       string `yaml:"command_timeout"`
 }
@@ -95,6 +96,10 @@ func (f playtestConfigFile) toConfig() (PlaytestConfig, error) {
 	if err != nil {
 		return PlaytestConfig{}, err
 	}
+	inputHelper, err := cleanConfiguredPath("playtest.input_helper", f.InputHelper)
+	if err != nil {
+		return PlaytestConfig{}, err
+	}
 	startup, err := parseRequiredDuration("playtest.driver_startup_timeout", valueOrDefault(f.DriverStartupTimeout, "30s"))
 	if err != nil {
 		return PlaytestConfig{}, err
@@ -106,6 +111,7 @@ func (f playtestConfigFile) toConfig() (PlaytestConfig, error) {
 	return PlaytestConfig{
 		NodeCommand:          valueOrDefault(f.NodeCommand, "node"),
 		DriverScript:         driverScript,
+		InputHelper:          inputHelper,
 		DriverStartupTimeout: startup,
 		CommandTimeout:       command,
 	}, nil

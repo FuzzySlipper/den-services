@@ -24,6 +24,7 @@ type Config struct {
 type PlaytestConfig struct {
 	NodeCommand          string
 	DriverScript         string
+	InputHelper          string
 	DriverStartupTimeout time.Duration
 	CommandTimeout       time.Duration
 }

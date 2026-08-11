@@ -78,6 +78,22 @@ Example:
 
 An unknown action with an `expression` field is interpreted as JavaScript evaluation. An unknown action without one is logged as `action_error`; subsequent actions continue.
 
+`mouse_move` continues to use viewport coordinates. On Linux playtest sessions,
+the broker runs hidden Chromium on a session-owned Xvfb display and sends mouse
+movement and buttons through XTest. Before pointer lock, coordinates are
+absolute. After pointer lock, the same coordinates are compared with the last
+requested position and emitted as real relative movement. This avoids the large
+synthetic recenter events produced by Chromium's DevTools mouse path and lets
+FPS-style games receive ordinary trusted `movementX`/`movementY` input. Agents
+should keep a simple virtual cursor position, for example center `(640, 360)`,
+then request `(590, 360)` for 50 pixels left and `(640, 360)` for 50 pixels
+right. Pointer-locked clicks use genuine XTest button events and do not move the
+virtual cursor.
+
+The configured `playtest.input_helper` must be the repository's
+`playtest-x11-input` binary. The Codex installer builds and validates it. Manual
+Linux installations also require `Xvfb`, X11, and XTest runtime libraries.
+
 ## Observe
 
 Observation can combine any of these in one call:

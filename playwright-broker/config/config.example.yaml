@@ -21,5 +21,6 @@ timeouts:
 playtest:
   node_command: "node"
   driver_script: "/home/dev/den-services/playwright-broker/driver/playtest-driver.mjs"
+  input_helper: "/home/agent/.codex/bin/den-playwright-x11-input"
   driver_startup_timeout: "30s"
   command_timeout: "2m"

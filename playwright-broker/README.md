@@ -15,12 +15,21 @@ Build the CLI and use the included fixture:
 
 ```bash
 go build -o /tmp/den-playwright ./playwright-broker/cmd/den-playwright
+go build -o /tmp/den-playwright-x11-input ./playwright-broker/cmd/playtest-x11-input
+
+# Point playtest.input_helper in the chosen config at the helper above.
 
 /tmp/den-playwright playtest start permissive-playtest-fixture \
   -config /home/dev/den-services/playwright-broker/config/config.example.yaml \
   -repo /home/dev/den-services/playwright-broker/examples/permissive-playtest \
   -scenario pointer-lock-smoke
 ```
+
+Persistent Linux sessions use a private Xvfb display and the XTest helper for
+real pointer input, including relative movement after pointer lock. `Xvfb` and
+the X11/XTest development libraries are required to build and run this path.
+The Codex installer builds both binaries and renders their exact paths into its
+local configuration.
 
 The result contains a `session_id`. Reuse it across calls:
 

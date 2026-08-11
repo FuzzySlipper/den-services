@@ -19,5 +19,6 @@ timeouts:
 playtest:
   node_command: "node"
   driver_script: @DRIVER_SCRIPT_YAML@
+  input_helper: @INPUT_HELPER_YAML@
   driver_startup_timeout: "30s"
   command_timeout: "2m"
