@@ -1,3 +1,4 @@
+# Managed by den-services: scripts/install-codex-playtester.sh
 name = "playtester"
 description = "Luna product playtester that operates the visible application, preserves indexed evidence, and reports pass, fail, uncertainty, or infrastructure errors without fixing the product."
 model = "gpt-5.6-luna"

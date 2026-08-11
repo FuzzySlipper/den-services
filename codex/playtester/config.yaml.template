@@ -1,4 +1,4 @@
-# Rendered by scripts/install-codex-playtester.sh.
+# Managed by den-services: scripts/install-codex-playtester.sh
 # Local trusted-playtest state and evidence remain host-local.
 state_dir: @STATE_DIR_YAML@
 artifact_root: @ARTIFACT_ROOT_YAML@

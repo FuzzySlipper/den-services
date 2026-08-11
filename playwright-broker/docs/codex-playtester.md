@@ -12,6 +12,7 @@ From the `den-services` repository root:
 ```bash
 ./scripts/install-codex-playtester.sh
 ./scripts/install-codex-playtester.sh --check
+./scripts/test-install-codex-playtester.sh
 ```
 
 The command:
@@ -21,6 +22,13 @@ The command:
 - renders the `playtester` custom agent with `gpt-5.6-luna` and `max` reasoning;
 - renders a host-local broker configuration and artifact root;
 - initializes the stdio MCP and verifies all eight tools.
+
+The installer marks the agent, configuration, and binary it owns. Re-running
+it updates those owned targets. If a target path already contains unrelated
+content, installation stops before changing any target; move or rename that
+customization explicitly before installing the repository playtester.
+The deterministic test command covers unrelated-target refusal, first install,
+owned reinstall/update, catalog checking, and stale binary detection.
 
 Set `CODEX_HOME` or pass `--codex-home PATH` to target another Codex
 configuration. The installer refuses to replace an unrelated skill directory.

@@ -50,6 +50,8 @@ installed_config="${codex_root}/playtester/config.yaml"
 state_dir="${codex_root}/playtester/state"
 artifact_root="${codex_root}/playtester/runs"
 driver_script="${repo_root}/playwright-broker/driver/playtest-driver.mjs"
+owner_record="${codex_root}/playtester/install-owner"
+owner_marker="# Managed by den-services: scripts/install-codex-playtester.sh"
 
 require_file() {
   [[ -f "$1" ]] || { echo "missing required file: $1" >&2; exit 1; }
@@ -59,6 +61,124 @@ require_file "${source_skill}/SKILL.md"
 require_file "${agent_template}"
 require_file "${config_template}"
 require_file "${driver_script}"
+
+path_exists() {
+  [[ -e "$1" || -L "$1" ]]
+}
+
+has_owner_marker() {
+  [[ -f "$1" && ! -L "$1" ]] && grep -Fqx "${owner_marker}" "$1"
+}
+
+has_owner_record() {
+  [[ -f "${owner_record}" && ! -L "${owner_record}" ]] \
+    && grep -Fqx "den-services-codex-playtester-v1" "${owner_record}" \
+    && grep -Fqx "repo_root=${repo_root}" "${owner_record}"
+}
+
+has_owned_binary() {
+  [[ -f "${installed_binary}" && ! -L "${installed_binary}" ]] || return 1
+  has_owner_record || return 1
+  local expected_hash
+  expected_hash="$(sed -n 's/^binary_sha256=//p' "${owner_record}")"
+  [[ -n "${expected_hash}" ]] || return 1
+  [[ "$(sha256sum "${installed_binary}" | awk '{print $1}')" == "${expected_hash}" ]]
+}
+
+is_legacy_owned_install() {
+  [[ -f "${installed_agent}" && -f "${installed_config}" && -x "${installed_binary}" ]] || return 1
+  [[ ! -L "${installed_agent}" && ! -L "${installed_config}" && ! -L "${installed_binary}" ]] || return 1
+  [[ -L "${installed_skill}" ]] || return 1
+  [[ "$(readlink -f "${installed_skill}")" == "$(readlink -f "${source_skill}")" ]] || return 1
+  grep -Fqx '# Rendered by scripts/install-codex-playtester.sh.' "${installed_config}" || return 1
+
+  python3 - \
+    "${installed_agent}" "${installed_skill}/SKILL.md" "${installed_binary}" \
+    "${installed_config}" "${repo_root}" <<'PY'
+import pathlib
+import sys
+import tomllib
+
+agent_path, skill_path, binary_path, config_path, repo_root = map(pathlib.Path, sys.argv[1:])
+try:
+    agent = tomllib.loads(agent_path.read_text())
+    server = agent["mcp_servers"]["den_playtest"]
+    skill = agent["skills"]["config"][0]
+except (KeyError, IndexError, OSError, tomllib.TOMLDecodeError):
+    raise SystemExit(1)
+
+valid = (
+    agent.get("name") == "playtester"
+    and agent.get("model") == "gpt-5.6-luna"
+    and skill.get("path") == str(skill_path)
+    and server.get("command") == str(binary_path)
+    and server.get("args") == ["mcp", "-config", str(config_path)]
+    and server.get("cwd") == str(repo_root)
+)
+raise SystemExit(0 if valid else 1)
+PY
+}
+
+is_unhashed_marker_owned_install() {
+  [[ -f "${installed_agent}" && -f "${installed_config}" && -x "${installed_binary}" ]] || return 1
+  [[ ! -L "${installed_agent}" && ! -L "${installed_config}" && ! -L "${installed_binary}" ]] || return 1
+  [[ -L "${installed_skill}" ]] || return 1
+  [[ "$(readlink -f "${installed_skill}")" == "$(readlink -f "${source_skill}")" ]] || return 1
+  has_owner_marker "${installed_agent}" || return 1
+  has_owner_marker "${installed_config}" || return 1
+  has_owner_record || return 1
+  ! grep -q '^binary_sha256=' "${owner_record}"
+}
+
+refuse_unowned_target() {
+  local target="$1"
+  local description="$2"
+  if path_exists "${target}"; then
+    echo "refusing to replace unrelated ${description}: ${target}" >&2
+    exit 1
+  fi
+}
+
+preflight_install_targets() {
+  local legacy_owned="false"
+  if is_legacy_owned_install || is_unhashed_marker_owned_install; then
+    legacy_owned="true"
+  fi
+
+  if path_exists "${installed_skill}"; then
+    if [[ ! -L "${installed_skill}" ]] \
+      || [[ "$(readlink -f "${installed_skill}")" != "$(readlink -f "${source_skill}")" ]]; then
+      refuse_unowned_target "${installed_skill}" "skill"
+    fi
+  fi
+
+  if path_exists "${installed_agent}" \
+    && ! has_owner_marker "${installed_agent}" \
+    && [[ "${legacy_owned}" != "true" ]]; then
+    refuse_unowned_target "${installed_agent}" "agent"
+  fi
+  if path_exists "${installed_config}" \
+    && ! has_owner_marker "${installed_config}" \
+    && [[ "${legacy_owned}" != "true" ]]; then
+    refuse_unowned_target "${installed_config}" "configuration"
+  fi
+  if path_exists "${installed_binary}" \
+    && ! has_owned_binary \
+    && [[ "${legacy_owned}" != "true" ]]; then
+    refuse_unowned_target "${installed_binary}" "binary"
+  fi
+  if path_exists "${owner_record}" && ! has_owner_record; then
+    refuse_unowned_target "${owner_record}" "ownership record"
+  fi
+}
+
+write_owner_record() {
+  printf '%s\n%s\n%s\n' \
+    'den-services-codex-playtester-v1' \
+    "repo_root=${repo_root}" \
+    "binary_sha256=$(sha256sum "${installed_binary}" | awk '{print $1}')" \
+    > "${owner_record}"
+}
 
 render_templates() {
   python3 - \
@@ -179,6 +299,7 @@ PY
 }
 
 if [[ "${mode}" == "install" ]]; then
+  preflight_install_targets
   mkdir -p "${codex_root}/agents" "${codex_root}/bin" "${codex_root}/skills" \
     "${codex_root}/playtester" "${state_dir}" "${artifact_root}"
   install_skill_link
@@ -190,6 +311,7 @@ if [[ "${mode}" == "install" ]]; then
   )
   install -m 0755 "${build_dir}/den-playwright" "${installed_binary}"
   render_templates
+  write_owner_record
   rm -rf "${build_dir}"
   trap - EXIT
 fi
