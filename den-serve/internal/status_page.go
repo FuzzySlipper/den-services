@@ -100,9 +100,9 @@ func statusProjectURL(session devserver.SessionState, requestHost string) string
 	if isUsableLANURL(session.LANURL) {
 		return session.LANURL
 	}
-	host := strings.TrimSpace(session.PublicHost)
+	host := hostname(requestHost)
 	if host == "" {
-		host = hostname(requestHost)
+		host = strings.TrimSpace(session.PublicHost)
 	}
 	if host == "" || session.Port < 1 || session.Port > 65535 {
 		return session.LocalURL

@@ -175,14 +175,23 @@ func TestStatusPageUsesRefreshedManagerIdentityHealthRegardlessOfStaleProcessMet
 	}
 }
 
-func TestStatusPageRewritesWildcardLANURLUsingRequestHost(t *testing.T) {
+func TestStatusPageRewritesWildcardAndLoopbackLANURLsUsingRequestHost(t *testing.T) {
 	page, err := NewStatusPage(fakeSessionLister{sessions: []devserver.SessionState{
 		{
-			Project: "rusty-dagger",
-			Status:  "stopped",
-			Port:    4174,
-			LANURL:  "http://0.0.0.0:4174/",
-			Health:  devserver.HealthResult{Matched: true},
+			Project:    "rusty-dagger",
+			Status:     "stopped",
+			PublicHost: "192.168.1.99",
+			Port:       4174,
+			LANURL:     "http://0.0.0.0:4174/",
+			Health:     devserver.HealthResult{Matched: true},
+		},
+		{
+			Project:    "loopback-demo",
+			Status:     "running",
+			PublicHost: "192.168.1.99",
+			Port:       4175,
+			LANURL:     "http://127.0.0.1:4175/",
+			Health:     devserver.HealthResult{Matched: true},
 		},
 	}})
 	if err != nil {
@@ -190,8 +199,14 @@ func TestStatusPageRewritesWildcardLANURLUsingRequestHost(t *testing.T) {
 	}
 	response := httptest.NewRecorder()
 	page.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "http://192.168.1.22:37299/", nil))
-	if body := response.Body.String(); !strings.Contains(body, `href="http://192.168.1.22:4174/">rusty-dagger</a>`) {
-		t.Fatalf("body missing rewritten wildcard link:\n%s", body)
+	body := response.Body.String()
+	for _, marker := range []string{
+		`href="http://192.168.1.22:4174/">rusty-dagger</a>`,
+		`href="http://192.168.1.22:4175/">loopback-demo</a>`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("body missing rewritten link %q:\n%s", marker, body)
+		}
 	}
 }
 
