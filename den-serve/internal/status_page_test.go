@@ -27,10 +27,10 @@ func (f fakeSessionLister) List(context.Context) ([]devserver.SessionState, erro
 
 func TestStatusPageListsOnlyRunningProjectsWithClickableAssignments(t *testing.T) {
 	page, err := NewStatusPage(fakeSessionLister{sessions: []devserver.SessionState{
-		{Project: "zeta", Status: "running", Ownership: "broker_owned", Port: 37302, LANURL: "http://192.168.1.22:37302/"},
-		{Project: "stopped", Status: "stopped", Ownership: "broker_owned", Port: 37301, LANURL: "http://192.168.1.22:37301/"},
-		{Project: "external", Status: "running", Ownership: "unowned", Port: 37303, LANURL: "http://192.168.1.22:37303/"},
-		{Project: "alpha", Status: "running", Ownership: "broker_owned", Port: 5173, LANURL: "http://192.168.1.22:5173/"},
+		{Project: "zeta", Status: "running", Ownership: "broker_owned", Port: 37302, LANURL: "http://192.168.1.22:37302/", Health: devserver.HealthResult{Matched: true}},
+		{Project: "unreachable", Status: "stopped", Ownership: "broker_owned", Port: 37301, LANURL: "http://192.168.1.22:37301/"},
+		{Project: "external", Status: "running", Ownership: "unowned", Port: 37303, LANURL: "http://192.168.1.22:37303/", Health: devserver.HealthResult{Matched: true}},
+		{Project: "alpha", Status: "running", Ownership: "broker_owned", Port: 5173, LANURL: "http://192.168.1.22:5173/", Health: devserver.HealthResult{Matched: true}},
 	}})
 	if err != nil {
 		t.Fatalf("NewStatusPage() error = %v", err)
@@ -47,6 +47,7 @@ func TestStatusPageListsOnlyRunningProjectsWithClickableAssignments(t *testing.T
 	body := response.Body.String()
 	for _, marker := range []string{
 		`href="http://192.168.1.22:5173/">alpha</a>`,
+		`href="http://192.168.1.22:37303/">external</a>`,
 		`href="http://192.168.1.22:37302/">zeta</a>`,
 		"Refreshed 2026-08-12T10:00:00Z",
 	} {
@@ -54,7 +55,7 @@ func TestStatusPageListsOnlyRunningProjectsWithClickableAssignments(t *testing.T
 			t.Fatalf("body missing %q:\n%s", marker, body)
 		}
 	}
-	for _, excluded := range []string{"stopped", "external"} {
+	for _, excluded := range []string{"unreachable"} {
 		if strings.Contains(body, ">"+excluded+"</a>") {
 			t.Fatalf("body includes excluded %s session:\n%s", excluded, body)
 		}
@@ -69,7 +70,7 @@ func TestStatusPageListsOnlyRunningProjectsWithClickableAssignments(t *testing.T
 
 func TestStatusPageEscapesProjectNamesAndUsesRequestHostFallback(t *testing.T) {
 	page, err := NewStatusPage(fakeSessionLister{sessions: []devserver.SessionState{
-		{Project: `<script>alert("no")</script>`, Status: "running", Ownership: "broker_owned", Port: 4040},
+		{Project: `<script>alert("no")</script>`, Status: "running", Ownership: "broker_owned", Port: 4040, Health: devserver.HealthResult{Matched: true}},
 	}})
 	if err != nil {
 		t.Fatalf("NewStatusPage() error = %v", err)
@@ -85,7 +86,7 @@ func TestStatusPageEscapesProjectNamesAndUsesRequestHostFallback(t *testing.T) {
 	}
 }
 
-func TestStatusPageUsesRefreshedManagerStateAndExcludesUnownedSessions(t *testing.T) {
+func TestStatusPageUsesRefreshedManagerIdentityHealthRegardlessOfStaleProcessMetadata(t *testing.T) {
 	healthServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
 		response.WriteHeader(http.StatusOK)
 	}))
@@ -167,13 +168,30 @@ func TestStatusPageUsesRefreshedManagerStateAndExcludesUnownedSessions(t *testin
 	response := httptest.NewRecorder()
 	page.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "http://192.168.1.22:37299/", nil))
 	body := response.Body.String()
-	if !strings.Contains(body, ">owned</a>") {
-		t.Fatalf("body missing broker-owned running session:\n%s", body)
-	}
-	for _, excluded := range []string{"external", "stale", "stopped"} {
-		if strings.Contains(body, ">"+excluded+"</a>") {
-			t.Fatalf("body includes refreshed %s session:\n%s", excluded, body)
+	for _, included := range []string{"owned", "external", "stale", "stopped"} {
+		if !strings.Contains(body, ">"+included+"</a>") {
+			t.Fatalf("body missing identity-healthy %s session:\n%s", included, body)
 		}
+	}
+}
+
+func TestStatusPageRewritesWildcardLANURLUsingRequestHost(t *testing.T) {
+	page, err := NewStatusPage(fakeSessionLister{sessions: []devserver.SessionState{
+		{
+			Project: "rusty-dagger",
+			Status:  "stopped",
+			Port:    4174,
+			LANURL:  "http://0.0.0.0:4174/",
+			Health:  devserver.HealthResult{Matched: true},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("NewStatusPage() error = %v", err)
+	}
+	response := httptest.NewRecorder()
+	page.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "http://192.168.1.22:37299/", nil))
+	if body := response.Body.String(); !strings.Contains(body, `href="http://192.168.1.22:4174/">rusty-dagger</a>`) {
+		t.Fatalf("body missing rewritten wildcard link:\n%s", body)
 	}
 }
 

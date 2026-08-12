@@ -42,11 +42,14 @@ den-serve stop <project-id> [-repo /path/to/repo]
 ```
 
 `den-serve page` runs a small status site at `http://<lan-host>:37299/`. It
-binds to `0.0.0.0` by default and, on every browser refresh, lists only the
-currently running sessions returned by den-serve's live session manager. Each
-project name links to its current LAN port assignment. Keep the command running
-while using the page; override `status_page.bind_host` or `status_page.port` in
-the config file only when the defaults conflict with another local service.
+binds to `0.0.0.0` by default and, on every browser refresh, lists assignments
+whose configured identity and health probe currently match. This deliberately
+keeps a reachable replacement process visible even when the persisted launch
+PID or ownership metadata is stale. Each project name links to its current LAN
+port assignment; wildcard or loopback session URLs are rewritten using the
+hostname used to open the status page. Keep the command running while using the
+page; override `status_page.bind_host` or `status_page.port` in the config file
+only when the defaults conflict with another local service.
 
 `restart` stops a running broker-owned session and starts it again. If no
 session exists (or the previous session is already stopped), it behaves like

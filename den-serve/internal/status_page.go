@@ -63,7 +63,7 @@ func (p *StatusPage) ServeHTTP(response http.ResponseWriter, request *http.Reque
 		http.Error(response, "could not read den-serve sessions", http.StatusInternalServerError)
 		return
 	}
-	projects := runningProjects(sessions, request.Host)
+	projects := reachableProjects(sessions, request.Host)
 	data := StatusPageData{
 		Projects:  projects,
 		Refreshed: p.clock().UTC().Format(time.RFC3339),
@@ -75,10 +75,10 @@ func (p *StatusPage) ServeHTTP(response http.ResponseWriter, request *http.Reque
 	}
 }
 
-func runningProjects(sessions []devserver.SessionState, requestHost string) []StatusPageProject {
+func reachableProjects(sessions []devserver.SessionState, requestHost string) []StatusPageProject {
 	projects := make([]StatusPageProject, 0, len(sessions))
 	for _, session := range sessions {
-		if session.Status != "running" || session.Ownership != "broker_owned" {
+		if !session.Health.Matched {
 			continue
 		}
 		projects = append(projects, StatusPageProject{
@@ -97,7 +97,7 @@ func runningProjects(sessions []devserver.SessionState, requestHost string) []St
 }
 
 func statusProjectURL(session devserver.SessionState, requestHost string) string {
-	if isHTTPURL(session.LANURL) {
+	if isUsableLANURL(session.LANURL) {
 		return session.LANURL
 	}
 	host := strings.TrimSpace(session.PublicHost)
@@ -114,9 +114,19 @@ func statusProjectURL(session devserver.SessionState, requestHost string) string
 	}).String()
 }
 
-func isHTTPURL(raw string) bool {
+func isUsableLANURL(raw string) bool {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
-	return err == nil && parsed.Host != "" && (parsed.Scheme == "http" || parsed.Scheme == "https")
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return false
+	}
+	host := parsed.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil && (ip.IsUnspecified() || ip.IsLoopback()) {
+		return false
+	}
+	return true
 }
 
 func hostname(hostPort string) string {
