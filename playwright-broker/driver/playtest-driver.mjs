@@ -7,6 +7,7 @@ import process from "node:process";
 import { chromium } from "@playwright/test";
 import { inputStateDiscrepancies, lifecycleDiscrepancies } from "./playtest-diagnostics.mjs";
 import { DecisionTrace } from "./playtest-decision-trace.mjs";
+import { retainCompletionEvidence } from "./playtest-evidence.mjs";
 import { isCoordinateClick, startVirtualDisplay, VirtualMouse } from "./playtest-virtual-input.mjs";
 
 const options = JSON.parse(process.env.DEN_PLAYTEST_DRIVER_OPTIONS || "{}");
@@ -384,6 +385,7 @@ async function finish(request) {
   status = request.kind === "cancel" ? "cancelled" : (request.outcome || "finished");
   if (request.annotation) index.metadata.final_annotation = request.annotation;
   if (request.assertions) index.metadata.assertions = request.assertions;
+  const evidenceSummary = retainCompletionEvidence(index.metadata, request, jsonSafe);
   const exitInterview = request.exit_interview ?? request.exitInterview ?? request.tester_feedback ?? request.testerFeedback;
   if (exitInterview !== undefined) index.metadata.exit_interview = jsonSafe(exitInterview);
   try {
@@ -405,7 +407,13 @@ async function finish(request) {
   index.artifacts = [...new Set(await collectArtifacts())].sort();
   await persist();
   setTimeout(() => server.close(() => process.exit(0)), 25);
-  return { status, index_path: indexPath, cleanup: index.cleanup, exit_interview: index.metadata.exit_interview };
+  return {
+    status,
+    index_path: indexPath,
+    cleanup: index.cleanup,
+    evidence_summary: evidenceSummary,
+    exit_interview: index.metadata.exit_interview,
+  };
 }
 
 async function handle(request) {

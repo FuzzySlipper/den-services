@@ -141,7 +141,7 @@ func playtestTools() []map[string]any {
 		{"name": "playtest_observe", "description": "Capture screenshots/frame bursts and any requested state. Verbose sessions may attach a short trace verification/update summary.", "inputSchema": sessionSchema},
 		{"name": "playtest_act", "description": "Run typed browser actions or unrestricted Playwright evaluation, injection, request, and raw CDP actions; errors are logged and later actions continue. Verbose sessions may attach short observe, hypothesis, intent, and expected-effect trace summaries.", "inputSchema": sessionSchema},
 		{"name": "playtest_inspect", "description": "Read arbitrary DOM, application, renderer, storage, network, or CDP state from a live session.", "inputSchema": sessionSchema},
-		{"name": "playtest_finish", "description": "Finalize evidence and best-effort cleanup. An optional free-form exit_interview records tester difficulties, workarounds, confidence, and suggestions.", "inputSchema": sessionSchema},
+		{"name": "playtest_finish", "description": "Finalize evidence and best-effort cleanup. Optional neutral_observation, operational_outcome, and acceptance_mapping fields are retained independently; exit_interview records tester difficulties, workarounds, confidence, and suggestions.", "inputSchema": sessionSchema},
 		{"name": "playtest_cancel", "description": "Cancel a session, finalize partial evidence, and attempt cleanup.", "inputSchema": sessionSchema},
 		{"name": "playtest_get", "description": "Get the persisted local session record.", "inputSchema": sessionSchema},
 		{"name": "playtest_list", "description": "List persisted local playtest session records.", "inputSchema": openSchema},

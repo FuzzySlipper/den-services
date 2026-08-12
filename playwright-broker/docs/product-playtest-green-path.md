@@ -17,8 +17,11 @@ Copy and tailor the two files in
 
 - add the `playtest` block from `manifest.example.json` to the product's
   `.den-playwright.json` or compatible serve manifest;
-- copy `scenario.example.json` to `product-playtest.scenario.json` and replace
-  its placeholder mission, ordinary controls, and evidence preferences.
+- copy the version 2 `scenario.example.json` to
+  `product-playtest.scenario.json` and replace its neutral player mission,
+  ordinary controls, observation protocol, orchestrator acceptance mapping,
+  and evidence preferences. Version 1 packets remain readable but the checker
+  reports that they lack the observation-first split.
 
 If the compatible manifest is not named `.den-playwright.json`, the parent
 mission must supply its absolute path. Keep the scenario as a concise mission
@@ -54,12 +57,14 @@ Give a fresh parent task one command-sized request:
 
 ```text
 Spawn the custom `playtester` agent at its configured Luna/max settings and run
-the mission in /absolute/path/to/product-playtest.scenario.json against exact
+the neutral player mission in /absolute/path/to/product-playtest.scenario.json against exact
 revision <40-character SHA> of /absolute/path/to/repository. Use manifest
 /absolute/path/to/manifest.json. Keep one browser session, judge the visible
-outcome from repeated screenshots or frame bursts, label any diagnostic
-influence, make at most one bounded reproduction attempt, always clean up, and
-return the complete product-playtest evidence report.
+outcome from repeated screenshots or frame bursts, and capture the worker's
+neutral account before revealing or applying the orchestrator acceptance
+mapping. Label any diagnostic influence, make at most one bounded reproduction
+attempt, always clean up, and return the complete product-playtest evidence
+report.
 ```
 
 The parent should verify the repository revision and dirty state before the
@@ -67,15 +72,34 @@ run. The worker then owns one persistent browser session through
 `start -> observe / act / inspect -> finish|cancel`. It uses ordinary controls
 from the mission packet and does not edit the product or harness.
 
-Valid outcomes are `pass`, `fail`, `uncertain`, and `infrastructure_error`.
-A failure is useful evidence, not permission for the worker to repair code.
+Valid operational outcomes are `pass`, `fail`, `uncertain`, and
+`infrastructure_error`. For a visual-description mission, `pass` may mean the
+requested observation was completed; it does not assert that a withheld
+product criterion passed. A failure is useful evidence, not permission for the
+worker to repair code.
 
 ## Judgement and diagnostics
+
+Avoid leading the worker with the desired visual verdict or implying that a
+fix already succeeded. Give it the player goal, controls, and any neutral game
+guide it needs. Its first account should describe concrete spatial and temporal
+relationships plus conspicuous or unexpected details. Preserve that account
+verbatim enough that a reviewer can compare it with the retained frames.
+
+The orchestrator normally owns acceptance interpretation for primarily visual
+classification. Apply the separate `orchestratorAcceptance` mapping only after
+the neutral account exists. A targeted follow-up may then gather missing
+evidence, disambiguate a concrete detail, or continue the intended affordance;
+it should not merely seek agreement with the desired result.
 
 Visible observations are the authority for user-visible claims. Use a before
 and after screenshot, repeated screenshots, or a frame burst whenever motion,
 camera direction, collision, targeting, or a state transition is part of the
 claim. A single still is insufficient when another observation is practical.
+For an interaction, do not stop at the first local response. Continue through
+the intended completion chain: activate, observe the local effect, attempt the
+downstream use, and verify the resulting player state. A moving door does not
+establish that its opening is traversable.
 
 DOM, accessibility, eval, application state, CDP, network traffic, browser
 storage, and test hooks are available because the local broker is deliberately
@@ -87,8 +111,10 @@ diagnostic that influenced its conclusion.
 
 - repository path, exact 40-character revision, origin, and dirty state;
 - configured worker model/effort and recorded runtime identity when available;
-- concrete mission, ordinary controls, and final outcome;
-- visible before/after observations and at most one bounded reproduction;
+- neutral player mission, ordinary controls, and operational outcome;
+- initial neutral account, visible trajectory, unexpected details, and at most
+  one bounded reproduction;
+- separate acceptance owner/status and orchestrator mapping;
 - diagnostic influence, or an explicit statement that there was none;
 - absolute `playtest-index.json` path plus useful timeline offsets and
   screenshot, frame-burst, trace, or video paths;
@@ -108,9 +134,10 @@ Product playtest: <project>/<scenario>
 Repository: <absolute path>
 Revision: <40-character SHA> (<clean|dirty; list dirty paths>)
 Worker: <configured model/effort; recorded runtime identity if available>
-Mission: <visible user outcome>
-Outcome: <pass|fail|uncertain|infrastructure_error>
-Visible observations: <before/after or repeated-frame judgement>
+Mission: <neutral player goal>
+Operational outcome: <pass|fail|uncertain|infrastructure_error>
+Neutral observation: <initial spatial account, trajectory, unexpected details>
+Acceptance mapping: <orchestrator owner/status and criterion mapping>
 Reproduction: <none|one bounded attempt and result>
 Diagnostics: <none|what influenced the conclusion>
 Discrepancies/warnings: <count and relevant codes>

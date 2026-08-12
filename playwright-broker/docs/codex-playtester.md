@@ -49,13 +49,13 @@ Spawn the custom `playtester` agent for an evidence-backed product playtest.
 Repository: /absolute/path/to/repository
 Manifest: <optional absolute path when not named .den-playwright.json>
 Exact revision: <40-character SHA> (<clean or dirty, with dirty paths if any>)
-Mission: <visible user outcome to attempt>
+Mission: <neutral player goal to attempt; do not supply the desired verdict>
 Controls: <ordinary keyboard/mouse controls and any startup action>
 Artifacts: <screenshots/frame bursts/trace/video preferences>
 Project/scenario: <project id> / <scenario label>
 Den reference: <optional project and task>
 
-Keep one browser session across repeated observe/act turns. Judge visible behavior from repeated screenshots or frame bursts, use diagnostics only when useful and label their influence, make at most one bounded reproduction attempt, always clean up, and return the product-playtest evidence report.
+Keep one browser session across repeated observe/act turns. Capture a neutral concrete account before applying the separate orchestrator acceptance mapping. Judge visible behavior from repeated screenshots or frame bursts, continue interactions through their intended downstream use, use diagnostics only when useful and label their influence, make at most one bounded reproduction attempt, always clean up, and return the product-playtest evidence report.
 ```
 
 The playtester defaults to headless Chromium because screenshots and frame
@@ -77,6 +77,12 @@ The parent should accept `pass`, `fail`, `uncertain`, and
 failure is not an invitation for the playtester to edit code or repair the
 harness; follow-up engineering belongs to the parent.
 
+For primarily visual classification, the worker's outcome classifies whether
+the observation mission completed, failed visibly, remained uncertain, or was
+blocked by infrastructure. The parent normally interprets product acceptance
+after the neutral account exists. Keep `neutral_observation`,
+`operational_outcome`, and `acceptance_mapping` distinct in `playtest_finish`.
+
 ## Model identity
 
 The installed agent pins:
@@ -95,6 +101,8 @@ Generic prose such as “GPT-5 (Codex)” is not authoritative model proof.
 Use ordinary visible controls and before/after observations for product
 judgement. A lone still image does not prove movement, collision, targeting,
 camera handedness, or a state transition when another observation is practical.
+Likewise, the first response to an interaction does not prove its intended
+affordance works; attempt the downstream use and re-observe the player state.
 
 Eval, DOM, application state, CDP, network data, and test hooks remain useful
 for reproduction and diagnosis. The report must say when those diagnostics

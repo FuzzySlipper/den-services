@@ -72,8 +72,8 @@ if (!manifest.playtest || !manifest.playtest.startPath) {
 if (manifest.playtest.viewport?.width <= 0 || manifest.playtest.viewport?.height <= 0) {
   fail("manifest playtest viewport dimensions must be positive when provided");
 }
-if (scenario.version !== 1 || !scenario.project || !scenario.scenario || !scenario.mission) {
-  fail("scenario requires version 1, project, scenario, and mission");
+if (![1, 2].includes(scenario.version) || !scenario.project || !scenario.scenario || !scenario.mission) {
+  fail("scenario requires version 1 or 2, project, scenario, and mission");
 }
 if (scenario.project !== manifest.project) {
   fail(`scenario project ${scenario.project} does not match manifest project ${manifest.project}`);
@@ -94,6 +94,28 @@ if (scenario.artifacts?.screenshots !== "before-and-after") {
 }
 if (!scenario.artifacts?.trace) {
   fail("scenario artifacts.trace must be true");
+}
+if (scenario.version === 2) {
+  if (!scenario.observationProtocol?.initialAccount || !scenario.observationProtocol?.progressAccount) {
+    fail("scenario version 2 requires observationProtocol.initialAccount and progressAccount");
+  }
+  if (!Array.isArray(scenario.observationProtocol?.interactionCompletion) || scenario.observationProtocol.interactionCompletion.length === 0) {
+    fail("scenario version 2 requires a non-empty observationProtocol.interactionCompletion");
+  }
+  if (scenario.orchestratorAcceptance?.owner !== "orchestrator") {
+    fail('scenario version 2 requires orchestratorAcceptance.owner to be "orchestrator"');
+  }
+  if (scenario.orchestratorAcceptance?.withholdUntil !== "after-neutral-account") {
+    fail('scenario version 2 requires orchestratorAcceptance.withholdUntil to be "after-neutral-account"');
+  }
+  if (!Array.isArray(scenario.orchestratorAcceptance?.criteria) || scenario.orchestratorAcceptance.criteria.length === 0) {
+    fail("scenario version 2 requires non-empty orchestratorAcceptance.criteria");
+  }
+  if (!Array.isArray(scenario.orchestratorAcceptance?.insufficientEvidence) || scenario.orchestratorAcceptance.insufficientEvidence.length === 0) {
+    fail("scenario version 2 requires non-empty orchestratorAcceptance.insufficientEvidence");
+  }
+} else {
+  console.warn("product-playtest adoption check warning: scenario version 1 is legacy and lacks the observation-first split");
 }
 
 console.log(`product-playtest adoption check passed for ${manifest.project}/${scenario.scenario}`);

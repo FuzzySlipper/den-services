@@ -192,7 +192,23 @@ tester repeatedly got lost; routine smoke playtests should leave the mode off.
 ```json
 {
   "outcome": "pass",
-  "annotation": "free-form summary",
+  "annotation": "operational mission result and bounded diagnostics",
+  "neutral_observation": {
+    "initial": "A closed gate is centered several steps ahead.",
+    "trajectory": [
+      "The gate moved upward after E.",
+      "Forward input moved the camera through the opening into a distinct area."
+    ],
+    "unexpected": []
+  },
+  "operational_outcome": {
+    "status": "completed",
+    "summary": "Entered the next area and retained movement control."
+  },
+  "acceptance_mapping": {
+    "owner": "orchestrator",
+    "status": "pending"
+  },
   "assertions": [
     { "name": "movement persisted", "pass": true, "artifact": "timeline offset 4" }
   ],
@@ -206,6 +222,13 @@ tester repeatedly got lost; routine smoke playtests should leave the mode off.
   }
 }
 ```
+
+`neutral_observation`, `operational_outcome`, and `acceptance_mapping` are
+optional but first-class completion evidence. They are persisted independently
+in index metadata and returned in the finish result. This keeps a concrete
+visual account inspectable even when a later acceptance classification
+contradicts it. For primarily visual classification, capture the neutral
+account before the orchestrator supplies or applies targeted criteria.
 
 `exit_interview` is an optional free-form suggestion box. It is retained in the
 index, returned by finish, and copied into the persisted session returned by

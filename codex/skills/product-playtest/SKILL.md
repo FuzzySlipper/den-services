@@ -16,7 +16,8 @@ Require the parent prompt to identify:
 - repository and exact revision;
 - an explicit manifest path when the repository does not use the broker's
   auto-discovered `.den-playwright.json` name;
-- mission and success signal;
+- a neutral player goal; do not require a desired verdict or a statement that
+  the expected fix already succeeded;
 - ordinary user controls;
 - desired screenshots, frame bursts, trace, or video;
 - project/scenario labels and an optional Den task.
@@ -33,6 +34,28 @@ searches, source inspection, git commands, memory lookup, or repository reads to
 reconstruct or verify it. The playtest MCP owns the application launch and
 evidence paths. Default `headed` to `false` unless the parent explicitly asks
 for a headed browser and confirms a display is available.
+
+## Observe before judging
+
+The first account is evidence, not a verdict. Before applying acceptance
+criteria or answering a targeted visual question:
+
+- describe the visible scene in concrete spatial terms;
+- identify conspicuous or unexpected details, including details unrelated to
+  the apparent desired result;
+- distinguish what is visible now from what changed after an action;
+- preserve ambiguity instead of completing the parent's implied story.
+
+For primarily visual classification, the parent/orchestrator normally owns the
+acceptance mapping. It may keep its criteria private until the neutral account
+exists. The worker still owns ordinary operational outcomes: whether it
+completed the player goal, encountered a visible failure, remained uncertain,
+or could not run the harness.
+
+A targeted follow-up is appropriate after the neutral account when it asks for
+missing evidence, disambiguates a concrete spatial or temporal detail, or
+continues the intended player affordance. Do not use a follow-up merely to ask
+the worker to agree with a desired verdict.
 
 ## Stay in the playtester role
 
@@ -61,11 +84,15 @@ for a headed browser and confirms a display is available.
    preferences, and useful correlation fields. Include the supplied exact
    revision, mission, controls, model identity, and Den references as additional
    evidence metadata. Preserve any dirty-state declaration from the parent.
-3. Capture an initial screenshot or frame burst. Record visible startup state,
-   focus, pointer lock, and any discrepancies.
+3. Capture an initial screenshot or frame burst. Before mapping it to acceptance,
+   record a neutral visible account of startup state, spatial relationships,
+   focus, pointer lock, conspicuous details, and discrepancies.
 4. Alternate `playtest_act` with `playtest_observe`. Use genuine keyboard and
    mouse actions. For held movement, prefer key-down, a bounded wait, and
    key-up. Capture before/after observations around important interactions.
+   When testing an affordance, continue beyond its first local reaction:
+   activate it, observe the effect, attempt the intended downstream use, and
+   verify the resulting player state.
 5. Do not infer movement, collision, targeting, camera handedness, or a state
    transition from one still image when another observation/action sequence is
    practical. Use frame bursts or separated before/after screenshots.
@@ -129,7 +156,20 @@ prose report:
   "session_id": "<session>",
   "sequence": 4,
   "outcome": "pass",
-  "annotation": "visible before/after judgement and bounded diagnostics",
+  "annotation": "operational mission result and bounded diagnostics",
+  "neutral_observation": {
+    "initial": "concrete spatial account before acceptance mapping",
+    "trajectory": ["visible change after an important action"],
+    "unexpected": ["conspicuous detail or contradiction"]
+  },
+  "operational_outcome": {
+    "status": "completed",
+    "summary": "furthest player-level state reached"
+  },
+  "acceptance_mapping": {
+    "owner": "orchestrator",
+    "status": "pending"
+  },
   "assertions": [
     { "name": "mission result", "pass": true, "artifact": "timeline offset 3" }
   ],
@@ -167,6 +207,11 @@ Return exactly one primary outcome:
 - `infrastructure_error`: the browser, MCP, manifest, or harness prevented a
   meaningful run.
 
+These are operational mission outcomes. For a visual-description mission,
+`pass` can mean the requested neutral account was captured; it does not mean a
+withheld product criterion passed. Preserve the separate acceptance owner and
+status in `acceptance_mapping`.
+
 Do not turn deterministic assertions or diagnostics into model judgement.
 Conversely, do not present visual model judgement as a deterministic check.
 
@@ -180,7 +225,9 @@ Repository: <path>
 Revision: <40-character SHA and clean/dirty declaration>
 Mission: <requested visible outcome>
 Outcome: <pass|fail|uncertain|infrastructure_error>
-Visible observations: <before/after or frame-sequence findings>
+Neutral observation: <initial concrete account, trajectory, unexpected details>
+Operational result: <furthest player state reached or blocker>
+Acceptance mapping: <orchestrator owner/status, or why worker judgement applies>
 Reproduction: <attempt count and result>
 Diagnostics: <none, or what influenced the conclusion>
 Warnings: <manifest/tool/discrepancy warnings>

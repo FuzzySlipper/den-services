@@ -1,14 +1,38 @@
 {
-  "version": 1,
+  "version": 2,
   "project": "replace-with-project-id",
   "scenario": "replace-with-scenario-label",
-  "mission": "Replace with one concrete visible user outcome to attempt.",
+  "mission": "Replace with a neutral player goal, such as: starting in this room, reach and move around in the next distinct room. If blocked, report the furthest visible state reached.",
   "controls": [
     {
       "input": "Replace with an ordinary keyboard or mouse input",
       "purpose": "Replace with the visible action it should perform"
     }
   ],
+  "observationProtocol": {
+    "initialAccount": "Before applying acceptance criteria or receiving targeted follow-up questions, describe the visible scene in concrete spatial terms and call out conspicuous or unexpected details.",
+    "progressAccount": "After important actions, record the visible change, whether it advanced the player goal, and the furthest state reached.",
+    "interactionCompletion": [
+      "observe the target and starting relationship",
+      "activate the apparent affordance",
+      "observe the local effect",
+      "attempt the intended downstream use",
+      "verify the resulting player state with another observation"
+    ]
+  },
+  "orchestratorAcceptance": {
+    "owner": "orchestrator",
+    "withholdUntil": "after-neutral-account",
+    "criteria": [
+      {
+        "name": "Replace with the player-level outcome the retained trajectory must support",
+        "evidence": "Replace with required before/after, repeated-frame, or terminal-state evidence"
+      }
+    ],
+    "insufficientEvidence": [
+      "Replace with a shallow intermediate effect that does not establish the player outcome, such as a door animation without successful traversal"
+    ]
+  },
   "artifacts": {
     "screenshots": "before-and-after",
     "frameBurst": {
@@ -19,5 +43,5 @@
     "video": false
   },
   "reproductionLimit": 1,
-  "notes": "Visible observations own product judgement. Label any diagnostic influence."
+  "notes": "The worker receives the mission, controls, and observation protocol first. The orchestrator normally maps the retained neutral account to acceptance after that account exists. Label any diagnostic influence."
 }
