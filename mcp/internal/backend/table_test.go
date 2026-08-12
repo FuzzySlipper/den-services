@@ -519,6 +519,7 @@ func reviewRoute(operation string) bool {
 	switch operation {
 	case "create_review_round",
 		"list_review_rounds",
+		"list_review_pipeline",
 		"list_review_findings",
 		"request_review",
 		"request_campaign_review",

@@ -105,3 +105,26 @@ func TestHTTPTaskClientDecodesCampaignMembershipFields(t *testing.T) {
 		t.Fatalf("task = %+v", task)
 	}
 }
+
+func TestHTTPTaskClientListsBoundedReviewableTasks(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/projects/den-services/tasks" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		query := r.URL.Query()
+		if query.Get("status") != TaskStatusReview || query.Get("tree") != "true" ||
+			query.Get("limit") != "51" || query.Get("offset") != "10" {
+			t.Fatalf("query = %s", r.URL.RawQuery)
+		}
+		_, _ = w.Write([]byte(`[{"id":42,"project_id":"den-services","title":"Review me","status":"review","priority":2,"assigned_to":"codex","created_at":"2026-08-11T00:00:00Z","updated_at":"2026-08-12T00:00:00Z"}]`))
+	}))
+	defer server.Close()
+
+	tasks, err := NewTaskClient(server.URL, "").ListReviewableTasks(t.Context(), "den-services", 51, 10)
+	if err != nil {
+		t.Fatalf("ListReviewableTasks() error = %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != 42 || tasks[0].AssignedTo != "codex" || tasks[0].UpdatedAt.IsZero() {
+		t.Fatalf("tasks = %+v", tasks)
+	}
+}

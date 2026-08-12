@@ -18,8 +18,8 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 76 {
-		t.Fatalf("tool count = %d, want 76", len(names))
+	if len(names) != 77 {
+		t.Fatalf("tool count = %d, want 77", len(names))
 	}
 	for _, name := range []string{
 		"search_documents",
@@ -35,6 +35,7 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		"wait_for_github_checks",
 		"get_task_context",
 		"get_review_context",
+		"list_review_pipeline",
 		"get_details",
 		"mark_project_notifications_read",
 		"mark_task_notifications_read",
@@ -206,8 +207,8 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if err != nil {
 		t.Fatalf("ToolsForProfile(managed-runtime) error = %v", err)
 	}
-	if len(direct) != 76 {
-		t.Fatalf("direct tool count = %d, want 76", len(direct))
+	if len(direct) != 77 {
+		t.Fatalf("direct tool count = %d, want 77", len(direct))
 	}
 	if len(managed) >= len(direct) {
 		t.Fatalf("managed tool count = %d, want fewer than direct %d", len(managed), len(direct))
@@ -312,6 +313,7 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 		if tool.Name != "await_github_checks" && tool.Name != "discover_github_checks" && tool.Name != "watch_github_checks" &&
 			tool.Name != "get_github_check_gate" && tool.Name != "wait_for_github_checks" && tool.Name != "get_task_context" &&
 			tool.Name != "get_review_context" &&
+			tool.Name != "list_review_pipeline" &&
 			tool.Name != "finalize_review" && tool.Name != "request_campaign_review" &&
 			tool.Name != "get_details" && tool.Name != "mark_project_notifications_read" &&
 			tool.Name != "mark_task_notifications_read" && tool.Name != "ensure_document_discussion" &&

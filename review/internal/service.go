@@ -35,6 +35,7 @@ type TaskClient interface {
 	SetTaskStatus(ctx context.Context, projectID string, taskID int64, agent string, status string) (TaskContext, error)
 	TransitionTaskToReview(ctx context.Context, projectID string, taskID int64, agent string) (TaskReviewTransition, error)
 	CreateFollowUpTask(ctx context.Context, projectID string, req CreateFollowUpTaskRequest) (CreatedTask, error)
+	ListReviewableTasks(ctx context.Context, projectID string, limit int, offset int) ([]TaskContext, error)
 }
 
 type MessageClient interface {
@@ -77,6 +78,19 @@ type ReviewStore interface {
 	MarkGitHubCheckGateEvidencePosted(ctx context.Context, id int64, messageID int64, at time.Time) (*GitHubCheckGate, error)
 	RecordGitHubCheckGateEvidenceError(ctx context.Context, id int64, messageError string, at time.Time) (*GitHubCheckGate, error)
 	ListGitHubCheckGateEvents(ctx context.Context, query ListGitHubCheckGateEventsQuery) ([]*GitHubCheckGateTerminalEvent, error)
+	ListPipelineReviewStates(ctx context.Context, projectID string, taskIDs []int64) (map[int64]ReviewPipelineState, error)
+}
+
+type ReviewPipelineQuery struct {
+	Limit  int
+	Offset int
+}
+
+type ReviewPipelinePage struct {
+	Items      []ReviewPipelineState
+	Limit      int
+	Offset     int
+	NextOffset *int
 }
 
 type ListFindingsQuery struct {
@@ -623,6 +637,47 @@ func (s *Service) ListRounds(ctx context.Context, projectID string, taskID int64
 		return nil, err
 	}
 	return s.store.ListRounds(ctx, strings.TrimSpace(projectID), taskID)
+}
+
+func (s *Service) ReviewPipeline(ctx context.Context, projectID string, query ReviewPipelineQuery) (ReviewPipelinePage, error) {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return ReviewPipelinePage{}, validationError(ErrMissingProjectID, "missing_project_id", "project_id", "common.project_id")
+	}
+	if query.Limit == 0 {
+		query.Limit = 50
+	}
+	if query.Limit < 1 || query.Limit > 100 || query.Offset < 0 {
+		return ReviewPipelinePage{}, validationError(fmt.Errorf("pipeline pagination is out of range"), "invalid_pagination", "limit", "review.pipeline")
+	}
+	tasks, err := s.tasks.ListReviewableTasks(ctx, projectID, query.Limit+1, query.Offset)
+	if err != nil {
+		return ReviewPipelinePage{}, fmt.Errorf("listing reviewable tasks: %w", err)
+	}
+	hasMore := len(tasks) > query.Limit
+	if hasMore {
+		tasks = tasks[:query.Limit]
+	}
+	taskIDs := make([]int64, 0, len(tasks))
+	for _, task := range tasks {
+		taskIDs = append(taskIDs, task.ID)
+	}
+	states, err := s.store.ListPipelineReviewStates(ctx, projectID, taskIDs)
+	if err != nil {
+		return ReviewPipelinePage{}, fmt.Errorf("listing review pipeline state: %w", err)
+	}
+	items := make([]ReviewPipelineState, 0, len(tasks))
+	for _, task := range tasks {
+		state := states[task.ID]
+		state.Task = task
+		items = append(items, state)
+	}
+	page := ReviewPipelinePage{Items: items, Limit: query.Limit, Offset: query.Offset}
+	if hasMore {
+		next := query.Offset + query.Limit
+		page.NextOffset = &next
+	}
+	return page, nil
 }
 
 func (s *Service) ListRoundsForTask(ctx context.Context, taskID int64) ([]*ReviewRound, error) {

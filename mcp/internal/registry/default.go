@@ -82,10 +82,26 @@ func DefaultTools() ([]ToolDefinition, error) {
 	tools = append(tools, campaignReviewTools()...)
 	tools = append(tools, taskContextTools()...)
 	tools = append(tools, reviewContextTools()...)
+	tools = append(tools, reviewPipelineTools()...)
 	tools = append(tools, contractErgonomicsTools()...)
 	tools = append(tools, handoffTools()...)
 	tools = append(tools, knowledgeTools()...)
 	return tools, nil
+}
+
+func reviewPipelineTools() []ToolDefinition {
+	return []ToolDefinition{{
+		Name:         "list_review_pipeline",
+		Description:  "List a bounded read-only project review pipeline projection, including reviewable tasks with no round or gate. This does not create reviews, register gates, wake reviewers, finalize reviews, or change task state.",
+		Backend:      "review",
+		Operation:    "list_review_pipeline",
+		WorkflowTier: WorkflowTierPrimitive,
+		InputSchema: ObjectSchema(map[string]Schema{
+			"project_id": StringSchema("Project ID whose reviewable tasks should be listed."),
+			"limit":      NullableIntegerSchema("Optional page size from 1 to 100. Defaults to 50."),
+			"offset":     NullableIntegerSchema("Optional non-negative page offset. Defaults to 0."),
+		}, "project_id"),
+	}}
 }
 
 func knowledgeTools() []ToolDefinition {

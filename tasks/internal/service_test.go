@@ -61,6 +61,25 @@ func TestServiceCreateListAndSubtasks(t *testing.T) {
 	}
 }
 
+func TestServiceListTasksUsesBoundedOffsetPagination(t *testing.T) {
+	service := newTestService()
+	for _, title := range []string{"First", "Second", "Third"} {
+		if _, err := service.CreateTask(t.Context(), "den-services", CreateTaskRequest{Title: title, Priority: 2}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page, err := service.ListTasks(t.Context(), "den-services", ListTasksQuery{Limit: 1, Offset: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page) != 1 || page[0].Task.Title() != "Second" {
+		t.Fatalf("page = %+v", page)
+	}
+	if _, err := service.ListTasks(t.Context(), "den-services", ListTasksQuery{Limit: 201}); err == nil {
+		t.Fatal("expected limit validation error")
+	}
+}
+
 func TestServiceTransitionTaskToReviewIsConditionalAndIdempotent(t *testing.T) {
 	service := newTestService()
 	ctx := context.Background()

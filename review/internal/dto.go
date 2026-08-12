@@ -320,6 +320,53 @@ type GitHubCheckGateResponse struct {
 	UpdatedAt                  time.Time        `json:"updated_at"`
 }
 
+type ReviewPipelineTaskResponse struct {
+	ID         int64     `json:"id"`
+	ProjectID  string    `json:"project_id"`
+	Title      string    `json:"title"`
+	Status     string    `json:"status"`
+	Priority   int       `json:"priority"`
+	AssignedTo string    `json:"assigned_to,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+type ReviewPipelineItemResponse struct {
+	Task        ReviewPipelineTaskResponse `json:"task"`
+	LatestRound *ReviewRoundResponse       `json:"latest_round"`
+	LatestGate  *GitHubCheckGateResponse   `json:"latest_gate"`
+}
+
+type ReviewPipelinePageResponse struct {
+	Items      []ReviewPipelineItemResponse `json:"items"`
+	Limit      int                          `json:"limit"`
+	Offset     int                          `json:"offset"`
+	NextOffset *int                         `json:"next_offset,omitempty"`
+}
+
+func toReviewPipelinePageResponse(page ReviewPipelinePage) ReviewPipelinePageResponse {
+	items := make([]ReviewPipelineItemResponse, 0, len(page.Items))
+	for _, item := range page.Items {
+		response := ReviewPipelineItemResponse{
+			Task: ReviewPipelineTaskResponse{
+				ID: item.Task.ID, ProjectID: item.Task.ProjectID, Title: item.Task.Title,
+				Status: item.Task.Status, Priority: item.Task.Priority, AssignedTo: item.Task.AssignedTo,
+				CreatedAt: item.Task.CreatedAt, UpdatedAt: item.Task.UpdatedAt,
+			},
+		}
+		if item.Round != nil {
+			round := toRoundResponse(item.Round)
+			response.LatestRound = &round
+		}
+		if item.Gate != nil {
+			gate := toGitHubCheckGateResponse(item.Gate)
+			response.LatestGate = &gate
+		}
+		items = append(items, response)
+	}
+	return ReviewPipelinePageResponse{Items: items, Limit: page.Limit, Offset: page.Offset, NextOffset: page.NextOffset}
+}
+
 type WorkflowSummaryResponse struct {
 	CurrentRound           *ReviewRoundResponse    `json:"current_round,omitempty"`
 	CurrentVerdict         string                  `json:"current_verdict,omitempty"`

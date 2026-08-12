@@ -311,6 +311,25 @@ func TestHTTPRequiresAuth(t *testing.T) {
 	}
 }
 
+func TestHTTPTaskListPagination(t *testing.T) {
+	server := testServer(t)
+	for _, title := range []string{"First", "Second"} {
+		request := authedJSONRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{"title":"`+title+`","priority":2}`)
+		response := httptest.NewRecorder()
+		server.Handler.ServeHTTP(response, request)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("create status = %d body=%s", response.Code, response.Body.String())
+		}
+	}
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, authedJSONRequest(http.MethodGet, "/v1/projects/den-services/tasks?limit=1&offset=1", ""))
+	var tasks []TaskSummaryResponse
+	decodeJSON(t, response.Body, &tasks)
+	if response.Code != http.StatusOK || len(tasks) != 1 || tasks[0].Title != "Second" {
+		t.Fatalf("status=%d tasks=%+v", response.Code, tasks)
+	}
+}
+
 func TestHTTPTaskChangeBackfillAndStream(t *testing.T) {
 	server := testServer(t)
 

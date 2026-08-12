@@ -610,6 +610,15 @@ func (s *memoryStore) listLocked(query ListTasksQuery) []TaskSummary {
 		}
 		return summaries[left].Task.ID() < summaries[right].Task.ID()
 	})
+	if query.Offset >= len(summaries) {
+		return nil
+	}
+	if query.Offset > 0 {
+		summaries = summaries[query.Offset:]
+	}
+	if query.Limit > 0 && len(summaries) > query.Limit {
+		summaries = summaries[:query.Limit]
+	}
 	return summaries
 }
 

@@ -121,6 +121,8 @@ func (s *Store) ListTasks(ctx context.Context, query ListTasksQuery) ([]TaskSumm
 		query.MaxPriority,
 		query.ParentID,
 		query.IncludeAll,
+		query.Limit,
+		query.Offset,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("listing tasks: %w", err)
@@ -845,7 +847,9 @@ where t.project_id = $1
   and ($4::text[] is null or cardinality($4::text[]) = 0 or t.tags ?& $4::text[])
   and ($5::integer is null or t.priority <= $5)
   and (($6::bigint is not null and t.parent_id = $6) or ($6::bigint is null and ($7::boolean or t.parent_id is null)))
-order by t.priority, t.id`
+order by t.priority, t.id
+limit case when $8::integer > 0 then $8 else null end
+offset $9`
 
 const updateTaskSQL = `
 update den_tasks.tasks

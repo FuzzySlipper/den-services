@@ -20,6 +20,7 @@ local and staged verification, then a later explicit cutover task can update
 - `GET /v1/projects/{project_id}/tasks/{task_id}/review/findings`
 - `POST /v1/projects/{project_id}/tasks/{task_id}/review/findings/split-follow-up`
 - `GET /v1/projects/{project_id}/tasks/{task_id}/review/workflow-summary`
+- `GET /v1/projects/{project_id}/review/pipeline?limit=50&offset=0`
 - `POST /v1/projects/{project_id}/tasks/{task_id}/review/packets/validate`
 - `POST /v1/projects/{project_id}/tasks/{task_id}/review/packets`
 - `POST /v1/review/rounds/{review_round_id}/findings`
@@ -35,6 +36,7 @@ verification:
 
 - `create_review_round`
 - `list_review_rounds`
+- `list_review_pipeline` (bounded, read-only project operator projection)
 - `finalize_review` (normal `looks_good` / `changes_requested` closeout)
 - `create_review_finding`
 - `list_review_findings`
@@ -54,6 +56,12 @@ The pointer-first review envelope and bounded wake/event contract are defined in
 Normal managed submission is owned by Rusty Crew's `submit_task_for_review`;
 Review supplies exact-round/SHA facts, packet/gate handles, and deterministic
 receipts but does not own Crew routing or wake scheduling.
+
+The pipeline route composes Tasks-owned `review` status with the latest
+Review-owned round and GitHub gate. Missing `latest_round` and `latest_gate`
+values are explicit JSON `null` values; they mean the task is reviewable but
+that lifecycle record does not exist. The route has no wake or mutation side
+effects and pages at a maximum of 100 tasks.
 
 New Markdown packet tools can route here once accepted by MCP/tool docs:
 

@@ -53,6 +53,28 @@ func TestReviewServerExposesTerminalGateEventCursor(t *testing.T) {
 	}
 }
 
+func TestReviewServerExposesBoundedPipelineWithExplicitNullState(t *testing.T) {
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Awaiting submission", Status: TaskStatusReview, Priority: 2},
+	}}
+	service := newTestService(newMemoryStore(), &fakeMessages{}, tasks)
+	info, _ := health.NewBuildInfo("review", "0.1.0", "testcommit", time.Now().UTC())
+	server, err := NewHTTPServer(&Config{
+		BindAddr: "127.0.0.1:0", ServiceToken: "token", AllowUnauthenticatedLocalDev: true,
+		HTTP: HTTPConfig{ReadHeaderTimeout: 5 * time.Second},
+	}, info, service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/projects/den-services/review/pipeline?limit=25&offset=0", nil)
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`"latest_round":null`)) ||
+		!bytes.Contains(response.Body.Bytes(), []byte(`"latest_gate":null`)) {
+		t.Fatalf("response code=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestReviewServerAllowsExplicitUnauthenticatedLocalDev(t *testing.T) {
 	server := newReviewServerForAuthTest(t, true)
 

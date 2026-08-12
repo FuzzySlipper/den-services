@@ -83,6 +83,45 @@ func (s *memoryStore) ListRounds(_ context.Context, projectID string, taskID int
 	return rounds, nil
 }
 
+func (s *memoryStore) ListPipelineReviewStates(_ context.Context, projectID string, taskIDs []int64) (map[int64]ReviewPipelineState, error) {
+	wanted := make(map[int64]struct{}, len(taskIDs))
+	for _, taskID := range taskIDs {
+		wanted[taskID] = struct{}{}
+	}
+	states := make(map[int64]ReviewPipelineState, len(taskIDs))
+	for _, round := range s.rounds {
+		if round.ProjectID != projectID {
+			continue
+		}
+		if _, ok := wanted[round.TaskID]; !ok {
+			continue
+		}
+		state := states[round.TaskID]
+		if state.Round == nil || round.RoundNumber > state.Round.RoundNumber ||
+			(round.RoundNumber == state.Round.RoundNumber && round.ID > state.Round.ID) {
+			copied := cloneReviewRound(round)
+			state.Round = &copied
+			states[round.TaskID] = state
+		}
+	}
+	for _, gate := range s.githubCheckGates {
+		if gate.ProjectID != projectID {
+			continue
+		}
+		if _, ok := wanted[gate.TaskID]; !ok {
+			continue
+		}
+		state := states[gate.TaskID]
+		if state.Gate == nil || gate.CreatedAt.After(state.Gate.CreatedAt) ||
+			(gate.CreatedAt.Equal(state.Gate.CreatedAt) && gate.ID > state.Gate.ID) {
+			copied := *gate
+			state.Gate = &copied
+			states[gate.TaskID] = state
+		}
+	}
+	return states, nil
+}
+
 func (s *memoryStore) GetRound(_ context.Context, id int64) (*ReviewRound, error) {
 	round, ok := s.rounds[id]
 	if !ok {

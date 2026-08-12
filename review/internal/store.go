@@ -83,6 +83,42 @@ func (s *Store) ListRounds(ctx context.Context, projectID string, taskID int64) 
 	return scanRounds(rows)
 }
 
+func (s *Store) ListPipelineReviewStates(ctx context.Context, projectID string, taskIDs []int64) (map[int64]ReviewPipelineState, error) {
+	states := make(map[int64]ReviewPipelineState, len(taskIDs))
+	if len(taskIDs) == 0 {
+		return states, nil
+	}
+	roundRows, err := s.pool.Query(ctx, listLatestPipelineRoundsSQL, projectID, taskIDs)
+	if err != nil {
+		return nil, fmt.Errorf("listing latest pipeline rounds: %w", err)
+	}
+	rounds, err := scanRounds(roundRows)
+	roundRows.Close()
+	if err != nil {
+		return nil, fmt.Errorf("scanning latest pipeline rounds: %w", err)
+	}
+	for _, round := range rounds {
+		state := states[round.TaskID]
+		state.Round = round
+		states[round.TaskID] = state
+	}
+	gateRows, err := s.pool.Query(ctx, listLatestPipelineGatesSQL, projectID, taskIDs)
+	if err != nil {
+		return nil, fmt.Errorf("listing latest pipeline gates: %w", err)
+	}
+	gates, err := scanGitHubCheckGates(gateRows)
+	gateRows.Close()
+	if err != nil {
+		return nil, fmt.Errorf("scanning latest pipeline gates: %w", err)
+	}
+	for _, gate := range gates {
+		state := states[gate.TaskID]
+		state.Gate = gate
+		states[gate.TaskID] = state
+	}
+	return states, nil
+}
+
 func (s *Store) GetRound(ctx context.Context, id int64) (*ReviewRound, error) {
 	round, err := scanRound(s.pool.QueryRow(ctx, getRoundSQL, id))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -948,16 +984,17 @@ const (
 )
 
 const (
-	latestRoundSQL           = `select round_number, coalesce(head_commit, '') from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number desc limit 1`
-	createRoundSQL           = `insert into den_review.review_rounds(project_id, task_id, round_number, requested_by, target_kind, campaign_children, campaign_repositories, branch, base_branch, base_commit, head_commit, last_reviewed_head_commit, commits_since_last_review, tests_run, notes, preferred_diff_base_ref, preferred_diff_base_commit, preferred_diff_head_ref, preferred_diff_head_commit, alternate_diff_base_ref, alternate_diff_base_commit, alternate_diff_head_ref, alternate_diff_head_commit, delta_base_commit, inherited_commit_count, task_local_commit_count, requested_at, created_at, updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) returning ` + roundColumns
-	listRoundsSQL            = `select ` + roundColumns + ` from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number asc`
-	getRoundSQL              = `select ` + roundColumns + ` from den_review.review_rounds where id = $1`
-	getRoundForUpdateSQL     = `select ` + roundColumns + ` from den_review.review_rounds where id = $1 for update`
-	currentRoundForUpdateSQL = `select ` + roundColumns + ` from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number desc, id desc limit 1 for update`
-	lockReviewTaskSQL        = `select pg_advisory_xact_lock(hashtextextended($1 || ':' || ($2::bigint)::text, 0))`
-	setVerdictSQL            = `update den_review.review_rounds set verdict = $2, verdict_by = $3, verdict_notes = $4, verdict_at = $5, updated_at = $6 where id = $1 returning ` + roundColumns
-	nextFindingNumberSQL     = `select coalesce(max(finding_number), 0) + 1 from den_review.review_findings where project_id = $1 and task_id = $2`
-	createFindingSQL         = `
+	latestRoundSQL              = `select round_number, coalesce(head_commit, '') from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number desc limit 1`
+	createRoundSQL              = `insert into den_review.review_rounds(project_id, task_id, round_number, requested_by, target_kind, campaign_children, campaign_repositories, branch, base_branch, base_commit, head_commit, last_reviewed_head_commit, commits_since_last_review, tests_run, notes, preferred_diff_base_ref, preferred_diff_base_commit, preferred_diff_head_ref, preferred_diff_head_commit, alternate_diff_base_ref, alternate_diff_base_commit, alternate_diff_head_ref, alternate_diff_head_commit, delta_base_commit, inherited_commit_count, task_local_commit_count, requested_at, created_at, updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) returning ` + roundColumns
+	listRoundsSQL               = `select ` + roundColumns + ` from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number asc`
+	listLatestPipelineRoundsSQL = `select distinct on (task_id) ` + roundColumns + ` from den_review.review_rounds where project_id = $1 and task_id = any($2::bigint[]) order by task_id, round_number desc, id desc`
+	getRoundSQL                 = `select ` + roundColumns + ` from den_review.review_rounds where id = $1`
+	getRoundForUpdateSQL        = `select ` + roundColumns + ` from den_review.review_rounds where id = $1 for update`
+	currentRoundForUpdateSQL    = `select ` + roundColumns + ` from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number desc, id desc limit 1 for update`
+	lockReviewTaskSQL           = `select pg_advisory_xact_lock(hashtextextended($1 || ':' || ($2::bigint)::text, 0))`
+	setVerdictSQL               = `update den_review.review_rounds set verdict = $2, verdict_by = $3, verdict_notes = $4, verdict_at = $5, updated_at = $6 where id = $1 returning ` + roundColumns
+	nextFindingNumberSQL        = `select coalesce(max(finding_number), 0) + 1 from den_review.review_findings where project_id = $1 and task_id = $2`
+	createFindingSQL            = `
 with inserted as (
 	insert into den_review.review_findings(project_id, finding_key, task_id, review_round_id, finding_number, created_by, category, summary, notes, file_references, test_commands, status, run_id, subagent_role, created_at, updated_at)
 	values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
@@ -1145,6 +1182,7 @@ returning ` + githubCheckGateColumns
 	listGitHubCheckGatesPendingEvidenceSQL = `select ` + githubCheckGateColumns + ` from den_review.github_check_gates where evidence_message_status in ('pending','error') and status in ('passed','failed','timed_out','superseded') order by coalesce(evidence_message_attempted_at, completed_at, updated_at), id limit $1`
 	getGitHubCheckGateSQL                  = `select ` + githubCheckGateColumns + ` from den_review.github_check_gates where id = $1`
 	getGitHubCheckGateByCommitSQL          = `select ` + githubCheckGateColumns + ` from den_review.github_check_gates where project_id = $1 and task_id = $2 and commit_sha = $3`
+	listLatestPipelineGatesSQL             = `select distinct on (task_id) ` + githubCheckGateColumns + ` from den_review.github_check_gates where project_id = $1 and task_id = any($2::bigint[]) order by task_id, created_at desc, id desc`
 	listGitHubCheckGateEventsSQL           = `select ` + githubCheckGateEventColumns + ` from den_review.github_check_gate_terminal_events where project_id = $1 and ($2::bigint = 0 or task_id = $2) and id > $3 order by id limit $4`
 	completeGitHubCheckGateSQL             = `
 with updated as (

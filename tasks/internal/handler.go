@@ -344,6 +344,20 @@ func listQueryFromRequest(r *http.Request) (ListTasksQuery, error) {
 	result.AssignedTo = strings.TrimSpace(query.Get("assigned_to"))
 	result.Tags = splitCSV(query.Get("tags"))
 	result.IncludeAll = query.Get("tree") == "true"
+	if raw := strings.TrimSpace(query.Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > 200 {
+			return ListTasksQuery{}, badRequest(ErrInvalidTask)
+		}
+		result.Limit = limit
+	}
+	if raw := strings.TrimSpace(query.Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return ListTasksQuery{}, badRequest(ErrInvalidTask)
+		}
+		result.Offset = offset
+	}
 	if raw := strings.TrimSpace(query.Get("priority")); raw != "" {
 		priority, err := strconv.Atoi(raw)
 		if err != nil {

@@ -304,14 +304,26 @@ type ValidationIssue struct {
 }
 
 type TaskContext struct {
-	ID          int64    `json:"id"`
-	ProjectID   string   `json:"project_id"`
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	Status      string   `json:"status"`
-	Priority    int      `json:"priority"`
-	ParentID    *int64   `json:"parent_id,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
+	ID          int64     `json:"id"`
+	ProjectID   string    `json:"project_id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	Status      string    `json:"status"`
+	Priority    int       `json:"priority"`
+	ParentID    *int64    `json:"parent_id,omitempty"`
+	Tags        []string  `json:"tags,omitempty"`
+	AssignedTo  string    `json:"assigned_to,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// ReviewPipelineState is the Den-owned review projection for one task. Nil
+// round and gate values are meaningful: the task is reviewable but the
+// corresponding lifecycle has not been created.
+type ReviewPipelineState struct {
+	Task  TaskContext
+	Round *ReviewRound
+	Gate  *GitHubCheckGate
 }
 
 type CreatedTask struct {

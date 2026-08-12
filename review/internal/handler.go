@@ -38,6 +38,7 @@ type ReviewUseCases interface {
 	GetGitHubCheckGate(ctx context.Context, projectID string, taskID int64, commitSHA string) (*GitHubCheckGate, error)
 	WaitGitHubCheckGateEvents(ctx context.Context, query ListGitHubCheckGateEventsQuery, wait time.Duration) (GitHubCheckGateEventPage, error)
 	WaitForGitHubCheckGate(ctx context.Context, projectID string, taskID int64, commitSHA string, afterID int64, wait time.Duration) (GitHubCheckGateWaitReceipt, error)
+	ReviewPipeline(ctx context.Context, projectID string, query ReviewPipelineQuery) (ReviewPipelinePage, error)
 }
 
 type Handler struct {
@@ -64,6 +65,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}", h.getGitHubCheckGate)
 	mux.HandleFunc("GET /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}/wait", h.waitForGitHubCheckGate)
 	mux.HandleFunc("GET /v1/projects/{project_id}/review/github-check-gate-events", h.waitGitHubCheckGateEvents)
+	mux.HandleFunc("GET /v1/projects/{project_id}/review/pipeline", h.reviewPipeline)
 	mux.HandleFunc("POST /v1/tasks/{task_id}/review/rounds", h.createRoundForTask)
 	mux.HandleFunc("GET /v1/tasks/{task_id}/review/rounds", h.listRoundsForTask)
 	mux.HandleFunc("GET /v1/tasks/{task_id}/review/findings", h.listFindingsForTask)
@@ -73,6 +75,39 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/review/finalizations", h.finalizeReview)
 	mux.HandleFunc("POST /v1/review/findings/{finding_id}/response", h.respondToFinding)
 	mux.HandleFunc("POST /v1/review/findings/{finding_id}/status", h.setFindingStatus)
+}
+
+func (h *Handler) reviewPipeline(w http.ResponseWriter, r *http.Request) {
+	query, err := reviewPipelineQueryFromRequest(r)
+	if err != nil {
+		writeReviewError(w, err)
+		return
+	}
+	page, err := h.service.ReviewPipeline(r.Context(), r.PathValue("project_id"), query)
+	if err != nil {
+		writeReviewError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, toReviewPipelinePageResponse(page))
+}
+
+func reviewPipelineQueryFromRequest(r *http.Request) (ReviewPipelineQuery, error) {
+	query := ReviewPipelineQuery{Limit: 50}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > 100 {
+			return ReviewPipelineQuery{}, badRequest(fmt.Errorf("limit must be between 1 and 100"))
+		}
+		query.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return ReviewPipelineQuery{}, badRequest(fmt.Errorf("offset must be non-negative"))
+		}
+		query.Offset = offset
+	}
+	return query, nil
 }
 
 func (h *Handler) createRound(w http.ResponseWriter, r *http.Request) {

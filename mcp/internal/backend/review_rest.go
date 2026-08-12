@@ -82,6 +82,8 @@ type reviewToolArguments struct {
 	AfterID                 int64           `json:"after_id"`
 	WaitMS                  *int            `json:"wait_ms"`
 	Verbose                 *bool           `json:"verbose"`
+	Limit                   *int            `json:"limit"`
+	Offset                  *int            `json:"offset"`
 }
 
 type reviewRoundBody struct {
@@ -402,7 +404,7 @@ func reviewRESTRequestBody(operation string, arguments reviewToolArguments) ([]b
 			Repository: strings.TrimSpace(arguments.Repository), CommitSHA: strings.TrimSpace(arguments.CommitSHA),
 			RequiredChecks: requiredChecks,
 		})
-	case "list_review_rounds", "list_review_findings", "get_github_check_gate", "wait_for_github_checks":
+	case "list_review_rounds", "list_review_findings", "list_review_pipeline", "get_github_check_gate", "wait_for_github_checks":
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("%w: review operation %s", ErrUnsupportedAdapter, operation)
@@ -429,6 +431,14 @@ func reviewRESTURL(baseURL string, route Route, arguments reviewToolArguments) (
 	}
 	if route.Operation == "list_review_rounds" {
 		setBoolQuery(query, "verbose", arguments.Verbose)
+	}
+	if route.Operation == "list_review_pipeline" {
+		if arguments.Limit != nil {
+			query.Set("limit", strconv.Itoa(*arguments.Limit))
+		}
+		if arguments.Offset != nil {
+			query.Set("offset", strconv.Itoa(*arguments.Offset))
+		}
 	}
 	if route.Operation == "wait_for_github_checks" {
 		if arguments.AfterID > 0 {

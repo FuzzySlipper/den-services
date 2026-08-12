@@ -408,6 +408,8 @@ install_mcp_routes() {
     "/v1/review/finalizations" "mcp_review_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "request_campaign_review" "review" "POST" \
     "/v1/projects/{project_id}/tasks/{task_id}/review/campaign-request" "mcp_review_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "list_review_pipeline" "review" "GET" \
+    "/v1/projects/{project_id}/review/pipeline" "mcp_review_rest" "mcp_tool_result_json"
   set_mcp_route_timeout "${routes_target}" "wait_for_github_checks" "55s"
   set_mcp_route_timeout "${routes_target}" "wait_for_messages" "65s"
   append_mcp_route_if_missing "${routes_target}" "get_task_context" "tasks" "GET" \

@@ -126,6 +126,42 @@ func (c *HTTPTaskClient) GetTask(ctx context.Context, taskID int64) (TaskContext
 	return task, nil
 }
 
+func (c *HTTPTaskClient) ListReviewableTasks(ctx context.Context, projectID string, limit int, offset int) ([]TaskContext, error) {
+	if c.baseURL == "" {
+		return nil, NewServiceError(ErrTaskClientUnset, "task_client_unconfigured", http.StatusInternalServerError)
+	}
+	endpoint, err := url.Parse(c.baseURL + "/v1/projects/" + url.PathEscape(projectID) + "/tasks")
+	if err != nil {
+		return nil, fmt.Errorf("building reviewable task list URL: %w", err)
+	}
+	query := endpoint.Query()
+	query.Set("status", TaskStatusReview)
+	query.Set("tree", "true")
+	query.Set("limit", fmt.Sprint(limit))
+	query.Set("offset", fmt.Sprint(offset))
+	endpoint.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("building reviewable task list request: %w", err)
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("listing reviewable tasks: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("reviewable task list failed: %s", errorMessage(resp))
+	}
+	var tasks []TaskContext
+	if err := json.NewDecoder(resp.Body).Decode(&tasks); err != nil {
+		return nil, fmt.Errorf("decoding reviewable task list: %w", err)
+	}
+	return tasks, nil
+}
+
 func (c *HTTPTaskClient) SetTaskStatus(ctx context.Context, projectID string, taskID int64, agent string, status string) (TaskContext, error) {
 	if c.baseURL == "" {
 		return TaskContext{}, NewServiceError(ErrTaskClientUnset, "task_client_unconfigured", http.StatusInternalServerError)

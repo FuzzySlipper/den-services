@@ -44,6 +44,8 @@ type ListTasksQuery struct {
 	MaxPriority *int
 	ParentID    *int64
 	IncludeAll  bool
+	Limit       int
+	Offset      int
 }
 
 type TaskChangeQuery struct {
@@ -125,6 +127,9 @@ func (s *Service) ListTasks(ctx context.Context, projectID string, query ListTas
 	}
 	if query.MaxPriority != nil && (*query.MaxPriority < 1 || *query.MaxPriority > 5) {
 		return nil, validationFailed(ErrInvalidPriority)
+	}
+	if query.Limit < 0 || query.Limit > 200 || query.Offset < 0 {
+		return nil, validationFailed(ErrInvalidTask)
 	}
 	query.ProjectID = projectID
 	return s.store.ListTasks(ctx, query)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,6 +66,46 @@ func TestServiceReviewRoundFindingVerdictAndResponse(t *testing.T) {
 	metadata := messages.appended[0].Metadata
 	if metadata["type"] != "review_feedback" || metadata["packet_kind"] != PacketKindReviewFindings {
 		t.Fatalf("verdict metadata did not separate type/packet_kind: %#v", metadata)
+	}
+}
+
+func TestServiceReviewPipelinePreservesMissingStateAndSelectsLatest(t *testing.T) {
+	store := newMemoryStore()
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		41: {ID: 41, ProjectID: "den-services", Title: "No submission", Status: TaskStatusReview, Priority: 1},
+		42: {ID: 42, ProjectID: "den-services", Title: "Gated", Status: TaskStatusReview, Priority: 2},
+		43: {ID: 43, ProjectID: "den-services", Title: "Not reviewable", Status: TaskStatusInProgress, Priority: 1},
+	}}
+	older := fixedReviewTestTime().Add(-time.Minute)
+	newer := fixedReviewTestTime()
+	store.rounds[1] = &ReviewRound{ID: 1, ProjectID: "den-services", TaskID: 42, RoundNumber: 1, HeadCommit: "old", CreatedAt: older, UpdatedAt: older}
+	store.rounds[2] = &ReviewRound{ID: 2, ProjectID: "den-services", TaskID: 42, RoundNumber: 2, HeadCommit: "new", CreatedAt: newer, UpdatedAt: newer}
+	store.githubCheckGates[1] = &GitHubCheckGate{ID: 1, ProjectID: "den-services", TaskID: 42, CommitSHA: "old", Status: GitHubCheckGateStatusSuperseded, CreatedAt: older, UpdatedAt: older}
+	store.githubCheckGates[2] = &GitHubCheckGate{ID: 2, ProjectID: "den-services", TaskID: 42, CommitSHA: "new", Status: GitHubCheckGateStatusPending, CreatedAt: newer, UpdatedAt: newer}
+
+	page, err := newTestService(store, &fakeMessages{}, tasks).ReviewPipeline(t.Context(), "den-services", ReviewPipelineQuery{Limit: 10})
+	if err != nil {
+		t.Fatalf("ReviewPipeline() error = %v", err)
+	}
+	if len(page.Items) != 2 || page.Items[0].Task.ID != 41 || page.Items[0].Round != nil || page.Items[0].Gate != nil {
+		t.Fatalf("missing-state item = %+v", page.Items)
+	}
+	if page.Items[1].Round == nil || page.Items[1].Round.HeadCommit != "new" || page.Items[1].Gate == nil || page.Items[1].Gate.CommitSHA != "new" {
+		t.Fatalf("latest-state item = %+v", page.Items[1])
+	}
+}
+
+func TestServiceReviewPipelineReturnsNextOffset(t *testing.T) {
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		1: {ID: 1, ProjectID: "den-services", Status: TaskStatusReview, Priority: 1},
+		2: {ID: 2, ProjectID: "den-services", Status: TaskStatusReview, Priority: 1},
+	}}
+	page, err := newTestService(newMemoryStore(), &fakeMessages{}, tasks).ReviewPipeline(t.Context(), "den-services", ReviewPipelineQuery{Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.NextOffset == nil || *page.NextOffset != 1 {
+		t.Fatalf("page = %+v", page)
 	}
 }
 
@@ -2294,6 +2335,31 @@ func (f *fakeTasks) CreateFollowUpTask(_ context.Context, projectID string, req 
 	return CreatedTask{ID: int64(9000 + len(f.created)), ProjectID: projectID, Title: req.Title, Status: "planned"}, nil
 }
 
+func (f *fakeTasks) ListReviewableTasks(_ context.Context, projectID string, limit int, offset int) ([]TaskContext, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	tasks := make([]TaskContext, 0)
+	for _, task := range f.tasks {
+		if task.ProjectID == projectID && task.Status == TaskStatusReview {
+			tasks = append(tasks, task)
+		}
+	}
+	sort.Slice(tasks, func(i, j int) bool {
+		if tasks[i].Priority != tasks[j].Priority {
+			return tasks[i].Priority < tasks[j].Priority
+		}
+		return tasks[i].ID < tasks[j].ID
+	})
+	if offset >= len(tasks) {
+		return nil, nil
+	}
+	tasks = tasks[offset:]
+	if len(tasks) > limit {
+		tasks = tasks[:limit]
+	}
+	return tasks, nil
+}
+
 type fakeMessages struct {
 	appended         []AppendMessageRequest
 	failAppend       bool
@@ -2455,6 +2521,10 @@ type barrierTasks struct {
 	responseLost       bool
 	setCalls           int
 	historyTransitions int
+}
+
+func (f *barrierTasks) ListReviewableTasks(context.Context, string, int, int) ([]TaskContext, error) {
+	return []TaskContext{f.task}, nil
 }
 
 func newBarrierTasks(loseFirstResponse bool) *barrierTasks {
