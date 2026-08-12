@@ -30,11 +30,14 @@ timeouts:
 	if err != nil {
 		t.Fatalf("LoadConfigFromPath() error = %v", err)
 	}
-	if cfg.BindHost != devserver.DefaultBindHost {
-		t.Fatalf("BindHost = %q, want %q", cfg.BindHost, devserver.DefaultBindHost)
+	if cfg.Manager.BindHost != devserver.DefaultBindHost {
+		t.Fatalf("BindHost = %q, want %q", cfg.Manager.BindHost, devserver.DefaultBindHost)
 	}
-	if cfg.ProbeHost != devserver.DefaultProbeHost {
-		t.Fatalf("ProbeHost = %q, want %q", cfg.ProbeHost, devserver.DefaultProbeHost)
+	if cfg.Manager.ProbeHost != devserver.DefaultProbeHost {
+		t.Fatalf("ProbeHost = %q, want %q", cfg.Manager.ProbeHost, devserver.DefaultProbeHost)
+	}
+	if cfg.StatusPage.BindHost != devserver.DefaultBindHost || cfg.StatusPage.Port != 37299 {
+		t.Fatalf("StatusPage = %#v, want 0.0.0.0:37299", cfg.StatusPage)
 	}
 }
 
@@ -43,13 +46,16 @@ func TestDefaultConfigSupportsOneCommandWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DefaultConfig() error = %v", err)
 	}
-	if cfg.BindHost != devserver.DefaultBindHost {
-		t.Fatalf("BindHost = %q, want %q", cfg.BindHost, devserver.DefaultBindHost)
+	if cfg.Manager.BindHost != devserver.DefaultBindHost {
+		t.Fatalf("BindHost = %q, want %q", cfg.Manager.BindHost, devserver.DefaultBindHost)
 	}
-	if cfg.ProbeHost != devserver.DefaultProbeHost {
-		t.Fatalf("ProbeHost = %q, want %q", cfg.ProbeHost, devserver.DefaultProbeHost)
+	if cfg.Manager.ProbeHost != devserver.DefaultProbeHost {
+		t.Fatalf("ProbeHost = %q, want %q", cfg.Manager.ProbeHost, devserver.DefaultProbeHost)
 	}
-	if cfg.PortRange.Start != 37300 || cfg.PortRange.End != 37450 {
-		t.Fatalf("PortRange = %#v, want 37300-37450", cfg.PortRange)
+	if cfg.Manager.PortRange.Start != 37300 || cfg.Manager.PortRange.End != 37450 {
+		t.Fatalf("PortRange = %#v, want 37300-37450", cfg.Manager.PortRange)
+	}
+	if got := cfg.StatusPage.Address(); got != "0.0.0.0:37299" {
+		t.Fatalf("StatusPage.Address() = %q, want 0.0.0.0:37299", got)
 	}
 }

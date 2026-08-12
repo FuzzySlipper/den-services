@@ -8,6 +8,10 @@ bind_host: "0.0.0.0"                            # LAN-facing bind passed to dev-
 probe_host: "127.0.0.1"                         # Local health checks probe loopback.
 public_host: "auto"                             # Auto-detect LAN IP; override with --public-host when needed.
 
+status_page:
+  bind_host: "0.0.0.0"                          # LAN-facing status page listener.
+  port: 37299                                    # Kept outside the managed project port range below.
+
 port_range:
   start: 37300                                  # First broker-managed fallback port.
   end: 37450                                    # Last broker-managed fallback port.

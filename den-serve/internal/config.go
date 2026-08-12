@@ -2,7 +2,9 @@ package serve
 
 import (
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,8 +13,28 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func DefaultConfig() (devserver.ManagerConfig, error) {
-	return devserver.NormalizeConfig(devserver.ManagerConfig{
+const defaultStatusPagePort = 37299
+
+type Config struct {
+	Manager    devserver.ManagerConfig
+	StatusPage StatusPageConfig
+}
+
+type StatusPageConfig struct {
+	BindHost string
+	Port     int
+}
+
+func (c StatusPageConfig) Address() string {
+	return net.JoinHostPort(c.BindHost, strconv.Itoa(c.Port))
+}
+
+func (c StatusPageConfig) AddressForHost(host string) string {
+	return net.JoinHostPort(host, strconv.Itoa(c.Port))
+}
+
+func DefaultConfig() (Config, error) {
+	manager, err := devserver.NormalizeConfig(devserver.ManagerConfig{
 		StateDir:    "~/.cache/den-serve/state",
 		SessionRoot: "~/.cache/den-serve/sessions",
 		BindHost:    devserver.DefaultBindHost,
@@ -30,16 +52,32 @@ func DefaultConfig() (devserver.ManagerConfig, error) {
 			ShutdownTimeout: 5 * time.Second,
 		},
 	})
+	if err != nil {
+		return Config{}, err
+	}
+	return Config{
+		Manager: manager,
+		StatusPage: StatusPageConfig{
+			BindHost: devserver.DefaultBindHost,
+			Port:     defaultStatusPagePort,
+		},
+	}, nil
 }
 
 type configFile struct {
-	StateDir    string        `yaml:"state_dir"`
-	SessionRoot string        `yaml:"session_root"`
-	BindHost    string        `yaml:"bind_host"`
-	ProbeHost   string        `yaml:"probe_host"`
-	PublicHost  string        `yaml:"public_host"`
-	PortRange   portRangeFile `yaml:"port_range"`
-	Timeouts    timeoutFile   `yaml:"timeouts"`
+	StateDir    string         `yaml:"state_dir"`
+	SessionRoot string         `yaml:"session_root"`
+	BindHost    string         `yaml:"bind_host"`
+	ProbeHost   string         `yaml:"probe_host"`
+	PublicHost  string         `yaml:"public_host"`
+	PortRange   portRangeFile  `yaml:"port_range"`
+	Timeouts    timeoutFile    `yaml:"timeouts"`
+	StatusPage  statusPageFile `yaml:"status_page"`
+}
+
+type statusPageFile struct {
+	BindHost string `yaml:"bind_host"`
+	Port     int    `yaml:"port"`
 }
 
 type portRangeFile struct {
@@ -55,23 +93,31 @@ type timeoutFile struct {
 	ShutdownTimeout string `yaml:"shutdown_timeout"`
 }
 
-func LoadConfigFromPath(path string) (devserver.ManagerConfig, error) {
+func LoadConfigFromPath(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return devserver.ManagerConfig{}, fmt.Errorf("reading den-serve config %s: %w", path, err)
+		return Config{}, fmt.Errorf("reading den-serve config %s: %w", path, err)
 	}
 	var file configFile
 	if err := yaml.Unmarshal(data, &file); err != nil {
-		return devserver.ManagerConfig{}, fmt.Errorf("parsing den-serve config %s: %w", path, err)
+		return Config{}, fmt.Errorf("parsing den-serve config %s: %w", path, err)
 	}
-	cfg, err := file.toConfig()
+	manager, err := file.toManagerConfig()
 	if err != nil {
-		return devserver.ManagerConfig{}, err
+		return Config{}, err
 	}
-	return devserver.NormalizeConfig(cfg)
+	manager, err = devserver.NormalizeConfig(manager)
+	if err != nil {
+		return Config{}, err
+	}
+	statusPage, err := file.StatusPage.toConfig()
+	if err != nil {
+		return Config{}, err
+	}
+	return Config{Manager: manager, StatusPage: statusPage}, nil
 }
 
-func (f configFile) toConfig() (devserver.ManagerConfig, error) {
+func (f configFile) toManagerConfig() (devserver.ManagerConfig, error) {
 	timeouts, err := f.Timeouts.toConfig()
 	if err != nil {
 		return devserver.ManagerConfig{}, err
@@ -87,6 +133,20 @@ func (f configFile) toConfig() (devserver.ManagerConfig, error) {
 			End:   f.PortRange.End,
 		},
 		Timeouts: timeouts,
+	}, nil
+}
+
+func (f statusPageFile) toConfig() (StatusPageConfig, error) {
+	port := f.Port
+	if port == 0 {
+		port = defaultStatusPagePort
+	}
+	if port < 1 || port > 65535 {
+		return StatusPageConfig{}, fmt.Errorf("status_page.port must be between 1 and 65535")
+	}
+	return StatusPageConfig{
+		BindHost: valueOrDefault(f.BindHost, devserver.DefaultBindHost),
+		Port:     port,
 	}, nil
 }
 

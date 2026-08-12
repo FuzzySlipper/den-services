@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,6 +37,8 @@ func run(args []string) error {
 		return runStatus(args[1:])
 	case "list":
 		return runList(args[1:])
+	case "page":
+		return runPage(args[1:])
 	case "stop":
 		return runStop(args[1:])
 	case "logs":
@@ -181,6 +184,45 @@ func runList(args []string) error {
 	return nil
 }
 
+func runPage(args []string) error {
+	var cfgPath string
+	flags := flag.NewFlagSet("den-serve page", flag.ContinueOnError)
+	flags.StringVar(&cfgPath, "config", os.Getenv(configPathEnv), "config path")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("den-serve page does not accept positional arguments")
+	}
+	cfg, err := loadConfig(cfgPath)
+	if err != nil {
+		return err
+	}
+	manager, err := devserver.NewManager(cfg.Manager)
+	if err != nil {
+		return err
+	}
+	page, err := serve.NewStatusPage(manager)
+	if err != nil {
+		return err
+	}
+	localURL := fmt.Sprintf("http://127.0.0.1:%d/", cfg.StatusPage.Port)
+	lanHost := devserver.ResolvePublicHost(cfg.Manager.PublicHost)
+	fmt.Printf("den-serve status page\nlocal: %s\n", localURL)
+	if lanHost != "" {
+		fmt.Printf("lan:   http://%s/\n", cfg.StatusPage.AddressForHost(lanHost))
+	}
+	fmt.Printf("listen: %s\n", cfg.StatusPage.Address())
+	server := &http.Server{
+		Addr:    cfg.StatusPage.Address(),
+		Handler: page,
+	}
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("serving den-serve status page: %w", err)
+	}
+	return nil
+}
+
 func runStop(args []string) error {
 	project, rest := splitProjectArg(args)
 	var cfgPath string
@@ -232,17 +274,18 @@ func runLogs(args []string) error {
 }
 
 func newManager(cfgPath string) (*devserver.Manager, error) {
-	var cfg devserver.ManagerConfig
-	var err error
-	if strings.TrimSpace(cfgPath) == "" {
-		cfg, err = serve.DefaultConfig()
-	} else {
-		cfg, err = serve.LoadConfigFromPath(cfgPath)
-	}
+	cfg, err := loadConfig(cfgPath)
 	if err != nil {
 		return nil, err
 	}
-	return devserver.NewManager(cfg)
+	return devserver.NewManager(cfg.Manager)
+}
+
+func loadConfig(cfgPath string) (serve.Config, error) {
+	if strings.TrimSpace(cfgPath) == "" {
+		return serve.DefaultConfig()
+	}
+	return serve.LoadConfigFromPath(cfgPath)
 }
 
 func splitProjectArg(args []string) (string, []string) {
@@ -319,6 +362,7 @@ func printUsage() {
 	fmt.Printf("       %s restart <project> -repo /path/to/repo [--public-host ip]\n", name)
 	fmt.Printf("       %s status <project> [-repo /path/to/repo]\n", name)
 	fmt.Printf("       %s list\n", name)
+	fmt.Printf("       %s page\n", name)
 	fmt.Printf("       %s stop <project> [-repo /path/to/repo]\n", name)
 	fmt.Printf("       %s logs <project> [-repo /path/to/repo]\n", name)
 	fmt.Println("pass -config or set " + configPathEnv + " only to override built-in defaults")
