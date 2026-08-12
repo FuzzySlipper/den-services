@@ -5,7 +5,11 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -23,9 +27,10 @@ func (f fakeSessionLister) List(context.Context) ([]devserver.SessionState, erro
 
 func TestStatusPageListsOnlyRunningProjectsWithClickableAssignments(t *testing.T) {
 	page, err := NewStatusPage(fakeSessionLister{sessions: []devserver.SessionState{
-		{Project: "zeta", Status: "running", Port: 37302, LANURL: "http://192.168.1.22:37302/"},
-		{Project: "stopped", Status: "stopped", Port: 37301, LANURL: "http://192.168.1.22:37301/"},
-		{Project: "alpha", Status: "running", Port: 5173, LANURL: "http://192.168.1.22:5173/"},
+		{Project: "zeta", Status: "running", Ownership: "broker_owned", Port: 37302, LANURL: "http://192.168.1.22:37302/"},
+		{Project: "stopped", Status: "stopped", Ownership: "broker_owned", Port: 37301, LANURL: "http://192.168.1.22:37301/"},
+		{Project: "external", Status: "running", Ownership: "unowned", Port: 37303, LANURL: "http://192.168.1.22:37303/"},
+		{Project: "alpha", Status: "running", Ownership: "broker_owned", Port: 5173, LANURL: "http://192.168.1.22:5173/"},
 	}})
 	if err != nil {
 		t.Fatalf("NewStatusPage() error = %v", err)
@@ -49,8 +54,10 @@ func TestStatusPageListsOnlyRunningProjectsWithClickableAssignments(t *testing.T
 			t.Fatalf("body missing %q:\n%s", marker, body)
 		}
 	}
-	if strings.Contains(body, ">stopped</a>") {
-		t.Fatalf("body includes stopped session:\n%s", body)
+	for _, excluded := range []string{"stopped", "external"} {
+		if strings.Contains(body, ">"+excluded+"</a>") {
+			t.Fatalf("body includes excluded %s session:\n%s", excluded, body)
+		}
 	}
 	if strings.Index(body, ">alpha</a>") > strings.Index(body, ">zeta</a>") {
 		t.Fatalf("projects are not sorted:\n%s", body)
@@ -62,7 +69,7 @@ func TestStatusPageListsOnlyRunningProjectsWithClickableAssignments(t *testing.T
 
 func TestStatusPageEscapesProjectNamesAndUsesRequestHostFallback(t *testing.T) {
 	page, err := NewStatusPage(fakeSessionLister{sessions: []devserver.SessionState{
-		{Project: `<script>alert("no")</script>`, Status: "running", Port: 4040},
+		{Project: `<script>alert("no")</script>`, Status: "running", Ownership: "broker_owned", Port: 4040},
 	}})
 	if err != nil {
 		t.Fatalf("NewStatusPage() error = %v", err)
@@ -75,6 +82,98 @@ func TestStatusPageEscapesProjectNamesAndUsesRequestHostFallback(t *testing.T) {
 	}
 	if !strings.Contains(body, `href="http://den-box.local:4040/"`) {
 		t.Fatalf("body missing request-host fallback URL:\n%s", body)
+	}
+}
+
+func TestStatusPageUsesRefreshedManagerStateAndExcludesUnownedSessions(t *testing.T) {
+	healthServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(healthServer.Close)
+	healthURL, err := url.Parse(healthServer.URL)
+	if err != nil {
+		t.Fatalf("url.Parse() error = %v", err)
+	}
+	port, err := strconv.Atoi(healthURL.Port())
+	if err != nil {
+		t.Fatalf("strconv.Atoi() error = %v", err)
+	}
+
+	root := t.TempDir()
+	cfg := devserver.ManagerConfig{
+		StateDir:    filepath.Join(root, "state"),
+		SessionRoot: filepath.Join(root, "sessions"),
+		BindHost:    devserver.DefaultBindHost,
+		ProbeHost:   healthURL.Hostname(),
+		PublicHost:  "192.168.1.22",
+		PortRange:   devserver.PortRange{Start: 37300, End: 37450},
+		Timeouts: devserver.TimeoutConfig{
+			LockTimeout:     time.Second,
+			StartupTimeout:  time.Second,
+			HealthTimeout:   time.Second,
+			HealthInterval:  time.Millisecond,
+			ShutdownTimeout: time.Second,
+		},
+	}
+	manager, err := devserver.NewManager(cfg)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	store := devserver.NewSessionStore(cfg.SessionRoot)
+	writeSession := func(project string, ownership string, pid int, launchFingerprint devserver.LaunchFingerprint) {
+		t.Helper()
+		sessionKey := devserver.SessionKey(project, root)
+		session := devserver.SessionState{
+			Project:           project,
+			RepoRoot:          root,
+			ProbeHost:         healthURL.Hostname(),
+			PublicHost:        "192.168.1.22",
+			Port:              port,
+			LocalURL:          healthServer.URL + "/",
+			LANURL:            "http://192.168.1.22:" + strconv.Itoa(port) + "/",
+			HealthURL:         healthServer.URL + "/",
+			PID:               pid,
+			Ownership:         ownership,
+			LaunchFingerprint: launchFingerprint,
+			StatePath:         store.CurrentPath(sessionKey),
+		}
+		if err := store.WriteCurrent(session); err != nil {
+			t.Fatalf("WriteCurrent(%s) error = %v", project, err)
+		}
+	}
+	manifest := &devserver.ServeManifest{
+		Project:    "owned",
+		ProbeHost:  healthURL.Hostname(),
+		HealthPath: "/",
+	}
+	fingerprint, err := devserver.ResolveLaunchFingerprint(context.Background(), manifest)
+	if err != nil {
+		t.Fatalf("ResolveLaunchFingerprint() error = %v", err)
+	}
+	writeSession("owned", "broker_owned", syscall.Getpgrp(), fingerprint)
+	manifest.Project = "external"
+	externalFingerprint, err := devserver.ResolveLaunchFingerprint(context.Background(), manifest)
+	if err != nil {
+		t.Fatalf("ResolveLaunchFingerprint() error = %v", err)
+	}
+	writeSession("external", "unowned", 0, externalFingerprint)
+	writeSession("stale", "broker_owned", syscall.Getpgrp(), devserver.LaunchFingerprint{Value: "old"})
+	writeSession("stopped", "broker_owned", 99999999, fingerprint)
+
+	page, err := NewStatusPage(manager)
+	if err != nil {
+		t.Fatalf("NewStatusPage() error = %v", err)
+	}
+	response := httptest.NewRecorder()
+	page.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "http://192.168.1.22:37299/", nil))
+	body := response.Body.String()
+	if !strings.Contains(body, ">owned</a>") {
+		t.Fatalf("body missing broker-owned running session:\n%s", body)
+	}
+	for _, excluded := range []string{"external", "stale", "stopped"} {
+		if strings.Contains(body, ">"+excluded+"</a>") {
+			t.Fatalf("body includes refreshed %s session:\n%s", excluded, body)
+		}
 	}
 }
 

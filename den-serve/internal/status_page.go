@@ -78,7 +78,7 @@ func (p *StatusPage) ServeHTTP(response http.ResponseWriter, request *http.Reque
 func runningProjects(sessions []devserver.SessionState, requestHost string) []StatusPageProject {
 	projects := make([]StatusPageProject, 0, len(sessions))
 	for _, session := range sessions {
-		if session.Status != "running" {
+		if session.Status != "running" || session.Ownership != "broker_owned" {
 			continue
 		}
 		projects = append(projects, StatusPageProject{
