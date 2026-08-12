@@ -33,6 +33,35 @@
       "Replace with a shallow intermediate effect that does not establish the player outcome, such as a door animation without successful traversal"
     ]
   },
+  "guidance": {
+    "fieldGuide": {
+      "schemaVersion": 1,
+      "guideId": "replace-with-project/scenario",
+      "revision": "replace-with-current-revision",
+      "sha256": "replace-with-the-exact-current-bundle-hash",
+      "provenance": [
+        "replace with the owning Den document, repository document, or prior playtest evidence handle"
+      ],
+      "observedBuildRevision": "replace with the game revision this guide was observed against, when known",
+      "freshness": "replace with an observed date or explicit unknown/stale label",
+      "confidence": "replace with high, medium, low, or mixed",
+      "notesMarkdown": "Replace with the complete current controls, landmarks, spatial relationships, useful strategies, confusing affordances, and failed approaches. Do not include a desired verdict for this mission.",
+      "unresolvedQuestions": [
+        "Replace with an unresolved question, or use an empty array"
+      ]
+    },
+    "sourceHandles": [
+      {
+        "kind": "den-knowledge",
+        "handle": "gameplay-interaction-completion",
+        "purpose": "Read on demand if an interaction's local effect may not establish its downstream use"
+      }
+    ],
+    "publication": {
+      "owner": "parent-orchestrator",
+      "mode": "replace-complete"
+    }
+  },
   "artifacts": {
     "screenshots": "before-and-after",
     "frameBurst": {
@@ -43,5 +72,5 @@
     "video": false
   },
   "reproductionLimit": 1,
-  "notes": "The worker receives the mission, controls, and observation protocol first. The orchestrator normally maps the retained neutral account to acceptance after that account exists. Label any diagnostic influence."
+  "notes": "The worker receives the mission, controls, and observation protocol first. When practical it captures the initial scene before reading game-specific guidance. The orchestrator normally maps the retained neutral account to acceptance after that account exists. Field-guide hints never determine acceptance; visible contradictions are retained and the next guide is a complete replacement candidate. Label any diagnostic influence."
 }

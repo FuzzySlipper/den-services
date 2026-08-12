@@ -230,6 +230,43 @@ visual account inspectable even when a later acceptance classification
 contradicts it. For primarily visual classification, capture the neutral
 account before the orchestrator supplies or applies targeted criteria.
 
+Optional field-guide inputs are also retained independently. Put one exact
+complete snapshot and its handles on start:
+
+```json
+{
+  "project": "my-game",
+  "repo_root": "/absolute/path/to/repo",
+  "scenario": "door-traversal",
+  "field_guide": {
+    "schema_version": 1,
+    "guide_id": "my-game/door-traversal",
+    "revision": "7",
+    "sha256": "<exact bundle hash>",
+    "provenance": ["den-document:my-game/playtest-field-guide"],
+    "observed_build_revision": "<40-character SHA>",
+    "freshness": "observed 2026-08-12",
+    "confidence": "medium",
+    "notes_markdown": "Complete current notes.",
+    "unresolved_questions": []
+  },
+  "source_handles": [
+    {
+      "kind": "den-knowledge",
+      "handle": "gameplay-interaction-completion",
+      "purpose": "read only if an interaction is ambiguous"
+    }
+  ]
+}
+```
+
+At finish, `field_guide_usage` records handles actually read, useful claims,
+and visible contradictions. `field_guide_replacement` is one complete proposed
+next bundle with `replacement_mode: "replace-complete"`. The parent publishes
+that bundle through its named latest-value document owner. The broker records
+both sides for audit but does not retrieve sources, publish notes, patch the
+old bundle, or inject historical revisions into later runs.
+
 `exit_interview` is an optional free-form suggestion box. It is retained in the
 index, returned by finish, and copied into the persisted session returned by
 `playtest_get`. Missing, partial, fuzzy, or low-confidence feedback is valid and

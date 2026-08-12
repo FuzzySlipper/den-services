@@ -50,6 +50,7 @@ installed_input_helper="${codex_root}/bin/den-playwright-x11-input"
 installed_config="${codex_root}/playtester/config.yaml"
 state_dir="${codex_root}/playtester/state"
 artifact_root="${codex_root}/playtester/runs"
+codex_config="${codex_root}/config.toml"
 driver_script="${repo_root}/playwright-broker/driver/playtest-driver.mjs"
 owner_record="${codex_root}/playtester/install-owner"
 owner_marker="# Managed by den-services: scripts/install-codex-playtester.sh"
@@ -201,10 +202,12 @@ render_templates() {
     "${agent_template}" "${installed_agent}" \
     "${config_template}" "${installed_config}" \
     "${installed_skill}/SKILL.md" "${installed_binary}" \
-    "${repo_root}" "${state_dir}" "${artifact_root}" "${driver_script}" "${installed_input_helper}" <<'PY'
+    "${repo_root}" "${state_dir}" "${artifact_root}" "${driver_script}" "${installed_input_helper}" \
+    "${codex_config}" <<'PY'
 import json
 import pathlib
 import sys
+import tomllib
 
 (
     agent_template,
@@ -218,6 +221,7 @@ import sys
     artifact_root,
     driver_script,
     input_helper,
+    codex_config,
 ) = map(pathlib.Path, sys.argv[1:])
 
 agent = agent_template.read_text()
@@ -228,6 +232,28 @@ for marker, value in {
     "@REPO_ROOT_TOML@": repo_root,
 }.items():
     agent = agent.replace(marker, json.dumps(str(value)))
+
+den_reference_server = ""
+if codex_config.is_file():
+    try:
+        root_config = tomllib.loads(codex_config.read_text())
+    except tomllib.TOMLDecodeError as error:
+        raise SystemExit(f"cannot discover Den reference MCP from {codex_config}: {error}")
+    den_server = root_config.get("mcp_servers", {}).get("den", {})
+    den_url = den_server.get("url") if isinstance(den_server, dict) else None
+    if isinstance(den_url, str) and den_url.strip():
+        den_reference_server = f'''[mcp_servers.den_reference]
+url = {json.dumps(den_url)}
+enabled = true
+enabled_tools = [
+  "den_knowledge_get",
+  "den_knowledge_guide",
+  "den_knowledge_search",
+  "get_document",
+]
+default_tools_approval_mode = "approve"
+'''
+agent = agent.replace("@DEN_REFERENCE_SERVER_TOML@", den_reference_server.rstrip())
 installed_agent.write_text(agent)
 
 config = config_template.read_text()
@@ -277,14 +303,15 @@ validate_installation() {
 
   python3 - \
     "${installed_agent}" "${installed_config}" "${installed_skill}/SKILL.md" \
-    "${installed_binary}" "${driver_script}" "${installed_input_helper}" "${validation_dir}/mcp.jsonl" <<'PY'
+    "${installed_binary}" "${driver_script}" "${installed_input_helper}" "${validation_dir}/mcp.jsonl" \
+    "${codex_config}" <<'PY'
 import json
 import pathlib
 import re
 import sys
 import tomllib
 
-agent_path, config_path, skill_path, binary_path, driver_path, input_helper_path, mcp_path = map(pathlib.Path, sys.argv[1:])
+agent_path, config_path, skill_path, binary_path, driver_path, input_helper_path, mcp_path, codex_config = map(pathlib.Path, sys.argv[1:])
 agent = tomllib.loads(agent_path.read_text())
 expected_tools = {
     "playtest_start", "playtest_observe", "playtest_act", "playtest_inspect",
@@ -299,6 +326,18 @@ server = agent["mcp_servers"]["den_playtest"]
 assert server["command"] == str(binary_path)
 assert server["args"] == ["mcp", "-config", str(config_path)]
 assert set(server["enabled_tools"]) == expected_tools
+
+root_config = tomllib.loads(codex_config.read_text()) if codex_config.is_file() else {}
+root_den = root_config.get("mcp_servers", {}).get("den", {})
+root_den_url = root_den.get("url") if isinstance(root_den, dict) else None
+reference = agent.get("mcp_servers", {}).get("den_reference")
+if isinstance(root_den_url, str) and root_den_url.strip():
+    assert reference["url"] == root_den_url
+    assert set(reference["enabled_tools"]) == {
+        "den_knowledge_get", "den_knowledge_guide", "den_knowledge_search", "get_document",
+    }
+else:
+    assert reference is None
 
 config = config_path.read_text()
 match = re.search(r'^\s*driver_script:\s*(.+?)\s*$', config, re.MULTILINE)
@@ -316,7 +355,12 @@ PY
 
   rm -rf "${validation_dir}"
   trap - RETURN
-  echo "playtester installation valid: gpt-5.6-luna / max / 8 playtest tools"
+  if grep -Fq '[mcp_servers.den_reference]' "${installed_agent}"; then
+    echo "playtester installation valid: gpt-5.6-luna / max / 8 playtest tools + read-only Den references"
+  else
+    echo "playtester installation valid: gpt-5.6-luna / max / 8 playtest tools"
+    echo "No root Den URL was discovered; pass resolved source material in the mission packet."
+  fi
   echo "Start a fresh Codex task to load the installed agent, skill, and MCP server."
 }
 

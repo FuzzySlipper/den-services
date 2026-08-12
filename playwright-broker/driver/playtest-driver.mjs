@@ -7,7 +7,7 @@ import process from "node:process";
 import { chromium } from "@playwright/test";
 import { inputStateDiscrepancies, lifecycleDiscrepancies } from "./playtest-diagnostics.mjs";
 import { DecisionTrace } from "./playtest-decision-trace.mjs";
-import { retainCompletionEvidence } from "./playtest-evidence.mjs";
+import { retainCompletionEvidence, retainStartGuidanceEvidence } from "./playtest-evidence.mjs";
 import { isCoordinateClick, startVirtualDisplay, VirtualMouse } from "./playtest-virtual-input.mjs";
 
 const options = JSON.parse(process.env.DEN_PLAYTEST_DRIVER_OPTIONS || "{}");
@@ -62,6 +62,7 @@ if (verboseTrace) {
   index.decision_trace_file = decisionTracePath;
   index.decision_trace = decisionTrace.entries;
 }
+retainStartGuidanceEvidence(index.metadata, options.metadata || {}, jsonSafe);
 
 await fs.mkdir(artifactRoot, { recursive: true });
 

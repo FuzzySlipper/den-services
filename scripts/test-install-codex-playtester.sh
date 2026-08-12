@@ -44,6 +44,28 @@ grep -Fqx '# Managed by den-services: scripts/install-codex-playtester.sh' \
 grep -Fqx 'den-services-codex-playtester-v1' \
   "${owned_home}/playtester/install-owner"
 
+reference_home="${test_root}/reference"
+mkdir -p "${reference_home}"
+printf '%s\n' \
+  '[mcp_servers.den]' \
+  'url = "http://127.0.0.1:5199/mcp?tool_profile=planner"' \
+  > "${reference_home}/config.toml"
+"${installer}" --codex-home "${reference_home}"
+"${installer}" --check --codex-home "${reference_home}"
+python3 - "${reference_home}/agents/playtester.toml" <<'PY'
+import pathlib
+import sys
+import tomllib
+
+agent = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())
+server = agent["mcp_servers"]["den_reference"]
+assert server["url"] == "http://127.0.0.1:5199/mcp?tool_profile=planner"
+assert set(server["enabled_tools"]) == {
+    "den_knowledge_get", "den_knowledge_guide", "den_knowledge_search", "get_document",
+}
+assert "den_knowledge_store" not in server["enabled_tools"]
+PY
+
 printf 'unrelated replacement binary\n' > "${test_root}/replacement-binary"
 chmod +x "${test_root}/replacement-binary"
 mv "${test_root}/replacement-binary" "${owned_home}/bin/den-playwright"

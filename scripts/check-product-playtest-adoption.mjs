@@ -114,6 +114,36 @@ if (scenario.version === 2) {
   if (!Array.isArray(scenario.orchestratorAcceptance?.insufficientEvidence) || scenario.orchestratorAcceptance.insufficientEvidence.length === 0) {
     fail("scenario version 2 requires non-empty orchestratorAcceptance.insufficientEvidence");
   }
+  if (scenario.guidance !== undefined) {
+    const guide = scenario.guidance.fieldGuide;
+    if (guide !== undefined) {
+      if (guide.schemaVersion !== 1 || !guide.guideId || !guide.revision || !guide.sha256 || !guide.notesMarkdown) {
+        fail("scenario guidance.fieldGuide requires schemaVersion 1, guideId, revision, sha256, and notesMarkdown");
+      }
+      if (!Array.isArray(guide.provenance) || guide.provenance.length === 0 || !guide.freshness || !guide.confidence) {
+        fail("scenario guidance.fieldGuide requires provenance, freshness, and confidence");
+      }
+      if (!Array.isArray(guide.unresolvedQuestions)) {
+        fail("scenario guidance.fieldGuide unresolvedQuestions must be an array");
+      }
+      for (const forbidden of ["acceptance", "acceptanceStatus", "desiredOutcome", "expectedOutcome", "expectedVerdict", "verdict"]) {
+        if (guide[forbidden] !== undefined) {
+          fail(`scenario guidance.fieldGuide must not include leading verdict field ${forbidden}`);
+        }
+      }
+    }
+    if (scenario.guidance.sourceHandles !== undefined && !Array.isArray(scenario.guidance.sourceHandles)) {
+      fail("scenario guidance.sourceHandles must be an array");
+    }
+    for (const [index, handle] of (scenario.guidance.sourceHandles || []).entries()) {
+      if (!handle?.kind || !handle?.handle || !handle?.purpose) {
+        fail(`scenario guidance source handle ${index} requires kind, handle, and purpose`);
+      }
+    }
+    if (scenario.guidance.publication?.owner !== "parent-orchestrator" || scenario.guidance.publication?.mode !== "replace-complete") {
+      fail('scenario guidance publication must use owner "parent-orchestrator" and mode "replace-complete"');
+    }
+  }
 } else {
   console.warn("product-playtest adoption check warning: scenario version 1 is legacy and lacks the observation-first split");
 }

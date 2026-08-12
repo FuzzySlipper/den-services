@@ -20,7 +20,8 @@ Require the parent prompt to identify:
   the expected fix already succeeded;
 - ordinary user controls;
 - desired screenshots, frame bursts, trace, or video;
-- project/scenario labels and an optional Den task.
+- project/scenario labels and an optional Den task;
+- an optional complete current field-guide snapshot and optional source handles.
 
 If optional details are absent, use the manifest and documented defaults. Pass
 any parent-supplied manifest path directly to `playtest_start`; do not search
@@ -34,6 +35,33 @@ searches, source inspection, git commands, memory lookup, or repository reads to
 reconstruct or verify it. The playtest MCP owns the application launch and
 evidence paths. Default `headed` to `false` unless the parent explicitly asks
 for a headed browser and confirms a display is available.
+
+## Use guidance without surrendering observation
+
+Keep two knowledge layers distinct:
+
+- Generic gameplay concepts are reviewed Den Knowledge entries. Retrieve a
+  supplied handle on demand with the optional `den_reference` tools; do not
+  preload a large corpus and do not send retrieval through the Playwright
+  broker.
+- A game/scenario field guide is a volatile, complete Markdown-friendly
+  snapshot supplied by the parent. It may contain controls, landmarks, spatial
+  relationships, strategies, confusing affordances, failed approaches, and
+  open questions. It is not Den Knowledge and is not an acceptance rubric.
+
+If practical, capture the initial neutral scene before reading game-specific
+guidance. Treat all notes as fallible hints. When current visible evidence
+contradicts a note, retain both the contradiction and what was visibly
+observed; the observation wins.
+
+At the end of a run, optionally emit one complete replacement candidate. The
+parent owns publication to a latest-value Den document, authored repository
+document, or other explicit owner. `replacement_mode` must be
+`replace-complete`: rewrite everything still useful and omit displaced claims.
+Never append or patch the old guide, never publish it from the worker, and
+never concatenate historical revisions into a later worker's context. The
+evidence index retains the exact input snapshot, handles, usage, and proposed
+replacement for audit.
 
 ## Observe before judging
 
@@ -62,7 +90,9 @@ the worker to agree with a desired verdict.
 - Operate and observe the supplied application. Do not edit product or
   configuration code, repair services, deploy replacements, or create a
   substitute harness.
-- Use only the eight `playtest_*` tools during the worker turn. Do not diagnose
+- Use only the eight `playtest_*` tools plus the optional read-only
+  `den_reference` tools (`den_knowledge_get`, `den_knowledge_guide`,
+  `den_knowledge_search`, and `get_document`) during the worker turn. Do not diagnose
   the harness by reading its source, logs, manifests, processes, or artifact
   directories with general-purpose tools.
 - Use ordinary visible controls for gameplay and product judgement.
@@ -75,7 +105,7 @@ the worker to agree with a desired verdict.
 
 ## Run the lifecycle
 
-1. Confirm that all eight tools are available:
+1. Confirm that all eight playtest tools are available:
    `playtest_start`, `playtest_observe`, `playtest_act`, `playtest_inspect`,
    `playtest_finish`, `playtest_cancel`, `playtest_get`, and `playtest_list`.
    If the configured MCP is absent or cannot start, return
@@ -84,6 +114,8 @@ the worker to agree with a desired verdict.
    preferences, and useful correlation fields. Include the supplied exact
    revision, mission, controls, model identity, and Den references as additional
    evidence metadata. Preserve any dirty-state declaration from the parent.
+   Include `field_guide` and `source_handles` exactly as received so the
+   evidence index records the run's guidance input.
 3. Capture an initial screenshot or frame burst. Before mapping it to acceptance,
    record a neutral visible account of startup state, spatial relationships,
    focus, pointer lock, conspicuous details, and discrepancies.
@@ -170,6 +202,25 @@ prose report:
     "owner": "orchestrator",
     "status": "pending"
   },
+  "field_guide_usage": {
+    "handles_read": ["den-knowledge:gameplay-interaction-completion"],
+    "useful_claims": ["verify the downstream player state after activation"],
+    "contradictions": ["a supplied traversal claim conflicted with visible collision"]
+  },
+  "field_guide_replacement": {
+    "schema_version": 1,
+    "guide_id": "project/scenario",
+    "revision": "next-candidate",
+    "replaces_revision": "7",
+    "replaces_sha256": "<exact input bundle hash>",
+    "replacement_mode": "replace-complete",
+    "provenance": ["playtest session <session>"],
+    "observed_build_revision": "<40-character product SHA>",
+    "freshness": "observed this run",
+    "confidence": "medium",
+    "notes_markdown": "Complete next-run controls, landmarks, strategies, and caveats.",
+    "unresolved_questions": ["question retained for a future run"]
+  },
   "assertions": [
     { "name": "mission result", "pass": true, "artifact": "timeline offset 3" }
   ],
@@ -228,6 +279,7 @@ Outcome: <pass|fail|uncertain|infrastructure_error>
 Neutral observation: <initial concrete account, trajectory, unexpected details>
 Operational result: <furthest player state reached or blocker>
 Acceptance mapping: <orchestrator owner/status, or why worker judgement applies>
+Guidance: <input revision/hash, handles read, contradictions, replacement candidate or none>
 Reproduction: <attempt count and result>
 Diagnostics: <none, or what influenced the conclusion>
 Warnings: <manifest/tool/discrepancy warnings>

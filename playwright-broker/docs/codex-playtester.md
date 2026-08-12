@@ -21,7 +21,10 @@ The command:
 - links the repository-owned `product-playtest` skill;
 - renders the `playtester` custom agent with `gpt-5.6-luna` and `max` reasoning;
 - renders a host-local broker configuration and artifact root;
-- initializes the stdio MCP and verifies all eight tools.
+- initializes the stdio MCP and verifies all eight tools;
+- when the active Codex root already configures `mcp_servers.den.url`, renders
+  a separate `den_reference` MCP exposing only read-only Knowledge/document
+  retrieval tools.
 
 The installer marks the agent, configuration, and binary it owns. Re-running
 it updates those owned targets. If a target path already contains unrelated
@@ -54,6 +57,8 @@ Controls: <ordinary keyboard/mouse controls and any startup action>
 Artifacts: <screenshots/frame bursts/trace/video preferences>
 Project/scenario: <project id> / <scenario label>
 Den reference: <optional project and task>
+Field guide: <optional complete snapshot with revision/hash/provenance/freshness/confidence>
+Source handles: <optional Den Knowledge, Den document, authored guide, or public URL handles>
 
 Keep one browser session across repeated observe/act turns. Capture a neutral concrete account before applying the separate orchestrator acceptance mapping. Judge visible behavior from repeated screenshots or frame bursts, continue interactions through their intended downstream use, use diagnostics only when useful and label their influence, make at most one bounded reproduction attempt, always clean up, and return the product-playtest evidence report.
 ```
@@ -61,7 +66,9 @@ Keep one browser session across repeated observe/act turns. Capture a neutral co
 The playtester defaults to headless Chromium because screenshots and frame
 bursts are its visible evidence surface. Request headed execution only when the
 host has a display. The worker trusts the mission packet and uses only the
-eight `playtest_*` tools; it does not inspect repository or harness source.
+eight `playtest_*` tools; it does not inspect repository or harness source. It
+may also use the optional read-only `den_reference` tools to resolve supplied
+Den handles on demand. Reference retrieval is not proxied through the broker.
 `playtest_observe` returns captured screenshots and frame bursts as model image
 inputs while retaining their indexed artifact paths. If an observation returns
 only text, treat that as an MCP/image-attachment infrastructure error rather
@@ -82,6 +89,12 @@ the observation mission completed, failed visibly, remained uncertain, or was
 blocked by infrastructure. The parent normally interprets product acceptance
 after the neutral account exists. Keep `neutral_observation`,
 `operational_outcome`, and `acceptance_mapping` distinct in `playtest_finish`.
+
+Field-guide assistance is similarly separate from acceptance. The worker
+records the exact supplied snapshot and handles at start, reports contradictions
+against visible evidence, and may return a complete `replace-complete`
+candidate for the next run. The parent, not the playtester, owns publication;
+old revisions remain auditable but are not automatically reinjected.
 
 ## Model identity
 

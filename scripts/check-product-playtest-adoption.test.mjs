@@ -33,6 +33,25 @@ function writePacket(repo, version = 2) {
         criteria: [{ name: "fixture started", evidence: "before/after screenshots" }],
         insufficientEvidence: ["a click without visible state change"],
       },
+      guidance: {
+        fieldGuide: {
+          schemaVersion: 1,
+          guideId: "fixture/visible-fixture",
+          revision: "4",
+          sha256: "4".repeat(64),
+          provenance: ["fixture guide"],
+          freshness: "current fixture",
+          confidence: "medium",
+          notesMarkdown: "Click Start to begin. Treat all claims as hints.",
+          unresolvedQuestions: [],
+        },
+        sourceHandles: [{
+          kind: "den-knowledge",
+          handle: "gameplay-interaction-completion",
+          purpose: "Retrieve only when needed",
+        }],
+        publication: { owner: "parent-orchestrator", mode: "replace-complete" },
+      },
     } : {}),
     artifacts: { screenshots: "before-and-after", trace: true },
     reproductionLimit: 1,
@@ -80,6 +99,40 @@ test("rejects version 2 packets that expose no orchestrator acceptance boundary"
     const result = spawnSync(process.execPath, [checker, repo, packet.manifest, packet.scenario], { encoding: "utf8" });
     assert.equal(result.status, 1);
     assert.match(result.stderr, /orchestratorAcceptance\.owner/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects field guides without complete replacement ownership", () => {
+  const root = mkdtempSync(join(tmpdir(), "product-playtest-guide-invalid-"));
+  try {
+    const repo = join(root, "repo");
+    mkdirSync(repo);
+    const packet = writePacket(repo);
+    const scenario = JSON.parse(readFileSync(packet.scenario, "utf8"));
+    scenario.guidance.publication.mode = "append";
+    writeFileSync(packet.scenario, JSON.stringify(scenario));
+    const result = spawnSync(process.execPath, [checker, repo, packet.manifest, packet.scenario], { encoding: "utf8" });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /mode "replace-complete"/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects a desired verdict embedded in a field guide", () => {
+  const root = mkdtempSync(join(tmpdir(), "product-playtest-guide-verdict-"));
+  try {
+    const repo = join(root, "repo");
+    mkdirSync(repo);
+    const packet = writePacket(repo);
+    const scenario = JSON.parse(readFileSync(packet.scenario, "utf8"));
+    scenario.guidance.fieldGuide.expectedVerdict = "pass";
+    writeFileSync(packet.scenario, JSON.stringify(scenario));
+    const result = spawnSync(process.execPath, [checker, repo, packet.manifest, packet.scenario], { encoding: "utf8" });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /must not include leading verdict field expectedVerdict/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
