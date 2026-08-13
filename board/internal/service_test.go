@@ -31,7 +31,8 @@ func TestServiceWalksImmediateChildrenAndPreservesPurgedStructure(t *testing.T) 
 		t.Fatalf("child page = %#v", children.Comments)
 	}
 
-	if err := service.PurgeComment(ctx, child.ID, PurgeRequest{ActorIdentity: "moderator", Reason: "misleading"}); err != nil {
+	purgeCtx := WithAuthenticatedAdapterIdentity(ctx, "den-web-adapter")
+	if err := service.PurgeComment(purgeCtx, child.ID, PurgeRequest{ActorIdentity: "caller-controlled", Reason: "misleading"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.GetComment(ctx, child.ID); !errors.Is(err, ErrCommentNotFound) {
@@ -73,7 +74,8 @@ func TestServicePurgingPostRemovesEveryNormalSurface(t *testing.T) {
 	if err != nil || len(before.Results) != 2 {
 		t.Fatalf("search before purge = %#v, %v", before, err)
 	}
-	if err := service.PurgePost(ctx, post.ID, PurgeRequest{ActorIdentity: "moderator", Reason: "misleading"}); err != nil {
+	purgeCtx := WithAuthenticatedAdapterIdentity(ctx, "den-web-adapter")
+	if err := service.PurgePost(purgeCtx, post.ID, PurgeRequest{ActorIdentity: "caller-controlled", Reason: "misleading"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.GetPost(ctx, post.ID); !errors.Is(err, ErrPostNotFound) {
@@ -103,6 +105,44 @@ func TestServiceRejectsParentFromAnotherPost(t *testing.T) {
 	_, err := service.CreateComment(context.Background(), second.ID, CreateCommentRequest{ParentCommentID: &parent.ID, BodyMarkdown: "wrong tree", AuthorIdentity: "agent"})
 	if !errors.Is(err, ErrParentPostMismatch) {
 		t.Fatalf("CreateComment error = %v", err)
+	}
+}
+
+func TestServiceRequiresAuthenticatedAdapterAndIgnoresCallerActor(t *testing.T) {
+	store := &auditCaptureStore{MemoryStore: NewMemoryStore()}
+	service := NewService(store, NoopProjectValidator{}, fixedClock())
+	post := createTestPost(t, service, "project-a", "Topic")
+
+	if err := service.PurgePost(context.Background(), post.ID, PurgeRequest{Reason: "misleading"}); !errors.Is(err, ErrMissingAdapterIdentity) {
+		t.Fatalf("purge without adapter identity error = %v", err)
+	}
+	ctx := WithAuthenticatedAdapterIdentity(context.Background(), "server-den-web-adapter")
+	if err := service.PurgePost(ctx, post.ID, PurgeRequest{ActorIdentity: "attacker", Reason: "misleading"}); err != nil {
+		t.Fatal(err)
+	}
+	if store.audit.AdapterIdentity != "server-den-web-adapter" || store.audit.Reason != "misleading" {
+		t.Fatalf("purge audit = %#v", store.audit)
+	}
+}
+
+func TestServiceRejectsConfiguredFieldSizes(t *testing.T) {
+	limits := DefaultLimits()
+	limits.MaxTitleBytes = 4
+	limits.MaxBodyBytes = 5
+	limits.MaxAuthorIdentityBytes = 5
+	limits.MaxMetadataBytes = 4
+	limits.MaxSearchQueryBytes = 4
+	service := NewServiceWithLimits(NewMemoryStore(), NoopProjectValidator{}, fixedClock(), limits)
+
+	if _, err := service.CreatePost(context.Background(), "project-a", CreatePostRequest{Title: "title", BodyMarkdown: "body", AuthorIdentity: "agent"}); err == nil {
+		t.Fatal("CreatePost accepted an oversized title")
+	}
+	post := createTestPostWithLimits(t, service, "p", "body", "agent")
+	if _, err := service.CreateComment(context.Background(), post.ID, CreateCommentRequest{BodyMarkdown: "sixsix", AuthorIdentity: "agent"}); err == nil {
+		t.Fatal("CreateComment accepted an oversized body")
+	}
+	if _, err := service.Search(context.Background(), "p", SearchQuery{Query: "query"}); err == nil {
+		t.Fatal("Search accepted an oversized query")
 	}
 }
 
@@ -143,6 +183,38 @@ func createTestComment(t *testing.T, service *Service, postID int64, parentID *i
 		t.Fatal(err)
 	}
 	return comment
+}
+
+func createTestPostWithLimits(t *testing.T, service *Service, projectID, body, author string) *Post {
+	t.Helper()
+	post, err := service.CreatePost(context.Background(), projectID, CreatePostRequest{Title: "p", BodyMarkdown: body, AuthorIdentity: author})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return post
+}
+
+type auditCaptureStore struct {
+	*MemoryStore
+	audit PurgeAudit
+}
+
+func (s *auditCaptureStore) PurgePost(ctx context.Context, id int64, now time.Time) error {
+	audit, ok := purgeAuditFromContext(ctx)
+	if !ok {
+		return ErrMissingAdapterIdentity
+	}
+	s.audit = audit
+	return s.MemoryStore.PurgePost(ctx, id, now)
+}
+
+func (s *auditCaptureStore) PurgeComment(ctx context.Context, id int64, now time.Time) error {
+	audit, ok := purgeAuditFromContext(ctx)
+	if !ok {
+		return ErrMissingAdapterIdentity
+	}
+	s.audit = audit
+	return s.MemoryStore.PurgeComment(ctx, id, now)
 }
 
 func fixedClock() func() time.Time {

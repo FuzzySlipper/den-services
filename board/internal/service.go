@@ -46,7 +46,7 @@ func NewServiceWithLimits(store BoardStore, projects ProjectValidator, clock fun
 		store:    store,
 		projects: projects,
 		clock:    clock,
-		limits:   limits,
+		limits:   limits.withDefaults(),
 	}
 }
 
@@ -58,6 +58,9 @@ func (s *Service) CreatePost(ctx context.Context, projectID string, req CreatePo
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
 		return nil, validationFailed(ErrMissingProjectID)
+	}
+	if err := s.limits.validatePostFields(projectID, req); err != nil {
+		return nil, validationFailed(err)
 	}
 	if err := s.projects.AssertWritable(ctx, projectID); err != nil {
 		return nil, err
@@ -84,6 +87,9 @@ func (s *Service) ListPosts(ctx context.Context, projectID string, query ListPos
 	if projectID == "" {
 		return PostPage{}, validationFailed(ErrMissingProjectID)
 	}
+	if err := s.limits.validateProjectID(projectID); err != nil {
+		return PostPage{}, validationFailed(err)
+	}
 	if err := validateAfterID(query.AfterID); err != nil {
 		return PostPage{}, validationFailed(err)
 	}
@@ -101,8 +107,15 @@ func (s *Service) Search(ctx context.Context, projectID string, query SearchQuer
 	if projectID == "" {
 		return SearchPage{}, validationFailed(ErrMissingProjectID)
 	}
-	if strings.TrimSpace(query.Query) == "" {
+	query.Query = strings.TrimSpace(query.Query)
+	if query.Query == "" {
 		return SearchPage{}, validationFailed(ErrInvalidSearchQuery)
+	}
+	if err := s.limits.validateProjectID(projectID); err != nil {
+		return SearchPage{}, validationFailed(err)
+	}
+	if err := s.limits.validateSearchQuery(query.Query); err != nil {
+		return SearchPage{}, validationFailed(err)
 	}
 	if err := validateAfterID(query.AfterID); err != nil {
 		return SearchPage{}, validationFailed(err)
@@ -112,7 +125,6 @@ func (s *Service) Search(ctx context.Context, projectID string, query SearchQuer
 		return SearchPage{}, validationFailed(err)
 	}
 	query.ProjectID = projectID
-	query.Query = strings.TrimSpace(query.Query)
 	query.Limit = limit
 	return s.store.Search(ctx, query)
 }
@@ -133,6 +145,9 @@ func (s *Service) GetPost(ctx context.Context, id int64) (*Post, error) {
 
 func (s *Service) CreateComment(ctx context.Context, postID int64, req CreateCommentRequest) (*Comment, error) {
 	if err := validateID(postID); err != nil {
+		return nil, validationFailed(err)
+	}
+	if err := s.limits.validateCommentFields(req); err != nil {
 		return nil, validationFailed(err)
 	}
 	post, err := s.store.GetPost(ctx, postID)
@@ -276,8 +291,9 @@ func (s *Service) PurgePost(ctx context.Context, id int64, req PurgeRequest) err
 	if err := validateID(id); err != nil {
 		return validationFailed(err)
 	}
-	if err := req.Validate(); err != nil {
-		return validationFailed(err)
+	ctx, err := s.preparePurgeContext(ctx, req)
+	if err != nil {
+		return err
 	}
 	post, err := s.store.GetPost(ctx, id)
 	if err != nil {
@@ -296,8 +312,9 @@ func (s *Service) PurgeComment(ctx context.Context, id int64, req PurgeRequest) 
 	if err := validateID(id); err != nil {
 		return validationFailed(err)
 	}
-	if err := req.Validate(); err != nil {
-		return validationFailed(err)
+	ctx, err := s.preparePurgeContext(ctx, req)
+	if err != nil {
+		return err
 	}
 	comment, err := s.store.GetComment(ctx, id)
 	if err != nil {
@@ -317,6 +334,20 @@ func (s *Service) PurgeComment(ctx context.Context, id int64, req PurgeRequest) 
 		return err
 	}
 	return s.store.PurgeComment(ctx, id, s.clock().UTC())
+}
+
+func (s *Service) preparePurgeContext(ctx context.Context, req PurgeRequest) (context.Context, error) {
+	identity, ok := authenticatedAdapterIdentity(ctx)
+	if !ok {
+		return ctx, forbidden(ErrMissingAdapterIdentity, "purge_adapter_identity_required")
+	}
+	if err := s.limits.validatePurgeRequest(req); err != nil {
+		return ctx, validationFailed(err)
+	}
+	return withPurgeAudit(ctx, PurgeAudit{
+		AdapterIdentity: identity,
+		Reason:          strings.TrimSpace(req.Reason),
+	}), nil
 }
 
 func (s *Service) pageLimit(limit int) (int, error) {

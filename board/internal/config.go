@@ -16,6 +16,7 @@ type Config struct {
 	BindAddr               string
 	DatabaseURL            string
 	ServiceToken           string
+	AdapterIdentity        string
 	ProjectsBaseURL        string
 	ProjectsToken          string
 	ProjectsRequestTimeout time.Duration
@@ -24,13 +25,15 @@ type Config struct {
 }
 
 type HTTPConfig struct {
-	ReadHeaderTimeout time.Duration
+	ReadHeaderTimeout   time.Duration
+	MaxRequestBodyBytes int64
 }
 
 type configFile struct {
 	BindAddr               string         `yaml:"bind_addr"`
 	DatabaseURLEnv         string         `yaml:"database_url_env"`
 	ServiceTokenEnv        string         `yaml:"service_token_env"`
+	AdapterIdentity        string         `yaml:"adapter_identity"`
 	ProjectsBaseURLEnv     string         `yaml:"projects_base_url_env"`
 	ProjectsTokenEnv       string         `yaml:"projects_token_env"`
 	ProjectsRequestTimeout string         `yaml:"projects_request_timeout"`
@@ -39,13 +42,21 @@ type configFile struct {
 }
 
 type limitsFile struct {
-	DefaultPageSize int `yaml:"default_page_size"`
-	MaxPageSize     int `yaml:"max_page_size"`
-	MaxPathComments int `yaml:"max_path_comments"`
+	DefaultPageSize        int `yaml:"default_page_size"`
+	MaxPageSize            int `yaml:"max_page_size"`
+	MaxPathComments        int `yaml:"max_path_comments"`
+	MaxProjectIDBytes      int `yaml:"max_project_id_bytes"`
+	MaxTitleBytes          int `yaml:"max_title_bytes"`
+	MaxBodyBytes           int `yaml:"max_body_bytes"`
+	MaxAuthorIdentityBytes int `yaml:"max_author_identity_bytes"`
+	MaxMetadataBytes       int `yaml:"max_metadata_bytes"`
+	MaxSearchQueryBytes    int `yaml:"max_search_query_bytes"`
+	MaxPurgeReasonBytes    int `yaml:"max_purge_reason_bytes"`
 }
 
 type httpConfigFile struct {
-	ReadHeaderTimeout string `yaml:"read_header_timeout"`
+	ReadHeaderTimeout   string `yaml:"read_header_timeout"`
+	MaxRequestBodyBytes int64  `yaml:"max_request_body_bytes"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -89,19 +100,36 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 		return nil, err
 	}
 	serviceToken := values.String(f.ServiceTokenEnv, "")
+	adapterIdentity := strings.TrimSpace(f.AdapterIdentity)
+	if adapterIdentity == "" {
+		adapterIdentity = DefaultAdapterIdentity
+	}
+	limits := Limits{
+		DefaultPageSize:        f.Limits.DefaultPageSize,
+		MaxPageSize:            f.Limits.MaxPageSize,
+		MaxPathComments:        f.Limits.MaxPathComments,
+		MaxProjectIDBytes:      f.Limits.MaxProjectIDBytes,
+		MaxTitleBytes:          f.Limits.MaxTitleBytes,
+		MaxBodyBytes:           f.Limits.MaxBodyBytes,
+		MaxAuthorIdentityBytes: f.Limits.MaxAuthorIdentityBytes,
+		MaxMetadataBytes:       f.Limits.MaxMetadataBytes,
+		MaxSearchQueryBytes:    f.Limits.MaxSearchQueryBytes,
+		MaxPurgeReasonBytes:    f.Limits.MaxPurgeReasonBytes,
+	}.withDefaults()
+	maxRequestBodyBytes := f.HTTP.MaxRequestBodyBytes
+	if maxRequestBodyBytes == 0 {
+		maxRequestBodyBytes = DefaultMaxRequestBodyBytes
+	}
 	return &Config{
 		BindAddr:               f.BindAddr,
 		DatabaseURL:            values.String(f.DatabaseURLEnv, ""),
 		ServiceToken:           serviceToken,
+		AdapterIdentity:        adapterIdentity,
 		ProjectsBaseURL:        values.String(f.ProjectsBaseURLEnv, ""),
 		ProjectsToken:          values.String(f.ProjectsTokenEnv, serviceToken),
 		ProjectsRequestTimeout: projectTimeout,
-		Limits: Limits{
-			DefaultPageSize: f.Limits.DefaultPageSize,
-			MaxPageSize:     f.Limits.MaxPageSize,
-			MaxPathComments: f.Limits.MaxPathComments,
-		},
-		HTTP: HTTPConfig{ReadHeaderTimeout: readHeaderTimeout},
+		Limits:                 limits,
+		HTTP:                   HTTPConfig{ReadHeaderTimeout: readHeaderTimeout, MaxRequestBodyBytes: maxRequestBodyBytes},
 	}, nil
 }
 
@@ -114,6 +142,9 @@ func (c *Config) Validate() error {
 	}
 	if strings.TrimSpace(c.ServiceToken) == "" {
 		return errors.New("service token is required")
+	}
+	if strings.TrimSpace(c.AdapterIdentity) == "" {
+		return errors.New("adapter_identity is required")
 	}
 	if strings.TrimSpace(c.ProjectsBaseURL) == "" {
 		return errors.New("projects base url is required")
@@ -129,6 +160,9 @@ func (c *Config) Validate() error {
 	}
 	if c.HTTP.ReadHeaderTimeout <= 0 {
 		return errors.New("http.read_header_timeout must be positive")
+	}
+	if c.HTTP.MaxRequestBodyBytes <= 0 {
+		return errors.New("http.max_request_body_bytes must be positive")
 	}
 	return nil
 }

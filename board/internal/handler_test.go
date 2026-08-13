@@ -2,6 +2,7 @@ package board
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -35,7 +36,7 @@ func TestHandlerPurgeReturnsNoContentAndThenNonRevealingNotFound(t *testing.T) {
 	mux := http.NewServeMux()
 	NewHandler(service).RegisterRoutes(mux)
 	performJSON(t, mux, http.MethodPost, "/v1/projects/project-a/board/posts", `{"title":"Topic","body_markdown":"Body","author_identity":"human"}`, http.StatusCreated)
-	performJSON(t, mux, http.MethodDelete, "/v1/board/posts/1", `{"actor_identity":"moderator","reason":"misleading"}`, http.StatusNoContent)
+	performJSONWithContext(t, mux, http.MethodDelete, "/v1/board/posts/1", `{"actor_identity":"caller-controlled","reason":"misleading"}`, http.StatusNoContent, WithAuthenticatedAdapterIdentity(context.Background(), "den-web-adapter"))
 	response := performJSON(t, mux, http.MethodGet, "/v1/board/posts/1", "", http.StatusNotFound)
 	if bytes.Contains(response.Body.Bytes(), []byte("Topic")) || bytes.Contains(response.Body.Bytes(), []byte("human")) {
 		t.Fatalf("purged response leaked authored content: %s", response.Body.String())
@@ -43,8 +44,13 @@ func TestHandlerPurgeReturnsNoContentAndThenNonRevealingNotFound(t *testing.T) {
 }
 
 func performJSON(t *testing.T, handler http.Handler, method, path, body string, wantStatus int) *httptest.ResponseRecorder {
+	return performJSONWithContext(t, handler, method, path, body, wantStatus, context.Background())
+}
+
+func performJSONWithContext(t *testing.T, handler http.Handler, method, path, body string, wantStatus int, ctx context.Context) *httptest.ResponseRecorder {
 	t.Helper()
 	request := httptest.NewRequest(method, path, bytes.NewBufferString(body))
+	request = request.WithContext(ctx)
 	if body != "" {
 		request.Header.Set("Content-Type", "application/json")
 	}

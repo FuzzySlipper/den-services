@@ -1,6 +1,7 @@
 package board
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,27 +25,37 @@ const (
 	MaxPathComments    = 50
 	MaxActorIdentity   = 256
 	MaxPurgeReasonSize = 2000
+
+	DefaultMaxProjectIDBytes      = 256
+	DefaultMaxTitleBytes          = 512
+	DefaultMaxBodyBytes           = 64 * 1024
+	DefaultMaxAuthorIdentityBytes = MaxActorIdentity
+	DefaultMaxMetadataBytes       = 16 * 1024
+	DefaultMaxSearchQueryBytes    = 256
+	DefaultMaxPurgeReasonBytes    = MaxPurgeReasonSize
+	DefaultMaxRequestBodyBytes    = 256 * 1024
+	DefaultAdapterIdentity        = "authenticated-board-adapter"
 )
 
 var (
-	ErrPostNotFound          = errors.New("board post not found")                        //nolint:gochecknoglobals
-	ErrCommentNotFound       = errors.New("board comment not found")                     //nolint:gochecknoglobals
-	ErrMissingProjectID      = errors.New("project_id is required")                      //nolint:gochecknoglobals
-	ErrMissingTitle          = errors.New("title is required")                           //nolint:gochecknoglobals
-	ErrMissingBody           = errors.New("body_markdown is required")                   //nolint:gochecknoglobals
-	ErrMissingAuthor         = errors.New("author_identity is required")                 //nolint:gochecknoglobals
-	ErrMissingActor          = errors.New("actor_identity is required")                  //nolint:gochecknoglobals
-	ErrMissingReason         = errors.New("reason is required")                          //nolint:gochecknoglobals
-	ErrInvalidMetadata       = errors.New("metadata must be valid json")                 //nolint:gochecknoglobals
-	ErrInvalidID             = errors.New("id must be positive")                         //nolint:gochecknoglobals
-	ErrInvalidAfterID        = errors.New("after_id must not be negative")               //nolint:gochecknoglobals
-	ErrInvalidLimit          = errors.New("limit must not be negative")                  //nolint:gochecknoglobals
-	ErrInvalidPathLimit      = errors.New("path limit must be positive")                 //nolint:gochecknoglobals
-	ErrParentPostMismatch    = errors.New("parent comment must belong to the same post") //nolint:gochecknoglobals
-	ErrInvalidSearchQuery    = errors.New("q is required")                               //nolint:gochecknoglobals
-	ErrProjectValidatorUnset = errors.New("project validator is not configured")         //nolint:gochecknoglobals
-	ErrInvalidLimits         = errors.New("board limits are invalid")                    //nolint:gochecknoglobals
-	ErrCommentCycle          = errors.New("comment parent cycle detected")               //nolint:gochecknoglobals
+	ErrPostNotFound           = errors.New("board post not found")                        //nolint:gochecknoglobals
+	ErrCommentNotFound        = errors.New("board comment not found")                     //nolint:gochecknoglobals
+	ErrMissingProjectID       = errors.New("project_id is required")                      //nolint:gochecknoglobals
+	ErrMissingTitle           = errors.New("title is required")                           //nolint:gochecknoglobals
+	ErrMissingBody            = errors.New("body_markdown is required")                   //nolint:gochecknoglobals
+	ErrMissingAuthor          = errors.New("author_identity is required")                 //nolint:gochecknoglobals
+	ErrMissingReason          = errors.New("reason is required")                          //nolint:gochecknoglobals
+	ErrInvalidMetadata        = errors.New("metadata must be valid json")                 //nolint:gochecknoglobals
+	ErrInvalidID              = errors.New("id must be positive")                         //nolint:gochecknoglobals
+	ErrInvalidAfterID         = errors.New("after_id must not be negative")               //nolint:gochecknoglobals
+	ErrInvalidLimit           = errors.New("limit must not be negative")                  //nolint:gochecknoglobals
+	ErrInvalidPathLimit       = errors.New("path limit must be positive")                 //nolint:gochecknoglobals
+	ErrParentPostMismatch     = errors.New("parent comment must belong to the same post") //nolint:gochecknoglobals
+	ErrInvalidSearchQuery     = errors.New("q is required")                               //nolint:gochecknoglobals
+	ErrProjectValidatorUnset  = errors.New("project validator is not configured")         //nolint:gochecknoglobals
+	ErrInvalidLimits          = errors.New("board limits are invalid")                    //nolint:gochecknoglobals
+	ErrCommentCycle           = errors.New("comment parent cycle detected")               //nolint:gochecknoglobals
+	ErrMissingAdapterIdentity = errors.New("authenticated adapter identity is required")  //nolint:gochecknoglobals
 )
 
 type ServiceError struct {
@@ -93,25 +104,134 @@ func conflict(err error, code string) error {
 	return NewServiceError(err, code, http.StatusConflict)
 }
 
+func forbidden(err error, code string) error {
+	return NewServiceError(err, code, http.StatusForbidden)
+}
+
 type Limits struct {
-	DefaultPageSize int
-	MaxPageSize     int
-	MaxPathComments int
+	DefaultPageSize        int
+	MaxPageSize            int
+	MaxPathComments        int
+	MaxProjectIDBytes      int
+	MaxTitleBytes          int
+	MaxBodyBytes           int
+	MaxAuthorIdentityBytes int
+	MaxMetadataBytes       int
+	MaxSearchQueryBytes    int
+	MaxPurgeReasonBytes    int
 }
 
 func DefaultLimits() Limits {
 	return Limits{
-		DefaultPageSize: DefaultPageSize,
-		MaxPageSize:     MaxPageSize,
-		MaxPathComments: MaxPathComments,
+		DefaultPageSize:        DefaultPageSize,
+		MaxPageSize:            MaxPageSize,
+		MaxPathComments:        MaxPathComments,
+		MaxProjectIDBytes:      DefaultMaxProjectIDBytes,
+		MaxTitleBytes:          DefaultMaxTitleBytes,
+		MaxBodyBytes:           DefaultMaxBodyBytes,
+		MaxAuthorIdentityBytes: DefaultMaxAuthorIdentityBytes,
+		MaxMetadataBytes:       DefaultMaxMetadataBytes,
+		MaxSearchQueryBytes:    DefaultMaxSearchQueryBytes,
+		MaxPurgeReasonBytes:    DefaultMaxPurgeReasonBytes,
 	}
 }
 
+func (l Limits) withDefaults() Limits {
+	defaults := DefaultLimits()
+	if l.DefaultPageSize == 0 {
+		l.DefaultPageSize = defaults.DefaultPageSize
+	}
+	if l.MaxPageSize == 0 {
+		l.MaxPageSize = defaults.MaxPageSize
+	}
+	if l.MaxPathComments == 0 {
+		l.MaxPathComments = defaults.MaxPathComments
+	}
+	if l.MaxProjectIDBytes == 0 {
+		l.MaxProjectIDBytes = defaults.MaxProjectIDBytes
+	}
+	if l.MaxTitleBytes == 0 {
+		l.MaxTitleBytes = defaults.MaxTitleBytes
+	}
+	if l.MaxBodyBytes == 0 {
+		l.MaxBodyBytes = defaults.MaxBodyBytes
+	}
+	if l.MaxAuthorIdentityBytes == 0 {
+		l.MaxAuthorIdentityBytes = defaults.MaxAuthorIdentityBytes
+	}
+	if l.MaxMetadataBytes == 0 {
+		l.MaxMetadataBytes = defaults.MaxMetadataBytes
+	}
+	if l.MaxSearchQueryBytes == 0 {
+		l.MaxSearchQueryBytes = defaults.MaxSearchQueryBytes
+	}
+	if l.MaxPurgeReasonBytes == 0 {
+		l.MaxPurgeReasonBytes = defaults.MaxPurgeReasonBytes
+	}
+	return l
+}
+
 func (l Limits) Validate() error {
-	if l.DefaultPageSize <= 0 || l.MaxPageSize < l.DefaultPageSize || l.MaxPathComments <= 0 {
+	if l.DefaultPageSize <= 0 || l.MaxPageSize < l.DefaultPageSize || l.MaxPathComments <= 0 ||
+		l.MaxProjectIDBytes <= 0 || l.MaxTitleBytes <= 0 || l.MaxBodyBytes <= 0 ||
+		l.MaxAuthorIdentityBytes <= 0 || l.MaxMetadataBytes <= 0 || l.MaxSearchQueryBytes <= 0 ||
+		l.MaxPurgeReasonBytes <= 0 {
 		return ErrInvalidLimits
 	}
 	return nil
+}
+
+func (l Limits) validateProjectID(projectID string) error {
+	return validateStringFieldSize("project_id", projectID, l.MaxProjectIDBytes)
+}
+
+func (l Limits) validatePostFields(projectID string, req CreatePostRequest) error {
+	if err := l.validateProjectID(projectID); err != nil {
+		return err
+	}
+	if err := validateStringFieldSize("title", strings.TrimSpace(req.Title), l.MaxTitleBytes); err != nil {
+		return err
+	}
+	if err := validateStringFieldSize("body_markdown", strings.TrimSpace(req.BodyMarkdown), l.MaxBodyBytes); err != nil {
+		return err
+	}
+	if err := validateStringFieldSize("author_identity", strings.TrimSpace(req.AuthorIdentity), l.MaxAuthorIdentityBytes); err != nil {
+		return err
+	}
+	return validateFieldSize("metadata", req.Metadata, l.MaxMetadataBytes)
+}
+
+func (l Limits) validateCommentFields(req CreateCommentRequest) error {
+	if err := validateStringFieldSize("body_markdown", strings.TrimSpace(req.BodyMarkdown), l.MaxBodyBytes); err != nil {
+		return err
+	}
+	if err := validateStringFieldSize("author_identity", strings.TrimSpace(req.AuthorIdentity), l.MaxAuthorIdentityBytes); err != nil {
+		return err
+	}
+	return validateFieldSize("metadata", req.Metadata, l.MaxMetadataBytes)
+}
+
+func (l Limits) validateSearchQuery(query string) error {
+	return validateStringFieldSize("q", query, l.MaxSearchQueryBytes)
+}
+
+func (l Limits) validatePurgeRequest(req PurgeRequest) error {
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		return ErrMissingReason
+	}
+	return validateStringFieldSize("reason", reason, l.MaxPurgeReasonBytes)
+}
+
+func validateFieldSize(name string, value []byte, maximum int) error {
+	if len(value) > maximum {
+		return fmt.Errorf("%s exceeds configured maximum of %d bytes", name, maximum)
+	}
+	return nil
+}
+
+func validateStringFieldSize(name string, value string, maximum int) error {
+	return validateFieldSize(name, []byte(value), maximum)
 }
 
 type Post struct {
@@ -217,27 +337,66 @@ type CreateCommentRequest struct {
 }
 
 // PurgeRequest is intentionally typed even though its caller supplied values
-// are not retained. Actor and reason are validated at the destructive boundary
-// so callers cannot accidentally perform an anonymous or context-free purge.
+// are not retained. ActorIdentity is accepted for wire compatibility with
+// existing clients, but it is never authoritative. The authenticated adapter
+// identity is bound by NewHTTPServer after service-token authentication.
 type PurgeRequest struct {
 	ActorIdentity string `json:"actor_identity"`
 	Reason        string `json:"reason"`
 }
 
 func (r PurgeRequest) Validate() error {
-	actor := strings.TrimSpace(r.ActorIdentity)
-	if actor == "" {
-		return ErrMissingActor
-	}
-	if len(actor) > MaxActorIdentity {
-		return fmt.Errorf("actor_identity exceeds %d characters", MaxActorIdentity)
-	}
 	reason := strings.TrimSpace(r.Reason)
 	if reason == "" {
 		return ErrMissingReason
 	}
 	if len(reason) > MaxPurgeReasonSize {
 		return fmt.Errorf("reason exceeds %d characters", MaxPurgeReasonSize)
+	}
+	return nil
+}
+
+// PurgeAudit is the private store-bound audit context for a destructive action.
+// Board's current schema has no audit table, so this context prevents actor
+// impersonation at the service/store boundary while keeping the authenticated
+// adapter identity and reason available to a future audit sink.
+type PurgeAudit struct {
+	AdapterIdentity string
+	Reason          string
+}
+
+type (
+	adapterIdentityContextKey struct{}
+	purgeAuditContextKey      struct{}
+)
+
+// WithAuthenticatedAdapterIdentity binds the server-configured adapter
+// identity after transport authentication. HTTP request JSON cannot set it.
+func WithAuthenticatedAdapterIdentity(ctx context.Context, identity string) context.Context {
+	return context.WithValue(ctx, adapterIdentityContextKey{}, strings.TrimSpace(identity))
+}
+
+func authenticatedAdapterIdentity(ctx context.Context) (string, bool) {
+	identity, ok := ctx.Value(adapterIdentityContextKey{}).(string)
+	identity = strings.TrimSpace(identity)
+	return identity, ok && identity != ""
+}
+
+func withPurgeAudit(ctx context.Context, audit PurgeAudit) context.Context {
+	audit.AdapterIdentity = strings.TrimSpace(audit.AdapterIdentity)
+	audit.Reason = strings.TrimSpace(audit.Reason)
+	return context.WithValue(ctx, purgeAuditContextKey{}, audit)
+}
+
+func purgeAuditFromContext(ctx context.Context) (PurgeAudit, bool) {
+	audit, ok := ctx.Value(purgeAuditContextKey{}).(PurgeAudit)
+	audit.AdapterIdentity = strings.TrimSpace(audit.AdapterIdentity)
+	return audit, ok && audit.AdapterIdentity != ""
+}
+
+func requirePurgeAudit(ctx context.Context) error {
+	if _, ok := purgeAuditFromContext(ctx); !ok {
+		return forbidden(ErrMissingAdapterIdentity, "purge_adapter_identity_required")
 	}
 	return nil
 }

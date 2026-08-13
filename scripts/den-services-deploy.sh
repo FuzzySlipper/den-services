@@ -397,36 +397,7 @@ ensure_gateway_board_routes() {
     write_target="${staged_routes}"
   fi
 
-  if ! grep -Eq '^[[:space:]]*- name:.*board-project-routes' "${write_target}"; then
-    cat >> "${write_target}" <<'ROUTE'
-
-  - name: "board-project-routes"
-    path_pattern: "/v1/projects/{project_id}/board"
-    methods: ["GET", "POST"]
-    legacy_upstream_url: "http://127.0.0.1:8100"
-    successor_upstream_url: "http://127.0.0.1:8100"
-    successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_BOARD_UPSTREAM_TOKEN}"
-ROUTE
-  fi
-  if ! grep -Eq '^[[:space:]]*- name:.*board-item-routes' "${write_target}"; then
-    cat >> "${write_target}" <<'ROUTE'
-
-  - name: "board-item-routes"
-    path_pattern: "/v1/board"
-    methods: ["GET", "POST", "DELETE"]
-    legacy_upstream_url: "http://127.0.0.1:8100"
-    successor_upstream_url: "http://127.0.0.1:8100"
-    successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_BOARD_UPSTREAM_TOKEN}"
-ROUTE
-  fi
+  python3 scripts/lib/ensure-board-config.py gateway-routes "${write_target}"
 
   if [[ -n "${staged_routes}" ]]; then
     run_systemctl install -m 0644 "${staged_routes}" "${routes_target}"
@@ -450,34 +421,7 @@ ensure_mcp_board_backend() {
     write_target="${staged_config}"
   fi
 
-  python3 - "${write_target}" <<'PY'
-import pathlib
-import re
-import sys
-
-path = pathlib.Path(sys.argv[1])
-lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-start = next((i for i, line in enumerate(lines) if re.match(r"^backends:\s*(?:#.*)?$", line.rstrip("\n"))), None)
-if start is None:
-    raise SystemExit(f"missing top-level backends list in {path}")
-
-end = len(lines)
-for index in range(start + 1, len(lines)):
-    line = lines[index]
-    if line.strip() and not line.startswith((" ", "\t", "#")):
-        end = index
-        break
-
-block = [
-    '  - name: "board"\n',
-    '    base_url: "http://127.0.0.1:8100"\n',
-    '    health_path: "/health"\n',
-    '    timeout: "3s"\n',
-    '    service_token_env: "DEN_BOARD_SERVICE_TOKEN"\n',
-]
-lines[end:end] = block
-path.write_text("".join(lines), encoding="utf-8")
-PY
+  python3 scripts/lib/ensure-board-config.py mcp-backend "${write_target}"
 
   if [[ -n "${staged_config}" ]]; then
     run_systemctl install -m 0644 "${staged_config}" "${config_target}"

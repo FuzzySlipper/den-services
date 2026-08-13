@@ -30,7 +30,11 @@ The browser and CLI use the same authenticated REST contract through Gateway whe
 - `GET /v1/board/comments/{comment_id}/path?limit=`
 - `DELETE /v1/board/comments/{comment_id}`
 
-`after_id` is an exclusive stable cursor. Service limits are clamped to a documented maximum; clients must not infer that one page is a complete discussion.
+`after_id` is an exclusive stable cursor. Post/comment list cursors are the last
+entity ID; search cursors are opaque merged-order values that keep the separate
+post and comment ID spaces distinct. Clients must only return a received search
+cursor and must not derive one from a result ID. Service limits are clamped to a
+documented maximum; clients must not infer that one page is a complete discussion.
 
 ## Purge and tombstones
 

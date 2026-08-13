@@ -93,10 +93,30 @@ func (s *Store) CreateComment(ctx context.Context, comment *Comment) (*Comment, 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var postStatus string
-	if err := tx.QueryRow(ctx, lockPostForCommentSQL, comment.PostID).Scan(&postStatus); errors.Is(err, pgx.ErrNoRows) || postStatus != PostStatusActive {
-		return nil, postNotFound()
-	} else if err != nil {
+	if err := tx.QueryRow(ctx, lockPostForCommentSQL, comment.PostID).Scan(&postStatus); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, postNotFound()
+		}
 		return nil, fmt.Errorf("locking board post for comment creation: %w", err)
+	}
+	if postStatus != PostStatusActive {
+		return nil, postNotFound()
+	}
+	if comment.ParentCommentID != nil {
+		var parentPostID int64
+		var parentStatus string
+		if err := tx.QueryRow(ctx, lockParentForCommentSQL, *comment.ParentCommentID).Scan(&parentPostID, &parentStatus); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, commentNotFound()
+			}
+			return nil, fmt.Errorf("locking board parent comment for creation: %w", err)
+		}
+		if parentStatus != CommentStatusActive {
+			return nil, commentNotFound()
+		}
+		if parentPostID != comment.PostID {
+			return nil, validationFailed(ErrParentPostMismatch)
+		}
 	}
 	created, err := scanComment(tx.QueryRow(ctx, createCommentSQL,
 		comment.PostID, comment.ParentCommentID, comment.AuthorIdentity, comment.BodyMarkdown, jsonOrNil(comment.MetadataJSON), comment.CreatedAt, comment.UpdatedAt,
@@ -171,6 +191,9 @@ func (s *Store) GetCommentPath(ctx context.Context, id int64, limit int) (Commen
 }
 
 func (s *Store) PurgePost(ctx context.Context, id int64, now time.Time) error {
+	if err := requirePurgeAudit(ctx); err != nil {
+		return err
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning board post purge: %w", err)
@@ -193,6 +216,9 @@ func (s *Store) PurgePost(ctx context.Context, id int64, now time.Time) error {
 }
 
 func (s *Store) PurgeComment(ctx context.Context, id int64, now time.Time) error {
+	if err := requirePurgeAudit(ctx); err != nil {
+		return err
+	}
 	tag, err := s.pool.Exec(ctx, purgeCommentSQL, id, now)
 	if err != nil {
 		return fmt.Errorf("purging board comment: %w", err)
@@ -250,8 +276,15 @@ func searchPage(results []SearchResult, limit int) SearchPage {
 	if len(results) <= limit {
 		return SearchPage{Results: results}
 	}
-	next := results[limit-1].ID
+	next := searchCursor(results[limit-1])
 	return SearchPage{Results: results[:limit], NextAfterID: &next}
+}
+
+func searchCursor(result SearchResult) int64 {
+	if result.Kind == SearchResultComment {
+		return result.ID*2 + 1
+	}
+	return result.ID * 2
 }
 
 const (
@@ -279,6 +312,11 @@ values ($1, $2, $3, $4, $5, $6, $7)
 returning ` + commentColumns
 
 const lockPostForCommentSQL = `select status from den_board.posts where id = $1 for update`
+
+// The parent row is locked in the same transaction as the insert. This closes
+// the purge/create race: a reply either observes an active parent before a
+// concurrent purge, or waits for that purge and rejects the deleted parent.
+const lockParentForCommentSQL = `select post_id, status from den_board.comments where id = $1 for update`
 
 const getCommentSQL = `select ` + commentColumns + ` from den_board.comments where id = $1`
 
@@ -313,20 +351,22 @@ select kind, id, post_id, project_id, title, author_identity, snippet, rank, cre
 from (
   select 'post'::text as kind, p.id, p.id as post_id, p.project_id, p.title,
          p.author_identity, left(p.body_markdown, 240) as snippet,
-         case when p.title ilike $2 then 2.0 else 1.0 end::double precision as rank, p.created_at
+         case when p.title ilike $2 then 2.0 else 1.0 end::double precision as rank, p.created_at,
+         p.id * 2 as cursor_key
   from den_board.posts p
   where p.project_id = $1 and p.status = 'active'
     and (p.title ilike $2 or p.body_markdown ilike $2)
   union all
   select 'comment'::text, c.id, c.post_id, p.project_id, p.title,
-         c.author_identity, left(c.body_markdown, 240), 1.0::double precision, c.created_at
+         c.author_identity, left(c.body_markdown, 240), 1.0::double precision, c.created_at,
+         c.id * 2 + 1 as cursor_key
   from den_board.comments c
   join den_board.posts p on p.id = c.post_id
   where p.project_id = $1 and p.status = 'active' and c.status = 'active'
     and c.body_markdown ilike $2
 ) results
-where id > $3
-order by id asc
+where cursor_key > $3
+order by cursor_key asc
 limit $4`
 
 const purgePostSQL = `

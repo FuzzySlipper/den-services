@@ -63,16 +63,22 @@ func (s *MemoryStore) Search(_ context.Context, query SearchQuery) (SearchPage, 
 		if post.ProjectID != query.ProjectID || post.Status != PostStatusActive {
 			continue
 		}
-		if post.ID > query.AfterID && (strings.Contains(strings.ToLower(post.Title), needle) || strings.Contains(strings.ToLower(post.BodyMarkdown), needle)) {
-			results = append(results, SearchResult{Kind: SearchResultPost, ID: post.ID, PostID: post.ID, ProjectID: post.ProjectID, Title: post.Title, AuthorIdentity: post.AuthorIdentity, Snippet: snippet(post.BodyMarkdown), CreatedAt: post.CreatedAt})
+		if strings.Contains(strings.ToLower(post.Title), needle) || strings.Contains(strings.ToLower(post.BodyMarkdown), needle) {
+			result := SearchResult{Kind: SearchResultPost, ID: post.ID, PostID: post.ID, ProjectID: post.ProjectID, Title: post.Title, AuthorIdentity: post.AuthorIdentity, Snippet: snippet(post.BodyMarkdown), CreatedAt: post.CreatedAt}
+			if searchCursor(result) > query.AfterID {
+				results = append(results, result)
+			}
 		}
 		for _, comment := range s.comments {
-			if comment.PostID == post.ID && comment.Status == CommentStatusActive && comment.ID > query.AfterID && strings.Contains(strings.ToLower(comment.BodyMarkdown), needle) {
-				results = append(results, SearchResult{Kind: SearchResultComment, ID: comment.ID, PostID: post.ID, ProjectID: post.ProjectID, Title: post.Title, AuthorIdentity: comment.AuthorIdentity, Snippet: snippet(comment.BodyMarkdown), CreatedAt: comment.CreatedAt})
+			if comment.PostID == post.ID && comment.Status == CommentStatusActive && strings.Contains(strings.ToLower(comment.BodyMarkdown), needle) {
+				result := SearchResult{Kind: SearchResultComment, ID: comment.ID, PostID: post.ID, ProjectID: post.ProjectID, Title: post.Title, AuthorIdentity: comment.AuthorIdentity, Snippet: snippet(comment.BodyMarkdown), CreatedAt: comment.CreatedAt}
+				if searchCursor(result) > query.AfterID {
+					results = append(results, result)
+				}
 			}
 		}
 	}
-	sort.Slice(results, func(i, j int) bool { return results[i].ID < results[j].ID })
+	sort.Slice(results, func(i, j int) bool { return searchCursor(results[i]) < searchCursor(results[j]) })
 	if len(results) > query.Limit+1 {
 		results = results[:query.Limit+1]
 	}
@@ -82,6 +88,19 @@ func (s *MemoryStore) Search(_ context.Context, query SearchQuery) (SearchPage, 
 func (s *MemoryStore) CreateComment(_ context.Context, comment *Comment) (*Comment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	post := s.posts[comment.PostID]
+	if post == nil || post.Status != PostStatusActive {
+		return nil, postNotFound()
+	}
+	if comment.ParentCommentID != nil {
+		parent := s.comments[*comment.ParentCommentID]
+		if parent == nil || parent.Status != CommentStatusActive {
+			return nil, commentNotFound()
+		}
+		if parent.PostID != comment.PostID {
+			return nil, validationFailed(ErrParentPostMismatch)
+		}
+	}
 	copyComment := cloneComment(comment)
 	copyComment.ID = s.allocateID()
 	s.comments[copyComment.ID] = copyComment
@@ -142,7 +161,10 @@ func (s *MemoryStore) GetCommentPath(_ context.Context, id int64, limit int) (Co
 	return CommentPath{Post: clonePost(s.posts[target.PostID]), Comments: comments, Truncated: truncated}, nil
 }
 
-func (s *MemoryStore) PurgePost(_ context.Context, id int64, now time.Time) error {
+func (s *MemoryStore) PurgePost(ctx context.Context, id int64, now time.Time) error {
+	if err := requirePurgeAudit(ctx); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	post := s.posts[id]
@@ -158,7 +180,10 @@ func (s *MemoryStore) PurgePost(_ context.Context, id int64, now time.Time) erro
 	return nil
 }
 
-func (s *MemoryStore) PurgeComment(_ context.Context, id int64, now time.Time) error {
+func (s *MemoryStore) PurgeComment(ctx context.Context, id int64, now time.Time) error {
+	if err := requirePurgeAudit(ctx); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	comment := s.comments[id]

@@ -486,6 +486,7 @@ DEN_REVIEW_APP_PASSWORD=local-den
 DEN_DOCUMENTS_APP_PASSWORD=local-den
 DEN_KNOWLEDGE_APP_PASSWORD=local-den
 DEN_GUIDANCE_APP_PASSWORD=local-den
+DEN_BOARD_APP_PASSWORD=local-den
 ```
 
 The role bootstrap currently requires password variables even when
@@ -531,6 +532,7 @@ DEN_REVIEW_APP_PASSWORD=<unique-password>
 DEN_DOCUMENTS_APP_PASSWORD=<unique-password>
 DEN_KNOWLEDGE_APP_PASSWORD=<unique-password>
 DEN_GUIDANCE_APP_PASSWORD=<unique-password>
+DEN_BOARD_APP_PASSWORD=<unique-password>
 ```
 
 Hex-generated passwords need no URL escaping. If a different password format
@@ -570,6 +572,7 @@ sudo bash -c '
     -v DEN_DOCUMENTS_APP_PASSWORD="$DEN_DOCUMENTS_APP_PASSWORD" \
     -v DEN_KNOWLEDGE_APP_PASSWORD="$DEN_KNOWLEDGE_APP_PASSWORD" \
     -v DEN_GUIDANCE_APP_PASSWORD="$DEN_GUIDANCE_APP_PASSWORD" \
+    -v DEN_BOARD_APP_PASSWORD="$DEN_BOARD_APP_PASSWORD" \
     -f deployment/postgresql-app-roles.psql
 '
 ```
@@ -682,7 +685,7 @@ Add an optional service to this array when its configuration is ready:
 cd /data/services/den-services
 DEN_DEPLOY_SERVICES=(
   projects knowledge artifacts runtime conversation
-  tasks documents delivery messages guidance observation timeline
+  tasks documents delivery messages guidance observation timeline board
   review librarian mcp
 )
 for service in "${DEN_DEPLOY_SERVICES[@]}"; do
@@ -745,11 +748,44 @@ At minimum, make these same-machine changes:
 - In the local-trust core deployment, set `review.github.enabled: false` and
   omit Gateway, Doc Publish, Visual Inspect, and Visual Contract until those
   capabilities are actually needed.
+- Board is a passive, database-backed threaded discussion service. Its
+  migration creates the `den_board` schema and its runtime role is
+  `den_board_app`; it does not import legacy conversations. Keep it enabled
+  when this instance will serve Den Web Board or Board REST/MCP clients.
 - When Visual Contract is enabled, keep it bound to loopback but set
   `artifacts.public_base_path: "/api/v1/visual-contracts"`. Emitted artifact
   refs are browser-visible same-origin paths served through web-edge and
   Gateway; never configure this field with the private `127.0.0.1:8086`
   service-owner URL.
+
+For a Board-enabled instance, review the generated
+`/data/services/board/config/config.yaml` and make the adapter and bounds
+explicit:
+
+```yaml
+adapter_identity: "den-web-adapter"
+limits:
+  default_page_size: 50
+  max_page_size: 100
+  max_path_comments: 50
+  max_project_id_bytes: 256
+  max_title_bytes: 512
+  max_body_bytes: 65536
+  max_author_identity_bytes: 256
+  max_metadata_bytes: 16384
+  max_search_query_bytes: 256
+  max_purge_reason_bytes: 2000
+http:
+  read_header_timeout: "5s"
+  max_request_body_bytes: 262144
+```
+
+The adapter identity is server-owned: Board binds it only after accepting the
+internal service token. Den Web users may purge through the trusted local web
+path, but any `actor_identity` member sent in a purge JSON body is a legacy
+compatibility field and is ignored for authorization/audit identity. Board
+listens on `127.0.0.1:8100` and is installed as `den-go@board.service`; keep
+this owner endpoint loopback-only.
 
 ### 4.3 Create service environment files
 
@@ -808,6 +844,7 @@ done
 | knowledge | `KNOWLEDGE_CONFIG_PATH` | `den_knowledge_app` | none |
 | review | `REVIEW_CONFIG_PATH` | `den_review_app` | projects, tasks, messages, and optionally GitHub |
 | guidance | `GUIDANCE_CONFIG_PATH` | `den_guidance_app` | projects and documents |
+| board | `BOARD_CONFIG_PATH` | `den_board_app` | projects |
 | librarian | `LIBRARIAN_CONFIG_PATH` | none | projects, tasks, messages, documents, knowledge |
 | mcp | `MCP_CONFIG_PATH` | none | configured MCP backends |
 
@@ -827,6 +864,22 @@ The MCP env file similarly needs `DEN_MCP_SERVICE_TOKEN` plus the matching
 service token for every enabled backend in the hardened profile. Gateway needs
 separate caller tokens and the matching upstream service tokens for every
 enabled route.
+
+For Board, `/etc/den-services/board.env` should resemble:
+
+```text
+BOARD_CONFIG_PATH=/data/services/board/config/config.yaml
+DEN_BOARD_DATABASE_URL=postgres://den_board_app:<board-password>@127.0.0.1:5433/denservices?sslmode=disable
+DEN_BOARD_SERVICE_TOKEN=<board-token>
+DEN_PROJECTS_BASE_URL=http://127.0.0.1:8091
+DEN_PROJECTS_SERVICE_TOKEN=<projects-token>
+```
+
+Use the same `DEN_PROJECTS_SERVICE_TOKEN` as the Projects service and every
+other configured Projects caller. `DEN_BOARD_SERVICE_TOKEN` is the token used
+by Gateway, MCP, and other trusted adapters when they call Board; it is not a
+browser token. In the local-trust profile these service-token values may be
+`local-den`, while the database URL still uses the `den_board_app` role.
 
 Check that placeholders and old database endpoints are gone:
 
@@ -892,9 +945,20 @@ the guide with the diagnosis.
 2. Services with one foundation dependency:
 
    ```sh
-   for service in tasks documents delivery; do
+   for service in tasks documents delivery board; do
      scripts/den-services-deploy.sh "$service" --no-pull
    done
+   ```
+
+   Board must be deployed after Projects and after the migration runner has
+   reported `den_board` at the current version. The registered deploy command
+   installs the Board binary, restarts `den-go@board.service`, and smokes
+   `http://127.0.0.1:8100/health` and `/version`. Enable it after those checks:
+
+   ```sh
+   sudo systemctl enable den-go@board.service
+   curl -fsS http://127.0.0.1:8100/health
+   curl -fsS http://127.0.0.1:8100/version
    ```
 
 3. Composite database-backed services:
@@ -963,6 +1027,13 @@ service serves its assets and same-origin API on `0.0.0.0:18080`. Every
 The browser does not send a Den access token. The edge replaces any inbound
 Authorization header with a dedicated Gateway web caller token, and Gateway
 replaces that with the owning service token.
+
+When Board is enabled, install the reviewed Gateway route for the Board REST
+surface before validating Den Web. The route must preserve Board as the only
+writer and target `http://127.0.0.1:8100` with `DEN_BOARD_SERVICE_TOKEN` (or its
+hardened equivalent). Board purge remains available to authenticated Den Web
+users through this trusted adapter route; the browser-supplied
+`actor_identity` field is not an authority input.
 
 ### 7.1 Configure and deploy the loopback Gateway
 

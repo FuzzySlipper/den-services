@@ -86,6 +86,63 @@ func TestDeploymentSafetyRegression(t *testing.T) {
 	}
 }
 
+func TestBoardUpgradeConfigMigration(t *testing.T) {
+	helper := "scripts/lib/ensure-board-config.py"
+	for name, source := range map[string]string{
+		"indentless": "server:\n  listen_addr: loopback\nbackends:\n- name: projects\n  base_url: http://127.0.0.1:8091\n",
+		"indented":   "server:\n  listen_addr: loopback\nbackends:\n  - name: projects\n    base_url: http://127.0.0.1:8091\n",
+	} {
+		t.Run("mcp-"+name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if output, err := exec.Command("python3", helper, "mcp-backend", path).CombinedOutput(); err != nil {
+					t.Fatalf("mcp migration failed: %v\n%s", err, output)
+				}
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var parsed map[string]any
+			if err := yaml.Unmarshal(data, &parsed); err != nil {
+				t.Fatalf("migrated MCP config is invalid YAML: %v\n%s", err, data)
+			}
+			if strings.Count(string(data), `name: "board"`) != 1 {
+				t.Fatalf("Board backend is not idempotent:\n%s", data)
+			}
+		})
+	}
+
+	routesPath := filepath.Join(t.TempDir(), "routes.yaml")
+	routes := "routes:\n  - name: projects-routes\n    path_pattern: \"/v1/projects\"\n    methods: [\"GET\"]\n"
+	if err := os.WriteFile(routesPath, []byte(routes), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if output, err := exec.Command("python3", helper, "gateway-routes", routesPath).CombinedOutput(); err != nil {
+			t.Fatalf("gateway migration failed: %v\n%s", err, output)
+		}
+	}
+	data, err := os.ReadFile(routesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed map[string]any
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("migrated Gateway config is invalid YAML: %v\n%s", err, data)
+	}
+	text := string(data)
+	if strings.Count(text, "board-project-routes") != 1 || strings.Count(text, "board-item-routes") != 1 {
+		t.Fatalf("Board routes are not idempotent:\n%s", data)
+	}
+	if strings.Index(text, "board-project-routes") > strings.Index(text, "projects-routes") {
+		t.Fatalf("Board project route must precede broad projects route:\n%s", data)
+	}
+}
+
 func loadServiceRegistry(t *testing.T) serviceRegistry {
 	t.Helper()
 	data, err := os.ReadFile("deployment/services.yaml")

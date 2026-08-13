@@ -35,7 +35,8 @@ func TestStorePostgresPurgeAndTreeTraversal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.PurgeComment(ctx, root.ID, now.Add(time.Second)); err != nil {
+	purgeCtx := withPurgeAudit(WithAuthenticatedAdapterIdentity(ctx, "test-adapter"), PurgeAudit{AdapterIdentity: "test-adapter", Reason: "test"})
+	if err := store.PurgeComment(purgeCtx, root.ID, now.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	page, err := store.ListComments(ctx, ListCommentsQuery{PostID: post.ID, Limit: 10})
@@ -52,7 +53,7 @@ func TestStorePostgresPurgeAndTreeTraversal(t *testing.T) {
 	if len(path.Comments) != 2 || path.Comments[0].Status != CommentStatusDeleted {
 		t.Fatalf("path = %#v", path)
 	}
-	if err := store.PurgePost(ctx, post.ID, now.Add(2*time.Second)); err != nil {
+	if err := store.PurgePost(purgeCtx, post.ID, now.Add(2*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	storedPost, err := store.GetPost(ctx, post.ID)
@@ -62,7 +63,7 @@ func TestStorePostgresPurgeAndTreeTraversal(t *testing.T) {
 	if storedPost == nil || storedPost.Status != PostStatusDeleted || storedPost.Title != "" || storedPost.AuthorIdentity != "" {
 		t.Fatalf("purged post = %#v", storedPost)
 	}
-	if err := store.PurgePost(ctx, post.ID, now.Add(3*time.Second)); !errors.Is(err, ErrPostNotFound) {
+	if err := store.PurgePost(purgeCtx, post.ID, now.Add(3*time.Second)); !errors.Is(err, ErrPostNotFound) {
 		t.Fatalf("second purge error = %v", err)
 	}
 }
