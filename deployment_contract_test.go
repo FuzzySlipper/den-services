@@ -68,6 +68,13 @@ func TestDeploymentSafetyRegression(t *testing.T) {
 			t.Fatalf("deploy script missing safety contract %q", required)
 		}
 	}
+	safetyHelper, err := os.ReadFile("scripts/lib/deploy-safety.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(safetyHelper), `sudo -n grep -Eq`) {
+		t.Fatal("env preflight must support root-readable secret files without printing values")
+	}
 
 	fleetScript, err := os.ReadFile("scripts/update-den-fleet.sh")
 	if err != nil {

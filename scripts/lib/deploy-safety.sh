@@ -6,7 +6,12 @@
 den_env_has_assignment() {
   local env_file="$1"
   local variable="$2"
-  [[ -r "${env_file}" ]] && grep -Eq "^[[:space:]]*${variable}=" "${env_file}"
+  if [[ -r "${env_file}" ]]; then
+    grep -Eq "^[[:space:]]*${variable}=" "${env_file}"
+    return
+  fi
+  command -v sudo >/dev/null 2>&1 &&
+    sudo -n grep -Eq "^[[:space:]]*${variable}=" "${env_file}"
 }
 
 den_require_env_assignment() {
