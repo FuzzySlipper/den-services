@@ -194,15 +194,21 @@ validate_deployment_prerequisites() {
   local env_file="/etc/den-services/${service}.env"
   if [[ "${service}" == "gateway" ]]; then
     den_require_env_assignment "${env_file}" DEN_GATEWAY_KNOWLEDGE_UPSTREAM_TOKEN
+    den_require_env_assignment "${env_file}" DEN_GATEWAY_BOARD_UPSTREAM_TOKEN
   fi
   if [[ "${service}" == "mcp" ]]; then
     den_require_env_assignment "${env_file}" DEN_HANDOFF_SERVICE_TOKEN
+    den_require_env_assignment "${env_file}" DEN_BOARD_SERVICE_TOKEN
     den_mcp_backend_configured "${service_root}/config/config.yaml" handoff || {
       echo "missing required handoff backend in ${service_root}/config/config.yaml" >&2
       return 1
     }
     /bin/systemctl is-active --quiet den-go@handoff.service || {
       echo "den-go@handoff.service must be active before deploying MCP" >&2
+      return 1
+    }
+    /bin/systemctl is-active --quiet den-go@board.service || {
+      echo "den-go@board.service must be active before deploying MCP" >&2
       return 1
     }
   fi
@@ -372,6 +378,113 @@ ROUTE
   fi
 }
 
+ensure_gateway_board_routes() {
+  local routes_target="${service_root}/config/routes.yaml"
+  local staged_routes=""
+  local write_target="${routes_target}"
+
+  [[ "${service}" == "gateway" ]] || return 0
+  [[ -f "${routes_target}" ]] || return 0
+  if grep -Eq '^[[:space:]]*- name:.*board-project-routes' "${routes_target}" &&
+    grep -Eq '^[[:space:]]*- name:.*board-item-routes' "${routes_target}"; then
+    return 0
+  fi
+
+  backup_config_file "${routes_target}" "routes.yaml"
+  if [[ ! -w "${routes_target}" ]]; then
+    staged_routes="$(mktemp /tmp/den-gateway-routes.XXXXXX)"
+    cp "${routes_target}" "${staged_routes}"
+    write_target="${staged_routes}"
+  fi
+
+  if ! grep -Eq '^[[:space:]]*- name:.*board-project-routes' "${write_target}"; then
+    cat >> "${write_target}" <<'ROUTE'
+
+  - name: "board-project-routes"
+    path_pattern: "/v1/projects/{project_id}/board"
+    methods: ["GET", "POST"]
+    legacy_upstream_url: "http://127.0.0.1:8100"
+    successor_upstream_url: "http://127.0.0.1:8100"
+    successor_mode: "always"
+    caller_auth:
+      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
+    successor_auth:
+      bearer_token: "${DEN_GATEWAY_BOARD_UPSTREAM_TOKEN}"
+ROUTE
+  fi
+  if ! grep -Eq '^[[:space:]]*- name:.*board-item-routes' "${write_target}"; then
+    cat >> "${write_target}" <<'ROUTE'
+
+  - name: "board-item-routes"
+    path_pattern: "/v1/board"
+    methods: ["GET", "POST", "DELETE"]
+    legacy_upstream_url: "http://127.0.0.1:8100"
+    successor_upstream_url: "http://127.0.0.1:8100"
+    successor_mode: "always"
+    caller_auth:
+      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
+    successor_auth:
+      bearer_token: "${DEN_GATEWAY_BOARD_UPSTREAM_TOKEN}"
+ROUTE
+  fi
+
+  if [[ -n "${staged_routes}" ]]; then
+    run_systemctl install -m 0644 "${staged_routes}" "${routes_target}"
+    rm -f "${staged_routes}"
+  fi
+}
+
+ensure_mcp_board_backend() {
+  local config_target="${service_root}/config/config.yaml"
+  local staged_config=""
+  local write_target="${config_target}"
+
+  [[ "${service}" == "mcp" ]] || return 0
+  [[ -f "${config_target}" ]] || return 0
+  den_mcp_backend_configured "${config_target}" board && return 0
+
+  backup_config_file "${config_target}" "config.yaml"
+  if [[ ! -w "${config_target}" ]]; then
+    staged_config="$(mktemp /tmp/den-mcp-config.XXXXXX)"
+    cp "${config_target}" "${staged_config}"
+    write_target="${staged_config}"
+  fi
+
+  python3 - "${write_target}" <<'PY'
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+start = next((i for i, line in enumerate(lines) if re.match(r"^backends:\s*(?:#.*)?$", line.rstrip("\n"))), None)
+if start is None:
+    raise SystemExit(f"missing top-level backends list in {path}")
+
+end = len(lines)
+for index in range(start + 1, len(lines)):
+    line = lines[index]
+    if line.strip() and not line.startswith((" ", "\t", "#")):
+        end = index
+        break
+
+block = [
+    '  - name: "board"\n',
+    '    base_url: "http://127.0.0.1:8100"\n',
+    '    health_path: "/health"\n',
+    '    timeout: "3s"\n',
+    '    service_token_env: "DEN_BOARD_SERVICE_TOKEN"\n',
+]
+lines[end:end] = block
+path.write_text("".join(lines), encoding="utf-8")
+PY
+
+  if [[ -n "${staged_config}" ]]; then
+    run_systemctl install -m 0644 "${staged_config}" "${config_target}"
+    rm -f "${staged_config}"
+  fi
+}
+
 install_mcp_routes() {
   local routes_target="${service_root}/config/routes.yaml"
 
@@ -426,6 +539,24 @@ install_mcp_routes() {
     "/v1/handoffs" "mcp_handoff_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "get_handoff" "handoff" "GET" \
     "/v1/handoffs" "mcp_handoff_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "create_board_post" "board" "POST" \
+    "/v1/projects/{project_id}/board/posts" "mcp_board_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "list_board_posts" "board" "GET" \
+    "/v1/projects/{project_id}/board/posts" "mcp_board_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "get_board_post" "board" "GET" \
+    "/v1/board/posts/{post_id}" "mcp_board_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "create_board_comment" "board" "POST" \
+    "/v1/board/posts/{post_id}/comments" "mcp_board_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "list_board_comments" "board" "GET" \
+    "/v1/board/posts/{post_id}/comments" "mcp_board_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "get_board_comment" "board" "GET" \
+    "/v1/board/comments/{comment_id}" "mcp_board_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "get_board_comment_path" "board" "GET" \
+    "/v1/board/comments/{comment_id}/path" "mcp_board_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "purge_board_post" "board" "DELETE" \
+    "/v1/board/posts/{post_id}" "mcp_board_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "purge_board_comment" "board" "DELETE" \
+    "/v1/board/comments/{comment_id}" "mcp_board_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "den_knowledge_delete" "knowledge" "DELETE" \
     "/v1/knowledge/entries/{slug}" "mcp_knowledge_rest" "mcp_tool_result_json"
 }
@@ -518,7 +649,9 @@ if [[ "${service}" == "gateway" && -f gateway/config/routes.example.yaml && ! -f
   install -m 0644 gateway/config/routes.example.yaml "${service_root}/config/routes.yaml"
 fi
 ensure_gateway_knowledge_route
+ensure_gateway_board_routes
 if [[ "${service}" == "mcp" && -f mcp/routes.example.yaml ]]; then
+  ensure_mcp_board_backend
   install_mcp_routes
 fi
 

@@ -65,6 +65,7 @@ postgres://den_documents_app:<password>@127.0.0.1:5433/denservices
 postgres://den_knowledge_app:<password>@127.0.0.1:5433/denservices
 postgres://den_guidance_app:<password>@127.0.0.1:5433/denservices
 postgres://den_handoff_app:<password>@127.0.0.1:5433/denservices
+postgres://den_board_app:<password>@127.0.0.1:5433/denservices
 ```
 
 Store-level integration tests should use a separate test database on the same
@@ -91,6 +92,7 @@ Required variables for [postgresql-app-roles.psql](postgresql-app-roles.psql):
 - `DEN_KNOWLEDGE_APP_PASSWORD`
 - `DEN_GUIDANCE_APP_PASSWORD`
 - `DEN_HANDOFF_APP_PASSWORD`
+- `DEN_BOARD_APP_PASSWORD`
 
 Run on `den-srv`:
 
@@ -114,6 +116,7 @@ psql "$DEN_MIGRATION_DATABASE_URL" \
   -v DEN_KNOWLEDGE_APP_PASSWORD="$DEN_KNOWLEDGE_APP_PASSWORD" \
   -v DEN_GUIDANCE_APP_PASSWORD="$DEN_GUIDANCE_APP_PASSWORD" \
   -v DEN_HANDOFF_APP_PASSWORD="$DEN_HANDOFF_APP_PASSWORD" \
+  -v DEN_BOARD_APP_PASSWORD="$DEN_BOARD_APP_PASSWORD" \
   -f deployment/postgresql-app-roles.psql
 ```
 

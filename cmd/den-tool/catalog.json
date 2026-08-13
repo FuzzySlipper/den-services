@@ -1,0 +1,70 @@
+{
+  "version": "1.0.0",
+  "tools": [
+    {
+      "id": "board.search",
+      "description": "Search visible Board posts and comments in one project without adding Board search to MCP.",
+      "tags": ["board", "search", "conversation", "read"],
+      "repo": "den-services",
+      "root": "/home/dev/den-services",
+      "working_directory": "/home/dev/den-services",
+      "argv": ["den-tool", "board", "search"],
+      "risk": "read",
+      "source": "cmd/den-tool board search",
+      "requirements": ["den-tool installed on PATH", "Board service reachable through DEN_BOARD_URL or the loopback default"],
+      "examples": ["den-tool board search --project den-services --query threading", "den-tool run board.search -- --project den-services --query threading --json"]
+    },
+    {
+      "id": "den-services.git-status",
+      "description": "Show the den-services worktree status for quick local diagnostics.",
+      "tags": ["den-services", "git", "status", "diagnostic"],
+      "repo": "den-services",
+      "root": "/home/dev/den-services",
+      "working_directory": "/home/dev/den-services",
+      "argv": ["git", "status", "--short"],
+      "risk": "read",
+      "source": "checked-in den-tool allowlist",
+      "requirements": ["git on PATH"],
+      "examples": ["den-tool run den-services.git-status --"]
+    },
+    {
+      "id": "den-services.go-test",
+      "description": "Run the root den-services Go module tests.",
+      "tags": ["den-services", "go", "test", "verification"],
+      "repo": "den-services",
+      "root": "/home/dev/den-services",
+      "working_directory": "/home/dev/den-services",
+      "argv": ["go", "test", "./..."],
+      "risk": "read",
+      "source": "checked-in den-tool allowlist",
+      "requirements": ["Go 1.26 on PATH"],
+      "examples": ["den-tool run den-services.go-test --"]
+    },
+    {
+      "id": "den-web.git-status",
+      "description": "Show the den-web worktree status for quick local diagnostics.",
+      "tags": ["den-web", "git", "status", "diagnostic"],
+      "repo": "den-web",
+      "root": "/home/dev/den-web",
+      "working_directory": "/home/dev/den-web",
+      "argv": ["git", "status", "--short"],
+      "risk": "read",
+      "source": "checked-in den-tool allowlist",
+      "requirements": ["git on PATH"],
+      "examples": ["den-tool run den-web.git-status --"]
+    },
+    {
+      "id": "den-web.test",
+      "description": "Run den-web's configured unit test suite.",
+      "tags": ["den-web", "npm", "test", "verification"],
+      "repo": "den-web",
+      "root": "/home/dev/den-web",
+      "working_directory": "/home/dev/den-web",
+      "argv": ["npm", "test"],
+      "risk": "read",
+      "source": "checked-in den-tool allowlist",
+      "requirements": ["Node.js and npm on PATH", "den-web dependencies installed"],
+      "examples": ["den-tool run den-web.test --"]
+    }
+  ]
+}

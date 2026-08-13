@@ -1,0 +1,150 @@
+package board
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+)
+
+func TestServiceWalksImmediateChildrenAndPreservesPurgedStructure(t *testing.T) {
+	ctx := context.Background()
+	clock := fixedClock()
+	service := NewService(NewMemoryStore(), NoopProjectValidator{}, clock)
+	post := createTestPost(t, service, "project-a", "Root")
+	root := createTestComment(t, service, post.ID, nil, "root")
+	child := createTestComment(t, service, post.ID, &root.ID, "child")
+	grandchild := createTestComment(t, service, post.ID, &child.ID, "grandchild")
+
+	roots, err := service.ListComments(ctx, post.ID, ListCommentsQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roots.Comments) != 1 || roots.Comments[0].ID != root.ID {
+		t.Fatalf("root page = %#v", roots.Comments)
+	}
+	children, err := service.ListComments(ctx, post.ID, ListCommentsQuery{ParentCommentID: &root.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(children.Comments) != 1 || children.Comments[0].ID != child.ID {
+		t.Fatalf("child page = %#v", children.Comments)
+	}
+
+	if err := service.PurgeComment(ctx, child.ID, PurgeRequest{ActorIdentity: "moderator", Reason: "misleading"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.GetComment(ctx, child.ID); !errors.Is(err, ErrCommentNotFound) {
+		t.Fatalf("GetComment(purged) error = %v", err)
+	}
+	path, err := service.GetCommentPath(ctx, grandchild.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(path.Comments) != 3 || path.Comments[1].ID != child.ID || path.Comments[1].Status != CommentStatusDeleted {
+		t.Fatalf("path = %#v", path.Comments)
+	}
+	if path.Comments[1].BodyMarkdown != "" || path.Comments[1].AuthorIdentity != "" || path.Comments[1].MetadataJSON != nil {
+		t.Fatalf("purged ancestor leaked authored content: %#v", path.Comments[1])
+	}
+	children, err = service.ListComments(ctx, post.ID, ListCommentsQuery{ParentCommentID: &root.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(children.Comments) != 1 || children.Comments[0].Status != CommentStatusDeleted {
+		t.Fatalf("structural tombstone = %#v", children.Comments)
+	}
+	grandchildren, err := service.ListComments(ctx, post.ID, ListCommentsQuery{ParentCommentID: &child.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(grandchildren.Comments) != 1 || grandchildren.Comments[0].ID != grandchild.ID {
+		t.Fatalf("descendants through tombstone = %#v", grandchildren.Comments)
+	}
+}
+
+func TestServicePurgingPostRemovesEveryNormalSurface(t *testing.T) {
+	ctx := context.Background()
+	service := NewService(NewMemoryStore(), NoopProjectValidator{}, fixedClock())
+	post := createTestPost(t, service, "project-a", "Misleading claim")
+	comment := createTestComment(t, service, post.ID, nil, "also misleading")
+
+	before, err := service.Search(ctx, "project-a", SearchQuery{Query: "misleading"})
+	if err != nil || len(before.Results) != 2 {
+		t.Fatalf("search before purge = %#v, %v", before, err)
+	}
+	if err := service.PurgePost(ctx, post.ID, PurgeRequest{ActorIdentity: "moderator", Reason: "misleading"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.GetPost(ctx, post.ID); !errors.Is(err, ErrPostNotFound) {
+		t.Fatalf("GetPost error = %v", err)
+	}
+	if _, err := service.GetComment(ctx, comment.ID); !errors.Is(err, ErrCommentNotFound) {
+		t.Fatalf("GetComment error = %v", err)
+	}
+	posts, err := service.ListPosts(ctx, "project-a", ListPostsQuery{})
+	if err != nil || len(posts.Posts) != 0 {
+		t.Fatalf("posts after purge = %#v, %v", posts, err)
+	}
+	after, err := service.Search(ctx, "project-a", SearchQuery{Query: "misleading"})
+	if err != nil || len(after.Results) != 0 {
+		t.Fatalf("search after purge = %#v, %v", after, err)
+	}
+	if _, err := service.ListComments(ctx, post.ID, ListCommentsQuery{}); !errors.Is(err, ErrPostNotFound) {
+		t.Fatalf("ListComments error = %v", err)
+	}
+}
+
+func TestServiceRejectsParentFromAnotherPost(t *testing.T) {
+	service := NewService(NewMemoryStore(), NoopProjectValidator{}, fixedClock())
+	first := createTestPost(t, service, "project-a", "First")
+	second := createTestPost(t, service, "project-a", "Second")
+	parent := createTestComment(t, service, first.ID, nil, "parent")
+	_, err := service.CreateComment(context.Background(), second.ID, CreateCommentRequest{ParentCommentID: &parent.ID, BodyMarkdown: "wrong tree", AuthorIdentity: "agent"})
+	if !errors.Is(err, ErrParentPostMismatch) {
+		t.Fatalf("CreateComment error = %v", err)
+	}
+}
+
+func TestServiceUsesExclusiveBoundedCursors(t *testing.T) {
+	service := NewServiceWithLimits(NewMemoryStore(), NoopProjectValidator{}, fixedClock(), Limits{DefaultPageSize: 2, MaxPageSize: 2, MaxPathComments: 10})
+	first := createTestPost(t, service, "project-a", "First")
+	second := createTestPost(t, service, "project-a", "Second")
+	third := createTestPost(t, service, "project-a", "Third")
+	page, err := service.ListPosts(context.Background(), "project-a", ListPostsQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Posts) != 2 || page.Posts[0].ID != first.ID || page.Posts[1].ID != second.ID || page.NextAfterID == nil || *page.NextAfterID != second.ID {
+		t.Fatalf("first page = %#v", page)
+	}
+	next, err := service.ListPosts(context.Background(), "project-a", ListPostsQuery{AfterID: *page.NextAfterID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(next.Posts) != 1 || next.Posts[0].ID != third.ID {
+		t.Fatalf("next page = %#v", next)
+	}
+}
+
+func createTestPost(t *testing.T, service *Service, projectID, title string) *Post {
+	t.Helper()
+	post, err := service.CreatePost(context.Background(), projectID, CreatePostRequest{Title: title, BodyMarkdown: title + " body", AuthorIdentity: "agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return post
+}
+
+func createTestComment(t *testing.T, service *Service, postID int64, parentID *int64, body string) *Comment {
+	t.Helper()
+	comment, err := service.CreateComment(context.Background(), postID, CreateCommentRequest{ParentCommentID: parentID, BodyMarkdown: body, AuthorIdentity: "agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return comment
+}
+
+func fixedClock() func() time.Time {
+	return func() time.Time { return time.Date(2026, time.August, 13, 2, 0, 0, 0, time.UTC) }
+}

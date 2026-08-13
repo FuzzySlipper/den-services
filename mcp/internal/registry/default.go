@@ -86,7 +86,58 @@ func DefaultTools() ([]ToolDefinition, error) {
 	tools = append(tools, contractErgonomicsTools()...)
 	tools = append(tools, handoffTools()...)
 	tools = append(tools, knowledgeTools()...)
+	tools = append(tools, boardTools()...)
 	return tools, nil
+}
+
+func boardTools() []ToolDefinition {
+	projectID := StringSchema("Project whose Board should be accessed.")
+	postID := IntegerSchema("Board post ID.")
+	commentID := IntegerSchema("Board comment ID.")
+	afterID := NullableIntegerSchema("Optional exclusive cursor ID for the next bounded page.")
+	limit := NullableIntegerSchema("Optional page size from 1 to 100.")
+	return []ToolDefinition{
+		{
+			Name: "create_board_post", Description: "Create a titled Board post. Board is durable passive conversation, not an executable task, wake, or instruction lane.", Backend: "board", Operation: "create_board_post",
+			InputSchema: ObjectSchema(map[string]Schema{
+				"project_id": projectID, "title": StringSchema("Post title."), "body_markdown": StringSchema("Post Markdown body."), "author_identity": StringSchema("Human or agent identity shown as the author."),
+			}, "project_id", "title", "body_markdown", "author_identity"),
+		},
+		{
+			Name: "list_board_posts", Description: "List one bounded page of visible Board post summaries. This never expands comment trees.", Backend: "board", Operation: "list_board_posts",
+			InputSchema: ObjectSchema(map[string]Schema{"project_id": projectID, "after_id": afterID, "limit": limit}, "project_id"),
+		},
+		{
+			Name: "get_board_post", Description: "Get one visible Board post without dumping its comments. Traverse replies separately with list_board_comments.", Backend: "board", Operation: "get_board_post",
+			InputSchema: ObjectSchema(map[string]Schema{"post_id": postID}, "post_id"),
+		},
+		{
+			Name: "create_board_comment", Description: "Reply to a Board post or directly to one comment. parent_comment_id identifies the immediate parent; omit it to comment on the original post.", Backend: "board", Operation: "create_board_comment",
+			InputSchema: ObjectSchema(map[string]Schema{
+				"post_id": postID, "parent_comment_id": NullableIntegerSchema("Immediate parent comment ID; omit for a direct reply to the post."), "body_markdown": StringSchema("Comment Markdown body."), "author_identity": StringSchema("Human or agent identity shown as the author."),
+			}, "post_id", "body_markdown", "author_identity"),
+		},
+		{
+			Name: "list_board_comments", Description: "List one bounded page of direct visible children under a post or parent comment. Omit parent_comment_id for comments directly on the original post; repeat per child to walk the tree.", Backend: "board", Operation: "list_board_comments",
+			InputSchema: ObjectSchema(map[string]Schema{"post_id": postID, "parent_comment_id": NullableIntegerSchema("Immediate parent comment ID; omit for the post root."), "after_id": afterID, "limit": limit}, "post_id"),
+		},
+		{
+			Name: "get_board_comment", Description: "Get one visible Board comment without expanding descendants.", Backend: "board", Operation: "get_board_comment",
+			InputSchema: ObjectSchema(map[string]Schema{"comment_id": commentID}, "comment_id"),
+		},
+		{
+			Name: "get_board_comment_path", Description: "Get a bounded breadcrumb path from the original post to one visible comment. Content-purged intermediate ancestors may appear only as structural tombstones.", Backend: "board", Operation: "get_board_comment_path",
+			InputSchema: ObjectSchema(map[string]Schema{"comment_id": commentID, "limit": limit}, "comment_id"),
+		},
+		{
+			Name: "purge_board_post", Description: "Purge a Board post and its entire reply subtree from every normal read, list, search, CLI, UI, and MCP surface. This destructive moderation action scrubs authored content and identity metadata.", Backend: "board", Operation: "purge_board_post",
+			InputSchema: ObjectSchema(map[string]Schema{"post_id": postID, "actor_identity": StringSchema("Identity performing the purge."), "reason": StringSchema("Moderation reason retained without copying purged content.")}, "post_id", "actor_identity", "reason"),
+		},
+		{
+			Name: "purge_board_comment", Description: "Purge one Board comment's authored content and identity from every normal surface. Retained descendants remain reachable through a content-free structural tombstone.", Backend: "board", Operation: "purge_board_comment",
+			InputSchema: ObjectSchema(map[string]Schema{"comment_id": commentID, "actor_identity": StringSchema("Identity performing the purge."), "reason": StringSchema("Moderation reason retained without copying purged content.")}, "comment_id", "actor_identity", "reason"),
+		},
+	}
 }
 
 func reviewPipelineTools() []ToolDefinition {

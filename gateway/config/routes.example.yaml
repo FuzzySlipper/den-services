@@ -5,6 +5,28 @@
 # owning service's token. Lane-specific callers keep their narrower tokens.
 
 routes:
+  - name: "board-project-routes"
+    path_pattern: "/v1/projects/{project_id}/board"
+    methods: ["GET", "POST"]
+    legacy_upstream_url: "http://127.0.0.1:8100"
+    successor_upstream_url: "http://127.0.0.1:8100"
+    successor_mode: "always"
+    caller_auth:
+      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
+    successor_auth:
+      bearer_token: "${DEN_GATEWAY_BOARD_UPSTREAM_TOKEN}"
+
+  - name: "board-item-routes"
+    path_pattern: "/v1/board"
+    methods: ["GET", "POST", "DELETE"]
+    legacy_upstream_url: "http://127.0.0.1:8100"
+    successor_upstream_url: "http://127.0.0.1:8100"
+    successor_mode: "always"
+    caller_auth:
+      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
+    successor_auth:
+      bearer_token: "${DEN_GATEWAY_BOARD_UPSTREAM_TOKEN}"
+
   - name: "review-project-task-routes"
     path_pattern: "/v1/projects/{project_id}/tasks/{task_id}/review"
     methods: ["GET", "POST"]

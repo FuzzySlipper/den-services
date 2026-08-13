@@ -1,0 +1,12 @@
+bind_addr: "127.0.0.1:8100"
+database_url_env: "DEN_BOARD_DATABASE_URL"
+service_token_env: "DEN_BOARD_SERVICE_TOKEN"
+projects_base_url_env: "DEN_PROJECTS_BASE_URL"
+projects_token_env: "DEN_PROJECTS_SERVICE_TOKEN"
+projects_request_timeout: "5s"
+limits:
+  default_page_size: 50
+  max_page_size: 100
+  max_path_comments: 50
+http:
+  read_header_timeout: "5s"

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -18,8 +19,8 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 77 {
-		t.Fatalf("tool count = %d, want 77", len(names))
+	if len(names) != 86 {
+		t.Fatalf("tool count = %d, want 86", len(names))
 	}
 	for _, name := range []string{
 		"search_documents",
@@ -43,6 +44,10 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		"set_handoff",
 		"get_handoff",
 		"record_human_acceptance_review",
+		"create_board_post",
+		"list_board_comments",
+		"get_board_comment_path",
+		"purge_board_post",
 	} {
 		if !containsName(names, name) {
 			t.Fatalf("visible tools missing %s", name)
@@ -207,8 +212,8 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if err != nil {
 		t.Fatalf("ToolsForProfile(managed-runtime) error = %v", err)
 	}
-	if len(direct) != 77 {
-		t.Fatalf("direct tool count = %d, want 77", len(direct))
+	if len(direct) != 86 {
+		t.Fatalf("direct tool count = %d, want 86", len(direct))
 	}
 	if len(managed) >= len(direct) {
 		t.Fatalf("managed tool count = %d, want fewer than direct %d", len(managed), len(direct))
@@ -227,6 +232,11 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	for _, name := range []string{"get_task", "get_task_context", "list_tasks", "store_document", "update_task", "record_human_acceptance_review"} {
 		if !containsListedTool(managed, name) {
 			t.Fatalf("managed profile hides normal operator tool %s", name)
+		}
+	}
+	for _, name := range []string{"create_board_post", "list_board_posts", "get_board_post", "create_board_comment", "list_board_comments", "get_board_comment_path", "purge_board_post", "purge_board_comment"} {
+		if !containsListedTool(managed, name) {
+			t.Fatalf("managed profile hides Board operator tool %s", name)
 		}
 	}
 
@@ -318,7 +328,9 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 			tool.Name != "get_details" && tool.Name != "mark_project_notifications_read" &&
 			tool.Name != "mark_task_notifications_read" && tool.Name != "ensure_document_discussion" &&
 			tool.Name != "record_human_acceptance_review" && tool.Name != "set_handoff" &&
-			tool.Name != "get_handoff" && tool.Name != "den_knowledge_delete" {
+			tool.Name != "get_handoff" && tool.Name != "den_knowledge_delete" && !strings.HasSuffix(tool.Name, "_board_post") &&
+			!strings.HasSuffix(tool.Name, "_board_comment") && tool.Name != "list_board_posts" &&
+			tool.Name != "list_board_comments" && tool.Name != "get_board_comment_path" {
 			t.Fatalf("unexpected non-snapshot tool %q", tool.Name)
 		}
 	}
@@ -338,6 +350,18 @@ func TestVisibleToolSchemasHideVerbose(t *testing.T) {
 		}
 		if _, exists := schema.Properties["verbose"]; exists {
 			t.Fatalf("tool %s still exposes verbose", tool.Name)
+		}
+	}
+}
+
+func TestBoardSearchRemainsOutsideMCPDiscovery(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range registry.Tools() {
+		if tool.Name == "search_board" || tool.Name == "search_board_posts" || tool.Name == "board_search" {
+			t.Fatalf("Board search unexpectedly exposed through MCP as %s", tool.Name)
 		}
 	}
 }

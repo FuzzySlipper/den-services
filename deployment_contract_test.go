@@ -54,8 +54,13 @@ func TestDeploymentSafetyRegression(t *testing.T) {
 	text := string(deployScript)
 	for _, required := range []string{
 		"DEN_GATEWAY_KNOWLEDGE_UPSTREAM_TOKEN",
+		"DEN_GATEWAY_BOARD_UPSTREAM_TOKEN",
 		"DEN_HANDOFF_SERVICE_TOKEN",
+		"DEN_BOARD_SERVICE_TOKEN",
 		"den-go@handoff.service must be active",
+		"den-go@board.service must be active",
+		"ensure_gateway_board_routes",
+		"ensure_mcp_board_backend",
 		"rollback/routes.yaml",
 		"systemctl reset-failed",
 	} {

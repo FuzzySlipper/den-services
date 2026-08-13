@@ -140,6 +140,9 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 		if handoffRoute(tool.Name) {
 			wantBackend = "handoff"
 		}
+		if boardRoute(tool.Name) {
+			wantBackend = "board"
+		}
 		if route.Backend != wantBackend {
 			t.Fatalf("route %s backend = %q, want %s", tool.Name, route.Backend, wantBackend)
 		}
@@ -509,6 +512,15 @@ func documentsRoute(operation string) bool {
 		"get_discussion_thread",
 		"create_discussion_comment",
 		"update_discussion_thread":
+		return true
+	default:
+		return false
+	}
+}
+
+func boardRoute(operation string) bool {
+	switch operation {
+	case "create_board_post", "list_board_posts", "get_board_post", "create_board_comment", "list_board_comments", "get_board_comment", "get_board_comment_path", "purge_board_post", "purge_board_comment":
 		return true
 	default:
 		return false
