@@ -132,6 +132,7 @@ func TestServiceRejectsConfiguredFieldSizes(t *testing.T) {
 	limits.MaxAuthorIdentityBytes = 5
 	limits.MaxMetadataBytes = 4
 	limits.MaxSearchQueryBytes = 4
+	limits.MaxPurgeReasonBytes = 4
 	service := NewServiceWithLimits(NewMemoryStore(), NoopProjectValidator{}, fixedClock(), limits)
 
 	if _, err := service.CreatePost(context.Background(), "project-a", CreatePostRequest{Title: "title", BodyMarkdown: "body", AuthorIdentity: "agent"}); err == nil {
@@ -141,8 +142,29 @@ func TestServiceRejectsConfiguredFieldSizes(t *testing.T) {
 	if _, err := service.CreateComment(context.Background(), post.ID, CreateCommentRequest{BodyMarkdown: "sixsix", AuthorIdentity: "agent"}); err == nil {
 		t.Fatal("CreateComment accepted an oversized body")
 	}
+	if _, err := service.CreatePost(context.Background(), "p", CreatePostRequest{Title: "ok", BodyMarkdown: "body", AuthorIdentity: "agents"}); err == nil {
+		t.Fatal("CreatePost accepted an oversized author identity")
+	}
+	if _, err := service.CreatePost(context.Background(), "p", CreatePostRequest{Title: "ok", BodyMarkdown: "body", AuthorIdentity: "agent", Metadata: []byte("12345")}); err == nil {
+		t.Fatal("CreatePost accepted oversized metadata")
+	}
+	if _, err := service.CreateComment(context.Background(), post.ID, CreateCommentRequest{BodyMarkdown: "body", AuthorIdentity: "agents"}); err == nil {
+		t.Fatal("CreateComment accepted an oversized author identity")
+	}
+	if _, err := service.CreateComment(context.Background(), post.ID, CreateCommentRequest{BodyMarkdown: "body", AuthorIdentity: "agent", Metadata: []byte("12345")}); err == nil {
+		t.Fatal("CreateComment accepted oversized metadata")
+	}
 	if _, err := service.Search(context.Background(), "p", SearchQuery{Query: "query"}); err == nil {
 		t.Fatal("Search accepted an oversized query")
+	}
+	if err := service.PurgePost(WithAuthenticatedAdapterIdentity(context.Background(), "den-web-adapter"), post.ID, PurgeRequest{Reason: "12345"}); err == nil {
+		t.Fatal("PurgePost accepted an oversized reason")
+	}
+	projectLimits := limits
+	projectLimits.MaxProjectIDBytes = 4
+	projectService := NewServiceWithLimits(NewMemoryStore(), NoopProjectValidator{}, fixedClock(), projectLimits)
+	if _, err := projectService.CreatePost(context.Background(), "long-project", CreatePostRequest{Title: "ok", BodyMarkdown: "body", AuthorIdentity: "agent"}); err == nil {
+		t.Fatal("CreatePost accepted an oversized project id")
 	}
 }
 

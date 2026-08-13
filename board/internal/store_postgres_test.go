@@ -53,6 +53,9 @@ func TestStorePostgresPurgeAndTreeTraversal(t *testing.T) {
 	if len(path.Comments) != 2 || path.Comments[0].Status != CommentStatusDeleted {
 		t.Fatalf("path = %#v", path)
 	}
+	if _, err := store.CreateComment(ctx, &Comment{PostID: post.ID, ParentCommentID: &root.ID, BodyMarkdown: "late reply", AuthorIdentity: "agent", Status: CommentStatusActive, CreatedAt: now, UpdatedAt: now}); !errors.Is(err, ErrCommentNotFound) {
+		t.Fatalf("reply to purged parent error = %v", err)
+	}
 	if err := store.PurgePost(purgeCtx, post.ID, now.Add(2*time.Second)); err != nil {
 		t.Fatal(err)
 	}

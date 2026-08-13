@@ -57,7 +57,7 @@ func TestHTTPServerBindsAdapterIdentityAfterAuthentication(t *testing.T) {
 		t.Fatalf("create status = %d: %s", createResponse.Code, createResponse.Body.String())
 	}
 
-	purgeRequest := httptest.NewRequest(http.MethodDelete, "/v1/board/posts/1", strings.NewReader(`{"actor_identity":"attacker","reason":"misleading"}`))
+	purgeRequest := httptest.NewRequest(http.MethodDelete, "/v1/board/posts/1", strings.NewReader(`{"reason":"misleading"}`))
 	purgeRequest.Header.Set("Authorization", "Bearer board-token")
 	purgeRequest.Header.Set("Content-Type", "application/json")
 	purgeResponse := httptest.NewRecorder()
