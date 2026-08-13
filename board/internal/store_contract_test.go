@@ -15,11 +15,24 @@ func TestStoreSQLSerializesCommentCreationWithPostPurge(t *testing.T) {
 	if !strings.Contains(strings.ToLower(lockParentForCommentSQL), "for update") {
 		t.Fatal("reply creation must lock the parent comment before insert")
 	}
-	if strings.Contains(strings.ToLower(listCommentsSQL), "with recursive") {
-		t.Fatal("direct-child listing must not recursively scan descendant subtrees")
+	if !strings.Contains(strings.ToLower(listCommentsSQL), "with recursive descendants") ||
+		!strings.Contains(strings.ToLower(listCommentsSQL), "where status = 'active'") {
+		t.Fatal("deleted direct children must require an active descendant")
 	}
 	if !strings.Contains(commentPathSQL, "parent.post_id = $2") {
 		t.Fatal("comment paths must remain scoped to the target post")
+	}
+}
+
+func TestSearchSQLUsesPostgresFullTextSearch(t *testing.T) {
+	lower := strings.ToLower(searchSQL)
+	for _, required := range []string{"websearch_to_tsquery", "search_vector", "ts_rank", "@@ q.query"} {
+		if !strings.Contains(lower, required) {
+			t.Fatalf("search SQL missing PostgreSQL FTS primitive %q", required)
+		}
+	}
+	if strings.Contains(lower, " ilike ") {
+		t.Fatal("search SQL must not fall back to substring matching")
 	}
 }
 

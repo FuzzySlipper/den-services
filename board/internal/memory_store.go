@@ -57,20 +57,20 @@ func (s *MemoryStore) ListPosts(_ context.Context, query ListPostsQuery) (PostPa
 func (s *MemoryStore) Search(_ context.Context, query SearchQuery) (SearchPage, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	needle := strings.ToLower(query.Query)
+	terms := strings.Fields(strings.ToLower(query.Query))
 	results := make([]SearchResult, 0)
 	for _, post := range s.posts {
 		if post.ProjectID != query.ProjectID || post.Status != PostStatusActive {
 			continue
 		}
-		if strings.Contains(strings.ToLower(post.Title), needle) || strings.Contains(strings.ToLower(post.BodyMarkdown), needle) {
+		if containsAllTerms(post.Title+" "+post.BodyMarkdown, terms) {
 			result := SearchResult{Kind: SearchResultPost, ID: post.ID, PostID: post.ID, ProjectID: post.ProjectID, Title: post.Title, AuthorIdentity: post.AuthorIdentity, Snippet: snippet(post.BodyMarkdown), CreatedAt: post.CreatedAt}
 			if searchCursor(result) > query.AfterID {
 				results = append(results, result)
 			}
 		}
 		for _, comment := range s.comments {
-			if comment.PostID == post.ID && comment.Status == CommentStatusActive && strings.Contains(strings.ToLower(comment.BodyMarkdown), needle) {
+			if comment.PostID == post.ID && comment.Status == CommentStatusActive && containsAllTerms(comment.BodyMarkdown, terms) {
 				result := SearchResult{Kind: SearchResultComment, ID: comment.ID, PostID: post.ID, ProjectID: post.ProjectID, Title: post.Title, AuthorIdentity: comment.AuthorIdentity, Snippet: snippet(comment.BodyMarkdown), CreatedAt: comment.CreatedAt}
 				if searchCursor(result) > query.AfterID {
 					results = append(results, result)
@@ -83,6 +83,16 @@ func (s *MemoryStore) Search(_ context.Context, query SearchQuery) (SearchPage, 
 		results = results[:query.Limit+1]
 	}
 	return searchPage(results, query.Limit), nil
+}
+
+func containsAllTerms(value string, terms []string) bool {
+	value = strings.ToLower(value)
+	for _, term := range terms {
+		if !strings.Contains(value, term) {
+			return false
+		}
+	}
+	return len(terms) > 0
 }
 
 func (s *MemoryStore) CreateComment(_ context.Context, comment *Comment) (*Comment, error) {

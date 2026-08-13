@@ -67,7 +67,7 @@ func (s *Store) ListPosts(ctx context.Context, query ListPostsQuery) (PostPage, 
 }
 
 func (s *Store) Search(ctx context.Context, query SearchQuery) (SearchPage, error) {
-	rows, err := s.pool.Query(ctx, searchSQL, query.ProjectID, "%"+query.Query+"%", query.AfterID, query.Limit+1)
+	rows, err := s.pool.Query(ctx, searchSQL, query.ProjectID, query.Query, query.AfterID, query.Limit+1)
 	if err != nil {
 		return SearchPage{}, fmt.Errorf("searching board: %w", err)
 	}
@@ -328,7 +328,19 @@ where c.post_id = $1
   and c.id > $3
   and (
     c.status = 'active'
-    or exists (select 1 from den_board.comments child where child.parent_comment_id = c.id)
+    or exists (
+      with recursive descendants as (
+        select child.id, child.status
+        from den_board.comments child
+        where child.parent_comment_id = c.id and child.post_id = c.post_id
+        union all
+        select child.id, child.status
+        from den_board.comments child
+        join descendants parent on child.parent_comment_id = parent.id
+        where child.post_id = c.post_id
+      )
+      select 1 from descendants where status = 'active'
+    )
   )
 order by c.id asc
 limit $4`
@@ -347,23 +359,30 @@ with recursive path as (
 select ` + commentColumns + ` from path order by depth desc`
 
 const searchSQL = `
+with search_query as (
+  select websearch_to_tsquery('english', $2) as query
+)
 select kind, id, post_id, project_id, title, author_identity, snippet, rank, created_at
 from (
   select 'post'::text as kind, p.id, p.id as post_id, p.project_id, p.title,
          p.author_identity, left(p.body_markdown, 240) as snippet,
-         case when p.title ilike $2 then 2.0 else 1.0 end::double precision as rank, p.created_at,
+         ts_rank(p.search_vector, q.query)::double precision as rank, p.created_at,
          p.id * 2 as cursor_key
   from den_board.posts p
+  cross join search_query q
   where p.project_id = $1 and p.status = 'active'
-    and (p.title ilike $2 or p.body_markdown ilike $2)
+    and p.search_vector @@ q.query
   union all
   select 'comment'::text, c.id, c.post_id, p.project_id, p.title,
-         c.author_identity, left(c.body_markdown, 240), 1.0::double precision, c.created_at,
+         c.author_identity, left(c.body_markdown, 240),
+         ts_rank(c.search_vector, q.query)::double precision,
+         c.created_at,
          c.id * 2 + 1 as cursor_key
   from den_board.comments c
   join den_board.posts p on p.id = c.post_id
+  cross join search_query q
   where p.project_id = $1 and p.status = 'active' and c.status = 'active'
-    and c.body_markdown ilike $2
+    and c.search_vector @@ q.query
 ) results
 where cursor_key > $3
 order by cursor_key asc

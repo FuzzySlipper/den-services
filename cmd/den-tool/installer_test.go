@@ -102,6 +102,60 @@ func TestInstallerRefusesBinaryChangedBehindOwnedMarker(t *testing.T) {
 	}
 }
 
+func TestInstallerCheckDetectsSourceDriftUntilReinstall(t *testing.T) {
+	sourceRoot := repositoryRootForTest(t)
+	root := t.TempDir()
+	for _, relative := range []string{"go.mod", "go.sum", "scripts/install-den-tool.sh"} {
+		copyTestFile(t, sourceRoot, root, relative)
+	}
+	entries, err := os.ReadDir(filepath.Join(sourceRoot, "cmd", "den-tool"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() && (strings.HasSuffix(entry.Name(), ".go") || entry.Name() == "catalog.json") {
+			copyTestFile(t, sourceRoot, root, filepath.Join("cmd", "den-tool", entry.Name()))
+		}
+	}
+
+	home := t.TempDir()
+	if output, err := runInstaller(t, root, home); err != nil {
+		t.Fatalf("initial installer run: %v\n%s", err, output)
+	}
+	catalogPath := filepath.Join(root, "cmd", "den-tool", "catalog.json")
+	catalog, err := os.ReadFile(catalogPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(catalogPath, append(catalog, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := runInstaller(t, root, home, "--check"); err == nil || !strings.Contains(string(output), "source identity drifted") {
+		t.Fatalf("drift check output = %q, error = %v", output, err)
+	}
+	if output, err := runInstaller(t, root, home); err != nil {
+		t.Fatalf("reinstall after drift: %v\n%s", err, output)
+	}
+	if output, err := runInstaller(t, root, home, "--check"); err != nil {
+		t.Fatalf("check after reinstall: %v\n%s", err, output)
+	}
+}
+
+func copyTestFile(t *testing.T, sourceRoot, destinationRoot, relative string) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(sourceRoot, relative))
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(destinationRoot, relative)
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destination, data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func runInstaller(t *testing.T, root, home string, args ...string) ([]byte, error) {
 	t.Helper()
 	installer := filepath.Join(root, "scripts", "install-den-tool.sh")

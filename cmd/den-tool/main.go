@@ -15,6 +15,17 @@ import (
 
 const toolVersion = "1.0.0"
 
+type catalogReadback struct {
+	Version string         `json:"version"`
+	Tools   []toolReadback `json:"tools"`
+}
+
+type toolReadback struct {
+	Tool
+	Availability string `json:"availability"`
+	Reason       string `json:"reason"`
+}
+
 func main() {
 	os.Exit(runCLI(os.Args[1:], os.Stdout, os.Stderr))
 }
@@ -61,16 +72,11 @@ func handleList(args []string, stdout, stderr io.Writer) int {
 		return writeRuntimeError(stderr, err)
 	}
 	if jsonOutput {
-		return writeJSON(stdout, catalog)
+		return writeJSON(stdout, newCatalogReadback(catalog))
 	}
 
 	for _, tool := range catalog.Tools {
-		availability := CheckAvailability(tool)
-		status := "available"
-		if !availability.Available {
-			status = "unavailable: " + availability.Reason
-		}
-		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", tool.ID, tool.Risk, status, tool.Description)
+		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", tool.ID, tool.Risk, availabilityText(newToolReadback(tool)), tool.Description)
 	}
 	return 0
 }
@@ -91,10 +97,10 @@ func handleSearch(args []string, stdout, stderr io.Writer) int {
 	}
 	result := catalog.Search(terms)
 	if jsonOutput {
-		return writeJSON(stdout, result)
+		return writeJSON(stdout, newCatalogReadback(result))
 	}
 	for _, tool := range result.Tools {
-		fmt.Fprintf(stdout, "%s\t%s\t%s\n", tool.ID, tool.Risk, tool.Description)
+		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", tool.ID, tool.Risk, availabilityText(newToolReadback(tool)), tool.Description)
 	}
 	return 0
 }
@@ -118,10 +124,10 @@ func handleDescribe(args []string, stdout, stderr io.Writer) int {
 		return writeRuntimeError(stderr, fmt.Errorf("tool %q is not in the catalog", remaining[0]))
 	}
 	if jsonOutput {
-		return writeJSON(stdout, tool)
+		return writeJSON(stdout, newToolReadback(tool))
 	}
 
-	availability := CheckAvailability(tool)
+	readback := newToolReadback(tool)
 	fmt.Fprintf(stdout, "id: %s\n", tool.ID)
 	fmt.Fprintf(stdout, "description: %s\n", tool.Description)
 	fmt.Fprintf(stdout, "tags: %s\n", strings.Join(tool.Tags, ", "))
@@ -136,12 +142,36 @@ func handleDescribe(args []string, stdout, stderr io.Writer) int {
 	for _, example := range tool.Examples {
 		fmt.Fprintf(stdout, "  %s\n", example)
 	}
-	if availability.Available {
+	if readback.Availability == "available" {
 		fmt.Fprintln(stdout, "availability: available")
 	} else {
-		fmt.Fprintf(stdout, "availability: %s\n", availability.Reason)
+		fmt.Fprintln(stdout, "availability: unavailable")
+		fmt.Fprintf(stdout, "reason: %s\n", readback.Reason)
 	}
 	return 0
+}
+
+func newCatalogReadback(catalog Catalog) catalogReadback {
+	result := catalogReadback{Version: catalog.Version, Tools: make([]toolReadback, 0, len(catalog.Tools))}
+	for _, tool := range catalog.Tools {
+		result.Tools = append(result.Tools, newToolReadback(tool))
+	}
+	return result
+}
+
+func newToolReadback(tool Tool) toolReadback {
+	availability := CheckAvailability(tool)
+	if availability.Available {
+		return toolReadback{Tool: tool, Availability: "available"}
+	}
+	return toolReadback{Tool: tool, Availability: "unavailable", Reason: availability.Reason}
+}
+
+func availabilityText(readback toolReadback) string {
+	if readback.Availability == "available" {
+		return "available"
+	}
+	return "unavailable: " + readback.Reason
 }
 
 func handleRun(args []string, stdout, stderr io.Writer) int {
