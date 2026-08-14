@@ -133,25 +133,22 @@ type WorkflowSummary struct {
 }
 
 type ReviewTimelineEntry struct {
-	ReviewRoundID          int64                    `json:"review_round_id"`
-	RoundNumber            int                      `json:"round_number"`
-	TargetKind             string                   `json:"target_kind"`
-	CampaignChildren       []CampaignReviewChild    `json:"campaign_children,omitempty"`
-	CampaignRepositories   []CampaignRepositoryHead `json:"campaign_repositories,omitempty"`
-	Branch                 string                   `json:"branch,omitempty"`
-	RequestedBy            string                   `json:"requested_by"`
-	RequestedAt            time.Time                `json:"requested_at"`
-	HeadCommit             string                   `json:"head_commit,omitempty"`
-	LastReviewedHeadCommit string                   `json:"last_reviewed_head_commit,omitempty"`
-	CommitsSinceLastReview *int                     `json:"commits_since_last_review,omitempty"`
-	Verdict                string                   `json:"verdict,omitempty"`
-	VerdictBy              string                   `json:"verdict_by,omitempty"`
-	VerdictAt              *time.Time               `json:"verdict_at,omitempty"`
-	TotalFindings          int                      `json:"total_findings"`
-	OpenFindings           int                      `json:"open_findings"`
-	AddressedFindings      int                      `json:"addressed_findings"`
-	ClaimedFixedFindings   int                      `json:"claimed_fixed_findings"`
-	ResolvedFindings       int                      `json:"resolved_findings"`
+	ReviewRoundID        int64                 `json:"review_round_id"`
+	RoundNumber          int                   `json:"round_number"`
+	TargetKind           string                `json:"target_kind"`
+	CampaignChildren     []CampaignReviewChild `json:"campaign_children,omitempty"`
+	CampaignRepositories []CampaignRepository  `json:"campaign_repositories,omitempty"`
+	Branch               string                `json:"branch,omitempty"`
+	RequestedBy          string                `json:"requested_by"`
+	RequestedAt          time.Time             `json:"requested_at"`
+	Verdict              string                `json:"verdict,omitempty"`
+	VerdictBy            string                `json:"verdict_by,omitempty"`
+	VerdictAt            *time.Time            `json:"verdict_at,omitempty"`
+	TotalFindings        int                   `json:"total_findings"`
+	OpenFindings         int                   `json:"open_findings"`
+	AddressedFindings    int                   `json:"addressed_findings"`
+	ClaimedFixedFindings int                   `json:"claimed_fixed_findings"`
+	ResolvedFindings     int                   `json:"resolved_findings"`
 }
 
 type CreateFollowUpTaskRequest struct {
@@ -445,24 +442,21 @@ func (s *Service) campaignRoundFromRequest(ctx context.Context, parent TaskConte
 		return nil, validationError(ErrMissingCampaignChild, "missing_campaign_children", "children", "campaign_review_request.children")
 	}
 	if len(req.Repositories) == 0 {
-		return nil, validationError(ErrMissingCampaignHead, "missing_campaign_repositories", "repositories", "campaign_review_request.repositories")
+		return nil, validationError(ErrMissingCampaignRepository, "missing_campaign_repositories", "repositories", "campaign_review_request.repositories")
 	}
 
-	repositories := make([]CampaignRepositoryHead, 0, len(req.Repositories))
-	heads := make(map[string]struct{}, len(req.Repositories))
+	repositories := make([]CampaignRepository, 0, len(req.Repositories))
 	seenRepositories := make(map[string]struct{}, len(req.Repositories))
 	for _, repository := range req.Repositories {
 		name := strings.TrimSpace(repository.Repository)
-		head := strings.TrimSpace(repository.HeadSHA)
-		if !validGitHubRepository(name) || !validGitHubSHA(head) {
-			return nil, validationError(ErrMissingCampaignHead, "invalid_campaign_repository_head", "repositories", "campaign_review_request.repositories")
+		if !validGitHubRepository(name) {
+			return nil, validationError(ErrMissingCampaignRepository, "invalid_campaign_repository", "repositories", "campaign_review_request.repositories")
 		}
 		if _, exists := seenRepositories[name]; exists {
 			return nil, validationError(ErrDuplicateCampaignRepo, "duplicate_campaign_repository", "repositories", "campaign_review_request.repositories")
 		}
 		seenRepositories[name] = struct{}{}
-		heads[head] = struct{}{}
-		repositories = append(repositories, CampaignRepositoryHead{Repository: name, HeadSHA: head})
+		repositories = append(repositories, CampaignRepository{Repository: name})
 	}
 
 	children := make([]CampaignReviewChild, 0, len(req.Children))
@@ -526,12 +520,9 @@ func (s *Service) campaignRoundFromRequest(ctx context.Context, parent TaskConte
 				return nil, validationError(ErrBlockedCampaignChild, "blocked_campaign_child", "children", "campaign_review_request.children")
 			}
 		}
-		if _, exists := heads[childRound.HeadCommit]; !exists {
-			return nil, validationError(ErrCampaignHeadMismatch, "campaign_head_mismatch", "repositories", "campaign_review_request.repositories")
-		}
 		children = append(children, CampaignReviewChild{
 			ProjectID: childProjectID, TaskID: requestedChild.TaskID, ReviewRoundID: childRound.ID,
-			HeadCommit: childRound.HeadCommit, MembershipKind: membershipKind, ApprovedVerdict: childRound.Verdict,
+			MembershipKind: membershipKind, ApprovedVerdict: childRound.Verdict,
 		})
 	}
 	sort.Slice(children, func(i, j int) bool {
@@ -583,30 +574,8 @@ func sameReviewRequest(existing *ReviewRound, requested *ReviewRound) bool {
 		existing.RequestedBy == requested.RequestedBy &&
 		existing.Branch == requested.Branch &&
 		existing.BaseBranch == requested.BaseBranch &&
-		existing.BaseCommit == requested.BaseCommit &&
-		existing.HeadCommit == requested.HeadCommit &&
-		(requested.LastReviewedHeadCommit == "" || existing.LastReviewedHeadCommit == requested.LastReviewedHeadCommit) &&
-		equalOptionalInts(existing.CommitsSinceLastReview, requested.CommitsSinceLastReview) &&
 		equalStrings(existing.TestsRun, requested.TestsRun) &&
-		existing.Notes == requested.Notes &&
-		existing.PreferredDiffBaseRef == requested.PreferredDiffBaseRef &&
-		existing.PreferredDiffBaseCommit == requested.PreferredDiffBaseCommit &&
-		existing.PreferredDiffHeadRef == requested.PreferredDiffHeadRef &&
-		existing.PreferredDiffHeadCommit == requested.PreferredDiffHeadCommit &&
-		existing.AlternateDiffBaseRef == requested.AlternateDiffBaseRef &&
-		existing.AlternateDiffBaseCommit == requested.AlternateDiffBaseCommit &&
-		existing.AlternateDiffHeadRef == requested.AlternateDiffHeadRef &&
-		existing.AlternateDiffHeadCommit == requested.AlternateDiffHeadCommit &&
-		(requested.DeltaBaseCommit == "" || existing.DeltaBaseCommit == requested.DeltaBaseCommit) &&
-		equalOptionalInts(existing.InheritedCommitCount, requested.InheritedCommitCount) &&
-		equalOptionalInts(existing.TaskLocalCommitCount, requested.TaskLocalCommitCount)
-}
-
-func equalOptionalInts(left *int, right *int) bool {
-	if left == nil || right == nil {
-		return left == nil && right == nil
-	}
-	return *left == *right
+		existing.Notes == requested.Notes
 }
 
 func equalStrings(left []string, right []string) bool {
@@ -1761,7 +1730,6 @@ func roundFindingsTaskID(roundFindings, allFindings []*ReviewFinding) int64 {
 func finalizationMaterialDigest(round *ReviewRound, req FinalizeReviewRequest) (string, error) {
 	material := struct {
 		ReviewRoundID int64                       `json:"review_round_id"`
-		HeadCommit    string                      `json:"head_commit"`
 		Verdict       string                      `json:"verdict"`
 		DecidedBy     string                      `json:"decided_by"`
 		Notes         string                      `json:"notes"`
@@ -1770,7 +1738,7 @@ func finalizationMaterialDigest(round *ReviewRound, req FinalizeReviewRequest) (
 		SubagentRole  string                      `json:"subagent_role"`
 		Resolutions   []FinalizeFindingResolution `json:"prior_finding_resolutions,omitempty"`
 		NewFindings   []FinalizeNewFinding        `json:"new_findings,omitempty"`
-	}{round.ID, round.HeadCommit, req.Verdict, req.DecidedBy, req.Notes, req.ThreadID, req.RunID, req.SubagentRole, req.PriorFindingResolutions, req.NewFindings}
+	}{round.ID, req.Verdict, req.DecidedBy, req.Notes, req.ThreadID, req.RunID, req.SubagentRole, req.PriorFindingResolutions, req.NewFindings}
 	data, err := json.Marshal(material)
 	if err != nil {
 		return "", err
@@ -1848,10 +1816,6 @@ func (s *Service) validatePacketContext(ctx context.Context, packet *ReviewPacke
 		if round.ProjectID != packet.ProjectID || round.TaskID != packet.TaskID {
 			return validationError(fmt.Errorf("review round mismatch"), "review_round_mismatch", "review_round_id", packet.PacketKind+".review_round_id")
 		}
-		if requiresReviewedHead(packet.PacketKind) && round.TargetKind != ReviewTargetCampaignReconciliation &&
-			stringValue(packet.TypedEnvelope["reviewed_head_commit"]) != round.HeadCommit {
-			return validationError(fmt.Errorf("reviewed head does not match round"), "stale_reviewed_head", "reviewed_head_commit", packet.PacketKind+".reviewed_head_commit")
-		}
 	}
 	return nil
 }
@@ -1888,38 +1852,12 @@ func roundFromRequest(projectID string, taskID int64, req CreateReviewRoundReque
 	if strings.TrimSpace(req.RequestedBy) == "" {
 		return nil, validationError(ErrMissingActor, "missing_actor", "requested_by", "review_request.requested_by")
 	}
-	for field, value := range map[string]string{"branch": req.Branch, "base_branch": req.BaseBranch, "base_commit": req.BaseCommit, "head_commit": req.HeadCommit} {
-		if strings.TrimSpace(value) == "" {
-			return nil, validationError(fmt.Errorf("%s is required", field), "missing_"+field, field, "review_request."+field)
-		}
-	}
-	if negative(req.CommitsSinceLastReview) || negative(req.InheritedCommitCount) || negative(req.TaskLocalCommitCount) {
-		return nil, validationError(fmt.Errorf("commit counts must be non-negative"), "invalid_commit_count", "commits_since_last_review", "review_request.commits_since_last_review")
-	}
 	round := &ReviewRound{
 		ProjectID: projectID, TaskID: taskID, RequestedBy: strings.TrimSpace(req.RequestedBy),
 		TargetKind: ReviewTargetCodeDiff,
 		Branch:     strings.TrimSpace(req.Branch), BaseBranch: strings.TrimSpace(req.BaseBranch),
-		BaseCommit: strings.TrimSpace(req.BaseCommit), HeadCommit: strings.TrimSpace(req.HeadCommit),
-		LastReviewedHeadCommit: strings.TrimSpace(req.LastReviewedHeadCommit), CommitsSinceLastReview: req.CommitsSinceLastReview,
 		TestsRun: trimSlice(req.TestsRun), Notes: strings.TrimSpace(req.Notes),
-		PreferredDiffBaseRef:    firstNonEmpty(req.PreferredDiffBaseRef, req.BaseBranch),
-		PreferredDiffBaseCommit: firstNonEmpty(req.PreferredDiffBaseCommit, req.BaseCommit),
-		PreferredDiffHeadRef:    firstNonEmpty(req.PreferredDiffHeadRef, req.Branch),
-		PreferredDiffHeadCommit: firstNonEmpty(req.PreferredDiffHeadCommit, req.HeadCommit),
-		AlternateDiffBaseRef:    strings.TrimSpace(req.AlternateDiffBaseRef),
-		AlternateDiffBaseCommit: strings.TrimSpace(req.AlternateDiffBaseCommit),
-		AlternateDiffHeadRef:    strings.TrimSpace(req.AlternateDiffHeadRef),
-		AlternateDiffHeadCommit: strings.TrimSpace(req.AlternateDiffHeadCommit),
-		DeltaBaseCommit:         strings.TrimSpace(req.DeltaBaseCommit), InheritedCommitCount: req.InheritedCommitCount,
-		TaskLocalCommitCount: req.TaskLocalCommitCount, RequestedAt: now, CreatedAt: now, UpdatedAt: now,
-	}
-	if round.AlternateDiffBaseRef != "" || round.AlternateDiffBaseCommit != "" || round.AlternateDiffHeadRef != "" || round.AlternateDiffHeadCommit != "" {
-		if round.AlternateDiffBaseRef == "" || round.AlternateDiffBaseCommit == "" {
-			return nil, validationError(fmt.Errorf("alternate diff base ref and commit are required"), "invalid_alternate_diff", "alternate_diff", "review_request.alternate_diff")
-		}
-		round.AlternateDiffHeadRef = firstNonEmpty(round.AlternateDiffHeadRef, round.Branch)
-		round.AlternateDiffHeadCommit = firstNonEmpty(round.AlternateDiffHeadCommit, round.HeadCommit)
+		RequestedAt: now, CreatedAt: now, UpdatedAt: now,
 	}
 	return round, nil
 }
@@ -1940,10 +1878,6 @@ func allowedStatusesForPacket(kind string) []string {
 	default:
 		return nil
 	}
-}
-
-func requiresReviewedHead(kind string) bool {
-	return kind == PacketKindReviewFindings || kind == PacketKindResponse || kind == PacketKindCompletion
 }
 
 func contains(values []string, target string) bool {

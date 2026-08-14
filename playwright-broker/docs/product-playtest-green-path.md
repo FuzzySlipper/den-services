@@ -57,8 +57,8 @@ Give a fresh parent task one command-sized request:
 
 ```text
 Spawn the custom `playtester` agent at its configured Luna/max settings and run
-the neutral player mission in /absolute/path/to/product-playtest.scenario.json against exact
-revision <40-character SHA> of /absolute/path/to/repository. Use manifest
+the neutral player mission in /absolute/path/to/product-playtest.scenario.json against the
+current checkout in /absolute/path/to/repository. Use manifest
 /absolute/path/to/manifest.json. Keep one browser session, judge the visible
 outcome from repeated screenshots or frame bursts, and capture the worker's
 neutral account before revealing or applying the orchestrator acceptance
@@ -68,8 +68,8 @@ attempt, always clean up, and return the complete product-playtest evidence
 report.
 ```
 
-The parent should verify the repository revision and dirty state before the
-run. The worker then owns one persistent browser session through
+The parent should provide the repository path. The worker records the run
+timestamp and then owns one persistent browser session through
 `start -> observe / act / inspect -> finish|cancel`. It uses ordinary controls
 from the mission packet and does not edit the product or harness.
 
@@ -95,14 +95,14 @@ The initial reviewed concept-card handles are:
 - `gameplay-interaction-completion`;
 - `gameplay-pointer-capture-recovery`.
 
-Game/scenario notes have a different lifecycle. The parent supplies one exact,
-complete current snapshot with revision, hash, provenance, observed build,
-freshness, confidence, Markdown notes, and unresolved questions. The worker
+Game/scenario notes have a different lifecycle. The parent supplies one
+complete current snapshot with an observation timestamp, provenance, freshness,
+confidence, Markdown notes, and unresolved questions. The worker
 may propose one complete next snapshot in `field_guide_replacement`; it cannot
 publish it. The parent publishes through the explicitly named latest-value
 owner—normally a Den document or repository document—and replaces the previous
-content wholesale. Historical snapshots remain in prior evidence or document
-revisions, but are not concatenated into a future prompt.
+content wholesale. Prior snapshots remain in evidence or document history, but
+are not concatenated into a future prompt.
 
 Capture an initial neutral scene before reading game-specific hints when
 practical. Field guides can help with controls and navigation, but they never
@@ -140,13 +140,13 @@ diagnostic that influenced its conclusion.
 
 ## Completion and review checklist
 
-- repository path, exact 40-character revision, origin, and dirty state;
+- repository path and run timestamp;
 - configured worker model/effort and recorded runtime identity when available;
 - neutral player mission, ordinary controls, and operational outcome;
 - initial neutral account, visible trajectory, unexpected details, and at most
   one bounded reproduction;
 - separate acceptance owner/status and orchestrator mapping;
-- exact field-guide input revision/hash, source handles read, contradictions,
+- field-guide input timestamp, source handles read, contradictions,
   and complete replacement candidate or explicit none;
 - diagnostic influence, or an explicit statement that there was none;
 - absolute `playtest-index.json` path plus useful timeline offsets and
@@ -165,13 +165,13 @@ an automatic merge decision.
 ```text
 Product playtest: <project>/<scenario>
 Repository: <absolute path>
-Revision: <40-character SHA> (<clean|dirty; list dirty paths>)
+Started: <UTC timestamp>
 Worker: <configured model/effort; recorded runtime identity if available>
 Mission: <neutral player goal>
 Operational outcome: <pass|fail|uncertain|infrastructure_error>
 Neutral observation: <initial spatial account, trajectory, unexpected details>
 Acceptance mapping: <orchestrator owner/status and criterion mapping>
-Guidance: <input revision/hash; handles read; contradictions; replacement candidate or none>
+Guidance: <input snapshot timestamp; handles read; contradictions; replacement candidate or none>
 Reproduction: <none|one bounded attempt and result>
 Diagnostics: <none|what influenced the conclusion>
 Discrepancies/warnings: <count and relevant codes>

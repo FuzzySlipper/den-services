@@ -100,13 +100,13 @@ func TestReviewContextDetailReferenceExpandsEvidenceAndUsesOpaqueRefs(t *testing
 	for index := 0; index < 32; index++ {
 		children = append(children, map[string]any{
 			"project_id": "den-services", "task_id": 1000 + index, "review_round_id": 2000 + index,
-			"head_commit": campaignValue("campaign-child", index), "membership_kind": campaignValue("membership", index), "approved_verdict": campaignValue("verdict", index),
+			"membership_kind": campaignValue("membership", index), "approved_verdict": campaignValue("verdict", index),
 		})
-		repositories = append(repositories, map[string]any{"repository": campaignValue("owner/repository", index), "head_sha": campaignValue("campaign-head", index)})
+		repositories = append(repositories, map[string]any{"repository": campaignValue("owner/repository", index)})
 	}
 	workflowSummary, err := json.Marshal(map[string]any{
 		"current_round": map[string]any{
-			"id": 88, "project_id": "den-services", "task_id": 42, "round_number": 2, "head_commit": "head",
+			"id": 88, "project_id": "den-services", "task_id": 42, "round_number": 2,
 			"target_kind": "campaign_reconciliation", "campaign_children": children, "campaign_repositories": repositories,
 		},
 		"open_findings": []map[string]any{{"id": 11, "status": "open", "summary": "bounded finding"}},
@@ -128,8 +128,6 @@ func TestReviewContextDetailReferenceExpandsEvidenceAndUsesOpaqueRefs(t *testing
 			_, _ = w.Write([]byte(`{"project_id":"den-services","content_markdown":"full guidance evidence","sources":[{"source_scope":"den-services","document_project_id":"den-services","document_slug":"go-codestyle","document_title":"Go style"}]}`))
 		case "/v1/projects/den-services/tasks/42/packets/latest":
 			_, _ = w.Write([]byte(`{"id":41,"project_id":"den-services","task_id":42,"sender":"reviewer","content":"full packet evidence","intent":"review_request","metadata":{"kind":"review_request"},"created_at":"2026-08-03T01:02:03Z"}`))
-		case "/v1/projects/den-services/tasks/42/review/github-check-gates/head":
-			_, _ = w.Write([]byte(`{"id":9,"repository":"FuzzySlipper/den-services","status":"passed","required_checks":["verify"]}`))
 		default:
 			http.Error(w, "not found", http.StatusNotFound)
 		}
@@ -194,12 +192,12 @@ func TestReviewContextDetailReferenceExpandsEvidenceAndUsesOpaqueRefs(t *testing
 	}
 	childZero := normalChildren[0].(map[string]any)
 	childOne := normalChildren[1].(map[string]any)
-	if childZero["head_commit"] == childOne["head_commit"] {
+	if childZero["review_round_id"] == childOne["review_round_id"] {
 		t.Fatalf("normal campaign child identities collapsed: %#v %#v", childZero, childOne)
 	}
 	repositoryZero := normalRepositories[0].(map[string]any)
 	repositoryOne := normalRepositories[1].(map[string]any)
-	if repositoryZero["repository"] == repositoryOne["repository"] || repositoryZero["head_sha"] == repositoryOne["head_sha"] {
+	if repositoryZero["repository"] == repositoryOne["repository"] {
 		t.Fatalf("normal campaign repository identities collapsed: %#v %#v", repositoryZero, repositoryOne)
 	}
 	campaignRef := currentRound["campaign_detail_ref"].(string)
@@ -211,7 +209,7 @@ func TestReviewContextDetailReferenceExpandsEvidenceAndUsesOpaqueRefs(t *testing
 		t.Fatalf("expanded result is error: %#v", detailed)
 	}
 	detailedText := detailed["content"].([]any)[0].(map[string]any)["text"].(string)
-	for _, want := range []string{"expanded_findings", "full finding evidence", "expanded_packets", "full packet evidence", "expanded_guidance", "full guidance evidence", campaignValue("campaign-child", 31), campaignValue("campaign-head", 31)} {
+	for _, want := range []string{"expanded_findings", "full finding evidence", "expanded_packets", "full packet evidence", "expanded_guidance", "full guidance evidence", campaignValue("membership", 31), campaignValue("owner/repository", 31)} {
 		if !strings.Contains(detailedText, want) {
 			t.Fatalf("expanded result missing %s: %s", want, detailedText)
 		}

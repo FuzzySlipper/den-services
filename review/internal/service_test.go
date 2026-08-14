@@ -23,14 +23,14 @@ func TestServiceReviewRoundFindingVerdictAndResponse(t *testing.T) {
 	service := newTestService(store, messages, tasks)
 
 	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
-		RequestedBy: "pi", Branch: "task/3696-review-service", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+		RequestedBy: "pi", Branch: "task/3696-review-service", BaseBranch: "main",
 		TestsRun: []string{"go test ./review/..."},
 	})
 	if err != nil {
 		t.Fatalf("CreateRound() error = %v", err)
 	}
-	if round.RoundNumber != 1 || round.PreferredDiffBaseRef != "main" || round.PreferredDiffHeadRef != "task/3696-review-service" {
-		t.Fatalf("round metadata not defaulted: %+v", round)
+	if round.RoundNumber != 1 || round.Branch != "task/3696-review-service" || round.BaseBranch != "main" {
+		t.Fatalf("round metadata not preserved: %+v", round)
 	}
 
 	finding, err := service.CreateFinding(ctx, round.ID, CreateReviewFindingRequest{
@@ -78,8 +78,8 @@ func TestServiceReviewPipelinePreservesMissingStateAndSelectsLatest(t *testing.T
 	}}
 	older := fixedReviewTestTime().Add(-time.Minute)
 	newer := fixedReviewTestTime()
-	store.rounds[1] = &ReviewRound{ID: 1, ProjectID: "den-services", TaskID: 42, RoundNumber: 1, HeadCommit: "old", CreatedAt: older, UpdatedAt: older}
-	store.rounds[2] = &ReviewRound{ID: 2, ProjectID: "den-services", TaskID: 42, RoundNumber: 2, HeadCommit: "new", CreatedAt: newer, UpdatedAt: newer}
+	store.rounds[1] = &ReviewRound{ID: 1, ProjectID: "den-services", TaskID: 42, RoundNumber: 1, CreatedAt: older, UpdatedAt: older}
+	store.rounds[2] = &ReviewRound{ID: 2, ProjectID: "den-services", TaskID: 42, RoundNumber: 2, CreatedAt: newer, UpdatedAt: newer}
 	store.githubCheckGates[1] = &GitHubCheckGate{ID: 1, ProjectID: "den-services", TaskID: 42, CommitSHA: "old", Status: GitHubCheckGateStatusSuperseded, CreatedAt: older, UpdatedAt: older}
 	store.githubCheckGates[2] = &GitHubCheckGate{ID: 2, ProjectID: "den-services", TaskID: 42, CommitSHA: "new", Status: GitHubCheckGateStatusPending, CreatedAt: newer, UpdatedAt: newer}
 
@@ -90,7 +90,7 @@ func TestServiceReviewPipelinePreservesMissingStateAndSelectsLatest(t *testing.T
 	if len(page.Items) != 2 || page.Items[0].Task.ID != 41 || page.Items[0].Round != nil || page.Items[0].Gate != nil {
 		t.Fatalf("missing-state item = %+v", page.Items)
 	}
-	if page.Items[1].Round == nil || page.Items[1].Round.HeadCommit != "new" || page.Items[1].Gate == nil || page.Items[1].Gate.CommitSHA != "new" {
+	if page.Items[1].Round == nil || page.Items[1].Round.RoundNumber != 2 || page.Items[1].Gate == nil || page.Items[1].Gate.CommitSHA != "new" {
 		t.Fatalf("latest-state item = %+v", page.Items[1])
 	}
 }
@@ -117,7 +117,7 @@ func TestServiceSetVerdictRejectsGreenPathVerdicts(t *testing.T) {
 				42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
 			}})
 			round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
-				RequestedBy: "pi", Branch: "task/verdict", BaseBranch: "main", BaseCommit: "base", HeadCommit: verdict,
+				RequestedBy: "pi", Branch: "task/verdict", BaseBranch: "main",
 			})
 			if err != nil {
 				t.Fatalf("CreateRound() error = %v", err)
@@ -140,13 +140,13 @@ func TestFinalizeReviewRejectsSupersededRoundBeforeMutation(t *testing.T) {
 	}}
 	service := newTestService(store, messages, tasks)
 	first, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
-		RequestedBy: "reviewer", Branch: "task/first", BaseBranch: "main", BaseCommit: "base", HeadCommit: "first",
+		RequestedBy: "reviewer", Branch: "task/first", BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	second, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
-		RequestedBy: "reviewer", Branch: "task/second", BaseBranch: "main", BaseCommit: "first", HeadCommit: "second",
+		RequestedBy: "reviewer", Branch: "task/second", BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -185,7 +185,7 @@ func TestFinalizeReviewCreatesCurrentFindingsAtomically(t *testing.T) {
 	}}
 	service := newTestService(store, messages, tasks)
 	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
-		RequestedBy: "reviewer", Branch: "task/findings", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+		RequestedBy: "reviewer", Branch: "task/findings", BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -220,7 +220,7 @@ func TestFinalizeReviewResolvesPriorFindingAndNormalizesDigest(t *testing.T) {
 	}}
 	service := newTestService(store, &fakeMessages{}, tasks)
 	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
-		RequestedBy: "reviewer", Branch: "task/resolve", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+		RequestedBy: "reviewer", Branch: "task/resolve", BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -258,7 +258,7 @@ func TestRequestReviewMetadataUsesCanonicalPacketKind(t *testing.T) {
 	}}
 	service := newTestService(newMemoryStore(), messages, tasks)
 	packet, err := service.RequestReview(ctx, "den-services", 42, CreateReviewRoundRequest{
-		RequestedBy: "pi", Branch: "task/3696-review-service", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+		RequestedBy: "pi", Branch: "task/3696-review-service", BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatalf("RequestReview() error = %v", err)
@@ -292,7 +292,7 @@ func TestRequestReviewTransitionsInProgressTaskAndConvergesAfterResponseLoss(t *
 	}
 	service := newTestService(store, messages, tasks)
 	request := CreateReviewRoundRequest{
-		RequestedBy: "pi", Branch: "task/6377-request-review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+		RequestedBy: "pi", Branch: "task/6377-request-review", BaseBranch: "main",
 		TestsRun: []string{"go test -race ./review/internal"}, Notes: "Request review and transition atomically from the caller's perspective.",
 	}
 
@@ -323,7 +323,7 @@ func TestRequestReviewTransitionsInProgressTaskAndReportsResult(t *testing.T) {
 	}}
 	service := newTestService(newMemoryStore(), &fakeMessages{}, tasks)
 	packet, err := service.RequestReview(ctx, "den-services", 42, CreateReviewRoundRequest{
-		RequestedBy: "pi", Branch: "main", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+		RequestedBy: "pi", Branch: "main", BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatalf("RequestReview() error = %v", err)
@@ -348,7 +348,7 @@ func TestRequestReviewReturnsTypedRetryableTaskTransitionError(t *testing.T) {
 	}
 	service := newTestService(store, &fakeMessages{}, tasks)
 	request := CreateReviewRoundRequest{
-		RequestedBy: "pi", Branch: "main", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+		RequestedBy: "pi", Branch: "main", BaseBranch: "main",
 	}
 	if _, err := service.RequestReview(ctx, "den-services", 42, request); err == nil {
 		t.Fatal("RequestReview() error = nil, want retryable transition error")
@@ -381,7 +381,7 @@ func TestRequestReviewRejectsTerminalTasks(t *testing.T) {
 				42: {ID: 42, ProjectID: "den-services", Status: status},
 			}})
 			_, err := service.RequestReview(context.Background(), "den-services", 42, CreateReviewRoundRequest{
-				RequestedBy: "pi", Branch: "main", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+				RequestedBy: "pi", Branch: "main", BaseBranch: "main",
 			})
 			if err == nil || !errors.Is(err, ErrInvalidTaskState) {
 				t.Fatalf("RequestReview() error = %v, want ErrInvalidTaskState", err)
@@ -403,7 +403,7 @@ func TestRequestReviewDoesNotOverwriteStatusThatWinsAfterValidation(t *testing.T
 			}
 			service := newTestService(store, messages, tasks)
 			_, err := service.RequestReview(context.Background(), "den-services", 42, CreateReviewRoundRequest{
-				RequestedBy: "pi", Branch: "main", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+				RequestedBy: "pi", Branch: "main", BaseBranch: "main",
 			})
 			var serviceErr *ServiceError
 			if !errors.As(err, &serviceErr) || serviceErr.Code() != "review_transition_ineligible" ||
@@ -433,7 +433,7 @@ func TestRequestReviewConcurrentRetriesCreateOneWorkflowTransition(t *testing.T)
 	tasks.task.Status = TaskStatusInProgress
 	service := newTestService(store, messages, tasks)
 	request := CreateReviewRoundRequest{
-		RequestedBy: "pi", Branch: "task/6377-request-review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+		RequestedBy: "pi", Branch: "task/6377-request-review", BaseBranch: "main",
 	}
 
 	results := make(chan *ReviewPacket, 2)
@@ -482,26 +482,24 @@ func TestRequestCampaignReviewSnapshotsThreeRepositoryCampaignAndFinalizesIdempo
 	}}
 	service := newTestService(store, messages, tasks)
 
-	repositories := []CampaignRepositoryHead{
-		{Repository: "FuzzySlipper/asha-rpg", HeadSHA: strings.Repeat("a", 40)},
-		{Repository: "FuzzySlipper/asha-d20-fantasy", HeadSHA: strings.Repeat("b", 40)},
-		{Repository: "FuzzySlipper/asha-rulebench", HeadSHA: strings.Repeat("c", 40)},
+	repositories := []CampaignRepository{
+		{Repository: "FuzzySlipper/asha-rpg"},
+		{Repository: "FuzzySlipper/asha-d20-fantasy"},
+		{Repository: "FuzzySlipper/asha-rulebench"},
 	}
 	childSpecs := []struct {
 		projectID string
 		taskID    int64
-		head      string
 	}{
-		{projectID: "den-services", taskID: 6097, head: repositories[0].HeadSHA},
-		{projectID: "asha-d20-fantasy", taskID: 6098, head: repositories[1].HeadSHA},
-		{projectID: "asha-rulebench", taskID: 6099, head: repositories[2].HeadSHA},
+		{projectID: "den-services", taskID: 6097},
+		{projectID: "asha-d20-fantasy", taskID: 6098},
+		{projectID: "asha-rulebench", taskID: 6099},
 	}
 	children := make([]CampaignReviewChildRequest, 0, len(childSpecs))
 	for _, spec := range childSpecs {
 		round, err := store.CreateRound(ctx, &ReviewRound{
 			ProjectID: spec.projectID, TaskID: spec.taskID, RequestedBy: "implementer",
 			TargetKind: ReviewTargetCodeDiff, Branch: "main", BaseBranch: "main",
-			BaseCommit: strings.Repeat("0", 40), HeadCommit: spec.head,
 			RequestedAt: fixedReviewTestTime(), CreatedAt: fixedReviewTestTime(), UpdatedAt: fixedReviewTestTime(),
 		})
 		if err != nil {
@@ -529,7 +527,7 @@ func TestRequestCampaignReviewSnapshotsThreeRepositoryCampaignAndFinalizesIdempo
 	if round.TargetKind != ReviewTargetCampaignReconciliation || len(round.CampaignChildren) != 3 || len(round.CampaignRepositories) != 3 {
 		t.Fatalf("campaign snapshot = %+v", round)
 	}
-	if round.Branch != "" || round.BaseCommit != "" || round.HeadCommit != "" {
+	if round.Branch != "" || round.BaseBranch != "" {
 		t.Fatalf("campaign unexpectedly stored diff target: %+v", round)
 	}
 	membershipByTask := map[int64]string{}
@@ -555,7 +553,7 @@ func TestRequestCampaignReviewSnapshotsThreeRepositoryCampaignAndFinalizesIdempo
 			children[0],
 			children[1],
 		},
-		Repositories: []CampaignRepositoryHead{
+		Repositories: []CampaignRepository{
 			repositories[2],
 			repositories[0],
 			repositories[1],
@@ -639,7 +637,6 @@ func TestRequestCampaignReviewRejectsStaleUnapprovedUnrelatedDuplicateAndMismatc
 		parentID = int64(6212)
 		childID  = int64(7001)
 	)
-	head := strings.Repeat("d", 40)
 	baseTasks := func() *fakeTasks {
 		return &fakeTasks{tasks: map[int64]TaskContext{
 			parentID: {ID: parentID, ProjectID: "den-services", Status: TaskStatusReview},
@@ -650,7 +647,7 @@ func TestRequestCampaignReviewRejectsStaleUnapprovedUnrelatedDuplicateAndMismatc
 		t.Helper()
 		round, err := store.CreateRound(context.Background(), &ReviewRound{
 			ProjectID: "den-services", TaskID: childID, RequestedBy: "agent", TargetKind: ReviewTargetCodeDiff,
-			Branch: "main", BaseBranch: "main", BaseCommit: strings.Repeat("0", 40), HeadCommit: head,
+			Branch: "main", BaseBranch: "main",
 			RequestedAt: fixedReviewTestTime(), CreatedAt: fixedReviewTestTime(), UpdatedAt: fixedReviewTestTime(),
 		})
 		if err != nil {
@@ -668,7 +665,7 @@ func TestRequestCampaignReviewRejectsStaleUnapprovedUnrelatedDuplicateAndMismatc
 		return CreateCampaignReviewRequest{
 			RequestedBy:  "agent",
 			Children:     []CampaignReviewChildRequest{{ProjectID: "den-services", TaskID: childID, ReviewRoundID: roundID}},
-			Repositories: []CampaignRepositoryHead{{Repository: "owner/repo", HeadSHA: head}},
+			Repositories: []CampaignRepository{{Repository: "owner/repo"}},
 		}
 	}
 
@@ -681,7 +678,6 @@ func TestRequestCampaignReviewRejectsStaleUnapprovedUnrelatedDuplicateAndMismatc
 	t.Run("stale", func(t *testing.T) {
 		store := newMemoryStore()
 		round := seedRound(t, store, VerdictLooksGood)
-		store.rounds[round.ID].HeadCommit = strings.Repeat("e", 40)
 		_ = seedRound(t, store, VerdictLooksGood)
 		_, err := newTestService(store, &fakeMessages{}, baseTasks()).RequestCampaignReview(context.Background(), "den-services", parentID, request(round.ID))
 		assertServiceErrorCode(t, err, "stale_campaign_review_round")
@@ -702,13 +698,13 @@ func TestRequestCampaignReviewRejectsStaleUnapprovedUnrelatedDuplicateAndMismatc
 		_, err := newTestService(store, &fakeMessages{}, baseTasks()).RequestCampaignReview(context.Background(), "den-services", parentID, req)
 		assertServiceErrorCode(t, err, "duplicate_campaign_child")
 	})
-	t.Run("head mismatch", func(t *testing.T) {
+	t.Run("repository names do not require a revision", func(t *testing.T) {
 		store := newMemoryStore()
 		round := seedRound(t, store, VerdictLooksGood)
 		req := request(round.ID)
-		req.Repositories[0].HeadSHA = strings.Repeat("f", 40)
-		_, err := newTestService(store, &fakeMessages{}, baseTasks()).RequestCampaignReview(context.Background(), "den-services", parentID, req)
-		assertServiceErrorCode(t, err, "campaign_head_mismatch")
+		if _, err := newTestService(store, &fakeMessages{}, baseTasks()).RequestCampaignReview(context.Background(), "den-services", parentID, req); err != nil {
+			t.Fatalf("RequestCampaignReview() error = %v", err)
+		}
 	})
 	t.Run("missing round", func(t *testing.T) {
 		_, err := newTestService(newMemoryStore(), &fakeMessages{}, baseTasks()).RequestCampaignReview(
@@ -756,7 +752,6 @@ campaign_children:
     review_round_id: 70
 campaign_repositories:
   - repository: owner/repo
-    head_sha: 0123456789abcdef0123456789abcdef01234567
 verify:
   - checked: true
     item: child rounds approved
@@ -871,7 +866,7 @@ func TestPostReviewFindingsAppendsCompatiblePacket(t *testing.T) {
 		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusReview, Priority: 1},
 	}})
 	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
-		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -910,7 +905,7 @@ func TestFinalizeReviewLooksGoodCompletesAndIsIdempotent(t *testing.T) {
 	}}
 	service := newTestService(store, messages, tasks)
 	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
-		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -953,7 +948,7 @@ func TestFinalizeReviewChangesRequestedRequiresAndPreservesCurrentRoundFinding(t
 	}}
 	service := newTestService(store, messages, tasks)
 	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
-		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -997,7 +992,7 @@ func TestFinalizeReviewRejectsInconsistentFindings(t *testing.T) {
 				42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
 			}})
 			round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
-				RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+				RequestedBy: "pi", Branch: "task/review", BaseBranch: "main",
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -1051,7 +1046,7 @@ func TestFinalizeReviewResumesMessageFailureAndResponseLoss(t *testing.T) {
 			}}
 			service := newTestService(store, messages, tasks)
 			round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
-				RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+				RequestedBy: "pi", Branch: "task/review", BaseBranch: "main",
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -1109,7 +1104,7 @@ func TestFinalizeReviewResumesTaskFailureAndResponseLoss(t *testing.T) {
 			test.configureTasks(tasks)
 			service := newTestService(store, messages, tasks)
 			round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
-				RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+				RequestedBy: "pi", Branch: "task/review", BaseBranch: "main",
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -1153,7 +1148,7 @@ func TestFinalizeReviewConcurrentRetriesAreIdempotent(t *testing.T) {
 			}
 			service := newTestService(store, messages, seedTasks)
 			round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
-				RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+				RequestedBy: "pi", Branch: "task/review", BaseBranch: "main",
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -1227,7 +1222,7 @@ func TestFinalizeReviewConcurrentConflictingFirstCallsReturnOneConflict(t *testi
 	}}
 	service := newTestService(store, &fakeMessages{}, tasks)
 	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
-		RequestedBy: "reviewer", Branch: "task/conflict", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+		RequestedBy: "reviewer", Branch: "task/conflict", BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1276,7 +1271,7 @@ func TestFinalizeReviewResumesAfterTaskCheckpointBeforeComplete(t *testing.T) {
 	}}
 	service := newTestService(store, messages, tasks)
 	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
-		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1308,7 +1303,7 @@ func TestPostReviewFindingsReusesFinalizationPacketAfterTaskTransition(t *testin
 	}}
 	service := newTestService(store, messages, tasks)
 	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
-		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1340,7 +1335,7 @@ func TestServiceTaskOnlyReviewMethodsResolveProjectFromTask(t *testing.T) {
 	service := newTestService(store, &fakeMessages{}, tasks)
 
 	round, err := service.CreateRoundForTask(ctx, 42, CreateReviewRoundRequest{
-		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head",
+		RequestedBy: "pi", Branch: "task/review", BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatalf("CreateRoundForTask() error = %v", err)
@@ -1379,7 +1374,7 @@ func TestServiceSplitFindingsToFollowUpSkipsBlockingWithoutOverride(t *testing.T
 		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusReview, Priority: 1},
 	}}
 	service := newTestService(store, &fakeMessages{}, tasks)
-	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{RequestedBy: "pi", Branch: "b", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head"})
+	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{RequestedBy: "pi", Branch: "b", BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1409,13 +1404,13 @@ func TestServiceSplitFindingsToFollowUpSkipsBlockingWithoutOverride(t *testing.T
 	}
 }
 
-func TestPacketValidationAcceptsMarkdownAndRejectsBadContext(t *testing.T) {
+func TestPacketValidationAcceptsCurrentStateWithoutRevisionFields(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()
 	service := newTestService(store, &fakeMessages{}, &fakeTasks{tasks: map[int64]TaskContext{
 		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusReview, Priority: 1},
 	}})
-	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{RequestedBy: "pi", Branch: "b", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head"})
+	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{RequestedBy: "pi", Branch: "b", BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1427,10 +1422,9 @@ project_id: den-services
 task_id: 42
 sender: pi-reviewer
 review_round_id: ` + itoa(round.ID) + `
-reviewed_head_commit: head
 verdict: changes_requested
 verify:
-  - id: reviewed_head_matches_round
+  - id: findings_checked
     checked: true
 ---
 # Findings
@@ -1444,14 +1438,8 @@ One finding.`
 		t.Fatalf("packet not valid: %+v", packet)
 	}
 
-	stale := replace(markdown, "reviewed_head_commit: head", "reviewed_head_commit: stale")
-	_, err = service.ValidatePacketMarkdown(ctx, "den-services", 42, stale)
-	if err == nil {
-		t.Fatal("expected stale reviewed head rejection")
-	}
-	var serviceError *ServiceError
-	if !errors.As(err, &serviceError) || serviceError.Field() != "reviewed_head_commit" || serviceError.DocsRef() == "" {
-		t.Fatalf("expected field/docs validation error, got %T %v", err, err)
+	if strings.Contains(packet.MarkdownBody, "reviewed_head_commit") || strings.Contains(packet.MarkdownBody, "head_commit") {
+		t.Fatalf("packet retained revision-specific fields: %s", packet.MarkdownBody)
 	}
 }
 
@@ -1462,7 +1450,7 @@ func TestPostPacketMarkdownStoresPacketAndAppendsMessage(t *testing.T) {
 	service := newTestService(store, messages, &fakeTasks{tasks: map[int64]TaskContext{
 		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusReview, Priority: 1},
 	}})
-	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{RequestedBy: "pi", Branch: "b", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head"})
+	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{RequestedBy: "pi", Branch: "b", BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1474,7 +1462,6 @@ project_id: den-services
 task_id: 42
 sender: pi-reviewer
 review_round_id: ` + itoa(round.ID) + `
-reviewed_head_commit: head
 verdict: looks_good
 verify:
   - id: completion_refs_checked
@@ -1502,7 +1489,7 @@ func TestPostPacketMarkdownIdempotencyDoesNotAppendDuplicateMessages(t *testing.
 	service := newTestService(store, messages, &fakeTasks{tasks: map[int64]TaskContext{
 		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusReview, Priority: 1},
 	}})
-	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{RequestedBy: "pi", Branch: "b", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head"})
+	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{RequestedBy: "pi", Branch: "b", BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1530,7 +1517,7 @@ func TestPostPacketMarkdownMessageFailureResumesWithoutDuplicate(t *testing.T) {
 	service := newTestService(store, messages, &fakeTasks{tasks: map[int64]TaskContext{
 		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusReview, Priority: 1},
 	}})
-	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{RequestedBy: "pi", Branch: "b", BaseBranch: "main", BaseCommit: "base", HeadCommit: "head"})
+	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{RequestedBy: "pi", Branch: "b", BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2688,7 +2675,6 @@ project_id: den-services
 task_id: 42
 sender: pi-reviewer
 review_round_id: ` + itoa(roundID) + `
-reviewed_head_commit: head
 verdict: looks_good
 verify:
   - id: completion_refs_checked

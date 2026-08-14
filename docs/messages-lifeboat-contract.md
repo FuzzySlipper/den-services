@@ -366,7 +366,7 @@ Required completion metadata when stored in messages:
 - `project_id`
 - `task_id`
 - `run_id`
-- optional `branch`, `head_commit`, `base_commit`, `tests_run`,
+- optional `branch`, `tests_run`,
   `review_round_id`, `finding_ids`, `failure_category`, `recovery_guidance`,
   `dedupe_key`, and scope-audit fields
 

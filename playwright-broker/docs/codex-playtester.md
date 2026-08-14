@@ -51,13 +51,12 @@ Spawn the custom `playtester` agent for an evidence-backed product playtest.
 
 Repository: /absolute/path/to/repository
 Manifest: <optional absolute path when not named .den-playwright.json>
-Exact revision: <40-character SHA> (<clean or dirty, with dirty paths if any>)
 Mission: <neutral player goal to attempt; do not supply the desired verdict>
 Controls: <ordinary keyboard/mouse controls and any startup action>
 Artifacts: <screenshots/frame bursts/trace/video preferences>
 Project/scenario: <project id> / <scenario label>
 Den reference: <optional project and task>
-Field guide: <optional complete snapshot with revision/hash/provenance/freshness/confidence>
+Field guide: <optional complete snapshot with observation timestamp, provenance/freshness/confidence>
 Source handles: <optional Den Knowledge, Den document, authored guide, or public URL handles>
 
 Keep one browser session across repeated observe/act turns. Capture a neutral concrete account before applying the separate orchestrator acceptance mapping. Judge visible behavior from repeated screenshots or frame bursts, continue interactions through their intended downstream use, use diagnostics only when useful and label their influence, make at most one bounded reproduction attempt, always clean up, and return the product-playtest evidence report.
@@ -91,10 +90,10 @@ after the neutral account exists. Keep `neutral_observation`,
 `operational_outcome`, and `acceptance_mapping` distinct in `playtest_finish`.
 
 Field-guide assistance is similarly separate from acceptance. The worker
-records the exact supplied snapshot and handles at start, reports contradictions
+records the supplied snapshot and handles at start, reports contradictions
 against visible evidence, and may return a complete `replace-complete`
 candidate for the next run. The parent, not the playtester, owns publication;
-old revisions remain auditable but are not automatically reinjected.
+prior snapshots remain auditable but are not automatically reinjected.
 
 ## Model identity
 

@@ -230,8 +230,8 @@ visual account inspectable even when a later acceptance classification
 contradicts it. For primarily visual classification, capture the neutral
 account before the orchestrator supplies or applies targeted criteria.
 
-Optional field-guide inputs are also retained independently. Put one exact
-complete snapshot and its handles on start:
+Optional field-guide inputs are also retained independently. Put one complete
+current snapshot, its observation timestamp, and its handles on start:
 
 ```json
 {
@@ -241,10 +241,8 @@ complete snapshot and its handles on start:
   "field_guide": {
     "schema_version": 1,
     "guide_id": "my-game/door-traversal",
-    "revision": "7",
-    "sha256": "<exact bundle hash>",
+    "observed_at": "2026-08-12T20:30:00Z",
     "provenance": ["den-document:my-game/playtest-field-guide"],
-    "observed_build_revision": "<40-character SHA>",
     "freshness": "observed 2026-08-12",
     "confidence": "medium",
     "notes_markdown": "Complete current notes.",
@@ -265,7 +263,7 @@ and visible contradictions. `field_guide_replacement` is one complete proposed
 next bundle with `replacement_mode: "replace-complete"`. The parent publishes
 that bundle through its named latest-value document owner. The broker records
 both sides for audit but does not retrieve sources, publish notes, patch the
-old bundle, or inject historical revisions into later runs.
+old bundle, or inject obsolete notes into later runs.
 
 `exit_interview` is an optional free-form suggestion box. It is retained in the
 index, returned by finish, and copied into the persisted session returned by
@@ -304,7 +302,7 @@ Each session writes:
 
 `playtest-index.json` includes:
 
-- repo path, exact Git SHA/origin when available, and dirty-state details;
+- repo path and run start/finish timestamps;
 - Den/scenario/caller metadata;
 - browser/version/viewport and timestamps;
 - original request and interpreted timeline offsets;
@@ -338,7 +336,7 @@ evidence. The compact form below remains useful for manual diagnostics.
 Compact evidence template:
 
 ```text
-Playtest: <scenario> at exact SHA <sha> (<clean|dirty>)
+Playtest: <scenario> started <UTC timestamp>
 Outcome: <pass|fail|uncertain|infrastructure_error|caller-defined>
 Discrepancies: <count and relevant codes>
 Evidence: <absolute playtest-index.json path>

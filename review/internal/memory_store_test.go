@@ -48,19 +48,8 @@ func (s *memoryStore) CreateRound(_ context.Context, round *ReviewRound) (*Revie
 	}
 	if latest != nil {
 		round.RoundNumber = latest.RoundNumber + 1
-		if round.TargetKind != ReviewTargetCampaignReconciliation {
-			if round.HeadCommit != "" && latest.HeadCommit == round.HeadCommit {
-				return nil, conflict(fmt.Errorf("head commit was already reviewed: %s", round.HeadCommit), "same_head_review")
-			}
-			if round.LastReviewedHeadCommit == "" {
-				round.LastReviewedHeadCommit = latest.HeadCommit
-			}
-		}
 	} else {
 		round.RoundNumber = 1
-	}
-	if round.TargetKind != ReviewTargetCampaignReconciliation && round.DeltaBaseCommit == "" {
-		round.DeltaBaseCommit = round.LastReviewedHeadCommit
 	}
 	round.ID = s.nextRoundID
 	s.nextRoundID++
@@ -135,7 +124,7 @@ func cloneReviewRound(round *ReviewRound) ReviewRound {
 	copied := *round
 	copied.TestsRun = append([]string(nil), round.TestsRun...)
 	copied.CampaignChildren = append([]CampaignReviewChild(nil), round.CampaignChildren...)
-	copied.CampaignRepositories = append([]CampaignRepositoryHead(nil), round.CampaignRepositories...)
+	copied.CampaignRepositories = append([]CampaignRepository(nil), round.CampaignRepositories...)
 	return copied
 }
 

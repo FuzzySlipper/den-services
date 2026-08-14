@@ -88,39 +88,37 @@ const (
 )
 
 var (
-	ErrMissingProjectID        = errors.New("project_id is required")                 //nolint:gochecknoglobals
-	ErrMissingTaskID           = errors.New("task_id is required")                    //nolint:gochecknoglobals
-	ErrMissingActor            = errors.New("actor is required")                      //nolint:gochecknoglobals
-	ErrMissingRound            = errors.New("review round not found")                 //nolint:gochecknoglobals
-	ErrMissingFinding          = errors.New("review finding not found")               //nolint:gochecknoglobals
-	ErrInvalidVerdict          = errors.New("invalid verdict")                        //nolint:gochecknoglobals
-	ErrInvalidCategory         = errors.New("invalid category")                       //nolint:gochecknoglobals
-	ErrInvalidStatus           = errors.New("invalid status")                         //nolint:gochecknoglobals
-	ErrInvalidPacketKind       = errors.New("invalid packet_kind")                    //nolint:gochecknoglobals
-	ErrInvalidTaskState        = errors.New("task is not reviewable for packet kind") //nolint:gochecknoglobals
-	ErrMissingReviewedCommit   = errors.New("reviewed_head_commit is required")       //nolint:gochecknoglobals
-	ErrUncheckedVerify         = errors.New("required verify item is unchecked")      //nolint:gochecknoglobals
-	ErrFollowUpStatusMismatch  = errors.New("follow_up_task_id requires split_to_follow_up status")
-	ErrMessageClientUnset      = errors.New("messages client is not configured") //nolint:gochecknoglobals
-	ErrTaskClientUnset         = errors.New("tasks client is not configured")    //nolint:gochecknoglobals
-	ErrProjectScopeClientUnset = errors.New("projects client is not configured") //nolint:gochecknoglobals
-	ErrGitHubChecksUnset       = errors.New("github check provider is not configured")
-	ErrFinalizationConflict    = errors.New("review round was finalized with different decision identity")
-	ErrStaleReviewRound        = errors.New("review round is no longer current")
-	ErrReviewRequestTooLarge   = errors.New("review request exceeds the bounded payload budget")
-	ErrUnresolvedFindings      = errors.New("looks_good requires no unresolved findings for the task")
-	ErrActionableFinding       = errors.New("changes_requested requires an actionable finding in the current review round")
-	ErrMissingCampaignChild    = errors.New("campaign child is missing")
-	ErrMissingCampaignRound    = errors.New("campaign child review round is missing")
-	ErrMissingCampaignHead     = errors.New("campaign repository head is missing")
-	ErrDuplicateCampaignChild  = errors.New("duplicate campaign child")
-	ErrDuplicateCampaignRound  = errors.New("duplicate campaign review round")
-	ErrDuplicateCampaignRepo   = errors.New("duplicate campaign repository")
-	ErrStaleCampaignRound      = errors.New("campaign child review round is stale")
-	ErrUnapprovedCampaignRound = errors.New("campaign child review round is not approved")
-	ErrBlockedCampaignChild    = errors.New("campaign child has unresolved blocking findings")
-	ErrUnrelatedCampaignChild  = errors.New("task is not an explicit member of the campaign")
-	ErrCampaignHeadMismatch    = errors.New("campaign child head is not present in repository snapshot")
+	ErrMissingProjectID          = errors.New("project_id is required")                 //nolint:gochecknoglobals
+	ErrMissingTaskID             = errors.New("task_id is required")                    //nolint:gochecknoglobals
+	ErrMissingActor              = errors.New("actor is required")                      //nolint:gochecknoglobals
+	ErrMissingRound              = errors.New("review round not found")                 //nolint:gochecknoglobals
+	ErrMissingFinding            = errors.New("review finding not found")               //nolint:gochecknoglobals
+	ErrInvalidVerdict            = errors.New("invalid verdict")                        //nolint:gochecknoglobals
+	ErrInvalidCategory           = errors.New("invalid category")                       //nolint:gochecknoglobals
+	ErrInvalidStatus             = errors.New("invalid status")                         //nolint:gochecknoglobals
+	ErrInvalidPacketKind         = errors.New("invalid packet_kind")                    //nolint:gochecknoglobals
+	ErrInvalidTaskState          = errors.New("task is not reviewable for packet kind") //nolint:gochecknoglobals
+	ErrUncheckedVerify           = errors.New("required verify item is unchecked")      //nolint:gochecknoglobals
+	ErrFollowUpStatusMismatch    = errors.New("follow_up_task_id requires split_to_follow_up status")
+	ErrMessageClientUnset        = errors.New("messages client is not configured") //nolint:gochecknoglobals
+	ErrTaskClientUnset           = errors.New("tasks client is not configured")    //nolint:gochecknoglobals
+	ErrProjectScopeClientUnset   = errors.New("projects client is not configured") //nolint:gochecknoglobals
+	ErrGitHubChecksUnset         = errors.New("github check provider is not configured")
+	ErrFinalizationConflict      = errors.New("review round was finalized with different decision identity")
+	ErrStaleReviewRound          = errors.New("review round is no longer current")
+	ErrReviewRequestTooLarge     = errors.New("review request exceeds the bounded payload budget")
+	ErrUnresolvedFindings        = errors.New("looks_good requires no unresolved findings for the task")
+	ErrActionableFinding         = errors.New("changes_requested requires an actionable finding in the current review round")
+	ErrMissingCampaignChild      = errors.New("campaign child is missing")
+	ErrMissingCampaignRound      = errors.New("campaign child review round is missing")
+	ErrMissingCampaignRepository = errors.New("campaign repository is missing")
+	ErrDuplicateCampaignChild    = errors.New("duplicate campaign child")
+	ErrDuplicateCampaignRound    = errors.New("duplicate campaign review round")
+	ErrDuplicateCampaignRepo     = errors.New("duplicate campaign repository")
+	ErrStaleCampaignRound        = errors.New("campaign child review round is stale")
+	ErrUnapprovedCampaignRound   = errors.New("campaign child review round is not approved")
+	ErrBlockedCampaignChild      = errors.New("campaign child has unresolved blocking findings")
+	ErrUnrelatedCampaignChild    = errors.New("task is not an explicit member of the campaign")
 )
 
 type ServiceError struct {
@@ -156,54 +154,37 @@ func notFound(err error, code string) error { return NewServiceError(err, code, 
 func conflict(err error, code string) error { return NewServiceError(err, code, http.StatusConflict) }
 
 type ReviewRound struct {
-	ID                      int64
-	ProjectID               string
-	TaskID                  int64
-	RoundNumber             int
-	RequestedBy             string
-	TargetKind              string
-	CampaignChildren        []CampaignReviewChild
-	CampaignRepositories    []CampaignRepositoryHead
-	Branch                  string
-	BaseBranch              string
-	BaseCommit              string
-	HeadCommit              string
-	LastReviewedHeadCommit  string
-	CommitsSinceLastReview  *int
-	TestsRun                []string
-	Notes                   string
-	PreferredDiffBaseRef    string
-	PreferredDiffBaseCommit string
-	PreferredDiffHeadRef    string
-	PreferredDiffHeadCommit string
-	AlternateDiffBaseRef    string
-	AlternateDiffBaseCommit string
-	AlternateDiffHeadRef    string
-	AlternateDiffHeadCommit string
-	DeltaBaseCommit         string
-	InheritedCommitCount    *int
-	TaskLocalCommitCount    *int
-	Verdict                 string
-	VerdictBy               string
-	VerdictNotes            string
-	RequestedAt             time.Time
-	VerdictAt               *time.Time
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
+	ID                   int64
+	ProjectID            string
+	TaskID               int64
+	RoundNumber          int
+	RequestedBy          string
+	TargetKind           string
+	CampaignChildren     []CampaignReviewChild
+	CampaignRepositories []CampaignRepository
+	Branch               string
+	BaseBranch           string
+	TestsRun             []string
+	Notes                string
+	Verdict              string
+	VerdictBy            string
+	VerdictNotes         string
+	RequestedAt          time.Time
+	VerdictAt            *time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 type CampaignReviewChild struct {
 	ProjectID       string `json:"project_id"`
 	TaskID          int64  `json:"task_id"`
 	ReviewRoundID   int64  `json:"review_round_id"`
-	HeadCommit      string `json:"head_commit"`
 	MembershipKind  string `json:"membership_kind"`
 	ApprovedVerdict string `json:"approved_verdict"`
 }
 
-type CampaignRepositoryHead struct {
+type CampaignRepository struct {
 	Repository string `json:"repository"`
-	HeadSHA    string `json:"head_sha"`
 }
 
 type ReviewFinding struct {

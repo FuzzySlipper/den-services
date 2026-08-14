@@ -3,34 +3,19 @@ package review
 import "time"
 
 type CreateReviewRoundRequest struct {
-	RequestedBy             string   `json:"requested_by"`
-	Branch                  string   `json:"branch"`
-	BaseBranch              string   `json:"base_branch"`
-	BaseCommit              string   `json:"base_commit"`
-	HeadCommit              string   `json:"head_commit"`
-	LastReviewedHeadCommit  string   `json:"last_reviewed_head_commit,omitempty"`
-	CommitsSinceLastReview  *int     `json:"commits_since_last_review,omitempty"`
-	TestsRun                []string `json:"tests_run,omitempty"`
-	Notes                   string   `json:"notes,omitempty"`
-	PreferredDiffBaseRef    string   `json:"preferred_diff_base_ref,omitempty"`
-	PreferredDiffBaseCommit string   `json:"preferred_diff_base_commit,omitempty"`
-	PreferredDiffHeadRef    string   `json:"preferred_diff_head_ref,omitempty"`
-	PreferredDiffHeadCommit string   `json:"preferred_diff_head_commit,omitempty"`
-	AlternateDiffBaseRef    string   `json:"alternate_diff_base_ref,omitempty"`
-	AlternateDiffBaseCommit string   `json:"alternate_diff_base_commit,omitempty"`
-	AlternateDiffHeadRef    string   `json:"alternate_diff_head_ref,omitempty"`
-	AlternateDiffHeadCommit string   `json:"alternate_diff_head_commit,omitempty"`
-	DeltaBaseCommit         string   `json:"delta_base_commit,omitempty"`
-	InheritedCommitCount    *int     `json:"inherited_commit_count,omitempty"`
-	TaskLocalCommitCount    *int     `json:"task_local_commit_count,omitempty"`
-	ThreadID                *int64   `json:"thread_id,omitempty"`
-	RunID                   string   `json:"run_id,omitempty"`
+	RequestedBy string   `json:"requested_by"`
+	Branch      string   `json:"branch,omitempty"`
+	BaseBranch  string   `json:"base_branch,omitempty"`
+	TestsRun    []string `json:"tests_run,omitempty"`
+	Notes       string   `json:"notes,omitempty"`
+	ThreadID    *int64   `json:"thread_id,omitempty"`
+	RunID       string   `json:"run_id,omitempty"`
 }
 
 type CreateCampaignReviewRequest struct {
 	RequestedBy  string                       `json:"requested_by"`
 	Children     []CampaignReviewChildRequest `json:"children"`
-	Repositories []CampaignRepositoryHead     `json:"repositories"`
+	Repositories []CampaignRepository         `json:"repositories"`
 	TestsRun     []string                     `json:"tests_run,omitempty"`
 	Notes        string                       `json:"notes,omitempty"`
 	ThreadID     *int64                       `json:"thread_id,omitempty"`
@@ -164,38 +149,23 @@ type GitHubCheckDiscoveryResponse struct {
 }
 
 type ReviewRoundResponse struct {
-	ID                      int64                    `json:"id"`
-	ProjectID               string                   `json:"project_id"`
-	TaskID                  int64                    `json:"task_id"`
-	RoundNumber             int                      `json:"round_number"`
-	RequestedBy             string                   `json:"requested_by"`
-	TargetKind              string                   `json:"target_kind"`
-	CampaignChildren        []CampaignReviewChild    `json:"campaign_children,omitempty"`
-	CampaignRepositories    []CampaignRepositoryHead `json:"campaign_repositories,omitempty"`
-	Branch                  string                   `json:"branch,omitempty"`
-	BaseBranch              string                   `json:"base_branch,omitempty"`
-	BaseCommit              string                   `json:"base_commit,omitempty"`
-	HeadCommit              string                   `json:"head_commit,omitempty"`
-	LastReviewedHeadCommit  string                   `json:"last_reviewed_head_commit,omitempty"`
-	CommitsSinceLastReview  *int                     `json:"commits_since_last_review,omitempty"`
-	TestsRun                []string                 `json:"tests_run,omitempty"`
-	Notes                   string                   `json:"notes,omitempty"`
-	PreferredDiffBaseRef    string                   `json:"preferred_diff_base_ref,omitempty"`
-	PreferredDiffBaseCommit string                   `json:"preferred_diff_base_commit,omitempty"`
-	PreferredDiffHeadRef    string                   `json:"preferred_diff_head_ref,omitempty"`
-	PreferredDiffHeadCommit string                   `json:"preferred_diff_head_commit,omitempty"`
-	AlternateDiffBaseRef    string                   `json:"alternate_diff_base_ref,omitempty"`
-	AlternateDiffBaseCommit string                   `json:"alternate_diff_base_commit,omitempty"`
-	AlternateDiffHeadRef    string                   `json:"alternate_diff_head_ref,omitempty"`
-	AlternateDiffHeadCommit string                   `json:"alternate_diff_head_commit,omitempty"`
-	DeltaBaseCommit         string                   `json:"delta_base_commit,omitempty"`
-	InheritedCommitCount    *int                     `json:"inherited_commit_count,omitempty"`
-	TaskLocalCommitCount    *int                     `json:"task_local_commit_count,omitempty"`
-	Verdict                 string                   `json:"verdict,omitempty"`
-	VerdictBy               string                   `json:"verdict_by,omitempty"`
-	VerdictNotes            string                   `json:"verdict_notes,omitempty"`
-	RequestedAt             time.Time                `json:"requested_at"`
-	VerdictAt               *time.Time               `json:"verdict_at,omitempty"`
+	ID                   int64                 `json:"id"`
+	ProjectID            string                `json:"project_id"`
+	TaskID               int64                 `json:"task_id"`
+	RoundNumber          int                   `json:"round_number"`
+	RequestedBy          string                `json:"requested_by"`
+	TargetKind           string                `json:"target_kind"`
+	CampaignChildren     []CampaignReviewChild `json:"campaign_children,omitempty"`
+	CampaignRepositories []CampaignRepository  `json:"campaign_repositories,omitempty"`
+	Branch               string                `json:"branch,omitempty"`
+	BaseBranch           string                `json:"base_branch,omitempty"`
+	TestsRun             []string              `json:"tests_run,omitempty"`
+	Notes                string                `json:"notes,omitempty"`
+	Verdict              string                `json:"verdict,omitempty"`
+	VerdictBy            string                `json:"verdict_by,omitempty"`
+	VerdictNotes         string                `json:"verdict_notes,omitempty"`
+	RequestedAt          time.Time             `json:"requested_at"`
+	VerdictAt            *time.Time            `json:"verdict_at,omitempty"`
 }
 
 type ReviewFindingResponse struct {
@@ -265,7 +235,6 @@ type ReviewFinalizationResponse struct {
 	PacketID               int64                       `json:"packet_id"`
 	PacketMessageID        *int64                      `json:"packet_message_id,omitempty"`
 	PacketKind             string                      `json:"packet_kind"`
-	ExactHeadCommit        string                      `json:"exact_head_commit,omitempty"`
 	FindingStatuses        []FinalizationFindingStatus `json:"finding_statuses,omitempty"`
 	Reason                 string                      `json:"reason"`
 	MessageID              *int64                      `json:"message_id,omitempty"`
@@ -394,15 +363,8 @@ func toRoundResponse(round *ReviewRound) ReviewRoundResponse {
 		ID: round.ID, ProjectID: round.ProjectID, TaskID: round.TaskID, RoundNumber: round.RoundNumber,
 		RequestedBy: round.RequestedBy, TargetKind: firstNonEmpty(round.TargetKind, ReviewTargetCodeDiff),
 		CampaignChildren: round.CampaignChildren, CampaignRepositories: round.CampaignRepositories,
-		Branch: round.Branch, BaseBranch: round.BaseBranch,
-		BaseCommit: round.BaseCommit, HeadCommit: round.HeadCommit, LastReviewedHeadCommit: round.LastReviewedHeadCommit,
-		CommitsSinceLastReview: round.CommitsSinceLastReview, TestsRun: round.TestsRun, Notes: round.Notes,
-		PreferredDiffBaseRef: round.PreferredDiffBaseRef, PreferredDiffBaseCommit: round.PreferredDiffBaseCommit,
-		PreferredDiffHeadRef: round.PreferredDiffHeadRef, PreferredDiffHeadCommit: round.PreferredDiffHeadCommit,
-		AlternateDiffBaseRef: round.AlternateDiffBaseRef, AlternateDiffBaseCommit: round.AlternateDiffBaseCommit,
-		AlternateDiffHeadRef: round.AlternateDiffHeadRef, AlternateDiffHeadCommit: round.AlternateDiffHeadCommit,
-		DeltaBaseCommit: round.DeltaBaseCommit, InheritedCommitCount: round.InheritedCommitCount,
-		TaskLocalCommitCount: round.TaskLocalCommitCount, Verdict: round.Verdict, VerdictBy: round.VerdictBy,
+		Branch: round.Branch, BaseBranch: round.BaseBranch, TestsRun: round.TestsRun, Notes: round.Notes,
+		Verdict: round.Verdict, VerdictBy: round.VerdictBy,
 		VerdictNotes: round.VerdictNotes, RequestedAt: round.RequestedAt, VerdictAt: round.VerdictAt,
 	}
 }

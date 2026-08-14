@@ -2,13 +2,13 @@
 
 ## Purpose
 
-`den-services` is the clean Go successor-services program for Den's local service layer. It exists to replace haunted legacy responsibilities through strangler-fig migration, not to copy legacy complexity into a new language.
+`den-services` is the clean Go services workspace for Den's local service layer. It keeps service ownership explicit and avoids copying haunted legacy complexity into a new language.
 
 Current durable planning truth lives in Den documents, especially:
 
 - `den-services/architecture-guidelines`
 - `den-services/go-codestyle`
-- `den-services/successor-service-registry`
+- `den-services/service-registry`
 
 Treat those Den docs as authoritative over stale local notes. This file is a repo bootstrap so fresh agents know what to read and how to behave before the repo has much code.
 
@@ -26,9 +26,9 @@ Treat those Den docs as authoritative over stale local notes. This file is a rep
    - Cross-domain reads use approved views/contracts.
    - A service must not write another service's schema.
 
-3. **Successor codebase, not legacy surgery**
-   - Legacy services continue running while successors are built cleanly beside them.
-   - Gateway cutover moves one function at a time.
+3. **Service code, not legacy surgery**
+   - Keep each service's authority and data boundary explicit.
+   - Gateway routing changes one function at a time and require operational readback.
    - Legacy data is display-only unless explicitly validated and promoted through a cutover path.
    - Do not bulk-import haunted tables and call the migration complete.
 
@@ -105,7 +105,7 @@ Unless a task says otherwise, prefer this sequence:
 **Wave 2+.**
 11. Observation composed lane + lifecycle writer after delivery/runtime are authoritative.
 
-This matches the dependency graph in `successor-service-registry` §8. See Den tasks for per-module acceptance criteria.
+See the Den service registry for the current service list and Den tasks for per-module acceptance criteria.
 
 ## Testing and closeout
 

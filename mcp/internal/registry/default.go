@@ -193,7 +193,7 @@ func handoffTools() []ToolDefinition {
 func campaignReviewTools() []ToolDefinition {
 	return []ToolDefinition{{
 		Name:         "request_campaign_review",
-		Description:  "Request a campaign reconciliation review from immutable approved child review rounds and exact repository heads. Children must be direct subtasks or share the campaign:<parent_project_id>:<parent_task_id> tag.",
+		Description:  "Request a campaign reconciliation review from approved child review rounds and the current named repositories. Children must be direct subtasks or share the campaign:<parent_project_id>:<parent_task_id> tag.",
 		Backend:      "review",
 		Operation:    "request_campaign_review",
 		WorkflowTier: WorkflowTierPrimitive,
@@ -201,7 +201,7 @@ func campaignReviewTools() []ToolDefinition {
 			"task_id":      IntegerSchema("Parent campaign task ID."),
 			"requested_by": StringSchema("Agent or user requesting campaign reconciliation."),
 			"children":     AnySchema("JSON array of {project_id, task_id, review_round_id} child snapshots."),
-			"repositories": AnySchema("JSON array of exact {repository, head_sha} tuples."),
+			"repositories": AnySchema("JSON array of {repository} entries naming the repositories in the campaign."),
 			"tests_run":    AnySchema("Optional JSON array or comma-separated list of campaign verification commands."),
 			"notes":        NullableStringSchema("Optional reconciliation notes."),
 			"thread_id":    NullableIntegerSchema("Optional task thread receiving the review packet."),
@@ -229,6 +229,41 @@ func modernizeInputSchema(name string, schema Schema) Schema {
 			delete(properties, "project_id")
 			changed = true
 		}
+	}
+	switch name {
+	case "create_review_round", "request_review":
+		for _, field := range []string{
+			"base_commit", "head_commit", "last_reviewed_head_commit", "commits_since_last_review",
+			"preferred_diff_base_commit", "preferred_diff_head_commit", "alternate_diff_base_commit",
+			"alternate_diff_head_commit", "delta_base_commit", "inherited_commit_count", "task_local_commit_count",
+			"preferred_diff_base_ref", "preferred_diff_head_ref", "alternate_diff_base_ref", "alternate_diff_head_ref",
+		} {
+			if _, exists := properties[field]; exists {
+				delete(properties, field)
+				changed = true
+			}
+		}
+	case "post_worker_completion_packet":
+		for _, field := range []string{"base_commit", "head_commit", "audited_head_commit"} {
+			if _, exists := properties[field]; exists {
+				delete(properties, field)
+				changed = true
+			}
+		}
+	}
+	if name == "create_review_round" || name == "request_review" {
+		required, _ := object["required"].([]any)
+		filtered := make([]any, 0, len(required))
+		for _, value := range required {
+			field, _ := value.(string)
+			switch field {
+			case "base_commit", "head_commit":
+				changed = true
+				continue
+			}
+			filtered = append(filtered, value)
+		}
+		object["required"] = filtered
 	}
 	switch name {
 	case "mark_notifications_read":
@@ -272,14 +307,14 @@ func modernizeDescription(name, description string) string {
 	description = strings.TrimSpace(verboseSentence.ReplaceAllString(description, "."))
 	description = strings.ReplaceAll(description, "..", ".")
 	switch name {
+	case "create_review_round", "request_review":
+		return "Create or idempotently reuse a review request for the current checkout and task context. The reviewer reads the current repository state when the request is handled."
 	case "mark_notifications_read":
 		return "Mark explicit user notification IDs as read for an agent identity. For scoped operations, use mark_project_notifications_read or mark_task_notifications_read."
 	case "get_document_discussion":
 		return "Read discussion threads and comments for a document without creating state. Use ensure_document_discussion only when a default thread must exist."
 	case "store_document":
 		return "Create or update a document. The full markdown content is persisted; the MCP result returns bounded metadata, byte count, SHA-256, and a preview so large writes are not mistaken for clipped storage."
-	case "request_review":
-		return "Create or idempotently reuse a review request round and packet, then transition an in-progress task to review. The result reports whether the task transition was applied or already satisfied."
 	default:
 		return description
 	}
@@ -308,7 +343,7 @@ func taskContextTools() []ToolDefinition {
 func reviewContextTools() []ToolDefinition {
 	return []ToolDefinition{{
 		Name:        "get_review_context",
-		Description: "Compose a bounded, read-only exact review startup context from the canonical task, current review round, gate, packet headers, and guidance handles. It fails closed when no current review round exists and never falls back to the broad task context.",
+		Description: "Compose a bounded, read-only current review startup context from the canonical task, current review round, gate, packet headers, and guidance handles. It fails closed when no current review round exists and never falls back to the broad task context.",
 		Backend:     "tasks", Operation: "get_review_context",
 		WorkflowTier: WorkflowTierGreenPath,
 		InputSchema: ObjectSchema(map[string]Schema{

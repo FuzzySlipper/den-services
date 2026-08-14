@@ -13,7 +13,7 @@ uncertainty are all successful worker outcomes when backed by evidence.
 
 Require the parent prompt to identify:
 
-- repository and exact revision;
+- repository/current checkout;
 - an explicit manifest path when the repository does not use the broker's
   auto-discovered `.den-playwright.json` name;
 - a neutral player goal; do not require a desired verdict or a statement that
@@ -59,7 +59,7 @@ parent owns publication to a latest-value Den document, authored repository
 document, or other explicit owner. `replacement_mode` must be
 `replace-complete`: rewrite everything still useful and omit displaced claims.
 Never append or patch the old guide, never publish it from the worker, and
-never concatenate historical revisions into a later worker's context. The
+never concatenate historical snapshots into a later worker's context. The
 evidence index retains the exact input snapshot, handles, usage, and proposed
 replacement for audit.
 
@@ -111,10 +111,10 @@ the worker to agree with a desired verdict.
    If the configured MCP is absent or cannot start, return
    `infrastructure_error`; do not replace it inside this turn.
 2. Call `playtest_start` with `project`, `repo_root`, `scenario`, artifact
-   preferences, and useful correlation fields. Include the supplied exact
-   revision, mission, controls, model identity, and Den references as additional
-   evidence metadata. Preserve any dirty-state declaration from the parent.
-   Include `field_guide` and `source_handles` exactly as received so the
+   preferences, and useful correlation fields. Include the mission, controls,
+   model identity, and Den references as additional evidence metadata. The
+   broker records the run start timestamp for reconstruction.
+   Include `field_guide` and `source_handles` as received so the
    evidence index records the run's guidance input.
 3. Capture an initial screenshot or frame burst. Before mapping it to acceptance,
    record a neutral visible account of startup state, spatial relationships,
@@ -210,12 +210,9 @@ prose report:
   "field_guide_replacement": {
     "schema_version": 1,
     "guide_id": "project/scenario",
-    "revision": "next-candidate",
-    "replaces_revision": "7",
-    "replaces_sha256": "<exact input bundle hash>",
+    "observed_at": "<UTC timestamp>",
     "replacement_mode": "replace-complete",
     "provenance": ["playtest session <session>"],
-    "observed_build_revision": "<40-character product SHA>",
     "freshness": "observed this run",
     "confidence": "medium",
     "notes_markdown": "Complete next-run controls, landmarks, strategies, and caveats.",
@@ -273,13 +270,13 @@ Return a compact report containing:
 ```text
 Model: gpt-5.6-luna (configured); <runtime verification source or unverified>
 Repository: <path>
-Revision: <40-character SHA and clean/dirty declaration>
+Started: <UTC timestamp>
 Mission: <requested visible outcome>
 Outcome: <pass|fail|uncertain|infrastructure_error>
 Neutral observation: <initial concrete account, trajectory, unexpected details>
 Operational result: <furthest player state reached or blocker>
 Acceptance mapping: <orchestrator owner/status, or why worker judgement applies>
-Guidance: <input revision/hash, handles read, contradictions, replacement candidate or none>
+Guidance: <input snapshot timestamp, handles read, contradictions, replacement candidate or none>
 Reproduction: <attempt count and result>
 Diagnostics: <none, or what influenced the conclusion>
 Warnings: <manifest/tool/discrepancy warnings>

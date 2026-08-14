@@ -22,23 +22,8 @@ type reviewToolArguments struct {
 	RequestedBy             string          `json:"requested_by"`
 	Branch                  string          `json:"branch"`
 	BaseBranch              string          `json:"base_branch"`
-	BaseCommit              string          `json:"base_commit"`
-	HeadCommit              string          `json:"head_commit"`
-	LastReviewedHeadCommit  string          `json:"last_reviewed_head_commit"`
-	CommitsSinceLastReview  *int            `json:"commits_since_last_review"`
 	TestsRun                json.RawMessage `json:"tests_run"`
 	Notes                   string          `json:"notes"`
-	PreferredDiffBaseRef    string          `json:"preferred_diff_base_ref"`
-	PreferredDiffBaseCommit string          `json:"preferred_diff_base_commit"`
-	PreferredDiffHeadRef    string          `json:"preferred_diff_head_ref"`
-	PreferredDiffHeadCommit string          `json:"preferred_diff_head_commit"`
-	AlternateDiffBaseRef    string          `json:"alternate_diff_base_ref"`
-	AlternateDiffBaseCommit string          `json:"alternate_diff_base_commit"`
-	AlternateDiffHeadRef    string          `json:"alternate_diff_head_ref"`
-	AlternateDiffHeadCommit string          `json:"alternate_diff_head_commit"`
-	DeltaBaseCommit         string          `json:"delta_base_commit"`
-	InheritedCommitCount    *int            `json:"inherited_commit_count"`
-	TaskLocalCommitCount    *int            `json:"task_local_commit_count"`
 	ThreadID                *int64          `json:"thread_id"`
 	RunID                   string          `json:"run_id"`
 	SubagentRole            string          `json:"subagent_role"`
@@ -87,38 +72,23 @@ type reviewToolArguments struct {
 }
 
 type reviewRoundBody struct {
-	RequestedBy             string   `json:"requested_by"`
-	Branch                  string   `json:"branch"`
-	BaseBranch              string   `json:"base_branch"`
-	BaseCommit              string   `json:"base_commit"`
-	HeadCommit              string   `json:"head_commit"`
-	LastReviewedHeadCommit  string   `json:"last_reviewed_head_commit,omitempty"`
-	CommitsSinceLastReview  *int     `json:"commits_since_last_review,omitempty"`
-	TestsRun                []string `json:"tests_run,omitempty"`
-	Notes                   string   `json:"notes,omitempty"`
-	PreferredDiffBaseRef    string   `json:"preferred_diff_base_ref,omitempty"`
-	PreferredDiffBaseCommit string   `json:"preferred_diff_base_commit,omitempty"`
-	PreferredDiffHeadRef    string   `json:"preferred_diff_head_ref,omitempty"`
-	PreferredDiffHeadCommit string   `json:"preferred_diff_head_commit,omitempty"`
-	AlternateDiffBaseRef    string   `json:"alternate_diff_base_ref,omitempty"`
-	AlternateDiffBaseCommit string   `json:"alternate_diff_base_commit,omitempty"`
-	AlternateDiffHeadRef    string   `json:"alternate_diff_head_ref,omitempty"`
-	AlternateDiffHeadCommit string   `json:"alternate_diff_head_commit,omitempty"`
-	DeltaBaseCommit         string   `json:"delta_base_commit,omitempty"`
-	InheritedCommitCount    *int     `json:"inherited_commit_count,omitempty"`
-	TaskLocalCommitCount    *int     `json:"task_local_commit_count,omitempty"`
-	ThreadID                *int64   `json:"thread_id,omitempty"`
-	RunID                   string   `json:"run_id,omitempty"`
+	RequestedBy string   `json:"requested_by"`
+	Branch      string   `json:"branch,omitempty"`
+	BaseBranch  string   `json:"base_branch,omitempty"`
+	TestsRun    []string `json:"tests_run,omitempty"`
+	Notes       string   `json:"notes,omitempty"`
+	ThreadID    *int64   `json:"thread_id,omitempty"`
+	RunID       string   `json:"run_id,omitempty"`
 }
 
 type campaignReviewBody struct {
-	RequestedBy  string                   `json:"requested_by"`
-	Children     []campaignReviewChild    `json:"children"`
-	Repositories []campaignRepositoryHead `json:"repositories"`
-	TestsRun     []string                 `json:"tests_run,omitempty"`
-	Notes        string                   `json:"notes,omitempty"`
-	ThreadID     *int64                   `json:"thread_id,omitempty"`
-	RunID        string                   `json:"run_id,omitempty"`
+	RequestedBy  string                `json:"requested_by"`
+	Children     []campaignReviewChild `json:"children"`
+	Repositories []campaignRepository  `json:"repositories"`
+	TestsRun     []string              `json:"tests_run,omitempty"`
+	Notes        string                `json:"notes,omitempty"`
+	ThreadID     *int64                `json:"thread_id,omitempty"`
+	RunID        string                `json:"run_id,omitempty"`
 }
 
 type campaignReviewChild struct {
@@ -127,9 +97,8 @@ type campaignReviewChild struct {
 	ReviewRoundID int64  `json:"review_round_id"`
 }
 
-type campaignRepositoryHead struct {
+type campaignRepository struct {
 	Repository string `json:"repository"`
-	HeadSHA    string `json:"head_sha"`
 }
 
 type postReviewFindingsBody struct {
@@ -295,15 +264,8 @@ func reviewRESTRequestBody(operation string, arguments reviewToolArguments) ([]b
 		}
 		return json.Marshal(reviewRoundBody{
 			RequestedBy: strings.TrimSpace(arguments.RequestedBy), Branch: strings.TrimSpace(arguments.Branch),
-			BaseBranch: strings.TrimSpace(arguments.BaseBranch), BaseCommit: strings.TrimSpace(arguments.BaseCommit),
-			HeadCommit: strings.TrimSpace(arguments.HeadCommit), LastReviewedHeadCommit: strings.TrimSpace(arguments.LastReviewedHeadCommit),
-			CommitsSinceLastReview: arguments.CommitsSinceLastReview, TestsRun: testsRun, Notes: strings.TrimSpace(arguments.Notes),
-			PreferredDiffBaseRef: strings.TrimSpace(arguments.PreferredDiffBaseRef), PreferredDiffBaseCommit: strings.TrimSpace(arguments.PreferredDiffBaseCommit),
-			PreferredDiffHeadRef: strings.TrimSpace(arguments.PreferredDiffHeadRef), PreferredDiffHeadCommit: strings.TrimSpace(arguments.PreferredDiffHeadCommit),
-			AlternateDiffBaseRef: strings.TrimSpace(arguments.AlternateDiffBaseRef), AlternateDiffBaseCommit: strings.TrimSpace(arguments.AlternateDiffBaseCommit),
-			AlternateDiffHeadRef: strings.TrimSpace(arguments.AlternateDiffHeadRef), AlternateDiffHeadCommit: strings.TrimSpace(arguments.AlternateDiffHeadCommit),
-			DeltaBaseCommit: strings.TrimSpace(arguments.DeltaBaseCommit), InheritedCommitCount: arguments.InheritedCommitCount,
-			TaskLocalCommitCount: arguments.TaskLocalCommitCount, ThreadID: arguments.ThreadID, RunID: strings.TrimSpace(arguments.RunID),
+			BaseBranch: strings.TrimSpace(arguments.BaseBranch), TestsRun: testsRun, Notes: strings.TrimSpace(arguments.Notes),
+			ThreadID: arguments.ThreadID, RunID: strings.TrimSpace(arguments.RunID),
 		})
 	case "request_campaign_review":
 		testsRun, err := parseStringList(arguments.TestsRun)
@@ -314,7 +276,7 @@ func reviewRESTRequestBody(operation string, arguments reviewToolArguments) ([]b
 		if err := json.Unmarshal(arguments.CampaignChildren, &children); err != nil {
 			return nil, fmt.Errorf("decoding campaign children: %w", err)
 		}
-		var repositories []campaignRepositoryHead
+		var repositories []campaignRepository
 		if err := json.Unmarshal(arguments.CampaignRepositories, &repositories); err != nil {
 			return nil, fmt.Errorf("decoding campaign repositories: %w", err)
 		}

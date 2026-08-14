@@ -54,7 +54,7 @@ packet and task transition as one retryable workflow.
 The pointer-first review envelope and bounded wake/event contract are defined in
 [`docs/review-pointer-first-contract.md`](./review-pointer-first-contract.md).
 Normal managed submission is owned by Rusty Crew's `submit_task_for_review`;
-Review supplies exact-round/SHA facts, packet/gate handles, and deterministic
+Review supplies current-round facts, packet/gate handles, and deterministic
 receipts but does not own Crew routing or wake scheduling.
 
 The pipeline route composes Tasks-owned `review` status with the latest
@@ -80,7 +80,7 @@ ownership and reviewable task states through `tasks`, and durable task-thread
 packet records through `messages`. Missing upstream URLs fail closed.
 
 Markdown packet validation rejects malformed front matter, wrong project/task,
-invalid verdict/status/category values, stale reviewed head commits, and
+invalid verdict/status/category values, stale round identifiers, and
 unchecked required `verify` items before durable acceptance. Validation errors
 include `field` and `docs_ref` values suitable for focused tool-documentation
 lookup.

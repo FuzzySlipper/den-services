@@ -1,118 +1,55 @@
-# Den review routing and pointer-first contract
+# Den review current-state contract
 
-This document defines the runtime-neutral review envelope used by the normal
-Den review workflow. It is a contract between Den Review/MCP, managed runtimes
-such as Rusty Crew, and procedural clients such as the Codex `den-review`
-skill. It is not a second review authority and it does not make a distributed
-transaction claim.
+This document defines the bounded review envelope shared by Den Review, MCP,
+managed runtimes, and direct review clients. A review pointer identifies the
+task, current review round, repository, and evidence handles. It does not ask a
+reviewer to reconstruct an earlier checkout.
 
 The Den document `den-services/review-pointer-first-contract` is the canonical
 guidance source. This checked-in contract carries the implementation-facing
-envelope details and must remain faithful to that Den decision tree.
+boundary and must remain faithful to that document.
 
-## Submission and closeout decision tree
-
-- Built-in Rusty Crew brain: `submit_task_for_review`.
-- Crew-managed Codex: `rusty_crew.submit_task_for_review` when projected by the
-  managed runtime.
-- External/unmanaged caller using Crew: the role-bound
-  `npm run review:cli -- submit` and `status` commands.
-- Deliberate direct/unmanaged Den fallback: `request_review`.
-
-Generic `send_agent_message`, `agent_round`, raw `reply_agent_message`, and
-Codex app thread steering are not managed-review submission or closeout tools.
-An ordinary message to `@reviewer` remains direct/unmanaged unless Crew attaches
-an explicit `ReviewSubmissionRecord`.
-
-A reviewer certifies the envelope before closeout. An explicit managed Crew
-submission uses `complete_routed_review` / `rusty_crew.complete_routed_review`
-exactly once and does not call Den `finalize_review` first. A direct Den packet
-uses `finalize_review` once and sends no Crew reply.
-
-## Normal green path
+## Normal path
 
 ```text
 managed implementer   submit_task_for_review | rusty_crew.submit_task_for_review
 external implementer  role-bound review:cli submit/status
 direct implementer    request_review
-reviewer              get_review_context + exact target inspection
+reviewer              get_review_context + inspect the current checkout
 managed closeout      complete_routed_review | rusty_crew.complete_routed_review
-direct closeout       finalize_review + compact receipt in chat
+direct closeout       finalize_review + compact receipt
 ```
 
-`submit_task_for_review` is the managed Rusty Crew entry point. `request_review`
-is the direct/unmanaged Den fallback. Neither path is a synonym for the other,
-and a reviewer must not reconstruct a submission by calling low-level tools
-one at a time during normal work.
+Managed and direct submission are different authorities. A reviewer must use
+the routed submission record when one exists and must not recreate it by
+calling low-level tools one at a time. `request_review` is the direct fallback.
 
-Every code submission identifies current Den task/review context, repository
-and pushed ref, exact pushed 40-character head SHA, intentional 40-character
-base/diff SHA, the repository's declared review mode, a useful handoff, and
-stable task/SHA/material idempotency. A checked mode includes every exact
-required GitHub job/check-run name. An explicitly checkless repository skips
-only GitHub gate registration; it still creates the exact-SHA Den round and
-uses the same managed reviewer/finalization path. Accepted, `gate_pending`, or
-reviewer delivery is durable progress, not review completion.
-
-External clients read `.rusty-crew-review.json` when present. A non-empty
-`requiredChecks` array selects the normal exact-name GitHub gate. An empty array
-selects explicit `--no-checks` mode. Clients must not infer successful CI from
-local commands or invent a workflow merely to make review transport proceed.
+Review packets and messages point to durable task, round, finding, and
+repository records. They are not copies of source code or checkout identity.
+The reader resolves those pointers and examines the current repository state
+when the review is handled. A run timestamp, task/review identifiers, and the
+retained evidence handles are enough to reconstruct what was known at the
+time.
 
 ## Ownership
 
 | Concern | Authority | Boundary |
 | --- | --- | --- |
-| review rounds, findings, gates, finalization, receipts | Den Review | Review REST/MCP APIs and `den_review` schema |
-| managed submission, session identity, wake coalescing, routed reply | Rusty Crew | Crew-owned durable workflow and adapter calls |
-| model-facing procedure | Codex skill | Guidance only; never an authority boundary |
-| CI execution | GitHub Actions | Exact-SHA check runs and URLs |
-| human-readable task-thread projection | Messages | Idempotent packet/message append; no lifecycle ownership |
-| task status/history | Tasks | Conditional transitions; Review never writes task storage |
+| review rounds, findings, finalization, receipts | Den Review | Review REST/MCP APIs and `den_review` schema |
+| managed submission, session identity, wake coalescing, routed reply | Rusty Crew | Crew-owned workflow and adapter calls |
+| model-facing procedure | Codex skill | Guidance only |
+| CI execution and check-run identity | GitHub Actions / Review gate | Separate deterministic gate APIs |
+| human-readable task-thread projection | Messages | Idempotent packet/message append |
+| task status/history | Tasks | Conditional transitions |
 
-Review packets and messages are pointers to evidence, not substitutes for the
-owning records. A pointer may be stale; the reader must resolve it against the
-current exact round/SHA before acting.
+The separate GitHub check-gate APIs may accept a `commit_sha` when a caller
+explicitly needs deterministic CI evidence. That field belongs to the gate
+operation, not to review-round creation, review packets, campaign snapshots,
+reviewer context, or finalization paperwork.
 
-## Versioned envelopes
+## Review pointer
 
-All model-facing/adapter-facing envelopes use explicit, independently
-versioned schema identifiers. The version suffix is part of the compatibility
-contract; `schema_version` is retained for generic envelope tooling.
-
-```json
-{
-  "schema": "den_review.<envelope_kind>.v1",
-  "schema_version": 1,
-  "workflow_key": {
-    "project_id": "den-services",
-    "task_id": 6604,
-    "review_round_id": 123,
-    "head_commit": "0123456789abcdef0123456789abcdef01234567",
-    "correlation_id": "review-6604-123-01234567"
-  },
-  "revision": 7,
-  "material_digest": "sha256:canonical-semantic-json",
-  "handles": {},
-  "state": ""
-}
-```
-
-`workflow_key` is the idempotency and staleness identity. `revision` increases
-only when the material state represented by the envelope changes. The
-`material_digest` is SHA-256 over canonical, generated-time-free semantic JSON;
-map ordering and timestamps must not affect it. Replaying an identical
-envelope with the same key, revision, and digest is a no-op. A new exact SHA,
-round, or correlation is a new workflow; it must not reuse the old workflow's
-wake or reply.
-
-### Review request envelope
-
-`den_review.review_pointer.v1` contains only the fields needed to accept work.
-Managed runtimes may wrap it in their own durable request envelope (for Rusty
-Crew, `rusty_crew.routed_review_request.v1`) with submission identity, expiry,
-and runtime-owned correlation. The model never supplies the recipient or
-correlation target.
+The pointer contains only the current review context:
 
 ```json
 {
@@ -122,22 +59,14 @@ correlation target.
     "project_id": "den-services",
     "task_id": 6604,
     "review_round_id": 123,
-    "head_commit": "0123456789abcdef0123456789abcdef01234567",
-    "correlation_id": "crew-session-abc"
+    "correlation_id": "review-6604-123"
   },
-  "revision": 1,
-  "material_digest": "sha256:canonical-semantic-json",
+  "state_revision": 1,
+  "material_digest": "content:canonical-semantic-json",
   "repository": "FuzzySlipper/den-services",
   "root_path": "/home/dev/den-services",
-  "ref": "main",
-  "base_commit": "fedcba9876543210fedcba9876543210fedcba98",
-  "delta_base_commit": "fedcba9876543210fedcba9876543210fedcba98",
-  "gate": {
-    "id": 456,
-    "status": "pending",
-    "required_checks": ["Verify Offline"],
-    "terminal_reason": ""
-  },
+  "branch": "main",
+  "base_branch": "main",
   "handles": {
     "request_packet_id": 789,
     "request_message_id": 790,
@@ -147,49 +76,46 @@ correlation target.
     "agent_instance_id": "crew-a",
     "session_key": "session-abc",
     "reply_target": "session-abc"
-  },
-  "risk_focus": "Review the exact MCP profile boundary and pointer budget."
+  }
 }
 ```
 
-`root_path` is an optional checkout hint, not repository authority; the
-canonical repository identity is the repository/ref/exact SHA tuple. The
-meaning of `delta_base_commit` is the prior reviewed head when one exists,
-otherwise the submitted base. `review_summary_md`, test logs, full guidance bodies, and full packet Markdown
-do not belong in this envelope. They remain in the canonical packet and are
-opened by handle when a reviewer needs them.
+`root_path` and branch labels are useful checkout hints, not authority. The
+workflow key prevents duplicate delivery and identifies the review round that
+must still be current. `state_revision` is the envelope's own monotonic state
+revision; it is not a source-control revision. `material_digest` is a bounded
+semantic-content digest used for idempotency and does not identify a checkout.
 
-For explicit checkless mode, `gate` is absent and the managed submission
-records `gate_status=passed` with `terminal_reason=no_required_checks` before
-entering `reviewer_dispatch_pending`. This is workflow evidence that no gate
-was configured, not evidence that GitHub checks ran.
+The request packet carries the requested-by actor, task/review identifiers,
+optional branch context, tests run, notes, and evidence handles. It does not
+carry base/head source-control identifiers or diff substitutions.
 
-### Reviewer context envelope
+## Reviewer context
 
-`den_review.reviewer_context.v1` is read-only and derives all identity and exact
-revision fields from Den authorities. It contains:
+`den_review.reviewer_context.v1` is read-only and bounded. It contains:
 
-- task ID, project, title, status, and repository/root handle;
-- current round and exact branch/base/head/delta metadata;
-- current-round and prior finding IDs, keys, categories, statuses, concise
-  summaries, and evidence/detail handles;
-- exact-SHA gate ID, status, required checks, terminal reason, and evidence
-  handles;
-- request/implementation packet headers and opaque detail refs;
-- required guidance handles, not guidance bodies;
-- `next_state` (`source_review_ready`, `gate_pending`, `gate_failed`,
-  `round_superseded`, or `not_reviewable`);
-- `source_status` and `truncation` metadata.
+- task ID, project, title, status, repository, and root handle;
+- the current round number, target kind, branch context, campaign children, and
+  named campaign repositories;
+- current and prior finding IDs, keys, categories, statuses, concise summaries,
+  and detail handles;
+- packet headers and guidance handles, not full packet or guidance bodies;
+- an explicit `next_state` such as `source_review_ready`, `gate_pending`,
+  `gate_failed`, `round_superseded`, or `not_reviewable`;
+- source status and truncation metadata.
 
-The context must never silently substitute a generic task briefing when no
-current review round exists. It returns a typed `review_context_unavailable`
-error with a reason such as `no_current_round`, `round_superseded`, or
-`task_not_reviewable`.
+When no current round exists, return the typed
+`review_context_unavailable` result with a reason such as
+`no_current_round`. Do not substitute a generic task briefing.
 
-### Completion receipt
+Reviewers inspect the current checkout after receiving this context. They do
+not wait for a packet to contain a source revision, compare a campaign's
+repository entries to child source revisions, or reproduce an old packet
+before beginning review.
 
-`den_review.completion_receipt.v1` is returned by `finalize_review` and contains
-the durable result, not a copy of the packet:
+## Finalization and replay
+
+`den_review.completion_receipt.v1` returns the durable result:
 
 ```json
 {
@@ -199,15 +125,13 @@ the durable result, not a copy of the packet:
     "project_id": "den-services",
     "task_id": 6604,
     "review_round_id": 123,
-    "head_commit": "0123456789abcdef0123456789abcdef01234567",
-    "correlation_id": "review-6604-123-01234567"
+    "correlation_id": "review-6604-123"
   },
-  "revision": 2,
-  "material_digest": "sha256:canonical-semantic-json",
+  "state_revision": 2,
+  "material_digest": "content:canonical-semantic-json",
   "verdict": "looks_good",
   "task_status": "done",
   "finding_statuses": [],
-  "gate": {"id": 456, "status": "passed", "terminal_reason": "checks_passed"},
   "handles": {"finalization_id": 800, "packet_id": 789, "message_id": 801},
   "reason": "complete",
   "retry": {"safe": true, "same_request_is_idempotent": true}
@@ -215,114 +139,44 @@ the durable result, not a copy of the packet:
 ```
 
 An identical retry returns the same IDs and statuses. A different normalized
-verdict or finding result for a committed round is a typed conflict, not a new
-finalization. Actionable findings may expand the receipt beyond the normal
-budget, but finding IDs, statuses, and evidence handles remain bounded and
-deterministic.
+verdict or finding result for a committed round is a typed conflict. The
+finalization lock proves that the round and task state are still current; it
+does not compare source-control identifiers.
 
-### Routed result / wake envelope
+Routed results carry the same task/round/correlation workflow key, state, gate
+status when a separate gate exists, and packet/message handles. Reply targets
+come from trusted managed-runtime identity and are never model-supplied.
 
-`rusty_crew.routed_review_result.v1` is the adapter handoff between Den Review and a
-managed runtime. Den supplies facts; Rusty Crew decides whether/how to wake or
-reply:
+## Campaigns
 
-```json
-{
-  "schema": "rusty_crew.routed_review_result.v1",
-  "schema_version": 1,
-  "workflow_key": {
-    "project_id": "den-services",
-    "task_id": 6604,
-    "review_round_id": 123,
-    "head_commit": "0123456789abcdef0123456789abcdef01234567",
-    "correlation_id": "crew-session-abc"
-  },
-  "revision": 3,
-  "material_digest": "sha256:canonical-semantic-json",
-  "state": "gate_failed",
-  "gate": {"id": 456, "status": "failed", "terminal_reason": "required_checks_missing"},
-  "handles": {"gate_event_id": 900, "packet_id": 789, "message_id": 901},
-  "reply_target": "opaque-runtime-correlation",
-  "action": "wake_submitter",
-  "reason": "required_checks_missing"
-}
-```
+Campaign reconciliation is a current-state review of named repositories and
+approved child review rounds. Each repository entry contains only its name.
+Each child entry identifies its project, task, and review-round record. The
+service still validates membership, latest-round status, approval, duplicate
+entries, and unresolved blocking/acceptance findings. See
+[`campaign-reconciliation-reviews.md`](campaign-reconciliation-reviews.md).
 
-The reply target is resolved by Rusty Crew from trusted persisted identity; it
-is never model-supplied. The same workflow revision must not produce a second externally visible wake.
-A terminal gate event is material once; pending reminders and unchanged
-readbacks are coalesced.
+## Budgets and recovery
 
-## Budgets and truncation
+- bounded request body: reject oversized packets rather than silently
+  truncating them;
+- reviewer context: retain deterministic field ordering, truncation metadata,
+  opaque detail references, and current-state pointers;
+- completion receipt: compact by default, with bounded finding details;
+- unchanged pending/status events: coalesce by workflow key and state revision.
 
-These are serialized UTF-8 byte budgets at service boundaries, not promises about a
-model's token window:
+The pointer-first flow is recoverable after compaction or process restart from
+Den task/review reads, the run timestamp, and the retained handles. Repeat a
+submission only after a pre-persistence validation rejection. After persistence,
+reconcile the same review round and submission instead of issuing a new one.
 
-| Envelope | Normal target | Over-budget behavior |
-| --- | ---: | --- |
-| routed request body | 4 KiB, excluding protocol envelope | reject with typed `review_request_too_large`; do not silently truncate |
-| reviewer context | 8 KiB | deterministic field ordering/truncation plus `truncation` metadata and detail refs |
-| terminal receipt/reply | 2 KiB | compact receipt by default; actionable finding details may expand within the typed finding budget |
-| unchanged wake/status event | 0 additional events | coalesce by workflow key + revision |
+## Verification
 
-Truncation is only legal for fields explicitly marked bounded. Never truncate
-exact SHAs, IDs, statuses, gate terminal reasons, packet/message handles,
-finding keys, or reply correlations. Detail refs must be opaque, expiring, and
-read-only.
+The fixtures in `review/testdata/pointer-first/` cover initial review,
+rereview, gate failure, and superseded-round states. They verify bounded
+workflow keys, semantic content digests, UTF-8-safe budgets, event coalescing,
+stable finalization identities, and stale-round protection. GitHub gate tests
+separately verify deterministic check-run matching.
 
-## State, staleness, and fallback
-
-1. Persist the managed submission before external calls.
-2. Reuse exact-SHA gates and request packets; do not rerun CI for a repeated
-   pending event.
-3. Review finalization must atomically prove that the round is still current;
-   a stale round returns a typed conflict with a pointer to the current round.
-4. A newer SHA supersedes older nonterminal work. The old workflow may finish
-   as historical evidence, but must not wake or reply as if it were current.
-5. Duplicate, reordered, timed-out, and restarted adapter deliveries converge
-   on one workflow key and one material revision.
-6. An unavailable optional source is explicit in `source_status`; it is never
-   presented as an empty successful source.
-7. Direct/unmanaged sessions retain the primitive Review/GitHub operations as
-   typed recovery paths. They do not use managed wake/reply ownership.
-8. Manual review returns its receipt in chat and sends no Crew reply. Routed
-   review sends exactly one correlated Crew reply after durable finalization.
-9. Crew managed phases are `gate_pending` when checks are declared, then
-   `reviewer_dispatched`, `den_finalization_pending`, `reply_pending`, and
-   `review_terminal`. Explicit checkless submissions move from the Den handoff
-   directly to reviewer dispatch with `terminal_reason=no_required_checks`.
-   Authoritative completion requires the exact Crew submission plus Den
-   round/task/gate readback; Codex app thread state is observational.
-10. Repeat managed completion only after an explicit pre-persistence local
-    validation rejection that says no result was persisted. After persistence,
-    a Den attempt, a missing/ambiguous receipt, adapter error, or reply failure,
-    reconcile the same submission and Den round rather than issuing another
-    completion or finalization.
-11. Crew configures no Den project allowlist. Den validates the caller-supplied
-    project and task.
-
-Operator readback includes the role-bound review-submission status route,
-`GET /v1/admin/diagnostics/review-submissions`,
-`GET /v1/admin/diagnostics/review-submission-scope`,
-`GET /v1/admin/diagnostics/review-den-authority`, and Den review/workflow reads.
-
-## Verification contract
-
-The fixture corpus in `review/testdata/pointer-first/` covers initial review,
-rereview, gate failure, and superseded-round states. Each fixture records the
-serialized byte count and expected material-event key. Tests must prove:
-
-- exact-SHA, round, gate, packet, finding, and reply handles survive compaction;
-- canonical material digests remain stable across map ordering and timestamps;
-- UTF-8 boundaries at 2048, 4096, and 8192 bytes never split a code point;
-- repeated pending/status events coalesce;
-- terminal/material state changes do not coalesce incorrectly;
-- reordered/restarted deliveries return the same deterministic receipt;
-- stale SHA results cannot advance a newer workflow;
-- manual and routed reply cardinality remain distinct;
-- representative pre-change broad context is larger than the bounded context.
-
-This contract is intentionally additive. Later schema versions may add fields,
-but a breaking change to identity, ownership, or replay semantics requires a
-new version and an explicit migration/compatibility plan. Unknown major schema
-versions fail closed; optional additive fields may be ignored by older readers.
+Breaking changes to identity, ownership, or replay semantics require a new
+envelope version and an explicit compatibility plan.

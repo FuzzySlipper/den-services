@@ -38,7 +38,6 @@ const index = {
   session_id: options.sessionId,
   project: options.project,
   repository: options.repoRoot,
-  revision: options.revision || {},
   den: options.den || undefined,
   scenario: options.scenario || "",
   owner_label: options.owner || "",

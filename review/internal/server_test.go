@@ -91,7 +91,7 @@ func TestReviewServerFinalizesReview(t *testing.T) {
 	store := newMemoryStore()
 	store.rounds[7] = &ReviewRound{
 		ID: 7, ProjectID: "den-services", TaskID: 42, RoundNumber: 1,
-		RequestedBy: "implementer", HeadCommit: "abc", Verdict: "",
+		RequestedBy: "implementer", Verdict: "",
 		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
 	service := newTestService(store, &fakeMessages{}, &fakeTasks{tasks: map[int64]TaskContext{
@@ -155,10 +155,9 @@ func TestReviewServerRequestsCampaignReconciliation(t *testing.T) {
 	store := newMemoryStore()
 	parentID := int64(6212)
 	childID := int64(7001)
-	head := "0123456789abcdef0123456789abcdef01234567"
 	childRound, err := store.CreateRound(t.Context(), &ReviewRound{
 		ProjectID: "den-services", TaskID: childID, RequestedBy: "child-agent", TargetKind: ReviewTargetCodeDiff,
-		Branch: "main", BaseBranch: "main", BaseCommit: "base", HeadCommit: head,
+		Branch: "main", BaseBranch: "main",
 		RequestedAt: fixedReviewTestTime(), CreatedAt: fixedReviewTestTime(), UpdatedAt: fixedReviewTestTime(),
 	})
 	if err != nil {
@@ -182,8 +181,8 @@ func TestReviewServerRequestsCampaignReconciliation(t *testing.T) {
 	body := bytes.NewBufferString(fmt.Sprintf(`{
 		"requested_by":"campaign-agent",
 		"children":[{"project_id":"den-services","task_id":%d,"review_round_id":%d}],
-		"repositories":[{"repository":"owner/repo","head_sha":"%s"}]
-	}`, childID, childRound.ID, head))
+		"repositories":[{"repository":"owner/repo"}]
+	}`, childID, childRound.ID))
 	request := httptest.NewRequest(http.MethodPost, "/v1/projects/den-services/tasks/6212/review/campaign-request", body)
 	response := httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, request)

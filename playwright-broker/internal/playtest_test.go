@@ -48,6 +48,33 @@ func TestPlaytestCallPreservesUnknownFieldsAndAddsOperation(t *testing.T) {
 	}
 }
 
+func TestPlaytestIndexUsesCurrentStateAndObservationTime(t *testing.T) {
+	startedAt := time.Date(2026, time.August, 13, 19, 30, 0, 0, time.UTC)
+	session := PlaytestSession{
+		SessionID: "current-state",
+		Project:   "fixture",
+		RepoRoot:  "/workspace/fixture",
+		Scenario:  "smoke",
+		Status:    "running",
+		StartedAt: startedAt,
+		IndexPath: filepath.Join(t.TempDir(), "playtest-index.json"),
+		DriverPID: 0,
+	}
+
+	index, err := loadOrCreatePlaytestIndex(session)
+	if err != nil {
+		t.Fatalf("loadOrCreatePlaytestIndex() error = %v", err)
+	}
+	if index["repository"] != session.RepoRoot || index["started_at"] != startedAt {
+		t.Fatalf("index identity/time = %#v / %#v", index["repository"], index["started_at"])
+	}
+	for _, field := range []string{"revision", "sha", "sha256", "dirty", "origin"} {
+		if _, ok := index[field]; ok {
+			t.Fatalf("index contains source-control field %q: %#v", field, index)
+		}
+	}
+}
+
 func TestPlaytestCallFailsOpenWhenDriverIsUnavailable(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

@@ -17,9 +17,7 @@ func TestLocatorComposesBoundedReviewContextWithoutTaskBody(t *testing.T) {
 		case "/v1/tasks/6608":
 			_, _ = w.Write([]byte(`{"task":{"id":6608,"project_id":"den-services","title":"Review context","description":"this must not be copied into the reviewer context","status":"review"}}`))
 		case "/v1/projects/den-services/tasks/6608/review/workflow-summary":
-			_, _ = w.Write([]byte(`{"current_round":{"id":88,"project_id":"den-services","task_id":6608,"round_number":2,"target_kind":"code_diff","base_branch":"main","base_commit":"abc","head_commit":"def","preferred_diff_base_ref":"main","preferred_diff_base_commit":"abc","preferred_diff_head_ref":"task/6608","preferred_diff_head_commit":"def","alternate_diff_base_ref":"origin/main","alternate_diff_base_commit":"abc","alternate_diff_head_ref":"origin/task/6608","alternate_diff_head_commit":"def","delta_base_commit":"abc","campaign_children":[{"project_id":"den-services","task_id":6607,"review_round_id":87}],"campaign_repositories":[{"repository":"FuzzySlipper/den-services","head_sha":"def"}]},"open_findings":[{"id":11,"status":"open"}]}`))
-		case "/v1/projects/den-services/tasks/6608/review/github-check-gates/def":
-			_, _ = w.Write([]byte(`{"id":9,"repository":"FuzzySlipper/den-services","status":"passed","required_checks":["verify"]}`))
+			_, _ = w.Write([]byte(`{"current_round":{"id":88,"project_id":"den-services","task_id":6608,"round_number":2,"target_kind":"code_diff","base_branch":"main","campaign_children":[{"project_id":"den-services","task_id":6607,"review_round_id":87}],"campaign_repositories":[{"repository":"FuzzySlipper/den-services"}]},"open_findings":[{"id":11,"status":"open"}]}`))
 		case "/v1/projects/den-services":
 			_, _ = w.Write([]byte(`{"id":"den-services","root_path":"/home/dev/den-services","settings_json":{"repository":"FuzzySlipper/den-services"}}`))
 		case "/v1/projects/den-services/tasks/6608/packets/latest":
@@ -56,9 +54,14 @@ func TestLocatorComposesBoundedReviewContextWithoutTaskBody(t *testing.T) {
 	if len(first.Value) > reviewContextMaxBytes {
 		t.Fatalf("review context bytes = %d, want <= %d", len(first.Value), reviewContextMaxBytes)
 	}
-	for _, want := range []string{`"schema":"den_review.reviewer_context.v1"`, `"head_commit":"def"`, `"preferred_diff_base_ref":"main"`, `"alternate_diff_head_ref":"origin/task/6608"`, `"campaign_children"`, `"campaign_repositories"`, `"status":"passed"`, `"next_state":"source_review_ready"`, `"repository":"FuzzySlipper/den-services"`, `"root_path":"/home/dev/den-services"`, `"detail_refs"`, `"document_slug":"go-codestyle"`, `"material_digest":"sha256:`} {
+	for _, want := range []string{`"schema":"den_review.reviewer_context.v1"`, `"campaign_children"`, `"campaign_repositories"`, `"next_state":"source_review_ready"`, `"repository":"FuzzySlipper/den-services"`, `"root_path":"/home/dev/den-services"`, `"detail_refs"`, `"document_slug":"go-codestyle"`, `"material_digest":"sha256:`} {
 		if !strings.Contains(string(first.Value), want) {
 			t.Fatalf("review context missing %s: %s", want, first.Value)
+		}
+	}
+	for _, unwanted := range []string{"head_commit", "base_commit", "head_sha", "preferred_diff", "alternate_diff", "delta_base_commit"} {
+		if strings.Contains(string(first.Value), unwanted) {
+			t.Fatalf("review context retained revision-specific field %q: %s", unwanted, first.Value)
 		}
 	}
 	if strings.Contains(string(first.Value), "this must not be copied") || strings.Contains(string(first.Value), "review_request") == false {
@@ -72,7 +75,7 @@ func TestLocatorExpandsReviewContextEvidenceWhenVerbose(t *testing.T) {
 		case "/v1/tasks/6608":
 			_, _ = w.Write([]byte(`{"task":{"id":6608,"project_id":"den-services","title":"Review context","status":"review"}}`))
 		case "/v1/projects/den-services/tasks/6608/review/workflow-summary":
-			_, _ = w.Write([]byte(`{"current_round":{"id":88,"project_id":"den-services","task_id":6608,"round_number":2,"head_commit":"def"},"open_findings":[{"id":11,"status":"open","summary":"bounded finding"}]}`))
+			_, _ = w.Write([]byte(`{"current_round":{"id":88,"project_id":"den-services","task_id":6608,"round_number":2},"open_findings":[{"id":11,"status":"open","summary":"bounded finding"}]}`))
 		case "/v1/tasks/6608/review/findings":
 			_, _ = w.Write([]byte(`[{"id":11,"finding_key":"R6608-1","status":"open","summary":"full finding evidence","notes":"full finding notes"}]`))
 		case "/v1/projects/den-services":
@@ -107,8 +110,8 @@ func TestLocatorExpandsReviewContextEvidenceWhenVerbose(t *testing.T) {
 	}
 }
 
-func TestReviewContextNextStateUsesGateStatus(t *testing.T) {
-	round := reviewContextRound{ID: 1, HeadCommit: "head"}
+func TestReviewContextNextStateUsesExplicitGateStatus(t *testing.T) {
+	round := reviewContextRound{ID: 1}
 	for _, test := range []struct {
 		name, status, want string
 	}{
@@ -126,11 +129,17 @@ func TestReviewContextNextStateUsesGateStatus(t *testing.T) {
 	}
 }
 
+func TestReviewContextNextStateWithoutGateIsReadyForCurrentSource(t *testing.T) {
+	if got := reviewContextNextState("review", reviewContextRound{ID: 1}, taskWorkflowReviewSummary{}, nil); got != "source_review_ready" {
+		t.Fatalf("next state = %q, want source_review_ready", got)
+	}
+}
+
 func TestBoundReviewContextRetainsFindingAndPacketPointersWhenCompacting(t *testing.T) {
 	response := reviewContextResponse{
 		SchemaVersion: 1, Schema: reviewContextSchema, ProjectID: "den-services", TaskID: 6608,
 		Task:         reviewContextTask{ID: 6608, ProjectID: "den-services", Status: "review", RootPath: "/home/dev/den-services", RepositoryHandle: "/home/dev/den-services"},
-		CurrentRound: &reviewContextRound{ID: 88, HeadCommit: "def"}, CurrentStatus: "review", NextState: "source_review_ready",
+		CurrentRound: &reviewContextRound{ID: 88}, CurrentStatus: "review", NextState: "source_review_ready",
 		PriorFindings: []json.RawMessage{json.RawMessage(`{"id":11,"finding_key":"R6608-1","category":"acceptance_gap","status":"open","summary":"` + strings.Repeat("x", 3000) + `"}`)},
 		PacketHeaders: map[string]*taskWorkflowPacketHeader{"review_request": {ID: 41, Sender: "reviewer", Metadata: map[string]any{"body": strings.Repeat("x", 3000)}}},
 		Guidance:      []taskContextDocHandle{{DocumentProjectID: "den-services", DocumentSlug: "go-codestyle", Notes: strings.Repeat("x", 3000)}},

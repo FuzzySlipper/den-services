@@ -6,13 +6,12 @@
     "project_id": "den-services",
     "task_id": 6604,
     "review_round_id": 123,
-    "head_commit": "0123456789abcdef0123456789abcdef01234567",
     "correlation_id": "review-6604-123-01234567"
   },
-  "revision": 1,
+  "state_revision": 1,
   "material_digest": "sha256:initial-review-material",
   "state": "gate_pending",
   "gate": {"id": 456, "status": "pending", "required_checks": ["Verify Offline"]},
   "handles": {"request_packet_id": 789, "request_message_id": 790},
-  "expected": {"serialized_bytes_max": 4096, "material_event_key": "6604:123:01234567:1"}
+  "expected": {"serialized_bytes_max": 4096, "material_event_key": "6604:123:1"}
 }

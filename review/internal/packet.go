@@ -88,8 +88,6 @@ func validatePacketFields(packet *ReviewPacket, raw map[string]any) error {
 			if len(anySlice(raw["campaign_children"])) == 0 || len(anySlice(raw["campaign_repositories"])) == 0 {
 				return validationError(ErrMissingCampaignChild, "missing_campaign_snapshot", "campaign_children", packet.PacketKind+".campaign_children")
 			}
-		} else {
-			fields = append(fields, "branch", "base_branch", "base_commit", "head_commit")
 		}
 		for _, field := range fields {
 			if stringValue(raw[field]) == "" {
@@ -100,9 +98,6 @@ func validatePacketFields(packet *ReviewPacket, raw map[string]any) error {
 		if packet.ReviewRoundID == nil {
 			return validationError(fmt.Errorf("review_round_id is required"), "missing_review_round_id", "review_round_id", "review_findings.review_round_id")
 		}
-		if stringValue(raw["target_kind"]) != ReviewTargetCampaignReconciliation && stringValue(raw["reviewed_head_commit"]) == "" {
-			return validationError(ErrMissingReviewedCommit, "missing_reviewed_head_commit", "reviewed_head_commit", "review_findings.reviewed_head_commit")
-		}
 		verdict := stringValue(raw["verdict"])
 		if !validVerdict(verdict) {
 			return validationError(fmt.Errorf("%w: %s", ErrInvalidVerdict, verdict), "invalid_verdict", "verdict", "review_findings.verdict")
@@ -111,13 +106,7 @@ func validatePacketFields(packet *ReviewPacket, raw map[string]any) error {
 		if packet.ReviewRoundID == nil {
 			return validationError(fmt.Errorf("review_round_id is required"), "missing_review_round_id", "review_round_id", "implementer_response.review_round_id")
 		}
-		if stringValue(raw["target_kind"]) != ReviewTargetCampaignReconciliation && stringValue(raw["reviewed_head_commit"]) == "" {
-			return validationError(ErrMissingReviewedCommit, "missing_reviewed_head_commit", "reviewed_head_commit", "implementer_response.reviewed_head_commit")
-		}
 	case PacketKindCompletion:
-		if stringValue(raw["target_kind"]) != ReviewTargetCampaignReconciliation && stringValue(raw["reviewed_head_commit"]) == "" {
-			return validationError(ErrMissingReviewedCommit, "missing_reviewed_head_commit", "reviewed_head_commit", "completion_evidence.reviewed_head_commit")
-		}
 	}
 	return nil
 }
@@ -161,9 +150,6 @@ func metadataForRound(round *ReviewRound, packetKind string, metadataType string
 	} else {
 		metadata["branch"] = round.Branch
 		metadata["base_branch"] = round.BaseBranch
-		metadata["base_commit"] = round.BaseCommit
-		metadata["head_commit"] = round.HeadCommit
-		metadata["delta_base_commit"] = round.DeltaBaseCommit
 	}
 	if verdict != "" {
 		metadata["verdict"] = verdict

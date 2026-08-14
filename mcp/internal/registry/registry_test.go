@@ -192,6 +192,30 @@ func TestDefaultRegistryExposesFinalizeReviewGreenPath(t *testing.T) {
 	}
 }
 
+func TestDefaultRegistryReviewInputsDoNotExposeCheckoutRevisionFields(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry() error = %v", err)
+	}
+	for _, name := range []string{"create_review_round", "request_review", "post_worker_completion_packet"} {
+		tool, err := registry.Resolve(name)
+		if err != nil {
+			t.Fatalf("Resolve(%s) error = %v", name, err)
+		}
+		var schema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+			t.Fatalf("Unmarshal(%s) error = %v", name, err)
+		}
+		for _, field := range []string{"base_commit", "head_commit", "audited_head_commit", "last_reviewed_head_commit", "preferred_diff_head_commit", "delta_base_commit"} {
+			if _, exists := schema.Properties[field]; exists {
+				t.Fatalf("%s exposes non-current field %q: %s", name, field, tool.InputSchema)
+			}
+		}
+	}
+}
+
 func TestReviewContextSupportsOpaqueDetailReference(t *testing.T) {
 	if !SupportsDetails("get_review_context") || !DetailArgumentAllowed("get_review_context", "task_id") {
 		t.Fatal("get_review_context must support task-scoped get_details expansion")

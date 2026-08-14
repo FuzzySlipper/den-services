@@ -51,13 +51,14 @@ func TestCampaignRoundQueriesPersistTypedImmutableSnapshot(t *testing.T) {
 		"campaign_children",
 		"campaign_repositories",
 		"coalesce(branch, '')",
-		"coalesce(head_commit, '')",
+		"coalesce(base_branch, '')",
+		"coalesce(tests_run, '[]'::jsonb)",
 	} {
 		if !strings.Contains(roundColumns, want) {
 			t.Fatalf("round projection missing %q:\n%s", want, roundColumns)
 		}
 	}
-	for _, want := range []string{"target_kind", "campaign_children", "campaign_repositories", "$29"} {
+	for _, want := range []string{"target_kind", "campaign_children", "campaign_repositories", "$14"} {
 		if !strings.Contains(createRoundSQL, want) {
 			t.Fatalf("create round query missing %q:\n%s", want, createRoundSQL)
 		}

@@ -120,7 +120,6 @@ func (m *PlaytestManager) Start(ctx context.Context, options PlaytestStartOption
 		"recordVideo":  recordVideo,
 		"inputHelper":  m.cfg.Playtest.InputHelper,
 		"metadata":     options.Metadata,
-		"revision":     readRevision(repoRoot),
 	}
 	if options.DenProjectID != "" || options.DenTaskID > 0 {
 		driverOptions["den"] = map[string]any{"project_id": options.DenProjectID, "task_id": options.DenTaskID}
@@ -489,14 +488,9 @@ func loadOrCreatePlaytestIndex(session PlaytestSession) (map[string]any, error) 
 	if !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("reading playtest index: %w", err)
 	}
-	revision := map[string]any{}
-	if strings.TrimSpace(session.RepoRoot) != "" {
-		revision = readRevision(session.RepoRoot)
-	}
 	return map[string]any{
 		"schema_version": PlaytestSchemaVersion, "session_id": session.SessionID, "project": session.Project,
 		"repository": session.RepoRoot, "scenario": session.Scenario, "status": session.Status,
-		"revision":   revision,
 		"started_at": session.StartedAt, "timeline": []any{}, "discrepancies": []any{}, "artifacts": []any{},
 		"cleanup": map[string]any{"browser_closed": false, "driver_stopped": !processAlive(session.DriverPID)},
 	}, nil
@@ -640,22 +634,6 @@ func reservePort() (int, error) {
 	}
 	defer listener.Close()
 	return listener.Addr().(*net.TCPAddr).Port, nil
-}
-
-func readRevision(repoRoot string) map[string]any {
-	revision := map[string]any{}
-	if output, err := exec.Command("git", "-C", repoRoot, "rev-parse", "HEAD").Output(); err == nil {
-		revision["commit_sha"] = strings.TrimSpace(string(output))
-	}
-	if output, err := exec.Command("git", "-C", repoRoot, "status", "--short").Output(); err == nil {
-		status := strings.TrimSpace(string(output))
-		revision["dirty"] = status != ""
-		revision["dirty_status"] = status
-	}
-	if output, err := exec.Command("git", "-C", repoRoot, "remote", "get-url", "origin").Output(); err == nil {
-		revision["origin"] = strings.TrimSpace(string(output))
-	}
-	return revision
 }
 
 func ParseJSONRequest(raw string) (map[string]any, error) {

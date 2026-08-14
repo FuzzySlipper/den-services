@@ -43,8 +43,7 @@ test("records the exact supplied field guide and source handles as run input", (
   const request = {
     field_guide: {
       guide_id: "fixture/room-one",
-      revision: "7",
-      sha256: "7".repeat(64),
+      observed_at: "2026-08-13T18:00:00Z",
       notes_markdown: "Press E near the brass switch.",
     },
     source_handles: [
@@ -62,8 +61,7 @@ test("a second run receives only the first run's complete replacement", () => {
   const staleInput = {
     field_guide: {
       guide_id: "fixture/door",
-      revision: "1",
-      sha256: "1".repeat(64),
+      observed_at: "2026-08-13T18:00:00Z",
       notes_markdown: "The north door opens and is traversable.",
     },
   };
@@ -80,7 +78,7 @@ test("a second run receives only the first run's complete replacement", () => {
     field_guide_replacement: {
       schema_version: 1,
       guide_id: "fixture/door",
-      revision: "2-candidate",
+      observed_at: "2026-08-13T18:05:00Z",
       replacement_mode: "replace-complete",
       notes_markdown: "Press E to animate the north door. Traversal was blocked in this build.",
       unresolved_questions: ["Is the doorway collider removed after a later event?"],
@@ -90,7 +88,7 @@ test("a second run receives only the first run's complete replacement", () => {
   const secondRun = {};
   retainStartGuidanceEvidence(secondRun, { field_guide: firstRun.field_guide_replacement });
 
-  assert.equal(secondRun.field_guide_input.snapshot.revision, "2-candidate");
+  assert.equal(secondRun.field_guide_input.snapshot.observed_at, "2026-08-13T18:05:00Z");
   assert.match(secondRun.field_guide_input.snapshot.notes_markdown, /Press E/);
   assert.match(secondRun.field_guide_input.snapshot.notes_markdown, /Traversal was blocked/);
   assert.doesNotMatch(secondRun.field_guide_input.snapshot.notes_markdown, /opens and is traversable/);

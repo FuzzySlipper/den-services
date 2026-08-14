@@ -37,8 +37,7 @@ function writePacket(repo, version = 2) {
         fieldGuide: {
           schemaVersion: 1,
           guideId: "fixture/visible-fixture",
-          revision: "4",
-          sha256: "4".repeat(64),
+          observedAt: "2026-08-13T18:00:00Z",
           provenance: ["fixture guide"],
           freshness: "current fixture",
           confidence: "medium",

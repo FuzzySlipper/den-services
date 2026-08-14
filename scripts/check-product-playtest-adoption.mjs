@@ -117,8 +117,8 @@ if (scenario.version === 2) {
   if (scenario.guidance !== undefined) {
     const guide = scenario.guidance.fieldGuide;
     if (guide !== undefined) {
-      if (guide.schemaVersion !== 1 || !guide.guideId || !guide.revision || !guide.sha256 || !guide.notesMarkdown) {
-        fail("scenario guidance.fieldGuide requires schemaVersion 1, guideId, revision, sha256, and notesMarkdown");
+      if (guide.schemaVersion !== 1 || !guide.guideId || !guide.observedAt || !guide.notesMarkdown) {
+        fail("scenario guidance.fieldGuide requires schemaVersion 1, guideId, observedAt, and notesMarkdown");
       }
       if (!Array.isArray(guide.provenance) || guide.provenance.length === 0 || !guide.freshness || !guide.confidence) {
         fail("scenario guidance.fieldGuide requires provenance, freshness, and confidence");

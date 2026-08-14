@@ -1021,7 +1021,7 @@ func TestClientCallsReviewRESTCreateRoundTaskScoped(t *testing.T) {
 		ToolName:  "create_review_round",
 		Operation: "create_review_round",
 		RequestID: json.RawMessage(`1`),
-		Arguments: json.RawMessage(`{"task_id":3726,"requested_by":"codex","branch":"task/3726","base_branch":"main","base_commit":"base","head_commit":"head","tests_run":"[\"go test ./...\"]"}`),
+		Arguments: json.RawMessage(`{"task_id":3726,"requested_by":"codex","branch":"task/3726","base_branch":"main","tests_run":"[\"go test ./...\"]"}`),
 	})
 	if err != nil {
 		t.Fatalf("Call() error = %v", err)
@@ -1060,7 +1060,7 @@ func TestClientCallsReviewRESTRequestCampaignReview(t *testing.T) {
 				"task_id":6212,
 				"requested_by":"codex",
 				"children":[{"project_id":"den-services","task_id":7001,"review_round_id":70}],
-				"repositories":[{"repository":"owner/repo","head_sha":"0123456789abcdef0123456789abcdef01234567"}],
+				"repositories":[{"repository":"owner/repo"}],
 				"tests_run":["go test ./..."]
 			}`),
 		})

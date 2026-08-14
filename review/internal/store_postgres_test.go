@@ -24,8 +24,7 @@ func TestStorePostgresRepresentativeFlow(t *testing.T) {
 	now := time.Now().UTC()
 	round, err := store.CreateRound(ctx, &ReviewRound{
 		ProjectID: "review-store-smoke", TaskID: now.UnixNano(), RequestedBy: "pi", Branch: "task/review-smoke",
-		BaseBranch: "main", BaseCommit: "base", HeadCommit: "head", PreferredDiffBaseRef: "main",
-		PreferredDiffBaseCommit: "base", PreferredDiffHeadRef: "task/review-smoke", PreferredDiffHeadCommit: "head",
+		BaseBranch:  "main",
 		RequestedAt: now, CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {

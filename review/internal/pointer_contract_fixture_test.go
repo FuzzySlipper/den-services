@@ -32,10 +32,9 @@ func TestPointerFirstFixturesAreBoundedAndSelfIdentifying(t *testing.T) {
 				ProjectID     string `json:"project_id"`
 				TaskID        int64  `json:"task_id"`
 				ReviewRoundID int64  `json:"review_round_id"`
-				HeadCommit    string `json:"head_commit"`
 				CorrelationID string `json:"correlation_id"`
 			} `json:"workflow_key"`
-			Revision       int    `json:"revision"`
+			StateRevision  int    `json:"state_revision"`
 			MaterialDigest string `json:"material_digest"`
 			Expected       struct {
 				SerializedBytesMax int    `json:"serialized_bytes_max"`
@@ -45,10 +44,10 @@ func TestPointerFirstFixturesAreBoundedAndSelfIdentifying(t *testing.T) {
 		if err := json.Unmarshal(data, &fixture); err != nil {
 			t.Fatalf("Unmarshal(%q) error = %v", entry.Name(), err)
 		}
-		if fixture.Name == "" || fixture.Schema == "" || !strings.HasSuffix(fixture.Schema, ".v1") || fixture.SchemaVersion != 1 || fixture.Revision <= 0 || fixture.MaterialDigest == "" {
+		if fixture.Name == "" || fixture.Schema == "" || !strings.HasSuffix(fixture.Schema, ".v1") || fixture.SchemaVersion != 1 || fixture.StateRevision <= 0 || fixture.MaterialDigest == "" {
 			t.Fatalf("fixture %q has incomplete identity: %#v", entry.Name(), fixture)
 		}
-		if fixture.WorkflowKey.ProjectID == "" || fixture.WorkflowKey.TaskID <= 0 || fixture.WorkflowKey.ReviewRoundID <= 0 || fixture.WorkflowKey.HeadCommit == "" || fixture.WorkflowKey.CorrelationID == "" {
+		if fixture.WorkflowKey.ProjectID == "" || fixture.WorkflowKey.TaskID <= 0 || fixture.WorkflowKey.ReviewRoundID <= 0 || fixture.WorkflowKey.CorrelationID == "" {
 			t.Fatalf("fixture %q has incomplete workflow key: %#v", entry.Name(), fixture.WorkflowKey)
 		}
 		if fixture.Expected.SerializedBytesMax <= 0 || fixture.Expected.MaterialEventKey == "" || len(data) > fixture.Expected.SerializedBytesMax {

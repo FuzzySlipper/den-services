@@ -29,43 +29,29 @@ type reviewContextArguments struct {
 }
 
 type reviewContextRound struct {
-	ID                      int64                             `json:"id"`
-	ProjectID               string                            `json:"project_id"`
-	TaskID                  int64                             `json:"task_id"`
-	RoundNumber             int                               `json:"round_number"`
-	TargetKind              string                            `json:"target_kind,omitempty"`
-	Branch                  string                            `json:"branch,omitempty"`
-	BaseBranch              string                            `json:"base_branch,omitempty"`
-	BaseCommit              string                            `json:"base_commit,omitempty"`
-	HeadCommit              string                            `json:"head_commit,omitempty"`
-	LastReviewedHeadCommit  string                            `json:"last_reviewed_head_commit,omitempty"`
-	PreferredDiffBaseRef    string                            `json:"preferred_diff_base_ref,omitempty"`
-	PreferredDiffBaseCommit string                            `json:"preferred_diff_base_commit,omitempty"`
-	PreferredDiffHeadRef    string                            `json:"preferred_diff_head_ref,omitempty"`
-	PreferredDiffHeadCommit string                            `json:"preferred_diff_head_commit,omitempty"`
-	AlternateDiffBaseRef    string                            `json:"alternate_diff_base_ref,omitempty"`
-	AlternateDiffBaseCommit string                            `json:"alternate_diff_base_commit,omitempty"`
-	AlternateDiffHeadRef    string                            `json:"alternate_diff_head_ref,omitempty"`
-	AlternateDiffHeadCommit string                            `json:"alternate_diff_head_commit,omitempty"`
-	DeltaBaseCommit         string                            `json:"delta_base_commit,omitempty"`
-	CampaignChildren        []reviewContextCampaignChild      `json:"campaign_children,omitempty"`
-	CampaignRepositories    []reviewContextCampaignRepository `json:"campaign_repositories,omitempty"`
-	CampaignDetailRef       string                            `json:"campaign_detail_ref,omitempty"`
-	Verdict                 string                            `json:"verdict,omitempty"`
+	ID                   int64                             `json:"id"`
+	ProjectID            string                            `json:"project_id"`
+	TaskID               int64                             `json:"task_id"`
+	RoundNumber          int                               `json:"round_number"`
+	TargetKind           string                            `json:"target_kind,omitempty"`
+	Branch               string                            `json:"branch,omitempty"`
+	BaseBranch           string                            `json:"base_branch,omitempty"`
+	CampaignChildren     []reviewContextCampaignChild      `json:"campaign_children,omitempty"`
+	CampaignRepositories []reviewContextCampaignRepository `json:"campaign_repositories,omitempty"`
+	CampaignDetailRef    string                            `json:"campaign_detail_ref,omitempty"`
+	Verdict              string                            `json:"verdict,omitempty"`
 }
 
 type reviewContextCampaignChild struct {
 	ProjectID       string `json:"project_id"`
 	TaskID          int64  `json:"task_id"`
 	ReviewRoundID   int64  `json:"review_round_id"`
-	HeadCommit      string `json:"head_commit,omitempty"`
 	MembershipKind  string `json:"membership_kind,omitempty"`
 	ApprovedVerdict string `json:"approved_verdict,omitempty"`
 }
 
 type reviewContextCampaignRepository struct {
 	Repository string `json:"repository"`
-	HeadSHA    string `json:"head_sha"`
 }
 
 type reviewContextTask struct {
@@ -193,23 +179,6 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 		response.PriorFindings = summarizeReviewContextFindings(sortRawMessages(allFindings, 32),
 			"/v1/tasks/"+strconv.FormatInt(arguments.TaskID, 10)+"/review/findings")
 		response.Truncation.Findings = len(allFindings) > len(response.PriorFindings)
-		if round.HeadCommit != "" {
-			gatePath := "/v1/projects/" + url.PathEscape(projectID) + "/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/review/github-check-gates/" + url.PathEscape(round.HeadCommit)
-			gateBody, gateFailure, gateErr := c.taskContextGET(ctx, reviewBackend, gatePath, call)
-			if gateErr == nil && gateFailure == nil {
-				var gate reviewContextGate
-				if err := json.Unmarshal(gateBody, &gate); err != nil {
-					return Result{}, nil, fmt.Errorf("parsing review context gate: %w", err)
-				}
-				response.Gate = &gate
-				response.Task.Repository = strings.TrimSpace(gate.Repository)
-				response.SourceStatus = append(response.SourceStatus, taskContextSourceStatus{Source: "gate", State: "ok", Handle: gatePath, Retryable: false})
-			} else if gateFailure != nil && gateFailure.StatusCode != nil && *gateFailure.StatusCode == 404 {
-				response.SourceStatus = append(response.SourceStatus, taskContextSourceStatus{Source: "gate", State: "absent", Handle: gatePath, ErrorCode: "no_current_gate", Retryable: false})
-			} else {
-				response.SourceStatus = append(response.SourceStatus, taskContextStatus("gate", gatePath, gateFailure, gateErr))
-			}
-		}
 		response.NextState = reviewContextNextState(taskDetail.Task.Status, round, summary, response.Gate)
 	} else {
 		return c.reviewContextTypedError(reviewContextErrorResponse{
@@ -370,7 +339,7 @@ func reviewContextNextState(taskStatus string, round reviewContextRound, _ taskW
 		return "round_superseded"
 	}
 	if gate == nil {
-		return "gate_pending"
+		return "source_review_ready"
 	}
 	switch gate.Status {
 	case "passed":
@@ -430,7 +399,7 @@ func compactReviewContextCampaignText(round *reviewContextRound, limit int) bool
 	truncated := false
 	for index := range round.CampaignChildren {
 		child := &round.CampaignChildren[index]
-		values := []*string{&child.ProjectID, &child.HeadCommit, &child.MembershipKind, &child.ApprovedVerdict}
+		values := []*string{&child.ProjectID, &child.MembershipKind, &child.ApprovedVerdict}
 		for _, value := range values {
 			clipped := truncateReviewContextText(*value, limit)
 			if clipped != *value {
@@ -441,7 +410,7 @@ func compactReviewContextCampaignText(round *reviewContextRound, limit int) bool
 	}
 	for index := range round.CampaignRepositories {
 		repository := &round.CampaignRepositories[index]
-		values := []*string{&repository.Repository, &repository.HeadSHA}
+		values := []*string{&repository.Repository}
 		for _, value := range values {
 			clipped := truncateReviewContextText(*value, limit)
 			if clipped != *value {

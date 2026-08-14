@@ -42,9 +42,6 @@ func toFinalizationResponse(receipt *ReviewFinalizationReceipt) ReviewFinalizati
 		TaskTransitionAttempts: finalization.TaskTransitionAttempts, ResultingTaskStatus: receipt.TaskStatus,
 		Reason: finalizationReason(finalization), CreatedAt: finalization.CreatedAt, UpdatedAt: finalization.UpdatedAt,
 	}
-	if receipt.Round != nil {
-		response.ExactHeadCommit = receipt.Round.HeadCommit
-	}
 	response.FindingStatuses = compactFindingStatuses(receipt.Packet)
 	return response
 }
