@@ -108,6 +108,10 @@ func boardTools() []ToolDefinition {
 			InputSchema: ObjectSchema(map[string]Schema{"project_id": projectID, "after_id": afterID, "limit": limit}, "project_id"),
 		},
 		{
+			Name: "search_board_posts", Description: "CLI-only bounded Board search transport. Hidden from model discovery so uncommon search does not occupy the always-loaded MCP surface.", Backend: "board", Operation: "search_board_posts", Hidden: true,
+			InputSchema: ObjectSchema(map[string]Schema{"project_id": projectID, "query": StringSchema("Board full-text search query."), "after_id": afterID, "limit": limit}, "project_id", "query"),
+		},
+		{
 			Name: "get_board_post", Description: "Get one visible Board post without dumping its comments. Traverse replies separately with list_board_comments.", Backend: "board", Operation: "get_board_post",
 			InputSchema: ObjectSchema(map[string]Schema{"post_id": postID}, "post_id"),
 		},

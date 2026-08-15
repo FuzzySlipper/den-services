@@ -71,3 +71,56 @@ func TestDenCLIInvokesCatalogOperation(t *testing.T) {
 		t.Fatalf("stdout = %s", stdout.String())
 	}
 }
+
+func TestBoardCLIDefaultsToMCPWithoutBoardInfrastructureConfiguration(t *testing.T) {
+	var calls []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Authorization") != "Bearer agent-token" {
+			t.Errorf("authorization = %q", request.Header.Get("Authorization"))
+		}
+		var rpc map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&rpc); err != nil {
+			t.Fatal(err)
+		}
+		params := rpc["params"].(map[string]any)
+		calls = append(calls, params)
+		name := params["name"].(string)
+		structured := `{"id":42}`
+		if name == "search_board_posts" {
+			structured = `{"results":[{"post_id":42}]}`
+		}
+		_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","id":"den-tool","result":{"isError":false,"structuredContent":`+structured+`}}`)
+	}))
+	defer server.Close()
+	t.Setenv("DEN_BOARD_URL", "")
+	t.Setenv("DEN_MCP_URL", server.URL)
+	t.Setenv("DEN_MCP_TOKEN", "agent-token")
+
+	for _, test := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"board", "create-post", "--project", "den-services", "--title", "Topic", "--body", "Body", "--author", "agent", "--json"}, `{"id":42}`},
+		{[]string{"board", "search", "--project", "den-services", "--query", "Topic", "--limit", "5", "--json"}, `{"results":[{"post_id":42}]}`},
+	} {
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		if code := runCLI(test.args, &stdout, &stderr); code != 0 {
+			t.Fatalf("runCLI(%v) code = %d, stderr = %s", test.args, code, stderr.String())
+		}
+		if strings.TrimSpace(stdout.String()) != test.want {
+			t.Fatalf("runCLI(%v) stdout = %q, want %q", test.args, stdout.String(), test.want)
+		}
+	}
+	if len(calls) != 2 || calls[0]["name"] != "create_board_post" || calls[1]["name"] != "search_board_posts" {
+		t.Fatalf("calls = %#v", calls)
+	}
+	createArguments := calls[0]["arguments"].(map[string]any)
+	if createArguments["project_id"] != "den-services" || createArguments["body_markdown"] != "Body" {
+		t.Fatalf("create arguments = %#v", createArguments)
+	}
+	searchArguments := calls[1]["arguments"].(map[string]any)
+	if searchArguments["query"] != "Topic" || searchArguments["limit"] != float64(5) {
+		t.Fatalf("search arguments = %#v", searchArguments)
+	}
+}

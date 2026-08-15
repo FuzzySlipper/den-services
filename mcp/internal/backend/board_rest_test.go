@@ -47,6 +47,23 @@ func TestBuildBoardRESTRequestCreatesImmediateReply(t *testing.T) {
 	}
 }
 
+func TestBuildBoardRESTRequestSearchesWithBoundedQuery(t *testing.T) {
+	afterID := int64(29)
+	limit := 7
+	request, err := buildBoardRESTRequest(context.Background(), config.BackendConfig{BaseURL: "http://example.test", ServiceToken: "secret"}, Route{
+		Operation: "search_board_posts", Method: http.MethodGet, Path: "/v1/projects/{project_id}/board/posts/search",
+	}, ToolCall{Arguments: mustBoardArguments(t, boardToolArguments{ProjectID: "den services", Query: "thread tree", AfterID: &afterID, Limit: &limit})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := request.URL.String(); got != "http://example.test/v1/projects/den%20services/board/posts/search?after_id=29&limit=7&q=thread+tree" {
+		t.Fatalf("url = %q", got)
+	}
+	if got := request.Header.Get("Authorization"); got != "Bearer secret" {
+		t.Fatalf("authorization = %q", got)
+	}
+}
+
 func TestBoardRESTPurgesWithModerationMetadata(t *testing.T) {
 	var gotMethod, gotPath, gotBody string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

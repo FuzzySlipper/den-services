@@ -388,6 +388,13 @@ func TestBoardSearchRemainsOutsideMCPDiscovery(t *testing.T) {
 			t.Fatalf("Board search unexpectedly exposed through MCP as %s", tool.Name)
 		}
 	}
+	tool, err := registry.Resolve("search_board_posts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tool.Hidden || tool.TombstoneMessage != "" || tool.Backend != "board" {
+		t.Fatalf("search_board_posts policy = hidden:%t tombstone:%q backend:%q", tool.Hidden, tool.TombstoneMessage, tool.Backend)
+	}
 }
 
 func TestTaskScopedSchemasDeriveProject(t *testing.T) {

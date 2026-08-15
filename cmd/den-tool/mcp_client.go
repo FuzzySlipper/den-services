@@ -32,6 +32,14 @@ type mcpRPCResponse struct {
 	} `json:"error"`
 }
 
+type mcpToolEnvelope struct {
+	Content []struct {
+		Text string `json:"text"`
+	} `json:"content"`
+	IsError           bool            `json:"isError"`
+	StructuredContent json.RawMessage `json:"structuredContent"`
+}
+
 func MCPClientFromEnv() (*MCPClient, error) {
 	endpoint := strings.TrimSpace(os.Getenv("DEN_MCP_URL"))
 	if endpoint == "" {
@@ -104,6 +112,28 @@ func (c *MCPClient) Call(ctx context.Context, operation string, arguments json.R
 		return nil, false, fmt.Errorf("decode Den MCP result: %w", err)
 	}
 	return rpc.Result, result.IsError, nil
+}
+
+func (c *MCPClient) CallStructured(ctx context.Context, operation string, arguments json.RawMessage) (json.RawMessage, error) {
+	result, isError, err := c.Call(ctx, operation, arguments)
+	if err != nil {
+		return nil, err
+	}
+	var envelope mcpToolEnvelope
+	if err := json.Unmarshal(result, &envelope); err != nil {
+		return nil, fmt.Errorf("decode Den operation %s result: %w", operation, err)
+	}
+	if isError || envelope.IsError {
+		message := "operation returned an error"
+		if len(envelope.Content) > 0 && strings.TrimSpace(envelope.Content[0].Text) != "" {
+			message = boundedText([]byte(envelope.Content[0].Text), 4096)
+		}
+		return nil, fmt.Errorf("den operation %s: %s", operation, message)
+	}
+	if len(envelope.StructuredContent) == 0 || !json.Valid(envelope.StructuredContent) {
+		return nil, fmt.Errorf("den operation %s returned no structured JSON", operation)
+	}
+	return envelope.StructuredContent, nil
 }
 
 func boundedText(data []byte, limit int) string {

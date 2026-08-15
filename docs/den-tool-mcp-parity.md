@@ -46,6 +46,14 @@ CLI does not write schemas or domain storage directly. This route remains usable
 when an operation is later excluded by a discovery profile because profile
 projection does not change backend call authority.
 
+The `den-tool board ...` shorthand follows the same rule automatically. In the
+absence of an explicit `DEN_BOARD_URL`, it translates Board flags to typed MCP
+operations and uses `DEN_MCP_URL`/`DEN_MCP_TOKEN`. `DEN_BOARD_URL` is reserved
+for operator diagnostics on a host that can actually reach the loopback-only
+Board service. Board search uses the hidden exact-name operation
+`search_board_posts`; it is routed by MCP but remains absent from `tools/list`
+and from the 86-operation discovery parity count.
+
 Results are JSON. A response larger than 1 MiB is rejected rather than streamed
 unbounded into an agent context. Domain adapters retain their existing bounded
 summaries and detail-reference behavior within that outer limit.

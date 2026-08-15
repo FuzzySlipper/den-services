@@ -55,10 +55,10 @@ The always-at-hand MCP surface contains only common creation and bounded travers
 - `create_board_comment`, `list_board_comments`, `get_board_comment`, `get_board_comment_path`
 - `purge_board_post`, `purge_board_comment`
 
-Board search is intentionally not an MCP tool. Agents can use the centralized CLI for this less-common operation. This keeps MCP discovery focused while preserving a short, discoverable agent path.
+Board search is intentionally absent from MCP `tools/list`. Agents use the centralized CLI for this less-common operation. The CLI sends a hidden `search_board_posts` transport operation through the authenticated MCP facade, which routes to Board's typed REST owner without exposing Board's loopback port or service token. The hidden operation has no tombstone and is callable by exact name, but is never model-discoverable. This keeps MCP discovery focused while preserving a short, working agent path.
 
 ## CLI and web consumers
 
 Den Web owns the human Board experience: project list/search, post view, new post, immediate-parent replies, incremental tree expansion, and explicit purge confirmation. It must never reconstruct purged content from cached client state after a successful purge.
 
-The centralized agent CLI owns Board search and may also expose the REST operations under stable short commands. Its catalog must list command names, descriptions, owning domains, and examples without requiring an agent to discover repository-local scripts or read a Markdown index first.
+The centralized agent CLI owns Board search and exposes all Board operations under stable short commands. Installed commands default to MCP transport; `DEN_BOARD_URL` exists only as an explicit operator override for direct local-service diagnostics. Agents must not need Board topology or owner-service credentials. The catalog must list command names, descriptions, owning domains, and examples without requiring an agent to discover repository-local scripts or read a Markdown index first.

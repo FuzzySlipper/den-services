@@ -26,6 +26,7 @@ type boardToolArguments struct {
 	AuthorIdentity  string `json:"author_identity"`
 	ActorIdentity   string `json:"actor_identity"`
 	Reason          string `json:"reason"`
+	Query           string `json:"query"`
 }
 
 type boardPostBody struct {
@@ -89,6 +90,12 @@ func buildBoardRESTRequest(ctx context.Context, backend config.BackendConfig, ro
 	if arguments.Limit != nil {
 		query.Set("limit", strconv.Itoa(*arguments.Limit))
 	}
+	if route.Operation == "search_board_posts" {
+		if strings.TrimSpace(arguments.Query) == "" {
+			return nil, fmt.Errorf("board search route requires query")
+		}
+		query.Set("q", strings.TrimSpace(arguments.Query))
+	}
 	requestURL.RawQuery = query.Encode()
 
 	var body any
@@ -106,7 +113,7 @@ func buildBoardRESTRequest(ctx context.Context, backend config.BackendConfig, ro
 			ActorIdentity string `json:"actor_identity"`
 			Reason        string `json:"reason"`
 		}{arguments.ActorIdentity, arguments.Reason}
-	case "list_board_posts", "get_board_post", "list_board_comments", "get_board_comment", "get_board_comment_path":
+	case "list_board_posts", "search_board_posts", "get_board_post", "list_board_comments", "get_board_comment", "get_board_comment_path":
 	default:
 		return nil, fmt.Errorf("%w: board operation %s", ErrUnsupportedAdapter, route.Operation)
 	}

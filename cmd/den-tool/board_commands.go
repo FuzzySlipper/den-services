@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 )
 
 type boardFlags struct {
@@ -32,11 +35,16 @@ func runBoardCommand(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return boardUsageError(stderr, err.Error())
 	}
-	client, err := BoardClientFromEnv()
-	if err != nil {
-		return writeRuntimeError(stderr, err)
+	var body []byte
+	if strings.TrimSpace(os.Getenv("DEN_BOARD_URL")) != "" {
+		client, clientErr := BoardClientFromEnv()
+		if clientErr != nil {
+			return writeRuntimeError(stderr, clientErr)
+		}
+		body, err = executeBoardCommand(context.Background(), client, args[0], flags)
+	} else {
+		body, err = executeBoardMCPCommand(context.Background(), args[0], flags)
 	}
-	body, err := executeBoardCommand(context.Background(), client, args[0], flags)
 	if err != nil {
 		return writeRuntimeError(stderr, err)
 	}
@@ -50,6 +58,106 @@ func runBoardCommand(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	return writeHumanServiceJSON(stdout, body)
+}
+
+func executeBoardMCPCommand(ctx context.Context, command string, flags boardFlags) ([]byte, error) {
+	operation, arguments, err := boardMCPCall(command, flags)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := json.Marshal(arguments)
+	if err != nil {
+		return nil, fmt.Errorf("encode Board MCP arguments: %w", err)
+	}
+	client, err := MCPClientFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	return client.CallStructured(ctx, operation, payload)
+}
+
+func boardMCPCall(command string, flags boardFlags) (string, map[string]any, error) {
+	arguments := make(map[string]any)
+	putPageArguments(arguments, flags)
+	switch command {
+	case "create-post":
+		if strings.TrimSpace(*flags.project) == "" || strings.TrimSpace(*flags.title) == "" || strings.TrimSpace(*flags.body) == "" || strings.TrimSpace(*flags.author) == "" {
+			return "", nil, fmt.Errorf("board create-post requires project, title, body, and author")
+		}
+		arguments["project_id"], arguments["title"], arguments["body_markdown"], arguments["author_identity"] = *flags.project, *flags.title, *flags.body, *flags.author
+		return "create_board_post", arguments, nil
+	case "list-posts":
+		if strings.TrimSpace(*flags.project) == "" {
+			return "", nil, fmt.Errorf("board list-posts requires project")
+		}
+		arguments["project_id"] = *flags.project
+		return "list_board_posts", arguments, nil
+	case "get-post":
+		if *flags.postID <= 0 {
+			return "", nil, fmt.Errorf("board get-post requires positive post-id")
+		}
+		arguments["post_id"] = *flags.postID
+		return "get_board_post", arguments, nil
+	case "search":
+		if strings.TrimSpace(*flags.project) == "" || strings.TrimSpace(*flags.query) == "" {
+			return "", nil, fmt.Errorf("board search requires project and query")
+		}
+		arguments["project_id"], arguments["query"] = *flags.project, *flags.query
+		return "search_board_posts", arguments, nil
+	case "create-comment":
+		if *flags.postID <= 0 || strings.TrimSpace(*flags.body) == "" || strings.TrimSpace(*flags.author) == "" {
+			return "", nil, fmt.Errorf("board create-comment requires positive post-id, body, and author")
+		}
+		arguments["post_id"], arguments["body_markdown"], arguments["author_identity"] = *flags.postID, *flags.body, *flags.author
+		if flags.parentSet {
+			arguments["parent_comment_id"] = *flags.parent
+		}
+		return "create_board_comment", arguments, nil
+	case "list-comments":
+		if *flags.postID <= 0 {
+			return "", nil, fmt.Errorf("board list-comments requires positive post-id")
+		}
+		arguments["post_id"] = *flags.postID
+		if flags.parentSet {
+			arguments["parent_comment_id"] = *flags.parent
+		}
+		return "list_board_comments", arguments, nil
+	case "get-comment":
+		if *flags.comment <= 0 {
+			return "", nil, fmt.Errorf("board get-comment requires positive comment-id")
+		}
+		arguments["comment_id"] = *flags.comment
+		return "get_board_comment", arguments, nil
+	case "comment-path":
+		if *flags.comment <= 0 {
+			return "", nil, fmt.Errorf("board comment-path requires positive comment-id")
+		}
+		arguments["comment_id"] = *flags.comment
+		return "get_board_comment_path", arguments, nil
+	case "purge-post":
+		if *flags.postID <= 0 || strings.TrimSpace(*flags.actor) == "" || strings.TrimSpace(*flags.reason) == "" {
+			return "", nil, fmt.Errorf("board purge-post requires positive post-id, actor, and reason")
+		}
+		arguments["post_id"], arguments["actor_identity"], arguments["reason"] = *flags.postID, *flags.actor, *flags.reason
+		return "purge_board_post", arguments, nil
+	case "purge-comment":
+		if *flags.comment <= 0 || strings.TrimSpace(*flags.actor) == "" || strings.TrimSpace(*flags.reason) == "" {
+			return "", nil, fmt.Errorf("board purge-comment requires positive comment-id, actor, and reason")
+		}
+		arguments["comment_id"], arguments["actor_identity"], arguments["reason"] = *flags.comment, *flags.actor, *flags.reason
+		return "purge_board_comment", arguments, nil
+	default:
+		return "", nil, fmt.Errorf("unknown Board subcommand %q", command)
+	}
+}
+
+func putPageArguments(arguments map[string]any, flags boardFlags) {
+	if afterID := optionalInt64Flag(flags.afterID); afterID != nil {
+		arguments["after_id"] = *afterID
+	}
+	if limit := optionalIntFlag(flags.limit); limit != nil {
+		arguments["limit"] = *limit
+	}
 }
 
 func parseBoardFlags(command string, args []string) (boardFlags, error) {
