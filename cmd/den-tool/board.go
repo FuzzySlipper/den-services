@@ -329,7 +329,7 @@ func (c *BoardClient) request(ctx context.Context, method, requestURL string, pa
 	if err != nil {
 		return nil, fmt.Errorf("request board service: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read board response: %w", err)

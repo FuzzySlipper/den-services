@@ -55,7 +55,7 @@ recorded_value() {
 source_digest() {
   (
     cd "$repo_root"
-    find cmd/den-tool -maxdepth 1 -type f \( -name '*.go' -o -name 'catalog.json' \) -print0 \
+    find cmd/den-tool -maxdepth 1 -type f \( -name '*.go' -o -name '*.json' \) -print0 \
       | sort -z \
       | xargs -0 sha256sum
     sha256sum go.mod go.sum

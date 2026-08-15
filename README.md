@@ -39,6 +39,19 @@ make build SERVICE=gateway
 make build-all
 ```
 
+The globally installable agent CLI exposes common and uncommon Den operations
+without requiring repository-local script discovery:
+
+```sh
+scripts/install-den-tool.sh
+den-tool search review
+den-tool describe den.get_review_context
+den-tool den get_task --task-id 7011
+```
+
+See [the MCP parity inventory](docs/den-tool-mcp-parity.md) for its generated
+catalog and transport contract.
+
 ## Deployment
 
 For a new, empty instance with PostgreSQL and all services on one machine, use

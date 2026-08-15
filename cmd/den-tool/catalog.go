@@ -32,17 +32,21 @@ type Catalog struct {
 }
 
 type Tool struct {
-	ID               string   `json:"id"`
-	Description      string   `json:"description"`
-	Tags             []string `json:"tags"`
-	Repo             string   `json:"repo"`
-	Root             string   `json:"root"`
-	WorkingDirectory string   `json:"working_directory"`
-	Argv             []string `json:"argv"`
-	Risk             Risk     `json:"risk"`
-	Source           string   `json:"source"`
-	Requirements     []string `json:"requirements"`
-	Examples         []string `json:"examples"`
+	ID               string          `json:"id"`
+	Description      string          `json:"description"`
+	Tags             []string        `json:"tags"`
+	Repo             string          `json:"repo"`
+	Root             string          `json:"root"`
+	WorkingDirectory string          `json:"working_directory"`
+	Argv             []string        `json:"argv"`
+	Risk             Risk            `json:"risk"`
+	Source           string          `json:"source"`
+	Requirements     []string        `json:"requirements"`
+	Examples         []string        `json:"examples"`
+	Backend          string          `json:"backend,omitempty"`
+	Operation        string          `json:"operation,omitempty"`
+	WorkflowTier     string          `json:"workflow_tier,omitempty"`
+	InputSchema      json.RawMessage `json:"input_schema,omitempty"`
 }
 
 type Availability struct {
@@ -75,6 +79,10 @@ func ParseCatalog(data []byte) (Catalog, error) {
 
 func LoadEmbeddedCatalog(repoRoot string) (Catalog, error) {
 	catalog, err := ParseCatalog(embeddedCatalog)
+	if err != nil {
+		return Catalog{}, err
+	}
+	catalog, err = appendMCPTools(catalog)
 	if err != nil {
 		return Catalog{}, err
 	}
@@ -142,6 +150,14 @@ func (c *Catalog) Validate() error {
 		}
 		if err := validateStringList(tool.ID, "examples", tool.Examples, false); err != nil {
 			return err
+		}
+		if strings.HasPrefix(tool.ID, "den.") {
+			if strings.TrimSpace(tool.Backend) == "" || strings.TrimSpace(tool.Operation) == "" {
+				return fmt.Errorf("tool %q must declare backend and operation", tool.ID)
+			}
+			if len(tool.InputSchema) == 0 || !json.Valid(tool.InputSchema) {
+				return fmt.Errorf("tool %q must declare a valid input schema", tool.ID)
+			}
 		}
 	}
 

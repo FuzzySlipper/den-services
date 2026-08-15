@@ -45,7 +45,7 @@ func runBoardCommand(args []string, stdout, stderr io.Writer) int {
 			return writeRuntimeError(stderr, fmt.Errorf("write board response: %w", err))
 		}
 		if len(body) == 0 || body[len(body)-1] != '\n' {
-			fmt.Fprintln(stdout)
+			_, _ = fmt.Fprintln(stdout)
 		}
 		return 0
 	}
@@ -177,6 +177,6 @@ func optionalIntFlag(value *int) *int {
 }
 
 func boardUsageError(stderr io.Writer, message string) int {
-	fmt.Fprintf(stderr, "den-tool: %s\nBoard subcommands: create-post, list-posts, get-post, search, create-comment, list-comments, get-comment, comment-path, purge-post, purge-comment\n", message)
+	_, _ = fmt.Fprintf(stderr, "den-tool: %s\nBoard subcommands: create-post, list-posts, get-post, search, create-comment, list-comments, get-comment, comment-path, purge-post, purge-comment\n", message)
 	return 2
 }

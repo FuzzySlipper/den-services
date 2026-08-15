@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-const toolVersion = "1.0.0"
+const toolVersion = "1.1.0"
 
 type catalogReadback struct {
 	Version string         `json:"version"`
@@ -31,7 +31,7 @@ func main() {
 
 func runCLI(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 1 && args[0] == "--version" {
-		fmt.Fprintf(stdout, "den-tool version %s\n", toolVersion)
+		_, _ = fmt.Fprintf(stdout, "den-tool version %s\n", toolVersion)
 		return 0
 	}
 	if len(args) == 0 {
@@ -50,6 +50,8 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 		return handleRun(args[1:], stdout, stderr)
 	case "board":
 		return handleBoard(args[1:], stdout, stderr)
+	case "den":
+		return handleDen(args[1:], stdout, stderr)
 	default:
 		writeUsageError(stderr, fmt.Sprintf("unknown command %q", args[0]))
 		return 2
@@ -75,7 +77,7 @@ func handleList(args []string, stdout, stderr io.Writer) int {
 	}
 
 	for _, tool := range catalog.Tools {
-		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", tool.ID, tool.Risk, availabilityText(newToolReadback(tool)), tool.Description)
+		_, _ = fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", tool.ID, tool.Risk, availabilityText(newToolReadback(tool)), tool.Description)
 	}
 	return 0
 }
@@ -99,7 +101,7 @@ func handleSearch(args []string, stdout, stderr io.Writer) int {
 		return writeJSON(stdout, newCatalogReadback(result))
 	}
 	for _, tool := range result.Tools {
-		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", tool.ID, tool.Risk, availabilityText(newToolReadback(tool)), tool.Description)
+		_, _ = fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", tool.ID, tool.Risk, availabilityText(newToolReadback(tool)), tool.Description)
 	}
 	return 0
 }
@@ -127,25 +129,31 @@ func handleDescribe(args []string, stdout, stderr io.Writer) int {
 	}
 
 	readback := newToolReadback(tool)
-	fmt.Fprintf(stdout, "id: %s\n", tool.ID)
-	fmt.Fprintf(stdout, "description: %s\n", tool.Description)
-	fmt.Fprintf(stdout, "tags: %s\n", strings.Join(tool.Tags, ", "))
-	fmt.Fprintf(stdout, "repo: %s\n", tool.Repo)
-	fmt.Fprintf(stdout, "root: %s\n", tool.Root)
-	fmt.Fprintf(stdout, "working directory: %s\n", tool.WorkingDirectory)
-	fmt.Fprintf(stdout, "argv: %s\n", strings.Join(tool.Argv, " "))
-	fmt.Fprintf(stdout, "risk: %s\n", tool.Risk)
-	fmt.Fprintf(stdout, "source: %s\n", tool.Source)
-	fmt.Fprintf(stdout, "requirements: %s\n", strings.Join(tool.Requirements, ", "))
-	fmt.Fprintln(stdout, "examples:")
+	_, _ = fmt.Fprintf(stdout, "id: %s\n", tool.ID)
+	_, _ = fmt.Fprintf(stdout, "description: %s\n", tool.Description)
+	_, _ = fmt.Fprintf(stdout, "tags: %s\n", strings.Join(tool.Tags, ", "))
+	_, _ = fmt.Fprintf(stdout, "repo: %s\n", tool.Repo)
+	_, _ = fmt.Fprintf(stdout, "root: %s\n", tool.Root)
+	_, _ = fmt.Fprintf(stdout, "working directory: %s\n", tool.WorkingDirectory)
+	_, _ = fmt.Fprintf(stdout, "argv: %s\n", strings.Join(tool.Argv, " "))
+	_, _ = fmt.Fprintf(stdout, "risk: %s\n", tool.Risk)
+	_, _ = fmt.Fprintf(stdout, "source: %s\n", tool.Source)
+	if tool.Operation != "" {
+		_, _ = fmt.Fprintf(stdout, "backend: %s\n", tool.Backend)
+		_, _ = fmt.Fprintf(stdout, "operation: %s\n", tool.Operation)
+		_, _ = fmt.Fprintf(stdout, "workflow tier: %s\n", tool.WorkflowTier)
+		_, _ = fmt.Fprintf(stdout, "input schema: %s\n", string(tool.InputSchema))
+	}
+	_, _ = fmt.Fprintf(stdout, "requirements: %s\n", strings.Join(tool.Requirements, ", "))
+	_, _ = fmt.Fprintln(stdout, "examples:")
 	for _, example := range tool.Examples {
-		fmt.Fprintf(stdout, "  %s\n", example)
+		_, _ = fmt.Fprintf(stdout, "  %s\n", example)
 	}
 	if readback.Availability == "available" {
-		fmt.Fprintln(stdout, "availability: available")
+		_, _ = fmt.Fprintln(stdout, "availability: available")
 	} else {
-		fmt.Fprintln(stdout, "availability: unavailable")
-		fmt.Fprintf(stdout, "reason: %s\n", readback.Reason)
+		_, _ = fmt.Fprintln(stdout, "availability: unavailable")
+		_, _ = fmt.Fprintf(stdout, "reason: %s\n", readback.Reason)
 	}
 	return 0
 }
@@ -201,7 +209,7 @@ func handleRun(args []string, stdout, stderr io.Writer) int {
 			if code < 0 {
 				code = 1
 			}
-			fmt.Fprintf(stderr, "den-tool: %s exited with status %d\n", tool.ID, code)
+			_, _ = fmt.Fprintf(stderr, "den-tool: %s exited with status %d\n", tool.ID, code)
 			return code
 		}
 		return writeRuntimeError(stderr, err)
@@ -253,18 +261,18 @@ func writeHumanServiceJSON(writer io.Writer, body []byte) int {
 	}
 	var compact bytes.Buffer
 	if err := json.Compact(&compact, trimmed); err == nil {
-		fmt.Fprintln(writer, compact.String())
+		_, _ = fmt.Fprintln(writer, compact.String())
 		return 0
 	}
-	fmt.Fprintln(writer, string(trimmed))
+	_, _ = fmt.Fprintln(writer, string(trimmed))
 	return 0
 }
 
 func writeUsageError(writer io.Writer, message string) {
-	fmt.Fprintf(writer, "den-tool: %s\nusage: den-tool list [--json] | search <terms...> [--json] | describe <id> [--json] | run <id> -- [extra args...] | board <subcommand> [flags]\n", message)
+	_, _ = fmt.Fprintf(writer, "den-tool: %s\nusage: den-tool list [--json] | search <terms...> [--json] | describe <id> [--json] | run <id> -- [extra args...] | board <subcommand> [flags] | den <operation> [flags]\n", message)
 }
 
 func writeRuntimeError(writer io.Writer, err error) int {
-	fmt.Fprintf(writer, "den-tool: %v\n", err)
+	_, _ = fmt.Fprintf(writer, "den-tool: %v\n", err)
 	return 1
 }

@@ -113,7 +113,7 @@ func TestInstallerCheckDetectsSourceDriftUntilReinstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if !entry.IsDir() && (strings.HasSuffix(entry.Name(), ".go") || entry.Name() == "catalog.json") {
+		if !entry.IsDir() && (strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), ".json")) {
 			copyTestFile(t, sourceRoot, root, filepath.Join("cmd", "den-tool", entry.Name()))
 		}
 	}
