@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -211,68 +210,7 @@ func handleRun(args []string, stdout, stderr io.Writer) int {
 }
 
 func handleBoard(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || args[0] != "search" {
-		writeUsageError(stderr, "board requires the search subcommand")
-		return 2
-	}
-
-	flags := flag.NewFlagSet("board search", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	project := flags.String("project", "", "Board project id")
-	query := flags.String("query", "", "Board search query")
-	afterID := flags.Int64("after-id", -1, "Optional Board cursor")
-	limit := flags.Int("limit", -1, "Optional result limit")
-	jsonOutput := flags.Bool("json", false, "Print service JSON")
-	if err := flags.Parse(args[1:]); err != nil {
-		writeUsageError(stderr, fmt.Sprintf("invalid board search flags: %v", err))
-		return 2
-	}
-	if flags.NArg() != 0 {
-		writeUsageError(stderr, "board search does not accept positional arguments")
-		return 2
-	}
-	if strings.TrimSpace(*project) == "" {
-		writeUsageError(stderr, "board search requires --project")
-		return 2
-	}
-	if strings.TrimSpace(*query) == "" {
-		writeUsageError(stderr, "board search requires --query")
-		return 2
-	}
-	if *afterID < -1 {
-		writeUsageError(stderr, "board search --after-id must be non-negative")
-		return 2
-	}
-	if *limit == 0 || *limit < -1 {
-		writeUsageError(stderr, "board search --limit must be positive")
-		return 2
-	}
-
-	options := BoardSearchOptions{ProjectID: *project, Query: *query}
-	if *afterID >= 0 {
-		options.AfterID = afterID
-	}
-	if *limit > 0 {
-		options.Limit = limit
-	}
-	client, err := BoardClientFromEnv()
-	if err != nil {
-		return writeRuntimeError(stderr, err)
-	}
-	body, err := client.Search(context.Background(), options)
-	if err != nil {
-		return writeRuntimeError(stderr, err)
-	}
-	if *jsonOutput {
-		if _, err := stdout.Write(body); err != nil {
-			return writeRuntimeError(stderr, fmt.Errorf("write board response: %w", err))
-		}
-		if len(body) == 0 || body[len(body)-1] != '\n' {
-			fmt.Fprintln(stdout)
-		}
-		return 0
-	}
-	return writeHumanServiceJSON(stdout, body)
+	return runBoardCommand(args, stdout, stderr)
 }
 
 func cliCatalog() (Catalog, error) {
@@ -323,7 +261,7 @@ func writeHumanServiceJSON(writer io.Writer, body []byte) int {
 }
 
 func writeUsageError(writer io.Writer, message string) {
-	fmt.Fprintf(writer, "den-tool: %s\nusage: den-tool list [--json] | search <terms...> [--json] | describe <id> [--json] | run <id> -- [extra args...] | board search --project <id> --query <q> [--after-id N] [--limit N] [--json]\n", message)
+	fmt.Fprintf(writer, "den-tool: %s\nusage: den-tool list [--json] | search <terms...> [--json] | describe <id> [--json] | run <id> -- [extra args...] | board <subcommand> [flags]\n", message)
 }
 
 func writeRuntimeError(writer io.Writer, err error) int {

@@ -118,6 +118,22 @@ func TestEmbeddedCatalogHasBothReposAndRequiredRecords(t *testing.T) {
 	}
 }
 
+func TestEmbeddedCatalogIncludesCompleteBoardCommandFamily(t *testing.T) {
+	catalog, err := ParseCatalog(embeddedCatalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{
+		"board.create-post", "board.list-posts", "board.get-post", "board.search",
+		"board.create-comment", "board.list-comments", "board.get-comment",
+		"board.comment-path", "board.purge-post", "board.purge-comment",
+	} {
+		if _, found := catalog.Find(id); !found {
+			t.Errorf("catalog is missing %s", id)
+		}
+	}
+}
+
 func testTool(id string, risk Risk) Tool {
 	return Tool{
 		ID:               id,

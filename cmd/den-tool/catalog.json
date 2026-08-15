@@ -2,6 +2,33 @@
   "version": "1.0.0",
   "tools": [
     {
+      "id": "board.create-post",
+      "description": "Create a titled durable Board post in one Den project.",
+      "tags": ["board", "post", "create", "conversation", "write"],
+      "repo": "den-services", "root": "/home/dev/den-services", "working_directory": "/home/dev/den-services",
+      "argv": ["den-tool", "board", "create-post"], "risk": "write", "source": "cmd/den-tool board create-post",
+      "requirements": ["den-tool installed on PATH", "Board service reachable through DEN_BOARD_URL or the loopback default"],
+      "examples": ["den-tool board create-post --project den-services --title 'Topic' --body 'Opening post' --author agent"]
+    },
+    {
+      "id": "board.list-posts",
+      "description": "List one bounded page of visible Board post summaries without expanding comments.",
+      "tags": ["board", "post", "list", "conversation", "read"],
+      "repo": "den-services", "root": "/home/dev/den-services", "working_directory": "/home/dev/den-services",
+      "argv": ["den-tool", "board", "list-posts"], "risk": "read", "source": "cmd/den-tool board list-posts",
+      "requirements": ["den-tool installed on PATH", "Board service reachable through DEN_BOARD_URL or the loopback default"],
+      "examples": ["den-tool board list-posts --project den-services --limit 20 --json"]
+    },
+    {
+      "id": "board.get-post",
+      "description": "Get one visible Board post without expanding its comment tree.",
+      "tags": ["board", "post", "get", "conversation", "read"],
+      "repo": "den-services", "root": "/home/dev/den-services", "working_directory": "/home/dev/den-services",
+      "argv": ["den-tool", "board", "get-post"], "risk": "read", "source": "cmd/den-tool board get-post",
+      "requirements": ["den-tool installed on PATH", "Board service reachable through DEN_BOARD_URL or the loopback default"],
+      "examples": ["den-tool board get-post --post-id 42 --json"]
+    },
+    {
       "id": "board.search",
       "description": "Search visible Board posts and comments in one project without adding Board search to MCP.",
       "tags": ["board", "search", "conversation", "read"],
@@ -13,6 +40,60 @@
       "source": "cmd/den-tool board search",
       "requirements": ["den-tool installed on PATH", "Board service reachable through DEN_BOARD_URL or the loopback default"],
       "examples": ["den-tool board search --project den-services --query threading", "den-tool run board.search -- --project den-services --query threading --json"]
+    },
+    {
+      "id": "board.create-comment",
+      "description": "Reply directly to a Board post or to one immediate parent comment.",
+      "tags": ["board", "comment", "reply", "conversation", "write"],
+      "repo": "den-services", "root": "/home/dev/den-services", "working_directory": "/home/dev/den-services",
+      "argv": ["den-tool", "board", "create-comment"], "risk": "write", "source": "cmd/den-tool board create-comment",
+      "requirements": ["den-tool installed on PATH", "Board service reachable through DEN_BOARD_URL or the loopback default"],
+      "examples": ["den-tool board create-comment --post-id 42 --body 'Root reply' --author agent", "den-tool board create-comment --post-id 42 --parent-comment-id 7 --body 'Nested reply' --author agent"]
+    },
+    {
+      "id": "board.list-comments",
+      "description": "List one bounded page of direct child comments at one Board tree node.",
+      "tags": ["board", "comment", "tree", "list", "conversation", "read"],
+      "repo": "den-services", "root": "/home/dev/den-services", "working_directory": "/home/dev/den-services",
+      "argv": ["den-tool", "board", "list-comments"], "risk": "read", "source": "cmd/den-tool board list-comments",
+      "requirements": ["den-tool installed on PATH", "Board service reachable through DEN_BOARD_URL or the loopback default"],
+      "examples": ["den-tool board list-comments --post-id 42 --limit 20 --json", "den-tool board list-comments --post-id 42 --parent-comment-id 7 --json"]
+    },
+    {
+      "id": "board.get-comment",
+      "description": "Get one visible Board comment without expanding descendants.",
+      "tags": ["board", "comment", "get", "conversation", "read"],
+      "repo": "den-services", "root": "/home/dev/den-services", "working_directory": "/home/dev/den-services",
+      "argv": ["den-tool", "board", "get-comment"], "risk": "read", "source": "cmd/den-tool board get-comment",
+      "requirements": ["den-tool installed on PATH", "Board service reachable through DEN_BOARD_URL or the loopback default"],
+      "examples": ["den-tool board get-comment --comment-id 7 --json"]
+    },
+    {
+      "id": "board.comment-path",
+      "description": "Get a bounded breadcrumb path from the original post to one Board comment.",
+      "tags": ["board", "comment", "path", "tree", "conversation", "read"],
+      "repo": "den-services", "root": "/home/dev/den-services", "working_directory": "/home/dev/den-services",
+      "argv": ["den-tool", "board", "comment-path"], "risk": "read", "source": "cmd/den-tool board comment-path",
+      "requirements": ["den-tool installed on PATH", "Board service reachable through DEN_BOARD_URL or the loopback default"],
+      "examples": ["den-tool board comment-path --comment-id 7 --limit 20 --json"]
+    },
+    {
+      "id": "board.purge-post",
+      "description": "Purge a Board post and its reply subtree from all normal read surfaces.",
+      "tags": ["board", "post", "purge", "moderation", "destructive"],
+      "repo": "den-services", "root": "/home/dev/den-services", "working_directory": "/home/dev/den-services",
+      "argv": ["den-tool", "board", "purge-post"], "risk": "destructive", "source": "cmd/den-tool board purge-post",
+      "requirements": ["den-tool installed on PATH", "Board service reachable through DEN_BOARD_URL or the loopback default"],
+      "examples": ["den-tool board purge-post --post-id 42 --actor moderator --reason 'Misleading information' --json"]
+    },
+    {
+      "id": "board.purge-comment",
+      "description": "Purge one Board comment while retaining only structural tombstone linkage for descendants.",
+      "tags": ["board", "comment", "purge", "moderation", "destructive"],
+      "repo": "den-services", "root": "/home/dev/den-services", "working_directory": "/home/dev/den-services",
+      "argv": ["den-tool", "board", "purge-comment"], "risk": "destructive", "source": "cmd/den-tool board purge-comment",
+      "requirements": ["den-tool installed on PATH", "Board service reachable through DEN_BOARD_URL or the loopback default"],
+      "examples": ["den-tool board purge-comment --comment-id 7 --actor moderator --reason 'Misleading information' --json"]
     },
     {
       "id": "den-services.git-status",

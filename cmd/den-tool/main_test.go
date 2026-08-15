@@ -59,3 +59,16 @@ func TestToolReadbackExplainsMissingWorkingDirectoryAndExecutable(t *testing.T) 
 		t.Fatalf("missing executable readback = %#v", readback)
 	}
 }
+
+func TestBoardCLIRejectsUnknownCommandsAndIrrelevantFlagsBeforeCallingService(t *testing.T) {
+	for _, args := range [][]string{
+		{"board", "missing"},
+		{"board", "get-post", "--post-id", "1", "--actor", "irrelevant"},
+		{"board", "list-posts", "--project", "den-services", "--limit", "101"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := runCLI(args, &stdout, &stderr); code != 2 {
+			t.Errorf("runCLI(%v) code = %d, want usage error; stderr=%q", args, code, stderr.String())
+		}
+	}
+}
