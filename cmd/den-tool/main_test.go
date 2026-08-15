@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,5 +72,27 @@ func TestBoardCLIRejectsUnknownCommandsAndIrrelevantFlagsBeforeCallingService(t 
 		if code := runCLI(args, &stdout, &stderr); code != 2 {
 			t.Errorf("runCLI(%v) code = %d, want usage error; stderr=%q", args, code, stderr.String())
 		}
+	}
+}
+
+func TestBoardCLIRejectsExplicitZeroParentWithoutCallingService(t *testing.T) {
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requestCount++
+	}))
+	defer server.Close()
+	t.Setenv("DEN_BOARD_URL", server.URL)
+
+	for _, args := range [][]string{
+		{"board", "create-comment", "--post-id", "42", "--parent-comment-id", "0", "--body", "reply", "--author", "agent"},
+		{"board", "list-comments", "--post-id", "42", "--parent-comment-id", "0"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := runCLI(args, &stdout, &stderr); code != 2 {
+			t.Errorf("runCLI(%v) code = %d, want usage error; stderr=%q", args, code, stderr.String())
+		}
+	}
+	if requestCount != 0 {
+		t.Fatalf("service request count = %d, want zero", requestCount)
 	}
 }

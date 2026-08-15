@@ -8,19 +8,20 @@ import (
 )
 
 type boardFlags struct {
-	project *string
-	postID  *int64
-	comment *int64
-	parent  *int64
-	afterID *int64
-	limit   *int
-	title   *string
-	body    *string
-	author  *string
-	actor   *string
-	reason  *string
-	query   *string
-	json    *bool
+	project   *string
+	postID    *int64
+	comment   *int64
+	parent    *int64
+	afterID   *int64
+	limit     *int
+	title     *string
+	body      *string
+	author    *string
+	actor     *string
+	reason    *string
+	query     *string
+	json      *bool
+	parentSet bool
 }
 
 func runBoardCommand(args []string, stdout, stderr io.Writer) int {
@@ -81,6 +82,9 @@ func parseBoardFlags(command string, args []string) (boardFlags, error) {
 	}
 	var unexpected string
 	set.Visit(func(value *flag.Flag) {
+		if value.Name == "parent-comment-id" {
+			flags.parentSet = true
+		}
 		if value.Name != "json" && !allowed[value.Name] && unexpected == "" {
 			unexpected = value.Name
 		}
@@ -88,7 +92,7 @@ func parseBoardFlags(command string, args []string) (boardFlags, error) {
 	if unexpected != "" {
 		return boardFlags{}, fmt.Errorf("board %s does not accept --%s", command, unexpected)
 	}
-	if *flags.afterID < -1 || *flags.limit == 0 || *flags.limit < -1 || *flags.limit > 100 || *flags.parent < 0 {
+	if *flags.afterID < -1 || *flags.limit == 0 || *flags.limit < -1 || *flags.limit > 100 || *flags.parent < 0 || (flags.parentSet && *flags.parent == 0) {
 		return boardFlags{}, fmt.Errorf("board %s has an invalid cursor, limit, or parent id", command)
 	}
 	return flags, nil
