@@ -57,8 +57,11 @@ func TestDenToolCatalogMatchesDirectMCPRegistry(t *testing.T) {
 		wantByName[item.Name] = item
 	}
 	gotNames := make([]string, 0, len(cli.Tools))
+	riskCounts := map[string]int{"read": 0, "write": 0, "destructive": 0}
+	riskByName := make(map[string]string, len(cli.Tools))
 	for _, item := range cli.Tools {
 		gotNames = append(gotNames, item.Name)
+		riskByName[item.Name] = item.Risk
 		listedTool, exists := wantByName[item.Name]
 		if !exists {
 			continue
@@ -80,12 +83,23 @@ func TestDenToolCatalogMatchesDirectMCPRegistry(t *testing.T) {
 		}
 		if item.Risk != "read" && item.Risk != "write" && item.Risk != "destructive" {
 			t.Errorf("den-tool risk for %s = %q", item.Name, item.Risk)
+		} else {
+			riskCounts[item.Risk]++
 		}
 	}
 	sort.Strings(wantNames)
 	sort.Strings(gotNames)
 	if !reflect.DeepEqual(gotNames, wantNames) {
 		t.Fatalf("den-tool MCP names do not match direct registry\n got: %v\nwant: %v\nregenerate with go run ./mcp/cmd/den-tool-catalog -output ./cmd/den-tool/mcp_catalog.json", gotNames, wantNames)
+	}
+	for _, name := range []string{"await_github_checks", "den_knowledge_store"} {
+		if riskByName[name] != "write" {
+			t.Errorf("den-tool risk for %s = %q, want write", name, riskByName[name])
+		}
+	}
+	wantRiskCounts := map[string]int{"read": 43, "write": 37, "destructive": 6}
+	if !reflect.DeepEqual(riskCounts, wantRiskCounts) {
+		t.Errorf("den-tool risk counts = %v, want %v", riskCounts, wantRiskCounts)
 	}
 }
 

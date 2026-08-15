@@ -69,8 +69,8 @@ summaries and detail-reference behavior within that outer limit.
 
 | Risk | Count | Meaning |
 | --- | ---: | --- |
-| read | 44 | Observation or bounded wait; no requested durable mutation. |
-| write | 36 | Creates or updates durable/workflow state. |
+| read | 43 | Observation or bounded wait; no requested durable mutation. |
+| write | 37 | Creates or updates durable/workflow state. |
 | destructive | 6 | Purges, deletes, or archives accessible state. |
 
 The destructive set is explicit: `archive_space`,

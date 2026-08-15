@@ -136,7 +136,7 @@
       "backend": "review",
       "operation": "await_github_checks",
       "workflow_tier": "primitive",
-      "risk": "read",
+      "risk": "write",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
@@ -942,7 +942,7 @@
       "backend": "knowledge",
       "operation": "den_knowledge_store",
       "workflow_tier": "operator",
-      "risk": "read",
+      "risk": "write",
       "input_schema": {
         "properties": {
           "audience": {
