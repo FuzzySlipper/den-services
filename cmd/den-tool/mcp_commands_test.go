@@ -45,7 +45,7 @@ func TestEmbeddedMCPCatalogIsIncludedInDiscovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(mcpCatalog.Tools) != 86 {
-		t.Fatalf("MCP catalog contains %d tools, want current direct-profile count 86", len(mcpCatalog.Tools))
+		t.Fatalf("MCP catalog contains %d tools, want complete callable count 86", len(mcpCatalog.Tools))
 	}
 	for _, operation := range []string{"create_board_post", "create_task", "get_task_context", "wait_for_messages"} {
 		tool, found := catalog.Find("den." + operation)

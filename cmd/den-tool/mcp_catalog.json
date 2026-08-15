@@ -1,5 +1,5 @@
 {
-  "revision": "mcp-catalog-v3",
+  "revision": "mcp-catalog-v4",
   "tools": [
     {
       "name": "add_agent_guidance_entry",

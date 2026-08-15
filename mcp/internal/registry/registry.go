@@ -25,6 +25,16 @@ const (
 	WorkflowTierGreenPath WorkflowTier = "green_path"
 )
 
+// DiscoveryClass controls whether a supported tool occupies ordinary
+// model-facing MCP discovery. Long-tail tools remain registered and callable;
+// den-tool uses the complete callable catalog instead of this projection.
+type DiscoveryClass string
+
+const (
+	DiscoveryClassCommon   DiscoveryClass = "common"
+	DiscoveryClassLongTail DiscoveryClass = "long_tail"
+)
+
 // ToolProfile selects the model-facing discovery projection. It never changes
 // backend authority or whether a registered operation can be called directly.
 type ToolProfile string
@@ -32,7 +42,7 @@ type ToolProfile string
 const (
 	ToolProfileDirect         ToolProfile = "direct"
 	ToolProfileManagedRuntime ToolProfile = "managed-runtime"
-	ToolCatalogRevision                   = "mcp-catalog-v3"
+	ToolCatalogRevision                   = "mcp-catalog-v4"
 )
 
 // CatalogMetadata is returned alongside tools/list so managed runtimes can
@@ -55,6 +65,7 @@ type ToolDefinition struct {
 	Operation          string
 	Execution          json.RawMessage
 	WorkflowTier       WorkflowTier
+	DiscoveryClass     DiscoveryClass
 	Hidden             bool
 	TombstoneMessage   string
 	Deprecated         bool
@@ -96,7 +107,7 @@ var (
 )
 
 // ParseToolProfile validates a discovery profile supplied by configuration or
-// an MCP caller. An empty profile intentionally means the unrestricted direct
+// an MCP caller. An empty profile intentionally means the common direct
 // Codex/CLI projection.
 func ParseToolProfile(raw string) (ToolProfile, error) {
 	profile := ToolProfile(strings.TrimSpace(strings.ToLower(raw)))
@@ -129,9 +140,25 @@ func (r *Registry) Tools() []ListedTool {
 	return listed
 }
 
+// CatalogTools returns every supported, non-retired tool intended for the
+// global den-tool catalog, including operations omitted from MCP discovery.
+func (r *Registry) CatalogTools() []ListedTool {
+	listed := make([]ListedTool, 0, len(r.byName))
+	for _, tool := range r.tools {
+		if tool.Hidden {
+			continue
+		}
+		listed = append(listed, listedTool(tool, nil))
+		for index := range tool.Aliases {
+			listed = append(listed, listedTool(tool, &tool.Aliases[index]))
+		}
+	}
+	return listed
+}
+
 // ToolsForProfile returns the model-facing discovery projection for profile.
-// Hidden definitions remain in the registry and can still be resolved for
-// trusted service adapters.
+// Hidden and long-tail definitions remain in the registry and can still be
+// resolved for trusted service adapters.
 func (r *Registry) ToolsForProfile(profile ToolProfile) ([]ListedTool, error) {
 	profile, err := ParseToolProfile(string(profile))
 	if err != nil {
@@ -164,10 +191,7 @@ func (r *Registry) Catalog(profile ToolProfile) (CatalogMetadata, error) {
 	if err != nil {
 		return CatalogMetadata{}, err
 	}
-	direct, err := r.ToolsForProfile(ToolProfileDirect)
-	if err != nil {
-		return CatalogMetadata{}, err
-	}
+	catalogTools := r.CatalogTools()
 	counts := map[WorkflowTier]int{
 		WorkflowTierPrimitive: 0,
 		WorkflowTierOperator:  0,
@@ -185,7 +209,7 @@ func (r *Registry) Catalog(profile ToolProfile) (CatalogMetadata, error) {
 		Revision:            ToolCatalogRevision,
 		VisibleToolCount:    len(listed),
 		WorkflowTiers:       counts,
-		HiddenToolCount:     len(direct) - len(listed),
+		HiddenToolCount:     len(catalogTools) - len(listed),
 		HiddenWorkflowTiers: hiddenTiers,
 	}, nil
 }
@@ -204,6 +228,12 @@ func (r *Registry) addTool(tool ToolDefinition) error {
 	}
 	if !validWorkflowTier(tool.WorkflowTier) {
 		return fmt.Errorf("tool %s has invalid workflow tier %q", tool.Name, tool.WorkflowTier)
+	}
+	if tool.DiscoveryClass == "" {
+		tool.DiscoveryClass = DiscoveryClassCommon
+	}
+	if !validDiscoveryClass(tool.DiscoveryClass) {
+		return fmt.Errorf("tool %s has invalid discovery class %q", tool.Name, tool.DiscoveryClass)
 	}
 	if err := validateTool(tool); err != nil {
 		return err
@@ -284,10 +314,19 @@ func listedTool(tool ToolDefinition, alias *ToolAlias) ListedTool {
 }
 
 func visibleForProfile(tool ToolDefinition, profile ToolProfile) bool {
-	if tool.Hidden {
+	if tool.Hidden || tool.DiscoveryClass == DiscoveryClassLongTail {
 		return false
 	}
 	return !(profile == ToolProfileManagedRuntime && tool.WorkflowTier == WorkflowTierPrimitive)
+}
+
+func validDiscoveryClass(class DiscoveryClass) bool {
+	switch class {
+	case DiscoveryClassCommon, DiscoveryClassLongTail:
+		return true
+	default:
+		return false
+	}
 }
 
 func validWorkflowTier(tier WorkflowTier) bool {

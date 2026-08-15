@@ -49,7 +49,7 @@ func TestDenToolCatalogMatchesDirectMCPRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listed := reg.Tools()
+	listed := reg.CatalogTools()
 	wantNames := make([]string, 0, len(listed))
 	wantByName := make(map[string]registry.ListedTool, len(listed))
 	for _, item := range listed {

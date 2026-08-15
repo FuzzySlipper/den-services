@@ -2,8 +2,9 @@
 
 ## Status
 
-As of MCP catalog revision `mcp-catalog-v3`, `den-tool` maps every operation in
-the MCP direct discovery profile. The checked-in machine-readable inventory is
+As of MCP catalog revision `mcp-catalog-v4`, `den-tool` maps every supported,
+non-retired MCP operation, including long-tail operations omitted from ordinary
+MCP discovery. The checked-in machine-readable inventory is
 `cmd/den-tool/mcp_catalog.json`; it contains 86 operations and their exact input
 schemas, owning routed backend, workflow tier, description, and risk class.
 
@@ -15,11 +16,11 @@ go run ./mcp/cmd/den-tool-catalog \
   -output ./cmd/den-tool/mcp_catalog.json
 ```
 
-`mcp/internal/registry/den_tool_parity_test.go` fails when a direct-profile MCP
+`mcp/internal/registry/den_tool_parity_test.go` fails when a supported MCP
 operation is added, removed, or changed without regenerating the CLI inventory.
-There is no parity allowlist. Registry entries hidden from `tools/list` are
-retired, administrative, or compatibility-only operations and are not current
-supported MCP discovery operations, so they are intentionally outside this
+There is no parity allowlist. The generator uses the complete callable catalog,
+not the ordinary `tools/list` projection. Retired/tombstoned operations and
+exceptional hidden administrative compatibility tools remain outside this
 inventory.
 
 ## Invocation contract
@@ -52,7 +53,7 @@ operations and uses `DEN_MCP_URL`/`DEN_MCP_TOKEN`. `DEN_BOARD_URL` is reserved
 for operator diagnostics on a host that can actually reach the loopback-only
 Board service. Board search uses the hidden exact-name operation
 `search_board_posts`; it is routed by MCP but remains absent from `tools/list`
-and from the 86-operation discovery parity count.
+and from the 86-operation callable-catalog parity count.
 
 Results are JSON. A response larger than 1 MiB is rejected rather than streamed
 unbounded into an agent context. Domain adapters retain their existing bounded
@@ -88,10 +89,12 @@ The destructive set is explicit: `archive_space`,
 `den-tool` also retains non-MCP catalog entries, including Board search and
 repository utilities. They do not count toward MCP parity.
 
-## Input to MCP pruning
+## MCP discovery projection
 
-The later pruning task can remove uncommon operations from model-facing
-`tools/list` without making them undiscoverable: `den-tool search`,
-`den-tool describe den.<operation>`, and `den-tool den <operation>` remain the
-agent path. Pruning must be a separate profile/registry change. This parity work
-does not hide, retire, rename, or remove any MCP operation.
+Ordinary direct-profile discovery exposes the approved 38 common operations.
+The other 48 operations in this inventory are classified `long_tail`, remain
+callable by exact MCP name, and remain discoverable through `den-tool search`,
+`den-tool describe den.<operation>`, and `den-tool den <operation>`. Managed
+runtime discovery applies its primitive-workflow filter on top of the same
+common projection. Discovery class is not authorization and does not remove an
+owner-service route.

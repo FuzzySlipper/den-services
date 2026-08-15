@@ -89,7 +89,7 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadRouteTable() error = %v", err)
 	}
-	for _, tool := range reg.Tools() {
+	for _, tool := range reg.CatalogTools() {
 		if tool.Name == "get_details" {
 			continue
 		}

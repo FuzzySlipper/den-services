@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,8 +77,8 @@ func TestMCPToolsListIsStatic(t *testing.T) {
 	decodeResponse(t, response, &body)
 	result := body["result"].(map[string]any)
 	tools := result["tools"].([]any)
-	if len(tools) != 86 {
-		t.Fatalf("tool count = %d, want 86", len(tools))
+	if len(tools) != 38 {
+		t.Fatalf("tool count = %d, want 38", len(tools))
 	}
 	first := tools[0].(map[string]any)
 	if first["name"] != "search_documents" {
@@ -86,6 +87,9 @@ func TestMCPToolsListIsStatic(t *testing.T) {
 	catalog := result["catalog"].(map[string]any)
 	if catalog["toolProfile"] != "direct" {
 		t.Fatalf("catalog profile = %v, want direct", catalog["toolProfile"])
+	}
+	if catalog["visibleToolCount"] != float64(38) || catalog["hiddenToolCount"] != float64(48) {
+		t.Fatalf("catalog counts = %#v", catalog)
 	}
 }
 
@@ -110,6 +114,9 @@ func TestMCPToolsListManagedRuntimeProfileFiltersPrimitives(t *testing.T) {
 	decodeResponse(t, response, &responseBody)
 	result := responseBody["result"].(map[string]any)
 	tools := result["tools"].([]any)
+	if len(tools) != 33 {
+		t.Fatalf("managed tool count = %d, want 33", len(tools))
+	}
 	for _, rawTool := range tools {
 		name := rawTool.(map[string]any)["name"]
 		if name == "watch_github_checks" || name == "request_review" {
@@ -123,6 +130,9 @@ func TestMCPToolsListManagedRuntimeProfileFiltersPrimitives(t *testing.T) {
 	if catalog["hiddenToolCount"].(float64) == 0 {
 		t.Fatal("managed catalog reports no hidden tools")
 	}
+	if catalog["visibleToolCount"] != float64(33) || catalog["hiddenToolCount"] != float64(53) {
+		t.Fatalf("managed catalog counts = %#v", catalog)
+	}
 
 	request = httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader([]byte(`{"jsonrpc":"2.0","id":"managed-header","method":"tools/list"}`)))
 	request.Header.Set("X-Den-MCP-Tool-Profile", "managed-runtime")
@@ -132,6 +142,27 @@ func TestMCPToolsListManagedRuntimeProfileFiltersPrimitives(t *testing.T) {
 	result = responseBody["result"].(map[string]any)
 	if result["catalog"].(map[string]any)["toolProfile"] != "managed-runtime" {
 		t.Fatalf("header-selected profile = %#v", result["catalog"])
+	}
+}
+
+func TestMCPManagedRuntimeHeaderScopesInitializeAndToolsList(t *testing.T) {
+	server := newTestServer(t, true, nil)
+	for _, method := range []string{"initialize", "tools/list"} {
+		body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": method, "method": method})
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+		request.Header.Set("X-Den-MCP-Tool-Profile", "managed-runtime")
+		response := httptest.NewRecorder()
+		server.Handler.ServeHTTP(response, request)
+		var responseBody map[string]any
+		decodeResponse(t, response, &responseBody)
+		result := responseBody["result"].(map[string]any)
+		catalog := result["catalog"].(map[string]any)
+		if catalog["toolProfile"] != "managed-runtime" || catalog["visibleToolCount"] != float64(33) {
+			t.Fatalf("%s managed catalog = %#v", method, catalog)
+		}
 	}
 }
 
@@ -258,6 +289,46 @@ func TestToolsCallReturnsBackendFailureResult(t *testing.T) {
 	}
 }
 
+func TestToolsCallResolvesLongTailToolHiddenFromDiscovery(t *testing.T) {
+	server := newTestServer(t, true, nil)
+	cases := []struct {
+		name      string
+		arguments map[string]any
+	}{
+		{name: "get_project", arguments: map[string]any{"project_id": "den-services"}},
+		{name: "add_dependency", arguments: map[string]any{"task_id": 1, "depends_on": 2}},
+		{name: "purge_board_post", arguments: map[string]any{"post_id": 1, "actor_identity": "test", "reason": "test"}},
+		{name: "archive_space", arguments: map[string]any{"space_id": "test"}},
+		{name: "await_github_checks", arguments: map[string]any{
+			"task_id": 1, "repository": "owner/repo", "commit_sha": strings.Repeat("a", 40), "ref": "main", "required_checks": []string{}, "requested_by": "test",
+		}},
+		{name: "create_review_round", arguments: map[string]any{"task_id": 1, "requested_by": "test", "branch": "main", "base_branch": "main"}},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			response := postJSON(t, server, map[string]any{
+				"jsonrpc": "2.0",
+				"id":      3,
+				"method":  "tools/call",
+				"params":  map[string]any{"name": testCase.name, "arguments": testCase.arguments},
+			}, "")
+			if response.Code != http.StatusOK {
+				t.Fatalf("POST /mcp tools/call status = %d, want %d", response.Code, http.StatusOK)
+			}
+			var body map[string]any
+			decodeResponse(t, response, &body)
+			if body["result"] == nil {
+				t.Fatalf("long-tail call did not reach result handling: %#v", body)
+			}
+			result := body["result"].(map[string]any)
+			structured := result["structuredContent"].(map[string]any)
+			if structured["error"] != "den_backend_unavailable" || structured["tool"] != testCase.name {
+				t.Fatalf("long-tail result = %#v", structured)
+			}
+		})
+	}
+}
+
 func TestToolsCallReturnsRetiredToolTombstone(t *testing.T) {
 	server := newTestServer(t, true, nil)
 
@@ -317,6 +388,12 @@ func newTestServer(t *testing.T, allowUnauthenticatedLocalDev bool, handler MCPH
 				HealthPath: "/health",
 				Timeout:    20 * time.Millisecond,
 			},
+			{
+				Name:       "tasks",
+				BaseURL:    "http://127.0.0.1:1",
+				HealthPath: "/health",
+				Timeout:    20 * time.Millisecond,
+			},
 		},
 		Security: config.SecurityConfig{
 			ServiceToken:                 "test-token",
@@ -334,6 +411,42 @@ func testRouteTable(t *testing.T) string {
 	path := filepath.Join(t.TempDir(), "routes.yaml")
 	content := `routes:
   - operation: "get_task"
+    backend: "den-core"
+    method: "POST"
+    path: "/mcp"
+    request_adapter: "mcp_tools_call"
+    response_adapter: "mcp_jsonrpc_result"
+  - operation: "get_project"
+    backend: "den-core"
+    method: "POST"
+    path: "/mcp"
+    request_adapter: "mcp_tools_call"
+    response_adapter: "mcp_jsonrpc_result"
+  - operation: "add_dependency"
+    backend: "den-core"
+    method: "POST"
+    path: "/mcp"
+    request_adapter: "mcp_tools_call"
+    response_adapter: "mcp_jsonrpc_result"
+  - operation: "purge_board_post"
+    backend: "den-core"
+    method: "POST"
+    path: "/mcp"
+    request_adapter: "mcp_tools_call"
+    response_adapter: "mcp_jsonrpc_result"
+  - operation: "archive_space"
+    backend: "den-core"
+    method: "POST"
+    path: "/mcp"
+    request_adapter: "mcp_tools_call"
+    response_adapter: "mcp_jsonrpc_result"
+  - operation: "await_github_checks"
+    backend: "den-core"
+    method: "POST"
+    path: "/mcp"
+    request_adapter: "mcp_tools_call"
+    response_adapter: "mcp_jsonrpc_result"
+  - operation: "create_review_round"
     backend: "den-core"
     method: "POST"
     path: "/mcp"

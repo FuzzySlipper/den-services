@@ -40,7 +40,8 @@ func DefaultRegistry() (*Registry, error) {
 	return New(tools)
 }
 
-// DefaultTools is the live den-mcp compatibility surface exposed by tools/list.
+// DefaultTools is the complete live den-mcp compatibility registry. Discovery
+// class and profile policy decide which supported definitions reach tools/list.
 // Update testdata/live_tools_20260627.json intentionally whenever the old live
 // MCP tool contract changes.
 func DefaultTools() ([]ToolDefinition, error) {
@@ -87,6 +88,11 @@ func DefaultTools() ([]ToolDefinition, error) {
 	tools = append(tools, handoffTools()...)
 	tools = append(tools, knowledgeTools()...)
 	tools = append(tools, boardTools()...)
+	for index := range tools {
+		if _, ok := longTailToolNames[tools[index].Name]; ok {
+			tools[index].DiscoveryClass = DiscoveryClassLongTail
+		}
+	}
 	return tools, nil
 }
 
@@ -513,6 +519,59 @@ var hiddenCompatibilityToolPolicies = map[string]hiddenToolPolicy{
 	"set_review_verdict": {
 		message: "set_review_verdict is hidden compatibility behavior for exceptional follow_up_needed or blocked_by_dependency decisions. Use finalize_review for normal looks_good or changes_requested closeout.",
 	},
+}
+
+// longTailToolNames remains callable by exact MCP name and through den-tool,
+// but does not occupy ordinary model-facing tools/list discovery.
+var longTailToolNames = map[string]struct{}{
+	"add_agent_guidance_entry":           {},
+	"add_dependency":                     {},
+	"archive_document_preflight":         {},
+	"archive_space":                      {},
+	"await_github_checks":                {},
+	"create_discussion_comment":          {},
+	"create_project":                     {},
+	"create_review_finding":              {},
+	"create_review_round":                {},
+	"create_space":                       {},
+	"delete_agent_guidance_entry":        {},
+	"delete_document":                    {},
+	"den_knowledge_delete":               {},
+	"den_knowledge_search":               {},
+	"den_knowledge_store":                {},
+	"ensure_document_discussion":         {},
+	"get_discussion_thread":              {},
+	"get_github_check_gate":              {},
+	"get_latest_task_packet":             {},
+	"get_project":                        {},
+	"get_space":                          {},
+	"get_task_workflow_summary":          {},
+	"get_user_notifications":             {},
+	"list_agent_guidance_entries":        {},
+	"list_discussion_threads":            {},
+	"list_documents":                     {},
+	"list_projects":                      {},
+	"list_review_pipeline":               {},
+	"list_review_rounds":                 {},
+	"list_spaces":                        {},
+	"mark_notifications_read":            {},
+	"mark_project_notifications_read":    {},
+	"mark_read":                          {},
+	"mark_task_notifications_read":       {},
+	"post_review_findings":               {},
+	"purge_board_comment":                {},
+	"purge_board_post":                   {},
+	"query_archived_documents":           {},
+	"record_human_acceptance_review":     {},
+	"remove_dependency":                  {},
+	"render_worker_prompt":               {},
+	"request_campaign_review":            {},
+	"set_review_finding_status":          {},
+	"split_review_findings_to_follow_up": {},
+	"update_discussion_thread":           {},
+	"update_document_visibility":         {},
+	"update_project":                     {},
+	"update_space_visibility":            {},
 }
 
 var retiredToolPolicies = map[string]retiredToolPolicy{

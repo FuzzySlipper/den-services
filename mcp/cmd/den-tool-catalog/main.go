@@ -40,7 +40,7 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	listed := reg.Tools()
+	listed := reg.CatalogTools()
 	result := catalog{Revision: registry.ToolCatalogRevision, Tools: make([]tool, 0, len(listed))}
 	for _, item := range listed {
 		definition, err := reg.Resolve(item.Name)

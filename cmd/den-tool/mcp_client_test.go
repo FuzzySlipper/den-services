@@ -72,6 +72,37 @@ func TestDenCLIInvokesCatalogOperation(t *testing.T) {
 	}
 }
 
+func TestDenCLIInvokesLongTailReadWriteAndDestructiveOperations(t *testing.T) {
+	var operations []string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var rpc map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&rpc); err != nil {
+			t.Fatal(err)
+		}
+		params := rpc["params"].(map[string]any)
+		operations = append(operations, params["name"].(string))
+		_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","id":"den-tool","result":{"isError":false,"structuredContent":{"accepted":true}}}`)
+	}))
+	defer server.Close()
+	t.Setenv("DEN_MCP_URL", server.URL)
+
+	for _, args := range [][]string{
+		{"den", "get_project", "--project-id", "den-services"},
+		{"den", "add_dependency", "--task-id", "2", "--depends-on", "1"},
+		{"den", "purge_board_post", "--post-id", "1", "--actor-identity", "test", "--reason", "test"},
+	} {
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		if code := runCLI(args, &stdout, &stderr); code != 0 {
+			t.Fatalf("runCLI(%v) code = %d, stderr = %s", args, code, stderr.String())
+		}
+	}
+	want := []string{"get_project", "add_dependency", "purge_board_post"}
+	if strings.Join(operations, ",") != strings.Join(want, ",") {
+		t.Fatalf("operations = %v, want %v", operations, want)
+	}
+}
+
 func TestBoardCLIDefaultsToMCPWithoutBoardInfrastructureConfiguration(t *testing.T) {
 	var calls []map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
+func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 	registry, err := DefaultRegistry()
 	if err != nil {
 		t.Fatalf("DefaultRegistry() error = %v", err)
@@ -19,51 +19,127 @@ func TestDefaultRegistryListsLiveCompatibilitySurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 86 {
-		t.Fatalf("tool count = %d, want 86", len(names))
+	if len(names) != 38 {
+		t.Fatalf("tool count = %d, want 38", len(names))
 	}
 	for _, name := range []string{
-		"search_documents",
-		"den_knowledge_search",
-		"den_knowledge_delete",
 		"comment_on_document",
-		"get_task",
-		"store_document",
-		"await_github_checks",
-		"discover_github_checks",
-		"watch_github_checks",
-		"get_github_check_gate",
-		"wait_for_github_checks",
-		"get_task_context",
-		"get_review_context",
-		"list_review_pipeline",
-		"get_details",
-		"mark_project_notifications_read",
-		"mark_task_notifications_read",
-		"ensure_document_discussion",
-		"set_handoff",
-		"get_handoff",
-		"record_human_acceptance_review",
+		"create_board_comment",
 		"create_board_post",
-		"list_board_comments",
+		"create_task",
+		"den_knowledge_get",
+		"den_knowledge_guide",
+		"discover_github_checks",
+		"finalize_review",
+		"get_agent_guidance",
+		"get_board_comment",
 		"get_board_comment_path",
-		"purge_board_post",
+		"get_board_post",
+		"get_details",
+		"get_document",
+		"get_document_discussion",
+		"get_handoff",
+		"get_messages",
+		"get_review_context",
+		"get_task",
+		"get_task_context",
+		"get_thread",
+		"list_board_comments",
+		"list_board_posts",
+		"list_review_findings",
+		"list_tasks",
+		"next_task",
+		"query_librarian",
+		"request_review",
+		"respond_to_review_finding",
+		"search_documents",
+		"send_message",
+		"send_user_notification",
+		"set_handoff",
+		"store_document",
+		"update_task",
+		"wait_for_github_checks",
+		"wait_for_messages",
+		"watch_github_checks",
 	} {
 		if !containsName(names, name) {
-			t.Fatalf("visible tools missing %s", name)
+			t.Fatalf("common tools missing %s", name)
 		}
 	}
-	for _, name := range []string{
-		"legacy_get_dispatch",
-		"store_blackboard_entry",
-		"lease_worker",
-		"invoke_capability",
-		"list_topics",
-		"delete_space",
-	} {
+	catalogNames := make([]string, 0, len(registry.CatalogTools()))
+	for _, tool := range registry.CatalogTools() {
+		catalogNames = append(catalogNames, tool.Name)
+	}
+	longTailNames := []string{
+		"add_agent_guidance_entry",
+		"add_dependency",
+		"archive_document_preflight",
+		"archive_space",
+		"await_github_checks",
+		"create_discussion_comment",
+		"create_project",
+		"create_review_finding",
+		"create_review_round",
+		"create_space",
+		"delete_agent_guidance_entry",
+		"delete_document",
+		"den_knowledge_delete",
+		"den_knowledge_search",
+		"den_knowledge_store",
+		"ensure_document_discussion",
+		"get_discussion_thread",
+		"get_github_check_gate",
+		"get_latest_task_packet",
+		"get_project",
+		"get_space",
+		"get_task_workflow_summary",
+		"get_user_notifications",
+		"list_agent_guidance_entries",
+		"list_discussion_threads",
+		"list_documents",
+		"list_projects",
+		"list_review_pipeline",
+		"list_review_rounds",
+		"list_spaces",
+		"mark_notifications_read",
+		"mark_project_notifications_read",
+		"mark_read",
+		"mark_task_notifications_read",
+		"post_review_findings",
+		"purge_board_comment",
+		"purge_board_post",
+		"query_archived_documents",
+		"record_human_acceptance_review",
+		"remove_dependency",
+		"render_worker_prompt",
+		"request_campaign_review",
+		"set_review_finding_status",
+		"split_review_findings_to_follow_up",
+		"update_discussion_thread",
+		"update_document_visibility",
+		"update_project",
+		"update_space_visibility",
+	}
+	for _, name := range longTailNames {
 		if containsName(names, name) {
-			t.Fatalf("hidden tool %s is visible", name)
+			t.Fatalf("long-tail tool %s is visible", name)
 		}
+		if !containsName(catalogNames, name) {
+			t.Fatalf("long-tail tool %s is missing from callable catalog", name)
+		}
+		tool, err := registry.Resolve(name)
+		if err != nil {
+			t.Fatalf("Resolve(%s) error = %v", name, err)
+		}
+		if tool.DiscoveryClass != DiscoveryClassLongTail {
+			t.Fatalf("%s discovery class = %q", name, tool.DiscoveryClass)
+		}
+	}
+	if catalog := registry.CatalogTools(); len(catalog) != 86 {
+		t.Fatalf("catalog tool count = %d, want 86", len(catalog))
+	}
+	if len(longTailToolNames) != len(longTailNames) {
+		t.Fatalf("long-tail policy count = %d, want %d", len(longTailToolNames), len(longTailNames))
 	}
 }
 
@@ -236,11 +312,14 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if err != nil {
 		t.Fatalf("ToolsForProfile(managed-runtime) error = %v", err)
 	}
-	if len(direct) != 86 {
-		t.Fatalf("direct tool count = %d, want 86", len(direct))
+	if len(direct) != 38 {
+		t.Fatalf("direct tool count = %d, want 38", len(direct))
 	}
 	if len(managed) >= len(direct) {
 		t.Fatalf("managed tool count = %d, want fewer than direct %d", len(managed), len(direct))
+	}
+	if len(managed) != 33 {
+		t.Fatalf("managed tool count = %d, want 33", len(managed))
 	}
 	for _, name := range []string{"discover_github_checks", "watch_github_checks", "get_github_check_gate", "wait_for_github_checks", "await_github_checks", "request_review", "create_review_round"} {
 		if containsListedTool(managed, name) {
@@ -253,12 +332,12 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if !containsListedTool(managed, "finalize_review") {
 		t.Fatal("managed profile hides finalize_review green path")
 	}
-	for _, name := range []string{"get_task", "get_task_context", "list_tasks", "store_document", "update_task", "record_human_acceptance_review"} {
+	for _, name := range []string{"get_task", "get_task_context", "list_tasks", "store_document", "update_task"} {
 		if !containsListedTool(managed, name) {
 			t.Fatalf("managed profile hides normal operator tool %s", name)
 		}
 	}
-	for _, name := range []string{"create_board_post", "list_board_posts", "get_board_post", "create_board_comment", "list_board_comments", "get_board_comment_path", "purge_board_post", "purge_board_comment"} {
+	for _, name := range []string{"create_board_post", "list_board_posts", "get_board_post", "create_board_comment", "list_board_comments", "get_board_comment", "get_board_comment_path"} {
 		if !containsListedTool(managed, name) {
 			t.Fatalf("managed profile hides Board operator tool %s", name)
 		}
@@ -273,6 +352,9 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	}
 	if catalog.HiddenToolCount == 0 || catalog.WorkflowTiers[WorkflowTierPrimitive] != 0 {
 		t.Fatalf("managed catalog = %#v", catalog)
+	}
+	if catalog.VisibleToolCount != 33 || catalog.HiddenToolCount != 53 {
+		t.Fatalf("managed catalog counts = %#v", catalog)
 	}
 	if !slices.Contains(catalog.HiddenWorkflowTiers, WorkflowTierPrimitive) {
 		t.Fatalf("managed hidden tiers = %#v", catalog.HiddenWorkflowTiers)
@@ -311,7 +393,7 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 	if err := json.Unmarshal(liveToolsSnapshot, &snapshot); err != nil {
 		t.Fatalf("Unmarshal(snapshot) error = %v", err)
 	}
-	listed := registry.Tools()
+	listed := registry.CatalogTools()
 	visibleIndex := 0
 	for _, snapshotTool := range snapshot.Tools {
 		if _, retired := retiredToolPolicies[snapshotTool.Name]; retired {
@@ -365,7 +447,7 @@ func TestVisibleToolSchemasHideVerbose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tool := range registry.Tools() {
+	for _, tool := range registry.CatalogTools() {
 		var schema struct {
 			Properties map[string]json.RawMessage `json:"properties"`
 		}
@@ -468,6 +550,15 @@ func TestRegistryRejectsDuplicateNames(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("New() error = nil")
+	}
+}
+
+func TestRegistryRejectsUnknownDiscoveryClass(t *testing.T) {
+	tool := minimalTool("get_task")
+	tool.DiscoveryClass = "sometimes"
+	_, err := New([]ToolDefinition{tool})
+	if err == nil || !strings.Contains(err.Error(), "invalid discovery class") {
+		t.Fatalf("New() error = %v, want invalid discovery class", err)
 	}
 }
 
