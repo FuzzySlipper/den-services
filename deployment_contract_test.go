@@ -61,6 +61,7 @@ func TestDeploymentSafetyRegression(t *testing.T) {
 		"den-go@board.service must be active",
 		"ensure_gateway_board_routes",
 		"ensure_mcp_board_backend",
+		`append_mcp_route_if_missing "${routes_target}" "search_board_posts"`,
 		"rollback/routes.yaml",
 		"systemctl reset-failed",
 	} {

@@ -487,6 +487,8 @@ install_mcp_routes() {
     "/v1/projects/{project_id}/board/posts" "mcp_board_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "list_board_posts" "board" "GET" \
     "/v1/projects/{project_id}/board/posts" "mcp_board_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "search_board_posts" "board" "GET" \
+    "/v1/projects/{project_id}/board/posts/search" "mcp_board_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "get_board_post" "board" "GET" \
     "/v1/board/posts/{post_id}" "mcp_board_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "create_board_comment" "board" "POST" \
