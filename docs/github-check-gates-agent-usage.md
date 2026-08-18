@@ -27,7 +27,11 @@ submission keeps its requested checks and any registered gate ID, reports
 compatibility `gate_status=passed`, and distinguishes the synthetic result with
 `terminal_reason=operator_bypass_github_gate` plus the operator reason, config
 revision, deployment role, and bypass timestamp. Already-terminal
-`gate_failed` submissions are not reinterpreted.
+`gate_failed` submissions are not reinterpreted. Before bypassing a submission
+that Crew still projects as `gate_pending`, reconciliation reads the
+authoritative Den gate once; only an authoritative `pending` result is
+bypassed. Authoritative `passed`, `failed`, `timed_out`, and `superseded`
+results retain their real terminal outcome.
 
 This policy belongs to Rusty Crew's managed workflow. It does not change the
 Review service's direct `watch_github_checks` or `await_github_checks` behavior;
