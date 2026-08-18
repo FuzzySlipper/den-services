@@ -42,6 +42,13 @@ time.
 | human-readable task-thread projection | Messages | Idempotent packet/message append |
 | task status/history | Tasks | Conditional transitions |
 
+A Crew deployment may have a default-off emergency policy that bypasses the
+GitHub wait for its managed submissions. That is a typed, audited Crew workflow
+transition, not a successful GitHub result and not a change to the direct Den
+gate API. Managed callers still submit the exact required checks. The durable
+Crew record preserves those checks and labels the compatibility-green state
+with `operator_bypass_github_gate`; direct/unmanaged Den gates stay fail-closed.
+
 The separate GitHub check-gate APIs may accept a `commit_sha` when a caller
 explicitly needs deterministic CI evidence. That field belongs to the gate
 operation, not to review-round creation, review packets, campaign snapshots,
