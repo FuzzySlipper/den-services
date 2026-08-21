@@ -35,6 +35,43 @@ func (s *Store) CreatePost(ctx context.Context, post *Post) (*Post, error) {
 	return created, nil
 }
 
+func (s *Store) CreatePostIdempotent(ctx context.Context, post *Post, key string) (*Post, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("beginning idempotent board post creation: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	reserved, err := reserveIdempotencyKey(ctx, tx, key, "post")
+	if err != nil {
+		return nil, err
+	}
+	if !reserved {
+		var postID int64
+		if err := tx.QueryRow(ctx, getIdempotentPostSQL, key).Scan(&postID); err != nil {
+			return nil, fmt.Errorf("reading idempotent board post: %w", err)
+		}
+		post, err := scanPost(tx.QueryRow(ctx, getPostSQL, postID))
+		if err != nil {
+			return nil, fmt.Errorf("reading idempotent board post result: %w", err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("committing idempotent board post read: %w", err)
+		}
+		return post, nil
+	}
+	created, err := scanPost(tx.QueryRow(ctx, createPostSQL, post.ProjectID, post.Title, post.BodyMarkdown, post.AuthorIdentity, jsonOrNil(post.MetadataJSON), post.CreatedAt, post.UpdatedAt))
+	if err != nil {
+		return nil, fmt.Errorf("creating idempotent board post: %w", err)
+	}
+	if _, err := tx.Exec(ctx, attachIdempotentPostSQL, created.ID, key); err != nil {
+		return nil, fmt.Errorf("attaching idempotent board post: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing idempotent board post creation: %w", err)
+	}
+	return created, nil
+}
+
 func (s *Store) GetPost(ctx context.Context, id int64) (*Post, error) {
 	post, err := scanPost(s.pool.QueryRow(ctx, getPostSQL, id))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -128,6 +165,89 @@ func (s *Store) CreateComment(ctx context.Context, comment *Comment) (*Comment, 
 		return nil, fmt.Errorf("committing board comment creation: %w", err)
 	}
 	return created, nil
+}
+
+func (s *Store) CreateCommentIdempotent(ctx context.Context, comment *Comment, key string) (*Comment, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("beginning idempotent board comment creation: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	reserved, err := reserveIdempotencyKey(ctx, tx, key, "comment")
+	if err != nil {
+		return nil, err
+	}
+	if !reserved {
+		var commentID int64
+		if err := tx.QueryRow(ctx, getIdempotentCommentSQL, key).Scan(&commentID); err != nil {
+			return nil, fmt.Errorf("reading idempotent board comment: %w", err)
+		}
+		comment, err := scanComment(tx.QueryRow(ctx, getCommentSQL, commentID))
+		if err != nil {
+			return nil, fmt.Errorf("reading idempotent board comment result: %w", err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("committing idempotent board comment read: %w", err)
+		}
+		return comment, nil
+	}
+	created, err := s.createCommentInTransaction(ctx, tx, comment)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, attachIdempotentCommentSQL, created.ID, key); err != nil {
+		return nil, fmt.Errorf("attaching idempotent board comment: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing idempotent board comment creation: %w", err)
+	}
+	return created, nil
+}
+
+func (s *Store) createCommentInTransaction(ctx context.Context, tx pgx.Tx, comment *Comment) (*Comment, error) {
+	var postStatus string
+	if err := tx.QueryRow(ctx, lockPostForCommentSQL, comment.PostID).Scan(&postStatus); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, postNotFound()
+		}
+		return nil, fmt.Errorf("locking board post for comment creation: %w", err)
+	}
+	if postStatus != PostStatusActive {
+		return nil, postNotFound()
+	}
+	if comment.ParentCommentID != nil {
+		var parentPostID int64
+		var parentStatus string
+		if err := tx.QueryRow(ctx, lockParentForCommentSQL, *comment.ParentCommentID).Scan(&parentPostID, &parentStatus); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, commentNotFound()
+			}
+			return nil, fmt.Errorf("locking board parent comment for creation: %w", err)
+		}
+		if parentStatus != CommentStatusActive {
+			return nil, commentNotFound()
+		}
+		if parentPostID != comment.PostID {
+			return nil, validationFailed(ErrParentPostMismatch)
+		}
+	}
+	created, err := scanComment(tx.QueryRow(ctx, createCommentSQL, comment.PostID, comment.ParentCommentID, comment.AuthorIdentity, comment.BodyMarkdown, jsonOrNil(comment.MetadataJSON), comment.CreatedAt, comment.UpdatedAt))
+	if err != nil {
+		return nil, fmt.Errorf("creating board comment: %w", err)
+	}
+	return created, nil
+}
+
+func reserveIdempotencyKey(ctx context.Context, tx pgx.Tx, key string, operation string) (bool, error) {
+	var returned string
+	err := tx.QueryRow(ctx, reserveIdempotencyKeySQL, key, operation).Scan(&returned)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("reserving board idempotency key: %w", err)
+	}
+	return true, nil
 }
 
 func (s *Store) GetComment(ctx context.Context, id int64) (*Comment, error) {
@@ -296,6 +416,19 @@ const createPostSQL = `
 insert into den_board.posts(project_id, title, body_markdown, author_identity, metadata_json, created_at, updated_at)
 values ($1, $2, $3, $4, $5, $6, $7)
 returning ` + postColumns
+
+const reserveIdempotencyKeySQL = `
+insert into den_board.idempotency_keys (request_key, operation)
+values ($1, $2)
+on conflict (request_key) do nothing
+returning request_key`
+
+const (
+	getIdempotentPostSQL       = `select post_id from den_board.idempotency_keys where request_key = $1 and operation = 'post' for update`
+	getIdempotentCommentSQL    = `select comment_id from den_board.idempotency_keys where request_key = $1 and operation = 'comment' for update`
+	attachIdempotentPostSQL    = `update den_board.idempotency_keys set post_id = $1 where request_key = $2 and operation = 'post'`
+	attachIdempotentCommentSQL = `update den_board.idempotency_keys set comment_id = $1 where request_key = $2 and operation = 'comment'`
+)
 
 const getPostSQL = `select ` + postColumns + ` from den_board.posts where id = $1`
 

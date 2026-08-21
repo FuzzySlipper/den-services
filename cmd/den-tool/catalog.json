@@ -96,6 +96,24 @@
       "examples": ["den-tool board purge-comment --comment-id 7 --actor moderator --reason 'Misleading information' --json"]
     },
     {
+      "id": "board.github-sync",
+      "description": "Manually synchronize exactly one project Board with the configured GitHub Issues relay. Imports external Markdown verbatim and never schedules future work.",
+      "tags": ["board", "github", "relay", "sync", "write"],
+      "repo": "den-services", "root": "/home/dev/den-services", "working_directory": "/home/dev/den-services",
+      "argv": ["den-tool", "board", "github-sync"], "risk": "write", "source": "cmd/den-tool board github-sync",
+      "requirements": ["board-relay service reachable through DEN_BOARD_RELAY_URL or its loopback default", "DEN_BOARD_RELAY_SERVICE_TOKEN when relay authentication is enabled"],
+      "examples": ["den-tool board github-sync --project rusty-engine --json"]
+    },
+    {
+      "id": "board.github-visibility",
+      "description": "Explicitly set the dedicated GitHub relay repository public or private; synchronization never changes visibility itself.",
+      "tags": ["board", "github", "relay", "visibility", "write"],
+      "repo": "den-services", "root": "/home/dev/den-services", "working_directory": "/home/dev/den-services",
+      "argv": ["den-tool", "board", "github-visibility"], "risk": "write", "source": "cmd/den-tool board github-visibility",
+      "requirements": ["board-relay service reachable through DEN_BOARD_RELAY_URL or its loopback default", "DEN_BOARD_RELAY_SERVICE_TOKEN when relay authentication is enabled"],
+      "examples": ["den-tool board github-visibility --visibility private"]
+    },
+    {
       "id": "den-services.git-status",
       "description": "Show the den-services worktree status for quick local diagnostics.",
       "tags": ["den-services", "git", "status", "diagnostic"],

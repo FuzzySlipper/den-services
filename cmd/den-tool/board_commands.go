@@ -11,20 +11,21 @@ import (
 )
 
 type boardFlags struct {
-	project   *string
-	postID    *int64
-	comment   *int64
-	parent    *int64
-	afterID   *int64
-	limit     *int
-	title     *string
-	body      *string
-	author    *string
-	actor     *string
-	reason    *string
-	query     *string
-	json      *bool
-	parentSet bool
+	project    *string
+	postID     *int64
+	comment    *int64
+	parent     *int64
+	afterID    *int64
+	limit      *int
+	title      *string
+	body       *string
+	author     *string
+	actor      *string
+	reason     *string
+	query      *string
+	visibility *string
+	json       *bool
+	parentSet  bool
 }
 
 func runBoardCommand(args []string, stdout, stderr io.Writer) int {
@@ -36,6 +37,24 @@ func runBoardCommand(args []string, stdout, stderr io.Writer) int {
 		return boardUsageError(stderr, err.Error())
 	}
 	var body []byte
+	if args[0] == "github-sync" || args[0] == "github-visibility" {
+		client, clientErr := BoardRelayClientFromEnv()
+		if clientErr != nil {
+			return writeRuntimeError(stderr, clientErr)
+		}
+		if args[0] == "github-sync" {
+			body, err = client.Sync(context.Background(), *flags.project)
+		} else {
+			body, err = client.SetVisibility(context.Background(), *flags.visibility)
+		}
+		if err != nil {
+			return writeRuntimeError(stderr, err)
+		}
+		if *flags.json {
+			return writeJSON(stdout, json.RawMessage(body))
+		}
+		return writeHumanServiceJSON(stdout, body)
+	}
 	if strings.TrimSpace(os.Getenv("DEN_BOARD_URL")) != "" {
 		client, clientErr := BoardClientFromEnv()
 		if clientErr != nil {
@@ -168,19 +187,20 @@ func parseBoardFlags(command string, args []string) (boardFlags, error) {
 	set := flag.NewFlagSet("board "+command, flag.ContinueOnError)
 	set.SetOutput(io.Discard)
 	flags := boardFlags{
-		project: set.String("project", "", "Board project id"),
-		postID:  set.Int64("post-id", 0, "Board post id"),
-		comment: set.Int64("comment-id", 0, "Board comment id"),
-		parent:  set.Int64("parent-comment-id", 0, "Immediate parent comment id"),
-		afterID: set.Int64("after-id", -1, "Exclusive page cursor"),
-		limit:   set.Int("limit", -1, "Bounded result limit"),
-		title:   set.String("title", "", "Post title"),
-		body:    set.String("body", "", "Markdown body"),
-		author:  set.String("author", "", "Visible author identity"),
-		actor:   set.String("actor", "", "Moderation actor identity"),
-		reason:  set.String("reason", "", "Moderation reason"),
-		query:   set.String("query", "", "Search query"),
-		json:    set.Bool("json", false, "Print service JSON"),
+		project:    set.String("project", "", "Board project id"),
+		postID:     set.Int64("post-id", 0, "Board post id"),
+		comment:    set.Int64("comment-id", 0, "Board comment id"),
+		parent:     set.Int64("parent-comment-id", 0, "Immediate parent comment id"),
+		afterID:    set.Int64("after-id", -1, "Exclusive page cursor"),
+		limit:      set.Int("limit", -1, "Bounded result limit"),
+		title:      set.String("title", "", "Post title"),
+		body:       set.String("body", "", "Markdown body"),
+		author:     set.String("author", "", "Visible author identity"),
+		actor:      set.String("actor", "", "Moderation actor identity"),
+		reason:     set.String("reason", "", "Moderation reason"),
+		query:      set.String("query", "", "Search query"),
+		visibility: set.String("visibility", "", "GitHub repository visibility"),
+		json:       set.Bool("json", false, "Print service JSON"),
 	}
 	if err := set.Parse(args); err != nil {
 		return boardFlags{}, fmt.Errorf("invalid board %s flags: %w", command, err)
@@ -228,6 +248,10 @@ func allowedBoardFlags(command string) map[string]bool {
 		return map[string]bool{"post-id": true, "actor": true, "reason": true}
 	case "purge-comment":
 		return map[string]bool{"comment-id": true, "actor": true, "reason": true}
+	case "github-sync":
+		return map[string]bool{"project": true}
+	case "github-visibility":
+		return map[string]bool{"visibility": true}
 	default:
 		return nil
 	}
@@ -285,6 +309,6 @@ func optionalIntFlag(value *int) *int {
 }
 
 func boardUsageError(stderr io.Writer, message string) int {
-	_, _ = fmt.Fprintf(stderr, "den-tool: %s\nBoard subcommands: create-post, list-posts, get-post, search, create-comment, list-comments, get-comment, comment-path, purge-post, purge-comment\n", message)
+	_, _ = fmt.Fprintf(stderr, "den-tool: %s\nBoard subcommands: create-post, list-posts, get-post, search, create-comment, list-comments, get-comment, comment-path, purge-post, purge-comment, github-sync, github-visibility\n", message)
 	return 2
 }

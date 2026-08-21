@@ -11,14 +11,16 @@ import (
 // MemoryStore is a deterministic store for focused service and handler tests.
 // Production uses Store, whose SQL enforces the same visibility contract.
 type MemoryStore struct {
-	mu       sync.RWMutex
-	nextID   int64
-	posts    map[int64]*Post
-	comments map[int64]*Comment
+	mu          sync.RWMutex
+	nextID      int64
+	posts       map[int64]*Post
+	comments    map[int64]*Comment
+	postKeys    map[string]int64
+	commentKeys map[string]int64
 }
 
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{nextID: 1, posts: make(map[int64]*Post), comments: make(map[int64]*Comment)}
+	return &MemoryStore{nextID: 1, posts: make(map[int64]*Post), comments: make(map[int64]*Comment), postKeys: make(map[string]int64), commentKeys: make(map[string]int64)}
 }
 
 func (s *MemoryStore) Ping(context.Context) error { return nil }
@@ -29,6 +31,19 @@ func (s *MemoryStore) CreatePost(_ context.Context, post *Post) (*Post, error) {
 	copyPost := clonePost(post)
 	copyPost.ID = s.allocateID()
 	s.posts[copyPost.ID] = copyPost
+	return clonePost(copyPost), nil
+}
+
+func (s *MemoryStore) CreatePostIdempotent(_ context.Context, post *Post, key string) (*Post, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if id, ok := s.postKeys[key]; ok {
+		return clonePost(s.posts[id]), nil
+	}
+	copyPost := clonePost(post)
+	copyPost.ID = s.allocateID()
+	s.posts[copyPost.ID] = copyPost
+	s.postKeys[key] = copyPost.ID
 	return clonePost(copyPost), nil
 }
 
@@ -114,6 +129,32 @@ func (s *MemoryStore) CreateComment(_ context.Context, comment *Comment) (*Comme
 	copyComment := cloneComment(comment)
 	copyComment.ID = s.allocateID()
 	s.comments[copyComment.ID] = copyComment
+	return cloneComment(copyComment), nil
+}
+
+func (s *MemoryStore) CreateCommentIdempotent(_ context.Context, comment *Comment, key string) (*Comment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if id, ok := s.commentKeys[key]; ok {
+		return cloneComment(s.comments[id]), nil
+	}
+	post := s.posts[comment.PostID]
+	if post == nil || post.Status != PostStatusActive {
+		return nil, postNotFound()
+	}
+	if comment.ParentCommentID != nil {
+		parent := s.comments[*comment.ParentCommentID]
+		if parent == nil || parent.Status != CommentStatusActive {
+			return nil, commentNotFound()
+		}
+		if parent.PostID != comment.PostID {
+			return nil, validationFailed(ErrParentPostMismatch)
+		}
+	}
+	copyComment := cloneComment(comment)
+	copyComment.ID = s.allocateID()
+	s.comments[copyComment.ID] = copyComment
+	s.commentKeys[key] = copyComment.ID
 	return cloneComment(copyComment), nil
 }
 

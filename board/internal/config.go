@@ -52,6 +52,7 @@ type limitsFile struct {
 	MaxMetadataBytes       int `yaml:"max_metadata_bytes"`
 	MaxSearchQueryBytes    int `yaml:"max_search_query_bytes"`
 	MaxPurgeReasonBytes    int `yaml:"max_purge_reason_bytes"`
+	MaxIdempotencyKeyBytes int `yaml:"max_idempotency_key_bytes"`
 }
 
 type httpConfigFile struct {
@@ -115,6 +116,7 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 		MaxMetadataBytes:       f.Limits.MaxMetadataBytes,
 		MaxSearchQueryBytes:    f.Limits.MaxSearchQueryBytes,
 		MaxPurgeReasonBytes:    f.Limits.MaxPurgeReasonBytes,
+		MaxIdempotencyKeyBytes: f.Limits.MaxIdempotencyKeyBytes,
 	}.withDefaults()
 	maxRequestBodyBytes := f.HTTP.MaxRequestBodyBytes
 	if maxRequestBodyBytes == 0 {

@@ -60,6 +60,10 @@ select format('create role den_board_app login password %L', :'DEN_BOARD_APP_PAS
 where not exists (select 1 from pg_roles where rolname = 'den_board_app')
 \gexec
 
+select format('create role den_board_relay_app login password %L', :'DEN_BOARD_RELAY_APP_PASSWORD')
+where not exists (select 1 from pg_roles where rolname = 'den_board_relay_app')
+\gexec
+
 alter role den_delivery_app login password :'DEN_DELIVERY_APP_PASSWORD';
 alter role den_runtime_app login password :'DEN_RUNTIME_APP_PASSWORD';
 alter role den_observation_app login password :'DEN_OBSERVATION_APP_PASSWORD';
@@ -75,5 +79,6 @@ alter role den_knowledge_app login password :'DEN_KNOWLEDGE_APP_PASSWORD';
 alter role den_guidance_app login password :'DEN_GUIDANCE_APP_PASSWORD';
 alter role den_handoff_app login password :'DEN_HANDOFF_APP_PASSWORD';
 alter role den_board_app login password :'DEN_BOARD_APP_PASSWORD';
+alter role den_board_relay_app login password :'DEN_BOARD_RELAY_APP_PASSWORD';
 
 revoke create on schema public from public;

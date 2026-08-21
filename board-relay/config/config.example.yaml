@@ -1,0 +1,13 @@
+# The manual Board-to-GitHub Issues relay. It never polls or accepts webhooks.
+bind_addr: "127.0.0.1:8101"
+database_url_env: "DEN_BOARD_RELAY_DATABASE_URL"
+service_token_env: "DEN_BOARD_RELAY_SERVICE_TOKEN"
+board_base_url: "http://127.0.0.1:8100"
+board_token_env: "DEN_BOARD_SERVICE_TOKEN"
+github:
+  api_base_url: "https://api.github.com"
+  repository: "FuzzySlipper/den-board-relay"
+  token_env: "DEN_BOARD_RELAY_GITHUB_TOKEN"
+  request_timeout: "20s"
+http:
+  read_header_timeout: "5s"

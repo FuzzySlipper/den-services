@@ -16,6 +16,7 @@ limits:
   max_metadata_bytes: 16384
   max_search_query_bytes: 256
   max_purge_reason_bytes: 2000
+  max_idempotency_key_bytes: 256
 http:
   read_header_timeout: "5s"
   max_request_body_bytes: 262144

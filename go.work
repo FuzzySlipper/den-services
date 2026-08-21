@@ -4,6 +4,7 @@ use (
 	.
 	./artifacts
 	./board
+	./board-relay
 	./conversation
 	./delivery
 	./den-serve

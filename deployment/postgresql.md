@@ -66,6 +66,7 @@ postgres://den_knowledge_app:<password>@127.0.0.1:5433/denservices
 postgres://den_guidance_app:<password>@127.0.0.1:5433/denservices
 postgres://den_handoff_app:<password>@127.0.0.1:5433/denservices
 postgres://den_board_app:<password>@127.0.0.1:5433/denservices
+postgres://den_board_relay_app:<password>@127.0.0.1:5433/denservices
 ```
 
 Store-level integration tests should use a separate test database on the same

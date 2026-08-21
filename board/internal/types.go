@@ -34,6 +34,7 @@ const (
 	DefaultMaxSearchQueryBytes    = 256
 	DefaultMaxPurgeReasonBytes    = MaxPurgeReasonSize
 	DefaultMaxRequestBodyBytes    = 256 * 1024
+	DefaultMaxIdempotencyKeyBytes = 256
 	DefaultAdapterIdentity        = "authenticated-board-adapter"
 )
 
@@ -119,6 +120,7 @@ type Limits struct {
 	MaxMetadataBytes       int
 	MaxSearchQueryBytes    int
 	MaxPurgeReasonBytes    int
+	MaxIdempotencyKeyBytes int
 }
 
 func DefaultLimits() Limits {
@@ -133,6 +135,7 @@ func DefaultLimits() Limits {
 		MaxMetadataBytes:       DefaultMaxMetadataBytes,
 		MaxSearchQueryBytes:    DefaultMaxSearchQueryBytes,
 		MaxPurgeReasonBytes:    DefaultMaxPurgeReasonBytes,
+		MaxIdempotencyKeyBytes: DefaultMaxIdempotencyKeyBytes,
 	}
 }
 
@@ -168,6 +171,9 @@ func (l Limits) withDefaults() Limits {
 	if l.MaxPurgeReasonBytes == 0 {
 		l.MaxPurgeReasonBytes = defaults.MaxPurgeReasonBytes
 	}
+	if l.MaxIdempotencyKeyBytes == 0 {
+		l.MaxIdempotencyKeyBytes = defaults.MaxIdempotencyKeyBytes
+	}
 	return l
 }
 
@@ -175,7 +181,7 @@ func (l Limits) Validate() error {
 	if l.DefaultPageSize <= 0 || l.MaxPageSize < l.DefaultPageSize || l.MaxPathComments <= 0 ||
 		l.MaxProjectIDBytes <= 0 || l.MaxTitleBytes <= 0 || l.MaxBodyBytes <= 0 ||
 		l.MaxAuthorIdentityBytes <= 0 || l.MaxMetadataBytes <= 0 || l.MaxSearchQueryBytes <= 0 ||
-		l.MaxPurgeReasonBytes <= 0 {
+		l.MaxPurgeReasonBytes <= 0 || l.MaxIdempotencyKeyBytes <= 0 {
 		return ErrInvalidLimits
 	}
 	return nil
@@ -198,7 +204,10 @@ func (l Limits) validatePostFields(projectID string, req CreatePostRequest) erro
 	if err := validateStringFieldSize("author_identity", strings.TrimSpace(req.AuthorIdentity), l.MaxAuthorIdentityBytes); err != nil {
 		return err
 	}
-	return validateFieldSize("metadata", req.Metadata, l.MaxMetadataBytes)
+	if err := validateFieldSize("metadata", req.Metadata, l.MaxMetadataBytes); err != nil {
+		return err
+	}
+	return validateStringFieldSize("idempotency_key", strings.TrimSpace(req.IdempotencyKey), l.MaxIdempotencyKeyBytes)
 }
 
 func (l Limits) validateCommentFields(req CreateCommentRequest) error {
@@ -208,7 +217,10 @@ func (l Limits) validateCommentFields(req CreateCommentRequest) error {
 	if err := validateStringFieldSize("author_identity", strings.TrimSpace(req.AuthorIdentity), l.MaxAuthorIdentityBytes); err != nil {
 		return err
 	}
-	return validateFieldSize("metadata", req.Metadata, l.MaxMetadataBytes)
+	if err := validateFieldSize("metadata", req.Metadata, l.MaxMetadataBytes); err != nil {
+		return err
+	}
+	return validateStringFieldSize("idempotency_key", strings.TrimSpace(req.IdempotencyKey), l.MaxIdempotencyKeyBytes)
 }
 
 func (l Limits) validateSearchQuery(query string) error {
@@ -327,6 +339,7 @@ type CreatePostRequest struct {
 	BodyMarkdown   string          `json:"body_markdown"`
 	AuthorIdentity string          `json:"author_identity"`
 	Metadata       json.RawMessage `json:"metadata"`
+	IdempotencyKey string          `json:"idempotency_key"`
 }
 
 type CreateCommentRequest struct {
@@ -334,6 +347,7 @@ type CreateCommentRequest struct {
 	BodyMarkdown    string          `json:"body_markdown"`
 	AuthorIdentity  string          `json:"author_identity"`
 	Metadata        json.RawMessage `json:"metadata"`
+	IdempotencyKey  string          `json:"idempotency_key"`
 }
 
 // PurgeRequest is intentionally typed even though its caller supplied values

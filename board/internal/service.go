@@ -24,6 +24,13 @@ type BoardStore interface {
 	PurgeComment(ctx context.Context, id int64, now time.Time) error
 }
 
+// IdempotentWriteStore is an optional Board-owned replay seam. It deliberately
+// knows only opaque request keys; integrations retain their own source mapping.
+type IdempotentWriteStore interface {
+	CreatePostIdempotent(ctx context.Context, post *Post, key string) (*Post, error)
+	CreateCommentIdempotent(ctx context.Context, comment *Comment, key string) (*Comment, error)
+}
+
 type Service struct {
 	store    BoardStore
 	projects ProjectValidator
@@ -78,6 +85,11 @@ func (s *Service) CreatePost(ctx context.Context, projectID string, req CreatePo
 	})
 	if err != nil {
 		return nil, validationFailed(err)
+	}
+	if key := strings.TrimSpace(req.IdempotencyKey); key != "" {
+		if store, ok := s.store.(IdempotentWriteStore); ok {
+			return store.CreatePostIdempotent(ctx, post, key)
+		}
 	}
 	return s.store.CreatePost(ctx, post)
 }
@@ -192,6 +204,11 @@ func (s *Service) CreateComment(ctx context.Context, postID int64, req CreateCom
 	})
 	if err != nil {
 		return nil, validationFailed(err)
+	}
+	if key := strings.TrimSpace(req.IdempotencyKey); key != "" {
+		if store, ok := s.store.(IdempotentWriteStore); ok {
+			return store.CreateCommentIdempotent(ctx, comment, key)
+		}
 	}
 	return s.store.CreateComment(ctx, comment)
 }

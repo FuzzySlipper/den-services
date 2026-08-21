@@ -189,6 +189,34 @@ func TestServiceUsesExclusiveBoundedCursors(t *testing.T) {
 	}
 }
 
+func TestCreateWritesRespectOpaqueIdempotencyKeys(t *testing.T) {
+	service := NewService(NewMemoryStore(), NoopProjectValidator{}, fixedClock())
+	postRequest := CreatePostRequest{Title: "Topic", BodyMarkdown: "body", AuthorIdentity: "agent", IdempotencyKey: "relay:post:1"}
+	firstPost, err := service.CreatePost(context.Background(), "project-a", postRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondPost, err := service.CreatePost(context.Background(), "project-a", postRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstPost.ID != secondPost.ID {
+		t.Fatalf("idempotent posts = %d, %d", firstPost.ID, secondPost.ID)
+	}
+	commentRequest := CreateCommentRequest{BodyMarkdown: "reply", AuthorIdentity: "agent", IdempotencyKey: "relay:comment:1"}
+	firstComment, err := service.CreateComment(context.Background(), firstPost.ID, commentRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondComment, err := service.CreateComment(context.Background(), firstPost.ID, commentRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstComment.ID != secondComment.ID {
+		t.Fatalf("idempotent comments = %d, %d", firstComment.ID, secondComment.ID)
+	}
+}
+
 func createTestPost(t *testing.T, service *Service, projectID, title string) *Post {
 	t.Helper()
 	post, err := service.CreatePost(context.Background(), projectID, CreatePostRequest{Title: title, BodyMarkdown: title + " body", AuthorIdentity: "agent"})
