@@ -2,6 +2,7 @@ package boardrelay
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"testing"
 	"time"
@@ -86,9 +87,55 @@ func TestSetVisibilityRequiresExplicitValidValue(t *testing.T) {
 	}
 }
 
+func TestSyncRetainsBoundedPartialReceiptAfterExportFailure(t *testing.T) {
+	now := time.Date(2026, 8, 21, 5, 0, 0, 0, time.UTC)
+	board := newFakeBoard()
+	board.addPost("alpha", "First", "first", "local")
+	board.addPost("alpha", "Second", "second", "local")
+	github := newFakeGitHub()
+	github.failCreateIssueAt = 2
+	service := mustServiceWithReceiptLimit(t, newFakeStore(), board, github, now, 1)
+
+	receipt, err := service.Sync(context.Background(), "alpha")
+	if err == nil {
+		t.Fatal("Sync succeeded")
+	}
+	var syncError *SyncRunError
+	if !errors.As(err, &syncError) || syncError.Phase != "export_posts" {
+		t.Fatalf("error = %v", err)
+	}
+	if receipt.ExportedPosts != 1 || receipt.ErrorItems != 1 || len(receipt.Failures) != 1 || len(receipt.ItemURLs) != 1 {
+		t.Fatalf("partial receipt = %#v", receipt)
+	}
+	if receipt.Failures[0].Phase != "export_posts" || receipt.ItemURLs[0] != "https://example.test/issues/new" {
+		t.Fatalf("partial receipt details = %#v", receipt)
+	}
+}
+
+func TestSyncBoundsReceiptLinksAndReportsOmissions(t *testing.T) {
+	now := time.Date(2026, 8, 21, 5, 0, 0, 0, time.UTC)
+	board := newFakeBoard()
+	board.addPost("alpha", "First", "first", "local")
+	board.addPost("alpha", "Second", "second", "local")
+	board.addPost("alpha", "Third", "third", "local")
+	service := mustServiceWithReceiptLimit(t, newFakeStore(), board, newFakeGitHub(), now, 2)
+
+	receipt, err := service.Sync(context.Background(), "alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.ExportedPosts != 3 || len(receipt.ItemURLs) != 2 || receipt.OmittedItemURLs != 1 {
+		t.Fatalf("bounded receipt = %#v", receipt)
+	}
+}
+
 func mustService(t *testing.T, store *fakeStore, board *fakeBoard, github *fakeGitHub, now time.Time) *Service {
+	return mustServiceWithReceiptLimit(t, store, board, github, now, 100)
+}
+
+func mustServiceWithReceiptLimit(t *testing.T, store *fakeStore, board *fakeBoard, github *fakeGitHub, now time.Time, limit int) *Service {
 	t.Helper()
-	service, err := NewService(store, board, github, "owner/relay", func() time.Time { return now })
+	service, err := NewService(store, board, github, "owner/relay", func() time.Time { return now }, limit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,10 +270,12 @@ func sameID(left, right *int64) bool {
 }
 
 type fakeGitHub struct {
-	issues     []GitHubIssue
-	comments   map[int64][]GitHubComment
-	visibility string
-	nextID     int64
+	issues            []GitHubIssue
+	comments          map[int64][]GitHubComment
+	visibility        string
+	nextID            int64
+	createIssueCalls  int
+	failCreateIssueAt int
 }
 
 func newFakeGitHub(issues ...GitHubIssue) *fakeGitHub {
@@ -238,6 +287,10 @@ func (g *fakeGitHub) ListIssues(context.Context, string) ([]GitHubIssue, error) 
 }
 
 func (g *fakeGitHub) CreateIssue(_ context.Context, _ string, title, body string) (GitHubIssue, error) {
+	g.createIssueCalls++
+	if g.failCreateIssueAt == g.createIssueCalls {
+		return GitHubIssue{}, errors.New("github create issue failure")
+	}
 	issue := GitHubIssue{ID: g.nextID, Number: int64(len(g.issues) + 1), Title: title, Body: body, HTMLURL: "https://example.test/issues/new", UpdatedAt: time.Now().UTC()}
 	g.nextID++
 	g.issues = append(g.issues, issue)

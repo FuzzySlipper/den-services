@@ -42,6 +42,12 @@ rewritten.
 GitHub edits and deletions do not rewrite append-oriented Board content. A sync
 reports those mutations for human/local-agent handling instead.
 
+Each receipt is bounded by `sync.max_receipt_item_urls`. It reports imported,
+exported, skipped, conflict, and error counts; `omitted_item_urls` indicates
+links that exceeded the configured cap. If a run stops after a mutation, the
+non-success response includes its accumulated receipt and a phase-tagged
+failure, so an operator can reconcile the partial run before retrying.
+
 ## Visibility
 
 Visibility changes are intentional, separate operations:

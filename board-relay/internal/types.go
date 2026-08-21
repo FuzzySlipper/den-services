@@ -131,17 +131,39 @@ type MappingStore interface {
 }
 
 type SyncReceipt struct {
-	ProjectID              string   `json:"project_id"`
-	Repository             string   `json:"repository"`
-	ImportedPosts          int      `json:"imported_posts"`
-	ImportedComments       int      `json:"imported_comments"`
-	ExportedPosts          int      `json:"exported_posts"`
-	ExportedComments       int      `json:"exported_comments"`
-	RecoveredMappings      int      `json:"recovered_mappings"`
-	UnsupportedRemoteEdits int      `json:"unsupported_remote_edits"`
-	SkippedItems           int      `json:"skipped_items"`
-	ItemURLs               []string `json:"item_urls"`
+	ProjectID              string        `json:"project_id"`
+	Repository             string        `json:"repository"`
+	ImportedPosts          int           `json:"imported_posts"`
+	ImportedComments       int           `json:"imported_comments"`
+	ExportedPosts          int           `json:"exported_posts"`
+	ExportedComments       int           `json:"exported_comments"`
+	RecoveredMappings      int           `json:"recovered_mappings"`
+	UnsupportedRemoteEdits int           `json:"unsupported_remote_edits"`
+	SkippedItems           int           `json:"skipped_items"`
+	ConflictedItems        int           `json:"conflicted_items"`
+	ErrorItems             int           `json:"error_items"`
+	ItemURLs               []string      `json:"item_urls"`
+	OmittedItemURLs        int           `json:"omitted_item_urls"`
+	Failures               []SyncFailure `json:"failures"`
 }
+
+// SyncFailure identifies the phase that stopped a manual sync. The receipt
+// remains useful after a partial run: counts and links describe work that was
+// already committed before this failure.
+type SyncFailure struct {
+	Phase   string `json:"phase"`
+	Message string `json:"message"`
+}
+
+// SyncRunError marks an incomplete run while preserving the original cause.
+// Callers must use the accompanying SyncReceipt rather than discarding it.
+type SyncRunError struct {
+	Phase string
+	Cause error
+}
+
+func (e *SyncRunError) Error() string { return fmt.Sprintf("sync %s: %v", e.Phase, e.Cause) }
+func (e *SyncRunError) Unwrap() error { return e.Cause }
 
 type VisibilityRequest struct {
 	Visibility string `json:"visibility"`

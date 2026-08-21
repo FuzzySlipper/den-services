@@ -2,6 +2,7 @@ package boardrelay
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"den-services/shared/api"
@@ -24,10 +25,20 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 func (h *Handler) sync(w http.ResponseWriter, r *http.Request) {
 	receipt, err := h.service.Sync(r.Context(), r.PathValue("project_id"))
 	if err != nil {
+		var syncError *SyncRunError
+		if errors.As(err, &syncError) {
+			api.WriteJSON(w, http.StatusBadGateway, SyncResponse{Receipt: receipt, Error: api.ErrorBody{Code: "sync_failed", Message: err.Error()}})
+			return
+		}
 		api.WriteServiceError(w, err)
 		return
 	}
 	api.WriteJSON(w, http.StatusOK, receipt)
+}
+
+type SyncResponse struct {
+	Receipt SyncReceipt   `json:"receipt"`
+	Error   api.ErrorBody `json:"error"`
 }
 
 func (h *Handler) setVisibility(w http.ResponseWriter, r *http.Request) {

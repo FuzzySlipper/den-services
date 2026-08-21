@@ -50,6 +50,7 @@ func main() {
 		boardrelay.NewHTTPGitHubClient(cfg.GitHub.APIBaseURL, cfg.GitHub.Token, cfg.GitHub.RequestTimeout),
 		cfg.GitHub.Repository,
 		time.Now,
+		cfg.Sync.MaxReceiptItemURLs,
 	)
 	if err != nil {
 		slog.Error("building relay service", "error", err)

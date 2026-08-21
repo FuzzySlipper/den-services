@@ -11,22 +11,23 @@ import (
 const pageSize = 100
 
 type Service struct {
-	store      MappingStore
-	board      BoardClient
-	github     GitHubClient
-	repository string
-	clock      func() time.Time
+	store              MappingStore
+	board              BoardClient
+	github             GitHubClient
+	repository         string
+	clock              func() time.Time
+	maxReceiptItemURLs int
 }
 
-func NewService(store MappingStore, board BoardClient, github GitHubClient, repository string, clock func() time.Time) (*Service, error) {
+func NewService(store MappingStore, board BoardClient, github GitHubClient, repository string, clock func() time.Time, maxReceiptItemURLs int) (*Service, error) {
 	repository, err := normalizeRepository(repository)
 	if err != nil {
 		return nil, err
 	}
-	if store == nil || board == nil || github == nil || clock == nil {
+	if store == nil || board == nil || github == nil || clock == nil || maxReceiptItemURLs <= 0 {
 		return nil, fmt.Errorf("board relay dependencies are required")
 	}
-	return &Service{store: store, board: board, github: github, repository: repository, clock: clock}, nil
+	return &Service{store: store, board: board, github: github, repository: repository, clock: clock, maxReceiptItemURLs: maxReceiptItemURLs}, nil
 }
 
 func (s *Service) CheckStore(ctx context.Context) error { return s.store.Ping(ctx) }
@@ -36,22 +37,39 @@ func (s *Service) Sync(ctx context.Context, rawProjectID string) (SyncReceipt, e
 	if err != nil {
 		return SyncReceipt{}, validationFailed(err)
 	}
-	receipt := SyncReceipt{ProjectID: projectID, Repository: s.repository, ItemURLs: make([]string, 0)}
+	receipt := SyncReceipt{ProjectID: projectID, Repository: s.repository, ItemURLs: make([]string, 0), Failures: make([]SyncFailure, 0)}
 	issues, err := s.github.ListIssues(ctx, s.repository)
 	if err != nil {
-		return SyncReceipt{}, err
+		return s.failedReceipt(receipt, "list_issues", err)
 	}
 	if err := s.importIssues(ctx, projectID, issues, &receipt); err != nil {
-		return SyncReceipt{}, err
+		return s.failedReceipt(receipt, "import_issues", err)
 	}
 	if err := s.exportPosts(ctx, projectID, issues, &receipt); err != nil {
-		return SyncReceipt{}, err
+		return s.failedReceipt(receipt, "export_posts", err)
 	}
 	if err := s.importIssueComments(ctx, projectID, issues, &receipt); err != nil {
-		return SyncReceipt{}, err
+		return s.failedReceipt(receipt, "import_comments", err)
 	}
-	sort.Strings(receipt.ItemURLs)
+	s.sortReceipt(&receipt)
 	return receipt, nil
+}
+
+func (s *Service) failedReceipt(receipt SyncReceipt, phase string, cause error) (SyncReceipt, error) {
+	receipt.ErrorItems++
+	receipt.Failures = append(receipt.Failures, SyncFailure{Phase: phase, Message: cause.Error()})
+	s.sortReceipt(&receipt)
+	return receipt, &SyncRunError{Phase: phase, Cause: cause}
+}
+
+func (s *Service) sortReceipt(receipt *SyncReceipt) { sort.Strings(receipt.ItemURLs) }
+
+func (s *Service) addItemURL(receipt *SyncReceipt, itemURL string) {
+	if len(receipt.ItemURLs) >= s.maxReceiptItemURLs {
+		receipt.OmittedItemURLs++
+		return
+	}
+	receipt.ItemURLs = append(receipt.ItemURLs, itemURL)
 }
 
 func (s *Service) SetVisibility(ctx context.Context, request VisibilityRequest) error {
@@ -86,11 +104,11 @@ func (s *Service) importIssues(ctx context.Context, projectID string, issues []G
 		if err != nil {
 			return fmt.Errorf("importing github issue %d: %w", issue.ID, err)
 		}
+		receipt.ImportedPosts++
+		s.addItemURL(receipt, issue.HTMLURL)
 		if err := s.store.Save(ctx, newMapping(projectID, itemKindPost, post.ID, "issue", issue.ID, issue.Number, issue.HTMLURL, "github", issue.UpdatedAt, s.clock())); err != nil {
 			return err
 		}
-		receipt.ImportedPosts++
-		receipt.ItemURLs = append(receipt.ItemURLs, issue.HTMLURL)
 	}
 	return nil
 }
@@ -143,11 +161,11 @@ func (s *Service) exportPosts(ctx context.Context, projectID string, issues []Gi
 				if err != nil {
 					return fmt.Errorf("exporting board post %d: %w", post.ID, err)
 				}
+				receipt.ExportedPosts++
+				s.addItemURL(receipt, issue.HTMLURL)
 				if err := s.store.Save(ctx, newMapping(projectID, itemKindPost, post.ID, "issue", issue.ID, issue.Number, issue.HTMLURL, "board", issue.UpdatedAt, s.clock())); err != nil {
 					return err
 				}
-				receipt.ExportedPosts++
-				receipt.ItemURLs = append(receipt.ItemURLs, issue.HTMLURL)
 				mapping, err = s.store.FindByBoard(ctx, projectID, itemKindPost, post.ID)
 				if err != nil {
 					return err
@@ -187,11 +205,11 @@ func (s *Service) exportComments(ctx context.Context, projectID string, postID i
 				if err != nil {
 					return fmt.Errorf("exporting board comment %d: %w", comment.ID, err)
 				}
+				receipt.ExportedComments++
+				s.addItemURL(receipt, remote.HTMLURL)
 				if err := s.store.Save(ctx, newMapping(projectID, itemKindComment, comment.ID, "comment", remote.ID, issueNumber, remote.HTMLURL, "board", remote.UpdatedAt, s.clock())); err != nil {
 					return err
 				}
-				receipt.ExportedComments++
-				receipt.ItemURLs = append(receipt.ItemURLs, remote.HTMLURL)
 			}
 			commentID := comment.ID
 			if err := s.exportComments(ctx, projectID, postID, issueNumber, &commentID, receipt); err != nil {
@@ -245,11 +263,11 @@ func (s *Service) importIssueComments(ctx context.Context, projectID string, iss
 			if err != nil {
 				return fmt.Errorf("importing github comment %d: %w", remote.ID, err)
 			}
+			receipt.ImportedComments++
+			s.addItemURL(receipt, remote.HTMLURL)
 			if err := s.store.Save(ctx, newMapping(projectID, itemKindComment, comment.ID, "comment", remote.ID, issue.Number, remote.HTMLURL, "github", remote.UpdatedAt, s.clock())); err != nil {
 				return err
 			}
-			receipt.ImportedComments++
-			receipt.ItemURLs = append(receipt.ItemURLs, remote.HTMLURL)
 		}
 	}
 	return nil

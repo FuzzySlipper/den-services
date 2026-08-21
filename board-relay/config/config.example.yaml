@@ -11,3 +11,6 @@ github:
   request_timeout: "20s"
 http:
   read_header_timeout: "5s"
+sync:
+  # Bounded receipt links keep a large manual run inspectable without unbounded responses.
+  max_receipt_item_urls: 100

@@ -20,6 +20,7 @@ type Config struct {
 	BoardToken   string
 	GitHub       GitHubConfig
 	HTTP         HTTPConfig
+	Sync         SyncConfig
 }
 
 type GitHubConfig struct {
@@ -31,6 +32,8 @@ type GitHubConfig struct {
 
 type HTTPConfig struct{ ReadHeaderTimeout time.Duration }
 
+type SyncConfig struct{ MaxReceiptItemURLs int }
+
 type configFile struct {
 	BindAddr        string         `yaml:"bind_addr"`
 	DatabaseURLEnv  string         `yaml:"database_url_env"`
@@ -39,6 +42,7 @@ type configFile struct {
 	BoardTokenEnv   string         `yaml:"board_token_env"`
 	GitHub          githubFile     `yaml:"github"`
 	HTTP            httpConfigFile `yaml:"http"`
+	Sync            syncConfigFile `yaml:"sync"`
 }
 
 type githubFile struct {
@@ -50,6 +54,10 @@ type githubFile struct {
 
 type httpConfigFile struct {
 	ReadHeaderTimeout string `yaml:"read_header_timeout"`
+}
+
+type syncConfigFile struct {
+	MaxReceiptItemURLs int `yaml:"max_receipt_item_urls"`
 }
 
 func LoadConfig() (*Config, error) { return LoadConfigFromPath(configPath()) }
@@ -84,6 +92,7 @@ func LoadConfigFromPathWithValues(path string, values sharedconfig.Values) (*Con
 		BoardBaseURL: strings.TrimRight(strings.TrimSpace(file.BoardBaseURL), "/"), BoardToken: values.String(file.BoardTokenEnv, ""),
 		GitHub: GitHubConfig{APIBaseURL: strings.TrimRight(strings.TrimSpace(file.GitHub.APIBaseURL), "/"), Repository: strings.TrimSpace(file.GitHub.Repository), Token: values.String(file.GitHub.TokenEnv, ""), RequestTimeout: githubTimeout},
 		HTTP:   HTTPConfig{ReadHeaderTimeout: readHeaderTimeout},
+		Sync:   SyncConfig{MaxReceiptItemURLs: file.Sync.MaxReceiptItemURLs},
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -98,7 +107,7 @@ func (c *Config) Validate() error {
 	if _, err := normalizeRepository(c.GitHub.Repository); err != nil {
 		return err
 	}
-	if c.GitHub.RequestTimeout <= 0 || c.HTTP.ReadHeaderTimeout <= 0 {
+	if c.GitHub.RequestTimeout <= 0 || c.HTTP.ReadHeaderTimeout <= 0 || c.Sync.MaxReceiptItemURLs <= 0 {
 		return errors.New("board relay timeouts must be positive")
 	}
 	return nil
