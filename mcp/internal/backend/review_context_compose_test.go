@@ -23,6 +23,9 @@ func TestLocatorComposesBoundedReviewContextWithoutTaskBody(t *testing.T) {
 		case "/v1/projects/den-services/tasks/6608/packets/latest":
 			_, _ = w.Write([]byte(`{"id":41,"project_id":"den-services","task_id":6608,"sender":"reviewer","intent":"review_request","metadata":{"kind":"review_request"},"created_at":"2026-08-03T01:02:03Z"}`))
 		case "/v1/projects/den-services/agent-guidance":
+			if got := r.URL.Query().Get("include_content"); got != "false" {
+				t.Fatalf("concise guidance include_content = %q, want false", got)
+			}
 			_, _ = w.Write([]byte(`{"sources":[{"source_scope":"den-services","document_project_id":"den-services","document_slug":"go-codestyle","document_title":"Go style"}]}`))
 		default:
 			http.Error(w, "not found", http.StatusNotFound)
@@ -81,6 +84,9 @@ func TestLocatorExpandsReviewContextEvidenceWhenVerbose(t *testing.T) {
 		case "/v1/projects/den-services":
 			_, _ = w.Write([]byte(`{"id":"den-services","root_path":"/home/dev/den-services","settings_json":{"repository":"FuzzySlipper/den-services"}}`))
 		case "/v1/projects/den-services/agent-guidance":
+			if got := r.URL.Query().Get("include_content"); got != "true" {
+				t.Fatalf("verbose guidance include_content = %q, want true", got)
+			}
 			_, _ = w.Write([]byte(`{"project_id":"den-services","content_markdown":"full guidance evidence","sources":[{"source_scope":"den-services","document_project_id":"den-services","document_slug":"go-codestyle","document_title":"Go style"}]}`))
 		case "/v1/projects/den-services/tasks/6608/packets/latest":
 			_, _ = w.Write([]byte(`{"id":41,"project_id":"den-services","task_id":6608,"sender":"reviewer","content":"full packet evidence","intent":"review_request","metadata":{"kind":"review_request"},"created_at":"2026-08-03T01:02:03Z"}`))
@@ -156,6 +162,130 @@ func TestBoundReviewContextRetainsFindingAndPacketPointersWhenCompacting(t *test
 		if !strings.Contains(string(encoded), want) {
 			t.Fatalf("bounded response missing %s: %s", want, encoded)
 		}
+	}
+}
+
+func TestBoundReviewContextHonorsExactDetailBudget(t *testing.T) {
+	newResponse := func(content string) reviewContextResponse {
+		return reviewContextResponse{
+			SchemaVersion: reviewContextSchemaVersion,
+			Schema:        reviewContextSchema,
+			ProjectID:     "den-services",
+			TaskID:        6608,
+			Task:          reviewContextTask{ID: 6608, ProjectID: "den-services", Status: "review"},
+			CurrentStatus: "review",
+			NextState:     "source_review_ready",
+			ExpandedGuidance: &guidancePacketResponse{
+				ProjectID: "den-services", ContentMarkdown: content,
+			},
+		}
+	}
+	base := newResponse("")
+	baseEncoded, err := boundReviewContext(&base, reviewContextDetailMaxBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(baseEncoded) >= reviewContextDetailMaxBytes {
+		t.Fatalf("empty detail response = %d bytes, want below budget", len(baseEncoded))
+	}
+	exact := newResponse(strings.Repeat("x", reviewContextDetailMaxBytes-len(baseEncoded)))
+	exactEncoded, err := boundReviewContext(&exact, reviewContextDetailMaxBytes)
+	if err != nil {
+		t.Fatalf("exact budget detail response = %v", err)
+	}
+	if len(exactEncoded) != reviewContextDetailMaxBytes {
+		t.Fatalf("exact detail response = %d bytes, want %d", len(exactEncoded), reviewContextDetailMaxBytes)
+	}
+	over := newResponse(strings.Repeat("x", reviewContextDetailMaxBytes-len(baseEncoded)+1))
+	if _, err := boundReviewContext(&over, reviewContextDetailMaxBytes); err == nil {
+		t.Fatal("detail response one byte over the budget was accepted")
+	}
+}
+
+func TestBoundReviewContextHonorsExactConciseBudget(t *testing.T) {
+	newResponse := func(summary string) reviewContextResponse {
+		return reviewContextResponse{
+			SchemaVersion: reviewContextSchemaVersion,
+			Schema:        reviewContextSchema,
+			ProjectID:     "den-services",
+			TaskID:        6608,
+			Task:          reviewContextTask{ID: 6608, ProjectID: "den-services", Status: "review"},
+			CurrentStatus: "review",
+			NextState:     "source_review_ready",
+			PriorFindings: []json.RawMessage{json.RawMessage(`{"summary":"` + summary + `"}`)},
+		}
+	}
+	base := newResponse("")
+	baseEncoded, err := boundReviewContext(&base, reviewContextMaxBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exact := newResponse(strings.Repeat("x", reviewContextMaxBytes-len(baseEncoded)))
+	exactEncoded, err := boundReviewContext(&exact, reviewContextMaxBytes)
+	if err != nil {
+		t.Fatalf("exact concise budget response = %v", err)
+	}
+	if len(exactEncoded) != reviewContextMaxBytes {
+		t.Fatalf("exact concise response = %d bytes, want %d", len(exactEncoded), reviewContextMaxBytes)
+	}
+}
+
+func TestReviewContextRejectsUnknownDetailSection(t *testing.T) {
+	if _, err := decodeReviewContextArguments(json.RawMessage(`{"task_id":6608,"verbose":true,"detail_section":"everything"}`)); err == nil || !strings.Contains(err.Error(), "unknown detail_section") {
+		t.Fatalf("unknown detail section error = %v", err)
+	}
+	if _, err := decodeReviewContextArguments(json.RawMessage(`{"task_id":6608,"detail_section":"findings"}`)); err == nil || !strings.Contains(err.Error(), "requires verbose") {
+		t.Fatalf("non-verbose detail section error = %v", err)
+	}
+}
+
+func TestReviewContextSectionExpansionOmitsUnservedCampaignPath(t *testing.T) {
+	children := make([]map[string]any, 0, reviewContextCampaignLimit+1)
+	for index := 0; index <= reviewContextCampaignLimit; index++ {
+		children = append(children, map[string]any{"project_id": "den-services", "task_id": 7000 + index, "review_round_id": 8000 + index})
+	}
+	workflow, err := json.Marshal(map[string]any{
+		"current_round": map[string]any{"id": 88, "project_id": "den-services", "task_id": 6608, "round_number": 2, "campaign_children": children},
+		"open_findings": []map[string]any{{"id": 11, "status": "open", "summary": "bounded"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/tasks/6608":
+			_, _ = w.Write([]byte(`{"task":{"id":6608,"project_id":"den-services","status":"review"}}`))
+		case "/v1/projects/den-services/tasks/6608/review/workflow-summary":
+			_, _ = w.Write(workflow)
+		case "/v1/tasks/6608/review/findings":
+			_, _ = w.Write([]byte(`[{"id":11,"status":"open","summary":"full finding"}]`))
+		case "/v1/projects/den-services/agent-guidance":
+			if got := r.URL.Query().Get("include_content"); got != "false" {
+				t.Fatalf("guidance include_content = %q, want false", got)
+			}
+			_, _ = w.Write([]byte(`{"project_id":"den-services","sources":[]}`))
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	locator, err := newReviewContextTestLocator(t, server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, failure, err := locator.Call(context.Background(), ToolCall{
+		ToolName: "get_review_context", Operation: "get_review_context", RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"task_id":6608,"verbose":true,"detail_section":"findings"}`),
+	})
+	if err != nil || failure != nil {
+		t.Fatalf("Call() = %v, %#v", err, failure)
+	}
+	if strings.Contains(string(result.Value), "/review/campaign-details") {
+		t.Fatalf("section expansion leaked unserved campaign path: %s", result.Value)
+	}
+	if !strings.Contains(string(result.Value), `"expanded_findings"`) || strings.Contains(string(result.Value), `"expanded_packets"`) || strings.Contains(string(result.Value), `"expanded_guidance"`) {
+		t.Fatalf("section expansion is not isolated: %s", result.Value)
 	}
 }
 

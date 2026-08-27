@@ -15,6 +15,11 @@ import (
 	"den-services/mcp/internal/config"
 )
 
+const (
+	mcpListTasksDefaultLimit = 100
+	mcpListTasksMaximumLimit = 200
+)
+
 type tasksToolArguments struct {
 	ProjectID                    string          `json:"project_id"`
 	TaskID                       int64           `json:"task_id"`
@@ -38,6 +43,9 @@ type tasksToolArguments struct {
 	TagsFilter                   *string         `json:"-"`
 	ParentIDFilter               *int64          `json:"-"`
 	PriorityFilter               *int            `json:"-"`
+	Limit                        *int            `json:"limit"`
+	Offset                       *int            `json:"offset"`
+	Tree                         *bool           `json:"tree"`
 	IncludeVerboseCompatibility  bool            `json:"verbose"`
 	UnneededCompatibilityPadding string          `json:"-"`
 	ReviewerIdentity             string          `json:"reviewer_identity"`
@@ -174,6 +182,12 @@ func decodeTasksToolArguments(raw json.RawMessage) (tasksToolArguments, error) {
 	}
 	arguments.ParentIDFilter = filters.ParentID
 	arguments.PriorityFilter = filters.Priority
+	if arguments.Limit != nil && (*arguments.Limit < 1 || *arguments.Limit > mcpListTasksMaximumLimit) {
+		return tasksToolArguments{}, fmt.Errorf("task list limit must be from 1 to %d", mcpListTasksMaximumLimit)
+	}
+	if arguments.Offset != nil && *arguments.Offset < 0 {
+		return tasksToolArguments{}, fmt.Errorf("task list offset must be non-negative")
+	}
 	return arguments, nil
 }
 
@@ -264,6 +278,13 @@ func tasksRESTURL(baseURL string, route Route, arguments tasksToolArguments) (st
 		setStringQuery(query, "tags", arguments.TagsFilter)
 		setInt64Query(query, "parent_id", arguments.ParentIDFilter)
 		setIntQuery(query, "priority", arguments.PriorityFilter)
+		limit := mcpListTasksDefaultLimit
+		if arguments.Limit != nil {
+			limit = *arguments.Limit
+		}
+		query.Set("limit", strconv.Itoa(limit))
+		setIntQuery(query, "offset", arguments.Offset)
+		setBoolQuery(query, "tree", arguments.Tree)
 	case "next_task":
 		setStringQuery(query, "assigned_to", arguments.AssignedToFilter)
 	}

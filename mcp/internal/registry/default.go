@@ -241,6 +241,66 @@ func modernizeInputSchema(name string, schema Schema) Schema {
 		}
 	}
 	switch name {
+	case "get_agent_guidance":
+		properties["max_bytes"] = map[string]any{
+			"type":        []string{"integer", "null"},
+			"minimum":     1,
+			"maximum":     64 * 1024,
+			"description": "Optional guidance body ceiling in bytes, from 1 to 65536. Omit for the owner-configured 65536-byte maximum.",
+		}
+		properties["include_content"] = map[string]any{
+			"type":        []string{"boolean", "null"},
+			"description": "Whether to include the assembled Markdown body. Defaults to true; use false when only source handles are needed.",
+		}
+		properties["audience"] = map[string]any{
+			"type":        []string{"string", "null"},
+			"description": "Optional comma-separated audience labels used to select matching guidance entries.",
+		}
+		changed = true
+	case "list_tasks":
+		properties["limit"] = map[string]any{
+			"type":        []string{"integer", "null"},
+			"minimum":     1,
+			"maximum":     200,
+			"default":     100,
+			"description": "Bounded page size from 1 to 200. Omit for the MCP-safe default of 100.",
+		}
+		properties["offset"] = map[string]any{
+			"type":        []string{"integer", "null"},
+			"minimum":     0,
+			"default":     0,
+			"description": "Non-negative page offset. Defaults to 0.",
+		}
+		properties["tree"] = map[string]any{
+			"type":        []string{"boolean", "null"},
+			"default":     false,
+			"description": "Include the project's task tree rather than only the requested parent scope.",
+		}
+		changed = true
+	case "query_librarian":
+		properties["source_limits"] = sourceLimitsInputSchema()
+		changed = true
+	case "den_knowledge_guide":
+		properties["audience"] = map[string]any{
+			"type":        []string{"array", "null"},
+			"items":       map[string]any{"type": "string"},
+			"description": "Optional audience labels that selected knowledge entries must match.",
+		}
+		changed = true
+	case "den_knowledge_search":
+		properties["audience"] = map[string]any{
+			"type":        []string{"array", "null"},
+			"items":       map[string]any{"type": "string"},
+			"description": "Optional audience labels that matching knowledge entries must include.",
+		}
+		properties["kind"] = NullableStringSchema("Optional Knowledge kind filter.")
+		properties["status"] = NullableStringSchema("Optional comma-separated Knowledge status filter.")
+		properties["include_archived"] = map[string]any{
+			"type":        "boolean",
+			"default":     false,
+			"description": "Include archived Knowledge entries.",
+		}
+		changed = true
 	case "create_review_round", "request_review":
 		for _, field := range []string{
 			"base_commit", "head_commit", "last_reviewed_head_commit", "commits_since_last_review",
@@ -310,6 +370,28 @@ func modernizeInputSchema(name string, schema Schema) Schema {
 		object["required"] = filtered
 	}
 	return mustSchema(object)
+}
+
+func sourceLimitsInputSchema() map[string]any {
+	limit := func(maximum int, description string) map[string]any {
+		return map[string]any{
+			"type":        []string{"integer", "null"},
+			"minimum":     1,
+			"maximum":     maximum,
+			"description": description,
+		}
+	}
+	return map[string]any{
+		"type":        []string{"object", "null"},
+		"description": "Optional per-source result ceilings. Omitted source limits use Librarian defaults.",
+		"properties": map[string]any{
+			"tasks":     limit(20, "Tasks result ceiling from 1 to 20."),
+			"messages":  limit(30, "Messages result ceiling from 1 to 30."),
+			"documents": limit(30, "Documents result ceiling from 1 to 30."),
+			"knowledge": limit(20, "Knowledge result ceiling from 1 to 20."),
+		},
+		"additionalProperties": false,
+	}
 }
 
 func modernizeDescription(name, description string) string {

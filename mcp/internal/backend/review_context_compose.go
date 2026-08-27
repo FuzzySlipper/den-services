@@ -24,8 +24,9 @@ const (
 )
 
 type reviewContextArguments struct {
-	TaskID  int64 `json:"task_id"`
-	Verbose bool  `json:"verbose"`
+	TaskID        int64  `json:"task_id"`
+	Verbose       bool   `json:"verbose"`
+	DetailSection string `json:"detail_section"`
 }
 
 type reviewContextRound struct {
@@ -170,14 +171,19 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 		if err := json.Unmarshal(summary.CurrentRound, &round); err != nil {
 			return Result{}, nil, fmt.Errorf("parsing review context current round: %w", err)
 		}
-		if !arguments.Verbose && boundReviewContextCampaign(&round) {
-			round.CampaignDetailRef = "/v1/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/review/campaign-details"
+		if !arguments.expands("campaign") && boundReviewContextCampaign(&round) {
+			if !arguments.Verbose {
+				round.CampaignDetailRef = "/v1/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/review/campaign-details"
+			}
 			response.Truncation.Campaign = true
 		}
 		response.CurrentRound = &round
 		allFindings := decodeRawArray(summary.OpenFindings)
-		response.PriorFindings = summarizeReviewContextFindings(sortRawMessages(allFindings, 32),
-			"/v1/tasks/"+strconv.FormatInt(arguments.TaskID, 10)+"/review/findings")
+		findingDetailHandle := ""
+		if !arguments.Verbose {
+			findingDetailHandle = "/v1/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/review/findings"
+		}
+		response.PriorFindings = summarizeReviewContextFindings(sortRawMessages(allFindings, 32), findingDetailHandle)
 		response.Truncation.Findings = len(allFindings) > len(response.PriorFindings)
 		response.NextState = reviewContextNextState(taskDetail.Task.Status, round, summary, response.Gate)
 	} else {
@@ -229,13 +235,17 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 	guidanceBackend, guidanceOK := backends["guidance"]
 	guidancePath := "/v1/projects/" + url.PathEscape(projectID) + "/agent-guidance"
 	if guidanceOK {
-		body, guidanceFailure, guidanceErr := c.taskContextGET(ctx, guidanceBackend, guidancePath, call)
+		guidanceRequestPath := guidancePath + "?include_content=false"
+		if arguments.expands("guidance") {
+			guidanceRequestPath = guidancePath + "?include_content=true"
+		}
+		body, guidanceFailure, guidanceErr := c.taskContextGET(ctx, guidanceBackend, guidanceRequestPath, call)
 		if guidanceErr == nil && guidanceFailure == nil {
 			var guidance guidancePacketResponse
 			if err := json.Unmarshal(body, &guidance); err != nil {
 				return Result{}, nil, fmt.Errorf("parsing review context guidance: %w", err)
 			}
-			if arguments.Verbose {
+			if arguments.expands("guidance") {
 				response.ExpandedGuidance = &guidance
 			}
 			for _, source := range guidance.Sources {
@@ -248,7 +258,7 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 	} else {
 		response.SourceStatus = append(response.SourceStatus, taskContextSourceStatus{Source: "guidance", State: "unavailable", Handle: "guidance", ErrorCode: "den_backend_config_error", Retryable: false})
 	}
-	if arguments.Verbose {
+	if arguments.expands("findings") {
 		findingsPath := "/v1/tasks/" + strconv.FormatInt(arguments.TaskID, 10) + "/review/findings"
 		findingsBody, findingsFailure, findingsErr := c.taskContextGET(ctx, reviewBackend, findingsPath, call)
 		if findingsErr == nil && findingsFailure == nil {
@@ -260,6 +270,8 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 		} else if findingsFailure == nil || findingsFailure.StatusCode == nil || *findingsFailure.StatusCode != 404 {
 			response.SourceStatus = append(response.SourceStatus, taskContextStatus("review_findings", findingsPath, findingsFailure, findingsErr))
 		}
+	}
+	if arguments.expands("packets") {
 		response.ExpandedPackets = make(map[string]json.RawMessage)
 		for _, query := range []taskWorkflowPacketQuery{
 			{Key: "review_request", PacketType: "review_request", Role: "reviewer"},
@@ -275,6 +287,8 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 				response.SourceStatus = append(response.SourceStatus, taskContextStatus("expanded_packets", path, packetFailure, packetErr))
 			}
 		}
+	}
+	if arguments.Verbose {
 		response.DetailRefs = nil
 	} else {
 		response.DetailRefs = &reviewContextDetailRefs{
@@ -293,10 +307,7 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 	}
 	encoded, err := boundReviewContext(&response, byteLimit)
 	if err != nil {
-		return c.reviewContextTypedError(reviewContextErrorResponse{
-			SchemaVersion: reviewContextSchemaVersion, Schema: reviewContextSchema, TaskID: arguments.TaskID,
-			ErrorCode: "review_context_too_large", Reason: err.Error(), Retryable: false,
-		})
+		return Result{}, reviewContextTooLargeFailure(call, err), nil
 	}
 	result, err := buildRESTToolResult(encoded)
 	if err != nil {
@@ -328,7 +339,38 @@ func decodeReviewContextArguments(raw json.RawMessage) (reviewContextArguments, 
 	if arguments.TaskID <= 0 {
 		return reviewContextArguments{}, fmt.Errorf("review context requires task_id")
 	}
+	arguments.DetailSection = strings.TrimSpace(arguments.DetailSection)
+	if arguments.DetailSection != "" && !isReviewContextDetailSection(arguments.DetailSection) {
+		return reviewContextArguments{}, fmt.Errorf("review context has unknown detail_section %q", arguments.DetailSection)
+	}
+	if arguments.DetailSection != "" && !arguments.Verbose {
+		return reviewContextArguments{}, fmt.Errorf("review context detail_section requires verbose")
+	}
 	return arguments, nil
+}
+
+func (arguments reviewContextArguments) expands(section string) bool {
+	return arguments.Verbose && (arguments.DetailSection == "" || arguments.DetailSection == section)
+}
+
+func isReviewContextDetailSection(section string) bool {
+	switch section {
+	case "findings", "packets", "guidance", "campaign":
+		return true
+	default:
+		return false
+	}
+}
+
+func reviewContextTooLargeFailure(call ToolCall, cause error) *Failure {
+	return &Failure{
+		Error:     "review_context_too_large",
+		Retryable: false,
+		Backend:   "mcp",
+		Operation: call.Operation,
+		Tool:      call.ToolName,
+		Message:   cause.Error(),
+	}
 }
 
 func reviewContextNextState(taskStatus string, round reviewContextRound, _ taskWorkflowReviewSummary, gate *reviewContextGate) string {

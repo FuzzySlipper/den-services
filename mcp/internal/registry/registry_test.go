@@ -293,8 +293,11 @@ func TestDefaultRegistryReviewInputsDoNotExposeCheckoutRevisionFields(t *testing
 }
 
 func TestReviewContextSupportsOpaqueDetailReference(t *testing.T) {
-	if !SupportsDetails("get_review_context") || !DetailArgumentAllowed("get_review_context", "task_id") {
+	if !SupportsDetails("get_review_context") || !DetailArgumentAllowed("get_review_context", "task_id") || !DetailArgumentAllowed("get_review_context", "detail_section") {
 		t.Fatal("get_review_context must support task-scoped get_details expansion")
+	}
+	if DetailArgumentAllowed("get_task", "detail_section") {
+		t.Fatal("detail_section must remain scoped to review-context expansion")
 	}
 }
 
@@ -456,6 +459,65 @@ func TestVisibleToolSchemasHideVerbose(t *testing.T) {
 		}
 		if _, exists := schema.Properties["verbose"]; exists {
 			t.Fatalf("tool %s still exposes verbose", tool.Name)
+		}
+	}
+}
+
+func TestParitySchemasExposeOnlySupportedBoundedControls(t *testing.T) {
+	toolRegistry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	propertiesFor := func(name string) map[string]json.RawMessage {
+		t.Helper()
+		tool, err := toolRegistry.Resolve(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var schema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+			t.Fatalf("Unmarshal(%s) error = %v", name, err)
+		}
+		return schema.Properties
+	}
+	guidance := propertiesFor("get_agent_guidance")
+	for _, property := range []string{"max_bytes", "include_content", "audience"} {
+		if _, ok := guidance[property]; !ok {
+			t.Fatalf("get_agent_guidance is missing %s", property)
+		}
+	}
+	if _, ok := guidance["include_hidden"]; ok {
+		t.Fatal("get_agent_guidance must not expose administrative include_hidden")
+	}
+	listTasks := propertiesFor("list_tasks")
+	for _, property := range []string{"limit", "offset", "tree"} {
+		if _, ok := listTasks[property]; !ok {
+			t.Fatalf("list_tasks is missing %s", property)
+		}
+	}
+	var limit struct {
+		Minimum int `json:"minimum"`
+		Maximum int `json:"maximum"`
+		Default int `json:"default"`
+	}
+	if err := json.Unmarshal(listTasks["limit"], &limit); err != nil {
+		t.Fatal(err)
+	}
+	if limit.Minimum != 1 || limit.Maximum != 200 || limit.Default != 100 {
+		t.Fatalf("list_tasks limit schema = %#v", limit)
+	}
+	if _, ok := propertiesFor("query_librarian")["source_limits"]; !ok {
+		t.Fatal("query_librarian is missing source_limits")
+	}
+	if _, ok := propertiesFor("den_knowledge_guide")["audience"]; !ok {
+		t.Fatal("den_knowledge_guide is missing audience")
+	}
+	knowledgeSearch := propertiesFor("den_knowledge_search")
+	for _, property := range []string{"audience", "kind", "status", "include_archived"} {
+		if _, ok := knowledgeSearch[property]; !ok {
+			t.Fatalf("den_knowledge_search is missing %s", property)
 		}
 	}
 }

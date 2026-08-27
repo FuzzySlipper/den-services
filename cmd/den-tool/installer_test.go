@@ -29,6 +29,17 @@ func TestInstallerSyntaxAndIdempotentCheck(t *testing.T) {
 	if info.Mode().Perm() != 0o755 {
 		t.Fatalf("installed permissions = %o, want 755", info.Mode().Perm())
 	}
+	skillDestination := filepath.Join(home, ".codex", "skills", "den-tool-cli")
+	if info, err := os.Lstat(skillDestination); err != nil {
+		t.Fatalf("stat installed skill: %v", err)
+	} else if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("installed skill mode = %v, want symlink", info.Mode())
+	}
+	if resolved, err := filepath.EvalSymlinks(skillDestination); err != nil {
+		t.Fatalf("resolve installed skill: %v", err)
+	} else if resolved != filepath.Join(root, "codex", "skills", "den-tool-cli") {
+		t.Fatalf("installed skill resolves to %q", resolved)
+	}
 	if output, err := exec.Command(destination, "--version").CombinedOutput(); err != nil {
 		t.Fatalf("installed --version: %v\n%s", err, output)
 	} else if !strings.HasPrefix(string(output), "den-tool version ") {
@@ -59,6 +70,25 @@ func TestInstallerRefusesUnrelatedBinary(t *testing.T) {
 	}
 	if !strings.Contains(string(output), "refusing to overwrite unrelated binary") {
 		t.Fatalf("installer output = %q, want ownership refusal", output)
+	}
+}
+
+func TestInstallerRefusesUnrelatedSkill(t *testing.T) {
+	root := repositoryRootForTest(t)
+	home := t.TempDir()
+	skillDestination := filepath.Join(home, ".codex", "skills", "den-tool-cli")
+	if err := os.MkdirAll(skillDestination, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDestination, "SKILL.md"), []byte("unrelated\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output, err := runInstaller(t, root, home)
+	if err == nil {
+		t.Fatalf("installer succeeded over unrelated skill; output=%s", output)
+	}
+	if !strings.Contains(string(output), "refusing to overwrite unrelated skill") {
+		t.Fatalf("installer output = %q, want skill ownership refusal", output)
 	}
 }
 
@@ -105,7 +135,13 @@ func TestInstallerRefusesBinaryChangedBehindOwnedMarker(t *testing.T) {
 func TestInstallerCheckDetectsSourceDriftUntilReinstall(t *testing.T) {
 	sourceRoot := repositoryRootForTest(t)
 	root := t.TempDir()
-	for _, relative := range []string{"go.mod", "go.sum", "scripts/install-den-tool.sh"} {
+	for _, relative := range []string{
+		"go.mod",
+		"go.sum",
+		"scripts/install-den-tool.sh",
+		"codex/skills/den-tool-cli/SKILL.md",
+		"codex/skills/den-tool-cli/agents/openai.yaml",
+	} {
 		copyTestFile(t, sourceRoot, root, relative)
 	}
 	entries, err := os.ReadDir(filepath.Join(sourceRoot, "cmd", "den-tool"))
@@ -184,12 +220,12 @@ func repositoryRootForTest(t *testing.T) string {
 }
 
 func environmentWithHome(environment []string, home string) []string {
-	result := make([]string, 0, len(environment)+1)
+	result := make([]string, 0, len(environment)+2)
 	for _, entry := range environment {
-		if strings.HasPrefix(entry, "HOME=") {
+		if strings.HasPrefix(entry, "HOME=") || strings.HasPrefix(entry, "CODEX_HOME=") {
 			continue
 		}
 		result = append(result, entry)
 	}
-	return append(result, "HOME="+home)
+	return append(result, "HOME="+home, "CODEX_HOME="+filepath.Join(home, ".codex"))
 }

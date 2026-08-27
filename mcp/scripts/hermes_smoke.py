@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 
-EXPECTED_TOOL_COUNT = 71
+EXPECTED_TOOL_COUNT = 38
 MCP_PATH = "/mcp"
 DEN_CORE_TOKEN_ENV = "DEN_CORE_SERVICE_TOKEN"
 SMOKE_BACKENDS = (
@@ -42,6 +42,8 @@ SMOKE_BACKENDS = (
     ("knowledge", "DEN_KNOWLEDGE_SERVICE_TOKEN"),
     ("guidance", "DEN_GUIDANCE_SERVICE_TOKEN"),
     ("librarian", "DEN_LIBRARIAN_SERVICE_TOKEN"),
+    ("handoff", "DEN_HANDOFF_SERVICE_TOKEN"),
+    ("board", "DEN_BOARD_SERVICE_TOKEN"),
 )
 
 
@@ -360,6 +362,8 @@ def main() -> int:
     parser.add_argument("--review-url", default=os.getenv("DEN_MCP_SMOKE_REVIEW_URL", ""))
     parser.add_argument("--guidance-url", default=os.getenv("DEN_MCP_SMOKE_GUIDANCE_URL", ""))
     parser.add_argument("--librarian-url", default=os.getenv("DEN_MCP_SMOKE_LIBRARIAN_URL", ""))
+    parser.add_argument("--handoff-url", default=os.getenv("DEN_MCP_SMOKE_HANDOFF_URL", ""))
+    parser.add_argument("--board-url", default=os.getenv("DEN_MCP_SMOKE_BOARD_URL", ""))
     parser.add_argument("--read-task-id", type=int, default=int(os.getenv("DEN_MCP_SMOKE_READ_TASK_ID", "3446")))
     parser.add_argument("--write-project", default=os.getenv("DEN_MCP_SMOKE_WRITE_PROJECT", ""))
     parser.add_argument("--write-slug", default=os.getenv("DEN_MCP_SMOKE_WRITE_SLUG", ""))
@@ -553,6 +557,17 @@ def run_live_smoke(repo_root: Path, args: argparse.Namespace) -> None:
             raise SmokeError("live query_librarian did not return the MCP-compatible librarian shape")
         print("ok: live query_librarian proxied to librarian successor")
 
+        handoff = tools_call(mcp_url, "get_handoff", {"label": "mcp-smoke-read-probe"})
+        if handoff.get("isError"):
+            structured = handoff.get("structuredContent") or {}
+            if structured.get("backend") != "handoff" or structured.get("status_code") != 404:
+                raise SmokeError(f"live get_handoff did not reach the handoff successor: {handoff}")
+        print("ok: live get_handoff reached the handoff successor")
+
+        board = tools_call(mcp_url, "list_board_posts", {"project_id": "den-services", "limit": 1})
+        assert_tool_success(board, "live list_board_posts tool")
+        print("ok: live list_board_posts proxied to board successor")
+
         workflow = tools_call(mcp_url, "get_task_workflow_summary", {"task_id": args.read_task_id})
         assert_tool_success(workflow, "live get_task_workflow_summary tool")
         workflow_payload = json_from_result(workflow, "get_task_workflow_summary")
@@ -614,6 +629,8 @@ def live_backend_urls(args: argparse.Namespace) -> dict[str, str]:
         "review": args.review_url,
         "guidance": args.guidance_url,
         "librarian": args.librarian_url,
+        "handoff": args.handoff_url,
+        "board": args.board_url,
     }
     missing = [backend for backend, value in required.items() if not value]
     if missing:
@@ -800,9 +817,12 @@ def assert_ergonomic_tool_schemas(tools: list[dict[str, Any]], label: str) -> No
         raise SmokeError(f"{label} tools/list missing finalize_review")
     if "set_review_verdict" in by_name:
         raise SmokeError(f"{label} tools/list still exposes set_review_verdict")
-    for name in ("get_details", "mark_project_notifications_read", "mark_task_notifications_read", "ensure_document_discussion"):
+    for name in ("get_details",):
         if name not in by_name:
             raise SmokeError(f"{label} tools/list missing {name}")
+    for name in ("mark_project_notifications_read", "mark_task_notifications_read", "ensure_document_discussion"):
+        if name in by_name:
+            raise SmokeError(f"{label} tools/list unexpectedly exposes long-tail tool {name}")
 
 
 def assert_tool_success(result: dict[str, Any], label: str) -> None:

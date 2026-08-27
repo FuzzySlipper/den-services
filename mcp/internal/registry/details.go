@@ -5,7 +5,7 @@ package registry
 func DetailArgumentAllowed(toolName, argument string) bool {
 	switch toolName {
 	case "get_task", "get_task_workflow_summary", "get_review_context":
-		return argument == "task_id"
+		return argument == "task_id" || (toolName == "get_review_context" && argument == "detail_section")
 	case "get_document":
 		return argument == "project_id" || argument == "slug"
 	case "get_thread":

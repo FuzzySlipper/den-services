@@ -302,7 +302,7 @@ func (c *Client) callTaskContextCompose(ctx context.Context, backends map[string
 		go func() {
 			defer wg.Done()
 			handle := "/v1/projects/" + url.PathEscape(projectID) + "/agent-guidance"
-			body, downstreamFailure, downstreamErr := c.taskContextGET(ctx, backend, handle, call)
+			body, downstreamFailure, downstreamErr := c.taskContextGET(ctx, backend, handle+"?include_content=false", call)
 			if downstreamErr != nil || downstreamFailure != nil {
 				addStatus(taskContextStatus("guidance", handle, downstreamFailure, downstreamErr))
 				return

@@ -6,6 +6,15 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 const checker = new URL("./check-product-playtest-adoption.mjs", import.meta.url).pathname;
+const productPlaytestSkill = new URL("../codex/skills/product-playtest/SKILL.md", import.meta.url).pathname;
+
+test("routes ordinary agents through the dedicated playtester profile", () => {
+  const skill = readFileSync(productPlaytestSkill, "utf8");
+  assert.match(skill, /Spawn `agent_type: "playtester"`/);
+  assert.match(skill, /do \*\*not\*\* report an infrastructure error/);
+  assert.match(skill, /on-demand `den-playwright mcp` stdio process/);
+  assert.match(skill, /`den-serve` centrally owns long-running local/);
+});
 
 function writePacket(repo, version = 2) {
   const manifest = join(repo, ".den-playwright.json");

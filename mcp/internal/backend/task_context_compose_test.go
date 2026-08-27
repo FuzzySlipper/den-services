@@ -25,6 +25,9 @@ func TestLocatorComposesBoundedTaskContext(t *testing.T) {
 			}
 			_, _ = w.Write([]byte(`[{"id":2,"sender":"planner","content":"newer","created_at":"2026-07-11T12:00:00Z"},{"id":1,"sender":"reviewer","content":"older","created_at":"2026-07-10T12:00:00Z"}]`))
 		case "/v1/projects/den-services/agent-guidance":
+			if got := r.URL.Query().Get("include_content"); got != "false" {
+				t.Fatalf("guidance include_content = %q, want false", got)
+			}
 			_, _ = w.Write([]byte(`{"project_id":"den-services","resolved_at":"2026-07-11T12:00:00Z","sources":[{"source_scope":"_global","document_project_id":"_global","document_slug":"den-connectivity-policy","document_title":"Connectivity policy","sort_order":1},{"source_scope":"den-services","document_project_id":"den-services","document_slug":"go-codestyle","document_title":"Go style","sort_order":2}]}`))
 		case "/v1/projects/den-services/librarian/query":
 			var request librarianQueryBody

@@ -40,7 +40,8 @@ make build-all
 ```
 
 The globally installable agent CLI exposes common and uncommon Den operations
-without requiring repository-local script discovery:
+without requiring repository-local script discovery. Its installer also links
+the repository-owned `den-tool-cli` Codex skill into the active Codex home:
 
 ```sh
 scripts/install-den-tool.sh

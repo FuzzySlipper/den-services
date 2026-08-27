@@ -9,6 +9,32 @@ Produce a trustworthy observation of the running product. Mission completion,
 an observed product failure, a harness/configuration error, and honest
 uncertainty are all successful worker outcomes when backed by evidence.
 
+## Route the playtest to the dedicated profile
+
+This skill contains the dedicated playtester worker protocol. Before applying
+that protocol, inspect the current agent's tool surface:
+
+- If all eight `playtest_*` tools are present, continue with the worker
+  lifecycle below.
+- If they are absent from an ordinary coding, reviewing, or orchestrating
+  agent, do **not** report an infrastructure error. Their absence is expected.
+  Spawn `agent_type: "playtester"` and pass one complete mission packet with the
+  repository, explicit manifest when needed, neutral mission, controls,
+  requested artifacts, project/scenario labels, and optional Den context.
+- Keep acceptance mapping and any follow-up engineering in the parent agent.
+  The spawned playtester only operates and observes the product.
+- Classify `infrastructure_error` only when the dedicated playtester lacks its
+  configured tools, cannot call `playtest_list`/`playtest_start`, or the broker,
+  browser, manifest, or harness prevents the run.
+
+After installing or updating the playtester profile, start a fresh Codex task;
+agent and MCP catalogs do not update inside an already-running task.
+
+The playtest broker is an on-demand `den-playwright mcp` stdio process, not a
+`den-srv` or user-systemd service. `den-serve` centrally owns long-running local
+dev/demo servers and their LAN status page; it does not provide the browser
+session, actions, observations, or indexed evidence required by this skill.
+
 ## Accept the mission
 
 Require the parent prompt to identify:

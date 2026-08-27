@@ -222,7 +222,10 @@ func (m *PlaytestManager) Call(ctx context.Context, sessionID string, request ma
 		if outcome, ok := request["outcome"].(string); ok && strings.TrimSpace(outcome) != "" {
 			finalStatus = outcome
 		}
-		m.finishHostCleanup(&session, kind, finalStatus)
+		// A driver endpoint that did not answer cannot establish that the PID in a
+		// persisted session record still belongs to this session. Do not signal its
+		// process group during cleanup: a stale PID may have been reused.
+		m.finishHostCleanup(&session, kind, finalStatus, callErr == nil)
 	}
 	return result, nil
 }
@@ -342,13 +345,13 @@ func (m *PlaytestManager) waitForDriver(ctx context.Context, endpoint string, pi
 	return fmt.Errorf("playtest driver startup timed out after %s", m.cfg.Playtest.DriverStartupTimeout)
 }
 
-func (m *PlaytestManager) finishHostCleanup(session *PlaytestSession, kind string, finalStatus string) {
+func (m *PlaytestManager) finishHostCleanup(session *PlaytestSession, kind string, finalStatus string, driverCleanupConfirmed bool) {
 	diagnostics := []map[string]any{}
 	driverDeadline := m.clock().Add(m.cfg.Timeouts.ShutdownTimeout)
 	for processAlive(session.DriverPID) && m.clock().Before(driverDeadline) {
 		time.Sleep(25 * time.Millisecond)
 	}
-	if processGroupAlive(session.DriverPID) {
+	if driverCleanupConfirmed && processGroupAlive(session.DriverPID) {
 		if err := stopProcessGroup(session.DriverPID, m.cfg.Timeouts.ShutdownTimeout); err != nil {
 			diagnostics = append(diagnostics, cleanupDiagnostic("driver_cleanup_error", err))
 		}
@@ -357,8 +360,8 @@ func (m *PlaytestManager) finishHostCleanup(session *PlaytestSession, kind strin
 			time.Sleep(25 * time.Millisecond)
 		}
 	}
-	serverStopped := session.ServerReused || session.ServerPID <= 0
-	if !session.ServerReused && session.ServerPID > 0 {
+	serverStopped := session.ServerReused || session.ServerPID <= 0 || !processAlive(session.ServerPID)
+	if !session.ServerReused && session.ServerPID > 0 && processAlive(session.ServerPID) && m.sessionOwnsLiveServerLease(*session) {
 		if err := stopProcessGroup(session.ServerPID, m.cfg.Timeouts.ShutdownTimeout); err != nil {
 			diagnostics = append(diagnostics, cleanupDiagnostic("dev_server_cleanup_error", err))
 			serverStopped = false
@@ -399,6 +402,24 @@ func (m *PlaytestManager) finishHostCleanup(session *PlaytestSession, kind strin
 		}
 		_ = appendJSONLine(filepath.Join(session.ArtifactRoot, "host-cleanup.jsonl"), fallback)
 	}
+}
+
+func (m *PlaytestManager) sessionOwnsLiveServerLease(session PlaytestSession) bool {
+	registry := NewLeaseRegistry(m.cfg.StateDir)
+	if err := registry.Lock(context.Background(), m.cfg.Timeouts.LockTimeout); err != nil {
+		return false
+	}
+	defer func() { _ = registry.Unlock() }()
+	leases, err := registry.Load()
+	if err != nil {
+		return false
+	}
+	for _, lease := range leases {
+		if lease.RunID == session.SessionID && lease.PID == session.ServerPID && processAlive(lease.PID) {
+			return true
+		}
+	}
+	return false
 }
 
 func firstPresent(values map[string]any, keys ...string) any {

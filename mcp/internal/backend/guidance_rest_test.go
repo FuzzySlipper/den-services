@@ -1,8 +1,13 @@
 package backend
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"strconv"
 	"testing"
+
+	"den-services/mcp/internal/config"
 )
 
 func TestGuidanceCompatibleResponseBodyMapsPacketToLegacyShape(t *testing.T) {
@@ -43,8 +48,8 @@ func TestGuidanceCompatibleResponseBodyMapsPacketToLegacyShape(t *testing.T) {
 	if legacy["content"] != "# Den Agent Guidance\n\nUse the real service." {
 		t.Fatalf("content = %v", legacy["content"])
 	}
-	if _, ok := legacy["content_markdown"]; !ok {
-		t.Fatal("content_markdown additive field missing")
+	if _, ok := legacy["content_markdown"]; ok {
+		t.Fatal("content_markdown duplicates the legacy content body")
 	}
 	sources := legacy["sources"].([]any)
 	source := sources[0].(map[string]any)
@@ -55,6 +60,29 @@ func TestGuidanceCompatibleResponseBodyMapsPacketToLegacyShape(t *testing.T) {
 	}
 	if source["source_scope"] != nil {
 		t.Fatalf("source_scope leaked into legacy source: %#v", source)
+	}
+}
+
+func TestGuidanceRESTForwardsSafeResolutionControls(t *testing.T) {
+	request, err := buildGuidanceRESTRequest(context.Background(), config.BackendConfig{BaseURL: "http://guidance.test"}, Route{
+		Operation: "get_agent_guidance", Method: http.MethodGet, Path: "/v1/projects/{project_id}/agent-guidance",
+	}, ToolCall{Arguments: json.RawMessage(`{"project_id":"den services","max_bytes":8192,"include_content":false,"audience":"reviewer, coder"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.URL.Query().Get("max_bytes") != "8192" || request.URL.Query().Get("include_content") != "false" || request.URL.Query().Get("audience") != "reviewer,coder" {
+		t.Fatalf("guidance query = %s", request.URL.RawQuery)
+	}
+}
+
+func TestGuidanceRESTRejectsOutOfRangeMaxBytes(t *testing.T) {
+	for _, maxBytes := range []int{-1, 0, guidanceMaxPacketBytes + 1} {
+		_, err := buildGuidanceRESTRequest(context.Background(), config.BackendConfig{BaseURL: "http://guidance.test"}, Route{
+			Operation: "get_agent_guidance", Method: http.MethodGet, Path: "/v1/projects/{project_id}/agent-guidance",
+		}, ToolCall{Arguments: json.RawMessage(`{"project_id":"den-services","max_bytes":` + strconv.Itoa(maxBytes) + `}`)})
+		if err == nil {
+			t.Fatalf("max_bytes %d was accepted", maxBytes)
+		}
 	}
 }
 

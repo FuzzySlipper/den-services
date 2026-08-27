@@ -825,6 +825,16 @@
               "null"
             ]
           },
+          "audience": {
+            "description": "Optional audience labels that selected knowledge entries must match.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "context_budget": {
             "default": null,
             "description": "Max characters for the answer (default 1600).",
@@ -896,6 +906,21 @@
               "null"
             ]
           },
+          "audience": {
+            "description": "Optional audience labels that matching knowledge entries must include.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "include_archived": {
+            "default": false,
+            "description": "Include archived Knowledge entries.",
+            "type": "boolean"
+          },
           "include_deprecated": {
             "default": false,
             "description": "Include deprecated entries.",
@@ -905,6 +930,13 @@
             "default": false,
             "description": "Include unreviewed (draft/needs_review) entries.",
             "type": "boolean"
+          },
+          "kind": {
+            "description": "Optional Knowledge kind filter.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "limit": {
             "default": 10,
@@ -926,6 +958,13 @@
             },
             "type": [
               "array",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Optional comma-separated Knowledge status filter.",
+            "type": [
+              "string",
               "null"
             ]
           }
@@ -1162,6 +1201,29 @@
       "risk": "read",
       "input_schema": {
         "properties": {
+          "audience": {
+            "description": "Optional comma-separated audience labels used to select matching guidance entries.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "include_content": {
+            "description": "Whether to include the assembled Markdown body. Defaults to true; use false when only source handles are needed.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "max_bytes": {
+            "description": "Optional guidance body ceiling in bytes, from 1 to 65536. Omit for the owner-configured 65536-byte maximum.",
+            "maximum": 65536,
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "project_id": {
             "description": "Project or space ID to resolve guidance for.",
             "type": "string"
@@ -2085,6 +2147,25 @@
               "null"
             ]
           },
+          "limit": {
+            "default": 100,
+            "description": "Bounded page size from 1 to 200. Omit for the MCP-safe default of 100.",
+            "maximum": 200,
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "offset": {
+            "default": 0,
+            "description": "Non-negative page offset. Defaults to 0.",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "parent_id": {
             "default": null,
             "description": "Filter by parent task ID to list subtasks. Omit for top-level tasks.",
@@ -2118,6 +2199,14 @@
             "description": "Filter by tags (comma-separated). Task must have ALL specified tags.",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "tree": {
+            "default": false,
+            "description": "Include the project's task tree rather than only the requested parent scope.",
+            "type": [
+              "boolean",
               "null"
             ]
           }
@@ -2446,8 +2535,54 @@
             "type": "string"
           },
           "query": {
-            "description": "What you're working on or looking for, e.g. 'I'm starting work on task 47 \u2014 implementing document search'.",
+            "description": "What you're working on or looking for, e.g. 'I'm starting work on task 47 — implementing document search'.",
             "type": "string"
+          },
+          "source_limits": {
+            "additionalProperties": false,
+            "description": "Optional per-source result ceilings. Omitted source limits use Librarian defaults.",
+            "properties": {
+              "documents": {
+                "description": "Documents result ceiling from 1 to 30.",
+                "maximum": 30,
+                "minimum": 1,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "knowledge": {
+                "description": "Knowledge result ceiling from 1 to 20.",
+                "maximum": 20,
+                "minimum": 1,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "messages": {
+                "description": "Messages result ceiling from 1 to 30.",
+                "maximum": 30,
+                "minimum": 1,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "tasks": {
+                "description": "Tasks result ceiling from 1 to 20.",
+                "maximum": 20,
+                "minimum": 1,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "task_id": {
             "default": null,

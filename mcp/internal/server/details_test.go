@@ -173,9 +173,17 @@ func TestReviewContextDetailReferenceExpandsEvidenceAndUsesOpaqueRefs(t *testing
 	concise := invokeToolForTest(t, handler, "get_review_context", map[string]any{"task_id": 42})
 	structured := concise["structuredContent"].(map[string]any)
 	refs := structured["detail_refs"].(map[string]any)
-	detailRef := refs["findings"].(string)
-	if !strings.HasPrefix(detailRef, "d1.") {
-		t.Fatalf("detail ref is not opaque/signed: %q", detailRef)
+	findingsRef := refs["findings"].(string)
+	packetsRef := refs["packets"].(string)
+	guidanceRef := refs["guidance"].(string)
+	if !strings.HasPrefix(findingsRef, "d1.") || !strings.HasPrefix(packetsRef, "d1.") || !strings.HasPrefix(guidanceRef, "d1.") {
+		t.Fatalf("detail refs are not opaque/signed: %#v", refs)
+	}
+	if findingsRef == packetsRef || findingsRef == guidanceRef || packetsRef == guidanceRef {
+		t.Fatalf("section detail refs must be distinct: %#v", refs)
+	}
+	if _, ok := structured["detail_ref"]; ok {
+		t.Fatalf("review context must not advertise an aggregate detail ref: %#v", structured["detail_ref"])
 	}
 	content := concise["content"].([]any)[0].(map[string]any)["text"].(string)
 	if strings.Contains(content, "/v1/tasks/42/review/findings") {
@@ -204,16 +212,95 @@ func TestReviewContextDetailReferenceExpandsEvidenceAndUsesOpaqueRefs(t *testing
 	if !strings.HasPrefix(campaignRef, "d1.") {
 		t.Fatalf("campaign detail ref is not opaque/signed: %q", campaignRef)
 	}
+	assertDetailSection(t, handler, findingsRef, []string{"expanded_findings", "full finding evidence"}, []string{"expanded_packets", "expanded_guidance"})
+	assertDetailSection(t, handler, packetsRef, []string{"expanded_packets", "full packet evidence"}, []string{"expanded_findings", "expanded_guidance"})
+	assertDetailSection(t, handler, guidanceRef, []string{"expanded_guidance", "full guidance evidence"}, []string{"expanded_findings", "expanded_packets"})
+	assertDetailSection(t, handler, campaignRef, []string{campaignValue("membership", 31), campaignValue("owner/repository", 31)}, []string{"expanded_findings", "expanded_packets", "expanded_guidance"})
+}
+
+func assertDetailSection(t *testing.T, handler *Handler, detailRef string, want, unwanted []string) {
+	t.Helper()
 	detailed := invokeToolForTest(t, handler, "get_details", map[string]any{"detail_ref": detailRef})
 	if detailed["isError"] != false {
 		t.Fatalf("expanded result is error: %#v", detailed)
 	}
 	detailedText := detailed["content"].([]any)[0].(map[string]any)["text"].(string)
-	for _, want := range []string{"expanded_findings", "full finding evidence", "expanded_packets", "full packet evidence", "expanded_guidance", "full guidance evidence", campaignValue("membership", 31), campaignValue("owner/repository", 31)} {
-		if !strings.Contains(detailedText, want) {
-			t.Fatalf("expanded result missing %s: %s", want, detailedText)
+	if strings.Contains(detailedText, "/review/campaign-details") {
+		t.Fatalf("expanded section leaked an unserved campaign path: %s", detailedText)
+	}
+	for _, value := range want {
+		if !strings.Contains(detailedText, value) {
+			t.Fatalf("expanded result missing %s: %s", value, detailedText)
 		}
 	}
+	for _, value := range unwanted {
+		if strings.Contains(detailedText, value) {
+			t.Fatalf("expanded section unexpectedly included %s: %s", value, detailedText)
+		}
+	}
+}
+
+func TestReviewContextOversizedSectionReturnsToolError(t *testing.T) {
+	oversizedGuidance := strings.Repeat("x", backendReviewContextDetailMaxBytes())
+	backendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/tasks/42":
+			_, _ = w.Write([]byte(`{"task":{"id":42,"project_id":"den-services","status":"review"}}`))
+		case "/v1/projects/den-services/tasks/42/review/workflow-summary":
+			_, _ = w.Write([]byte(`{"current_round":{"id":88,"project_id":"den-services","task_id":42,"round_number":2}}`))
+		case "/v1/projects/den-services/agent-guidance":
+			if r.URL.Query().Get("include_content") == "true" {
+				_, _ = w.Write([]byte(`{"project_id":"den-services","content_markdown":"` + oversizedGuidance + `","sources":[]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"project_id":"den-services","sources":[]}`))
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer backendServer.Close()
+
+	table, err := backend.NewRouteTable([]backend.Route{{
+		Operation: "get_review_context", Backend: "tasks", Method: http.MethodGet, Path: "/v1/tasks/{task_id}/review-context",
+		RequestAdapter: backend.RequestAdapterMCPReviewContextCompose, ResponseAdapter: backend.ResponseAdapterMCPToolResultJSON,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backends := []config.BackendConfig{
+		{Name: "tasks", BaseURL: backendServer.URL, Timeout: time.Second},
+		{Name: "review", BaseURL: backendServer.URL, Timeout: time.Second},
+		{Name: "messages", BaseURL: backendServer.URL, Timeout: time.Second},
+		{Name: "guidance", BaseURL: backendServer.URL, Timeout: time.Second},
+	}
+	locator, err := backend.NewLocator(backends, table, backendServer.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolRegistry, err := registry.New([]registry.ToolDefinition{
+		{Name: "get_review_context", Description: "Get bounded review context.", Backend: "tasks", Operation: "get_review_context", InputSchema: registry.ObjectSchema(map[string]registry.Schema{"task_id": registry.IntegerSchema("Task ID")}, "task_id")},
+		{Name: "get_details", Description: "Expand a detail reference.", Backend: "tasks", Operation: "get_details", InputSchema: registry.ObjectSchema(map[string]registry.Schema{"detail_ref": registry.StringSchema("Detail reference")}, "detail_ref")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewMCPHandlerWithOptions(toolRegistry, health.BuildInfo{}, locator, HandlerOptions{
+		Clock:              func() time.Time { return time.Date(2026, 8, 4, 8, 0, 0, 0, time.UTC) },
+		DetailReferenceTTL: 15 * time.Minute, DetailReferenceKey: []byte("01234567890123456789012345678901"),
+	})
+	concise := invokeToolForTest(t, handler, "get_review_context", map[string]any{"task_id": 42})
+	guidanceRef := concise["structuredContent"].(map[string]any)["detail_refs"].(map[string]any)["guidance"].(string)
+	detailed := invokeToolForTest(t, handler, "get_details", map[string]any{"detail_ref": guidanceRef})
+	if detailed["isError"] != true {
+		t.Fatalf("oversized section result = %#v", detailed)
+	}
+	if !strings.Contains(detailed["content"].([]any)[0].(map[string]any)["text"].(string), "review_context_too_large") {
+		t.Fatalf("oversized section error was not typed: %#v", detailed)
+	}
+}
+
+func backendReviewContextDetailMaxBytes() int {
+	return 64 * 1024
 }
 
 func TestToolCallLogDistinguishesRequestedAliasFromCanonicalTool(t *testing.T) {

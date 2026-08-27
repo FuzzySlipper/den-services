@@ -59,7 +59,13 @@ endif
 ifndef DEN_MCP_SMOKE_LIBRARIAN_URL
 	$(error DEN_MCP_SMOKE_LIBRARIAN_URL is required, for example http://127.0.0.1:8098 when running on den-srv)
 endif
+ifndef DEN_MCP_SMOKE_HANDOFF_URL
+	$(error DEN_MCP_SMOKE_HANDOFF_URL is required, for example http://127.0.0.1:8099 when running on den-srv)
+endif
+ifndef DEN_MCP_SMOKE_BOARD_URL
+	$(error DEN_MCP_SMOKE_BOARD_URL is required, for example http://127.0.0.1:8100 when running on den-srv)
+endif
 	python3 mcp/scripts/hermes_smoke.py --mode live
 
 mcp-smoke-live-den-srv:
-	ssh $(DEN_MCP_SMOKE_SSH_HOST) 'cd /data/services/den-services && set -a && . /etc/den-services/mcp.env && set +a && DEN_MCP_SMOKE_DEN_CORE_URL=http://127.0.0.1:5299 DEN_MCP_SMOKE_TASKS_URL=http://127.0.0.1:8092 DEN_MCP_SMOKE_MESSAGES_URL=http://127.0.0.1:8093 DEN_MCP_SMOKE_DOCUMENTS_URL=http://127.0.0.1:8094 DEN_MCP_SMOKE_REVIEW_URL=http://127.0.0.1:8096 DEN_MCP_SMOKE_GUIDANCE_URL=http://127.0.0.1:8097 DEN_MCP_SMOKE_LIBRARIAN_URL=http://127.0.0.1:8098 DEN_MCP_SMOKE_READ_TASK_ID=$${DEN_MCP_SMOKE_READ_TASK_ID:-3446} make mcp-smoke-live'
+	ssh $(DEN_MCP_SMOKE_SSH_HOST) 'cd /data/services/den-services && set -a && . /etc/den-services/mcp.env && set +a && DEN_MCP_SMOKE_DEN_CORE_URL=http://127.0.0.1:5299 DEN_MCP_SMOKE_TASKS_URL=http://127.0.0.1:8092 DEN_MCP_SMOKE_MESSAGES_URL=http://127.0.0.1:8093 DEN_MCP_SMOKE_DOCUMENTS_URL=http://127.0.0.1:8094 DEN_MCP_SMOKE_REVIEW_URL=http://127.0.0.1:8096 DEN_MCP_SMOKE_GUIDANCE_URL=http://127.0.0.1:8097 DEN_MCP_SMOKE_LIBRARIAN_URL=http://127.0.0.1:8098 DEN_MCP_SMOKE_HANDOFF_URL=http://127.0.0.1:8099 DEN_MCP_SMOKE_BOARD_URL=http://127.0.0.1:8100 DEN_MCP_SMOKE_READ_TASK_ID=$${DEN_MCP_SMOKE_READ_TASK_ID:-3446} make mcp-smoke-live'

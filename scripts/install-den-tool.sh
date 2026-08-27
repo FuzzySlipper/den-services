@@ -43,6 +43,14 @@ repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
 bin_dir="$HOME/.local/bin"
 destination="$bin_dir/den-tool"
 owner_marker="$destination.owner"
+codex_root="${CODEX_HOME:-$HOME/.codex}"
+source_skill="$repo_root/codex/skills/den-tool-cli"
+skill_destination="$codex_root/skills/den-tool-cli"
+
+if [[ ! -f "$source_skill/SKILL.md" || ! -f "$source_skill/agents/openai.yaml" ]]; then
+  printf 'install-den-tool: source skill is incomplete at %s\n' "$source_skill" >&2
+  exit 1
+fi
 
 has_owned_marker() {
   [[ -f "$owner_marker" ]] && grep -Fqx 'den-tool ownership: den-tool' "$owner_marker"
@@ -86,6 +94,11 @@ is_legacy_owned_install() {
   has_owned_marker && [[ -z "$(recorded_value binary-sha256)" ]] && has_owned_version_probe
 }
 
+has_owned_skill() {
+  [[ -L "$skill_destination" ]] \
+    && [[ "$(readlink -f "$skill_destination")" == "$(readlink -f "$source_skill")" ]]
+}
+
 if [[ "$check_only" == true ]]; then
   if [[ ! -f "$destination" || ! -x "$destination" || -L "$destination" ]]; then
     printf 'install-den-tool: no owned executable at %s\n' "$destination" >&2
@@ -101,7 +114,12 @@ if [[ "$check_only" == true ]]; then
     printf 'install-den-tool: installed source identity drifted; reinstall required\n' >&2
     exit 1
   fi
+  if ! has_owned_skill; then
+    printf 'install-den-tool: Den Tool CLI skill is missing or unrelated at %s\n' "$skill_destination" >&2
+    exit 1
+  fi
   printf 'den-tool installation is healthy: %s\n' "$destination"
+  printf 'Den Tool CLI skill is healthy: %s\n' "$skill_destination"
   exit 0
 fi
 
@@ -111,8 +129,15 @@ if [[ -e "$destination" || -L "$destination" ]]; then
     exit 1
   fi
 fi
+if [[ -e "$skill_destination" || -L "$skill_destination" ]]; then
+  if ! has_owned_skill; then
+    printf 'install-den-tool: refusing to overwrite unrelated skill at %s\n' "$skill_destination" >&2
+    exit 1
+  fi
+fi
 
 mkdir -p "$bin_dir"
+mkdir -p "$(dirname "$skill_destination")"
 temporary_binary=$(mktemp "$bin_dir/.den-tool.XXXXXX")
 temporary_marker=$(mktemp "$bin_dir/.den-tool-owner.XXXXXX")
 cleanup() {
@@ -128,6 +153,10 @@ installed_binary_digest=$(sha256sum "$destination" | awk '{print $1}')
 printf 'den-tool ownership: den-tool\n%s\nsource-sha256: %s\nbinary-sha256: %s\n' \
   "$source_version" "$current_source_digest" "$installed_binary_digest" >"$temporary_marker"
 install -m0644 "$temporary_marker" "$owner_marker"
+if [[ ! -L "$skill_destination" ]]; then
+  ln -s "$source_skill" "$skill_destination"
+fi
 
 printf 'installed %s\n' "$destination"
+printf 'installed skill %s\n' "$skill_destination"
 printf '%s\n' "$source_version"

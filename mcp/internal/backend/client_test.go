@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -471,10 +472,61 @@ func TestClientCallsTasksRESTListTasksWithFilters(t *testing.T) {
 	if failure != nil {
 		t.Fatalf("Call() failure = %#v", failure)
 	}
-	for _, want := range []string{"assigned_to=codex", "status=planned%2Creview", "priority=2", "tags=mcp%2Ccutover"} {
+	for _, want := range []string{"assigned_to=codex", "status=planned%2Creview", "priority=2", "tags=mcp%2Ccutover", "limit=100"} {
 		if !strings.Contains(sawRawQuery, want) {
 			t.Fatalf("RawQuery = %q, missing %s", sawRawQuery, want)
 		}
+	}
+}
+
+func TestClientCallsTasksRESTListTasksWithExplicitBoundedPagination(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("limit"); got != "200" {
+			t.Fatalf("limit = %q, want 200", got)
+		}
+		if got := r.URL.Query().Get("offset"); got != "25" {
+			t.Fatalf("offset = %q, want 25", got)
+		}
+		if got := r.URL.Query().Get("tree"); got != "true" {
+			t.Fatalf("tree = %q, want true", got)
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	_, failure, err := client.Call(context.Background(), testBackend("tasks", server.URL), tasksRouteForTest("list_tasks", http.MethodGet, "/v1/projects/{project_id}/tasks"), ToolCall{
+		ToolName: "list_tasks", Operation: "list_tasks", RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"project_id":"den-services","limit":200,"offset":25,"tree":true}`),
+	})
+	if err != nil || failure != nil {
+		t.Fatalf("Call() = %v, %#v", err, failure)
+	}
+}
+
+func TestClientRejectsUnsafeTaskListPaginationBeforeRequest(t *testing.T) {
+	var requests atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.Error(w, "unexpected", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	for _, arguments := range []json.RawMessage{
+		json.RawMessage(`{"project_id":"den-services","limit":0}`),
+		json.RawMessage(`{"project_id":"den-services","limit":201}`),
+		json.RawMessage(`{"project_id":"den-services","offset":-1}`),
+	} {
+		_, failure, err := client.Call(context.Background(), testBackend("tasks", server.URL), tasksRouteForTest("list_tasks", http.MethodGet, "/v1/projects/{project_id}/tasks"), ToolCall{
+			ToolName: "list_tasks", Operation: "list_tasks", RequestID: json.RawMessage(`1`), Arguments: arguments,
+		})
+		if err == nil || failure != nil {
+			t.Fatalf("arguments %s: Call() = %v, %#v", arguments, err, failure)
+		}
+	}
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("backend requests = %d, want 0", got)
 	}
 }
 
@@ -1378,7 +1430,7 @@ func TestClientCallsKnowledgeRESTSearchAndGuide(t *testing.T) {
 		ToolName:  "den_knowledge_search",
 		Operation: "den_knowledge_search",
 		RequestID: json.RawMessage(`1`),
-		Arguments: json.RawMessage(`{"query":"routing","required_tags":["mcp"],"any_tags":["go"],"include_unreviewed":true,"limit":5}`),
+		Arguments: json.RawMessage(`{"query":"routing","required_tags":["mcp"],"any_tags":["go"],"audience":["agents"],"kind":"convention","status":"reviewed","include_archived":true,"include_unreviewed":true,"limit":5}`),
 	})
 	if err != nil {
 		t.Fatalf("Call() search error = %v", err)
@@ -1391,7 +1443,7 @@ func TestClientCallsKnowledgeRESTSearchAndGuide(t *testing.T) {
 		ToolName:  "den_knowledge_guide",
 		Operation: "den_knowledge_guide",
 		RequestID: json.RawMessage(`2`),
-		Arguments: json.RawMessage(`{"question":"How route?","required_tags":"mcp","context_budget":500,"include_follow_ups":false}`),
+		Arguments: json.RawMessage(`{"question":"How route?","required_tags":"mcp","audience":["agents"],"context_budget":500,"include_follow_ups":false}`),
 	})
 	if err != nil {
 		t.Fatalf("Call() guide error = %v", err)
@@ -1399,10 +1451,10 @@ func TestClientCallsKnowledgeRESTSearchAndGuide(t *testing.T) {
 	if failure != nil {
 		t.Fatalf("Call() guide failure = %#v", failure)
 	}
-	if sawSearchBody.Query != "routing" || !sawSearchBody.IncludeUnreviewed || sawSearchBody.Limit != 5 || sawSearchBody.RequiredTags[0] != "mcp" {
+	if sawSearchBody.Query != "routing" || !sawSearchBody.IncludeUnreviewed || !sawSearchBody.IncludeArchived || sawSearchBody.Limit != 5 || sawSearchBody.RequiredTags[0] != "mcp" || sawSearchBody.Audience[0] != "agents" || sawSearchBody.Kind != "convention" || sawSearchBody.Status != "reviewed" {
 		t.Fatalf("search body = %#v", sawSearchBody)
 	}
-	if sawGuideBody.Question != "How route?" || sawGuideBody.ContextBudget != 500 || sawGuideBody.IncludeFollowUps == nil || *sawGuideBody.IncludeFollowUps != includeFollowUps {
+	if sawGuideBody.Question != "How route?" || sawGuideBody.ContextBudget != 500 || sawGuideBody.IncludeFollowUps == nil || *sawGuideBody.IncludeFollowUps != includeFollowUps || sawGuideBody.Audience[0] != "agents" {
 		t.Fatalf("guide body = %#v", sawGuideBody)
 	}
 }

@@ -28,3 +28,33 @@ func TestGuidanceMigrationNormalizesLegacyTimestampTypes(t *testing.T) {
 
 	t.Fatal("den_guidance version 1 migration not discovered")
 }
+
+func TestGuidanceAudienceNormalizationMigrationIsSafeAndForwardOnly(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("discover migrations: %v", err)
+	}
+
+	for i := range migrations {
+		if migrations[i].Schema != "den_guidance" || migrations[i].Version != 2 {
+			continue
+		}
+		for _, fragment := range []string{
+			"jsonb_array_length(audience) = 1",
+			"parsed_audience := candidate.raw_audience::jsonb",
+			"jsonb_typeof(parsed_audience) = 'array'",
+			"jsonb_typeof(value) <> 'string'",
+			"btrim(value #>> '{}') = ''",
+			"set audience = nullif(parsed_audience, '[]'::jsonb)",
+			"exception",
+			"when others then",
+		} {
+			if !strings.Contains(migrations[i].SQL, fragment) {
+				t.Fatalf("guidance audience migration missing %q", fragment)
+			}
+		}
+		return
+	}
+
+	t.Fatal("den_guidance version 2 migration not discovered")
+}

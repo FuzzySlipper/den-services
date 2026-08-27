@@ -218,7 +218,7 @@ func TestFinishHostCleanupPersistsManagerDiagnostics(t *testing.T) {
 		IndexPath:     filepath.Join(artifactRoot, "playtest-index.json"),
 		StartedAt:     time.Now().UTC(),
 	}
-	manager.finishHostCleanup(&session, "finish", "infrastructure_error")
+	manager.finishHostCleanup(&session, "finish", "infrastructure_error", false)
 
 	index := readIndex(t, session.IndexPath)
 	assertIndexDiagnostic(t, index, "lease_lock_error")

@@ -36,6 +36,9 @@ func (h *Handler) attachDetailReference(toolName string, arguments, result json.
 	if !registry.SupportsDetails(toolName) || requestsVerbose(arguments) {
 		return result, nil
 	}
+	if toolName == "get_review_context" {
+		return h.attachReviewContextDetailReferences(arguments, result)
+	}
 	reference, err := h.newDetailReference(toolName, arguments)
 	if err != nil {
 		return nil, err
@@ -55,21 +58,6 @@ func (h *Handler) attachDetailReference(toolName string, arguments, result json.
 		return nil, fmt.Errorf("encoding detail reference field: %w", err)
 	}
 	structured["detail_ref"] = encodedReference
-	if toolName == "get_review_context" {
-		if err := replaceReviewContextDetailRefs(structured, reference); err != nil {
-			return nil, err
-		}
-		for index := range toolResult.Content {
-			if toolResult.Content[index].Type != "text" {
-				continue
-			}
-			updatedText, err := replaceReviewContextDetailRefsInText(toolResult.Content[index].Text, reference)
-			if err != nil {
-				return nil, err
-			}
-			toolResult.Content[index].Text = updatedText
-		}
-	}
 	toolResult.StructuredContent, err = json.Marshal(structured)
 	if err != nil {
 		return nil, fmt.Errorf("encoding structured content with detail reference: %w", err)
@@ -82,32 +70,121 @@ func (h *Handler) attachDetailReference(toolName string, arguments, result json.
 	return updated, nil
 }
 
-func replaceReviewContextDetailRefs(structured map[string]json.RawMessage, reference string) error {
-	raw, ok := structured["detail_refs"]
-	if !ok {
-		return nil
+func (h *Handler) attachReviewContextDetailReferences(arguments, result json.RawMessage) (json.RawMessage, error) {
+	var toolResult toolsCallResult
+	if err := json.Unmarshal(result, &toolResult); err != nil {
+		return nil, fmt.Errorf("decoding review context result for detail references: %w", err)
 	}
-	var refs map[string]string
-	if err := json.Unmarshal(raw, &refs); err != nil {
-		return fmt.Errorf("decoding review context detail refs: %w", err)
+	structured := make(map[string]json.RawMessage)
+	if err := json.Unmarshal(toolResult.StructuredContent, &structured); err != nil {
+		return nil, fmt.Errorf("decoding review context structured content for detail references: %w", err)
 	}
-	for key := range refs {
-		refs[key] = reference
-	}
-	encoded, err := json.Marshal(refs)
+	references, err := h.newReviewContextDetailReferences(arguments, structured)
 	if err != nil {
-		return fmt.Errorf("encoding review context detail refs: %w", err)
+		return nil, err
 	}
-	structured["detail_refs"] = encoded
-	if findings, ok := structured["prior_findings"]; ok {
-		updatedFindings, err := replaceReviewContextFindingRefs(findings, reference)
+	if err := replaceReviewContextDetailRefs(structured, references); err != nil {
+		return nil, err
+	}
+	for index := range toolResult.Content {
+		if toolResult.Content[index].Type != "text" {
+			continue
+		}
+		updatedText, err := replaceReviewContextDetailRefsInText(toolResult.Content[index].Text, references)
+		if err != nil {
+			return nil, err
+		}
+		toolResult.Content[index].Text = updatedText
+	}
+	encodedStructured, err := json.Marshal(structured)
+	if err != nil {
+		return nil, fmt.Errorf("encoding review context structured content with detail references: %w", err)
+	}
+	toolResult.StructuredContent = encodedStructured
+	updated, err := json.Marshal(toolResult)
+	if err != nil {
+		return nil, fmt.Errorf("encoding review context tool result with detail references: %w", err)
+	}
+	return updated, nil
+}
+
+func (h *Handler) newReviewContextDetailReferences(arguments json.RawMessage, structured map[string]json.RawMessage) (map[string]string, error) {
+	references := make(map[string]string)
+	if raw, ok := structured["detail_refs"]; ok {
+		var advertised map[string]string
+		if err := json.Unmarshal(raw, &advertised); err != nil {
+			return nil, fmt.Errorf("decoding review context advertised detail refs: %w", err)
+		}
+		for section, handle := range advertised {
+			if strings.TrimSpace(handle) == "" {
+				continue
+			}
+			reference, err := h.newReviewContextDetailReference(arguments, section)
+			if err != nil {
+				return nil, err
+			}
+			references[section] = reference
+		}
+	}
+	if raw, ok := structured["current_round"]; ok {
+		var round map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &round); err != nil {
+			return nil, fmt.Errorf("decoding review context current round for detail references: %w", err)
+		}
+		if _, ok := round["campaign_detail_ref"]; ok {
+			reference, err := h.newReviewContextDetailReference(arguments, "campaign")
+			if err != nil {
+				return nil, err
+			}
+			references["campaign"] = reference
+		}
+	}
+	return references, nil
+}
+
+func (h *Handler) newReviewContextDetailReference(rawArguments json.RawMessage, section string) (string, error) {
+	arguments := make(map[string]json.RawMessage)
+	if err := json.Unmarshal(rawArguments, &arguments); err != nil {
+		return "", fmt.Errorf("decoding review context source arguments: %w", err)
+	}
+	encodedSection, err := json.Marshal(section)
+	if err != nil {
+		return "", fmt.Errorf("encoding review context detail section: %w", err)
+	}
+	arguments["detail_section"] = encodedSection
+	encodedArguments, err := json.Marshal(arguments)
+	if err != nil {
+		return "", fmt.Errorf("encoding review context detail arguments: %w", err)
+	}
+	return h.newDetailReference("get_review_context", encodedArguments)
+}
+
+func replaceReviewContextDetailRefs(structured map[string]json.RawMessage, references map[string]string) error {
+	if raw, ok := structured["detail_refs"]; ok {
+		var refs map[string]string
+		if err := json.Unmarshal(raw, &refs); err != nil {
+			return fmt.Errorf("decoding review context detail refs: %w", err)
+		}
+		for key := range refs {
+			if reference, ok := references[key]; ok {
+				refs[key] = reference
+			}
+		}
+		encoded, err := json.Marshal(refs)
+		if err != nil {
+			return fmt.Errorf("encoding review context detail refs: %w", err)
+		}
+		structured["detail_refs"] = encoded
+	}
+	if findings, ok := structured["prior_findings"]; ok && references["findings"] != "" {
+		updatedFindings, err := replaceReviewContextFindingRefs(findings, references["findings"])
 		if err != nil {
 			return err
 		}
 		structured["prior_findings"] = updatedFindings
 	}
 	if currentRound, ok := structured["current_round"]; ok {
-		updatedRound, err := replaceReviewContextCampaignRef(currentRound, reference)
+		updatedRound, err := replaceReviewContextCampaignRef(currentRound, references["campaign"])
 		if err != nil {
 			return err
 		}
@@ -157,12 +234,12 @@ func replaceReviewContextFindingRefs(raw json.RawMessage, reference string) (jso
 	return updated, nil
 }
 
-func replaceReviewContextDetailRefsInText(raw, reference string) (string, error) {
+func replaceReviewContextDetailRefsInText(raw string, references map[string]string) (string, error) {
 	var structured map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &structured); err != nil {
 		return raw, nil
 	}
-	if err := replaceReviewContextDetailRefs(structured, reference); err != nil {
+	if err := replaceReviewContextDetailRefs(structured, references); err != nil {
 		return "", err
 	}
 	updated, err := json.Marshal(structured)

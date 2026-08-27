@@ -14,6 +14,8 @@ import (
 	"den-services/mcp/internal/config"
 )
 
+const guidanceMaxPacketBytes = 64 * 1024
+
 type guidanceToolArguments struct {
 	ProjectID         string          `json:"project_id"`
 	EntryID           int64           `json:"entry_id"`
@@ -24,7 +26,7 @@ type guidanceToolArguments struct {
 	SortOrder         int             `json:"sort_order"`
 	Notes             string          `json:"notes"`
 	IncludeGlobal     bool            `json:"include_global"`
-	MaxBytes          int             `json:"max_bytes"`
+	MaxBytes          *int            `json:"max_bytes"`
 	IncludeContent    *bool           `json:"include_content"`
 }
 
@@ -97,16 +99,15 @@ type guidanceSourceResponse struct {
 }
 
 type legacyGuidancePacket struct {
-	ProjectID       string                 `json:"project_id"`
-	ResolvedAt      string                 `json:"resolved_at"`
-	Content         string                 `json:"content"`
-	Sources         []legacyGuidanceSource `json:"sources"`
-	SkippedSources  json.RawMessage        `json:"skipped_sources,omitempty"`
-	ContentMarkdown string                 `json:"content_markdown,omitempty"`
-	ContentSHA256   string                 `json:"content_sha256,omitempty"`
-	ContentBytes    int                    `json:"content_bytes,omitempty"`
-	Truncated       bool                   `json:"truncated,omitempty"`
-	Incomplete      bool                   `json:"incomplete,omitempty"`
+	ProjectID      string                 `json:"project_id"`
+	ResolvedAt     string                 `json:"resolved_at"`
+	Content        string                 `json:"content"`
+	Sources        []legacyGuidanceSource `json:"sources"`
+	SkippedSources json.RawMessage        `json:"skipped_sources,omitempty"`
+	ContentSHA256  string                 `json:"content_sha256,omitempty"`
+	ContentBytes   int                    `json:"content_bytes,omitempty"`
+	Truncated      bool                   `json:"truncated,omitempty"`
+	Incomplete     bool                   `json:"incomplete,omitempty"`
 }
 
 type legacyGuidanceSource struct {
@@ -172,16 +173,15 @@ func legacyGuidancePacketBody(responseBody []byte) ([]byte, error) {
 		})
 	}
 	legacy := legacyGuidancePacket{
-		ProjectID:       packet.ProjectID,
-		ResolvedAt:      packet.ResolvedAt,
-		Content:         packet.ContentMarkdown,
-		Sources:         legacySources,
-		SkippedSources:  compactRaw(packet.SkippedSources),
-		ContentMarkdown: packet.ContentMarkdown,
-		ContentSHA256:   packet.ContentSHA256,
-		ContentBytes:    packet.ContentBytes,
-		Truncated:       packet.Truncated,
-		Incomplete:      packet.Incomplete,
+		ProjectID:      packet.ProjectID,
+		ResolvedAt:     packet.ResolvedAt,
+		Content:        packet.ContentMarkdown,
+		Sources:        legacySources,
+		SkippedSources: compactRaw(packet.SkippedSources),
+		ContentSHA256:  packet.ContentSHA256,
+		ContentBytes:   packet.ContentBytes,
+		Truncated:      packet.Truncated,
+		Incomplete:     packet.Incomplete,
 	}
 	return json.Marshal(legacy)
 }
@@ -270,11 +270,21 @@ func guidanceRESTURL(baseURL string, route Route, arguments guidanceToolArgument
 	switch route.Operation {
 	case "get_agent_guidance":
 		query.Set("include_content", "true")
-		if arguments.MaxBytes > 0 {
-			query.Set("max_bytes", strconv.Itoa(arguments.MaxBytes))
+		if arguments.MaxBytes != nil {
+			if *arguments.MaxBytes < 1 || *arguments.MaxBytes > guidanceMaxPacketBytes {
+				return "", fmt.Errorf("guidance max_bytes must be from 1 to %d", guidanceMaxPacketBytes)
+			}
+			query.Set("max_bytes", strconv.Itoa(*arguments.MaxBytes))
 		}
 		if arguments.IncludeContent != nil {
 			query.Set("include_content", strconv.FormatBool(*arguments.IncludeContent))
+		}
+		audience, err := parseStringList(arguments.Audience)
+		if err != nil {
+			return "", err
+		}
+		if len(audience) > 0 {
+			query.Set("audience", strings.Join(audience, ","))
 		}
 	case "list_agent_guidance_entries":
 		if arguments.IncludeGlobal {

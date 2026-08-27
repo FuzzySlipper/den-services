@@ -99,6 +99,22 @@ The configured `playtest.input_helper` must be the repository's
 `playtest-x11-input` binary. The Codex installer builds and validates it. Manual
 Linux installations also require `Xvfb`, X11, and XTest runtime libraries.
 
+## Physical Agora desktop versus Playwright
+
+`headed` Playwright is still a broker-owned, private Xvfb session. It creates
+useful browser screenshots and accepts real XTest input, but it does **not**
+place a window on the attached Agora-DE monitor. Do not use it as evidence of
+the physical desktop or as a substitute for a desktop interaction.
+
+When an agent genuinely needs a monitor-visible GUI window on an Agora host,
+use the Agora-DE surface path instead: launch the application with
+`agora-de-compositorctl launch`, confirm it through `list-surfaces`, perform
+structured input through that same authority, and use its physical-output
+capture. The local operating procedure is maintained by Agora-DE in
+`/home/dev/agora-de/docs/agent-surface-guide.md`. No bridge currently routes a
+`den-playwright` session through Agora-DE; choose the surface based on the
+claim being tested.
+
 ## Observe
 
 Observation can combine any of these in one call:

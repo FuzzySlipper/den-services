@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type GuidanceStore interface {
@@ -126,58 +127,77 @@ func (s *Service) Resolve(ctx context.Context, query ResolveQuery) (GuidancePack
 		ResolvedAt: s.clock().UTC(),
 	}
 	builder := strings.Builder{}
-	builder.WriteString("# Den Agent Guidance for ")
-	builder.WriteString(projectID)
-	builder.WriteString("\n\n")
-	for _, entry := range entries {
-		if !audienceMatches(entry.Audience, query.Audience) {
-			continue
+	preamble := "# Den Agent Guidance for " + projectID + "\n\n"
+	builder.WriteString(truncateUTF8Bytes(preamble, maxBytes))
+	if len(preamble) > maxBytes {
+		packet.Truncated = true
+		packet.Incomplete = true
+	}
+	for _, required := range []bool{true, false} {
+		for _, entry := range entries {
+			if (entry.Importance == ImportanceRequired) != required || !audienceMatches(entry.Audience, query.Audience) {
+				continue
+			}
+			document, err := s.documents.GetDocument(ctx, entry.DocumentProjectID, entry.DocumentSlug)
+			if err != nil {
+				packet.SkippedSources = append(packet.SkippedSources, skipped(entry, "missing_or_unavailable_document"))
+				packet.Incomplete = true
+				continue
+			}
+			if document.Visibility == VisibilityArchived {
+				packet.SkippedSources = append(packet.SkippedSources, skipped(entry, "archived_document"))
+				packet.Incomplete = true
+				continue
+			}
+			if document.Visibility == VisibilityHidden && !query.IncludeHidden {
+				packet.SkippedSources = append(packet.SkippedSources, skipped(entry, "hidden_document"))
+				packet.Incomplete = true
+				continue
+			}
+			section := guidanceSection(entry, document, query.IncludeContent)
+			if builder.Len()+len(section) > maxBytes {
+				packet.SkippedSources = append(packet.SkippedSources, skipped(entry, "guidance_packet_byte_budget_exceeded"))
+				packet.Truncated = true
+				packet.Incomplete = true
+				continue
+			}
+			builder.WriteString(section)
+			packet.Sources = append(packet.Sources, GuidanceSource{
+				EntryID:           entry.ID,
+				SourceScope:       entry.ProjectID,
+				DocumentProjectID: document.ProjectID,
+				DocumentSlug:      document.Slug,
+				DocumentTitle:     document.Title,
+				DocumentType:      document.DocType,
+				DocumentUpdatedAt: document.UpdatedAt,
+				Visibility:        document.Visibility,
+				Tags:              append([]string(nil), document.Tags...),
+				Importance:        entry.Importance,
+				Audience:          append([]string(nil), entry.Audience...),
+				SortOrder:         entry.SortOrder,
+				Notes:             entry.Notes,
+				ContentBytes:      len(document.Content),
+			})
 		}
-		document, err := s.documents.GetDocument(ctx, entry.DocumentProjectID, entry.DocumentSlug)
-		if err != nil {
-			packet.SkippedSources = append(packet.SkippedSources, skipped(entry, "missing_or_unavailable_document"))
-			packet.Incomplete = true
-			continue
-		}
-		if document.Visibility == VisibilityArchived {
-			packet.SkippedSources = append(packet.SkippedSources, skipped(entry, "archived_document"))
-			packet.Incomplete = true
-			continue
-		}
-		if document.Visibility == VisibilityHidden && !query.IncludeHidden {
-			packet.SkippedSources = append(packet.SkippedSources, skipped(entry, "hidden_document"))
-			packet.Incomplete = true
-			continue
-		}
-		section := guidanceSection(entry, document, query.IncludeContent)
-		if builder.Len()+len(section) > maxBytes {
-			packet.SkippedSources = append(packet.SkippedSources, skipped(entry, "guidance_packet_byte_budget_exceeded"))
-			packet.Truncated = true
-			packet.Incomplete = true
-			continue
-		}
-		builder.WriteString(section)
-		packet.Sources = append(packet.Sources, GuidanceSource{
-			EntryID:           entry.ID,
-			SourceScope:       entry.ProjectID,
-			DocumentProjectID: document.ProjectID,
-			DocumentSlug:      document.Slug,
-			DocumentTitle:     document.Title,
-			DocumentType:      document.DocType,
-			DocumentUpdatedAt: document.UpdatedAt,
-			Visibility:        document.Visibility,
-			Tags:              append([]string(nil), document.Tags...),
-			Importance:        entry.Importance,
-			Audience:          append([]string(nil), entry.Audience...),
-			SortOrder:         entry.SortOrder,
-			Notes:             entry.Notes,
-			ContentBytes:      len(document.Content),
-		})
 	}
 	packet.ContentMarkdown = builder.String()
 	packet.ContentBytes = len(packet.ContentMarkdown)
 	packet.ContentSHA256 = packetDigest(packet.ContentMarkdown)
 	return packet, nil
+}
+
+func truncateUTF8Bytes(value string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(value) <= maxBytes {
+		return value
+	}
+	end := maxBytes
+	for end > 0 && !utf8.ValidString(value[:end]) {
+		end--
+	}
+	return value[:end]
 }
 
 func (s *Service) DocumentReferences(ctx context.Context, documentProjectID string, documentSlug string) ([]DocumentReference, error) {
@@ -248,7 +268,13 @@ func audienceMatches(entryAudience []string, requested []string) bool {
 		wanted[strings.TrimSpace(value)] = struct{}{}
 	}
 	for _, value := range entryAudience {
-		if _, ok := wanted[value]; ok {
+		trimmed := strings.TrimSpace(value)
+		// "all" on an entry applies that entry to every requested audience.
+		// A request for "all" does not broaden a named-audience entry.
+		if trimmed == "all" {
+			return true
+		}
+		if _, ok := wanted[trimmed]; ok {
 			return true
 		}
 	}

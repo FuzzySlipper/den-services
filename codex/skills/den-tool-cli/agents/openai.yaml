@@ -1,0 +1,4 @@
+interface:
+  display_name: "Den Tool CLI"
+  short_description: "Discover and invoke Den operations safely"
+  default_prompt: "Use $den-tool-cli to find and invoke the appropriate Den operation."

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -125,6 +126,171 @@ func TestServiceDeleteMissingEntryReturnsNotFound(t *testing.T) {
 	if !errors.Is(err, ErrEntryNotFound) {
 		t.Fatalf("DeleteEntry(missing) error = %v, want %v", err, ErrEntryNotFound)
 	}
+}
+
+func TestServiceResolveAttemptsRequiredBeforeImportantUnderBudgetPressure(t *testing.T) {
+	ctx := context.Background()
+	important := Entry{
+		ID: 1, ProjectID: GlobalProjectID, DocumentProjectID: GlobalProjectID, DocumentSlug: "important", Importance: ImportanceImportant,
+	}
+	required := Entry{
+		ID: 2, ProjectID: "den-services", DocumentProjectID: "den-services", DocumentSlug: "required", Importance: ImportanceRequired,
+	}
+	importantDocument := &Document{ProjectID: GlobalProjectID, Slug: "important", Title: "Global Important", Content: strings.Repeat("i", 128), Visibility: VisibilityNormal}
+	requiredDocument := &Document{ProjectID: "den-services", Slug: "required", Title: "Project Required", Content: "required", Visibility: VisibilityNormal}
+	maxBytes := len(guidancePreamble("den-services")) + len(guidanceSection(required, requiredDocument, true))
+	service := NewService(&memoryStore{entries: []Entry{important, required}}, fakeProjects{}, &fakeDocuments{documents: map[string]*Document{
+		"_global/important":     importantDocument,
+		"den-services/required": requiredDocument,
+	}}, fixedClock, maxBytes)
+
+	packet, err := service.Resolve(ctx, ResolveQuery{ProjectID: "den-services", IncludeContent: true})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if len(packet.Sources) != 1 || packet.Sources[0].EntryID != required.ID {
+		t.Fatalf("sources = %#v, want only project required entry %d", packet.Sources, required.ID)
+	}
+	if !packet.Truncated || !packet.Incomplete {
+		t.Fatalf("truncated/incomplete = %t/%t, want true/true", packet.Truncated, packet.Incomplete)
+	}
+	if len(packet.SkippedSources) != 1 || packet.SkippedSources[0].EntryID != important.ID {
+		t.Fatalf("skipped = %#v, want global important entry %d", packet.SkippedSources, important.ID)
+	}
+}
+
+func TestServiceResolveAcceptsSectionAtExactByteLimit(t *testing.T) {
+	entry := Entry{ID: 1, ProjectID: "den-services", DocumentProjectID: "den-services", DocumentSlug: "required", Importance: ImportanceRequired}
+	document := &Document{ProjectID: "den-services", Slug: "required", Title: "Required", Content: "content", Visibility: VisibilityNormal}
+	maxBytes := len(guidancePreamble("den-services")) + len(guidanceSection(entry, document, true))
+	service := NewService(&memoryStore{entries: []Entry{entry}}, fakeProjects{}, &fakeDocuments{documents: map[string]*Document{
+		"den-services/required": document,
+	}}, fixedClock, maxBytes)
+
+	packet, err := service.Resolve(context.Background(), ResolveQuery{ProjectID: "den-services", IncludeContent: true})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if len(packet.Sources) != 1 || packet.Truncated || packet.Incomplete {
+		t.Fatalf("packet = %#v, want one complete source", packet)
+	}
+	if packet.ContentBytes != maxBytes {
+		t.Fatalf("content bytes = %d, want exact limit %d", packet.ContentBytes, maxBytes)
+	}
+}
+
+func TestServiceResolveNeverExceedsBudgetSmallerThanPreamble(t *testing.T) {
+	entry := Entry{ID: 1, ProjectID: "den-services", DocumentProjectID: "den-services", DocumentSlug: "required", Importance: ImportanceRequired}
+	document := &Document{ProjectID: "den-services", Slug: "required", Title: "Required", Content: "content", Visibility: VisibilityNormal}
+	service := NewService(&memoryStore{entries: []Entry{entry}}, fakeProjects{}, &fakeDocuments{documents: map[string]*Document{
+		"den-services/required": document,
+	}}, fixedClock, 1024)
+
+	packet, err := service.Resolve(context.Background(), ResolveQuery{ProjectID: "den-services", MaxBytes: 1, IncludeContent: true})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if packet.ContentBytes > 1 || len(packet.ContentMarkdown) > 1 {
+		t.Fatalf("content = %q (%d bytes), want at most 1 byte", packet.ContentMarkdown, packet.ContentBytes)
+	}
+	if !packet.Truncated || !packet.Incomplete {
+		t.Fatalf("truncated/incomplete = %t/%t, want true/true", packet.Truncated, packet.Incomplete)
+	}
+	if len(packet.SkippedSources) != 1 || packet.SkippedSources[0].EntryID != entry.ID {
+		t.Fatalf("skipped = %#v, want required source %d", packet.SkippedSources, entry.ID)
+	}
+}
+
+func TestServiceResolveSkipsOversizeRequiredAndContinuesRequiredTier(t *testing.T) {
+	oversize := Entry{ID: 1, ProjectID: "den-services", DocumentProjectID: "den-services", DocumentSlug: "oversize", Importance: ImportanceRequired}
+	fitting := Entry{ID: 2, ProjectID: "den-services", DocumentProjectID: "den-services", DocumentSlug: "fitting", Importance: ImportanceRequired}
+	oversizeDocument := &Document{ProjectID: "den-services", Slug: "oversize", Title: "Oversize", Content: strings.Repeat("o", 128), Visibility: VisibilityNormal}
+	fittingDocument := &Document{ProjectID: "den-services", Slug: "fitting", Title: "Fitting", Content: "fits", Visibility: VisibilityNormal}
+	maxBytes := len(guidancePreamble("den-services")) + len(guidanceSection(fitting, fittingDocument, true))
+	service := NewService(&memoryStore{entries: []Entry{oversize, fitting}}, fakeProjects{}, &fakeDocuments{documents: map[string]*Document{
+		"den-services/oversize": oversizeDocument,
+		"den-services/fitting":  fittingDocument,
+	}}, fixedClock, maxBytes)
+
+	packet, err := service.Resolve(context.Background(), ResolveQuery{ProjectID: "den-services", IncludeContent: true})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if len(packet.Sources) != 1 || packet.Sources[0].EntryID != fitting.ID {
+		t.Fatalf("sources = %#v, want only fitting required entry", packet.Sources)
+	}
+	if len(packet.SkippedSources) != 1 || packet.SkippedSources[0].EntryID != oversize.ID || !packet.SkippedSources[0].Required {
+		t.Fatalf("skipped = %#v, want oversize required entry", packet.SkippedSources)
+	}
+}
+
+func TestServiceResolveMarksSingleOversizeRequiredAsIncomplete(t *testing.T) {
+	entry := Entry{ID: 1, ProjectID: "den-services", DocumentProjectID: "den-services", DocumentSlug: "oversize", Importance: ImportanceRequired}
+	document := &Document{ProjectID: "den-services", Slug: "oversize", Title: "Oversize", Content: strings.Repeat("o", 128), Visibility: VisibilityNormal}
+	maxBytes := len(guidancePreamble("den-services")) + len(guidanceSection(entry, document, true)) - 1
+	service := NewService(&memoryStore{entries: []Entry{entry}}, fakeProjects{}, &fakeDocuments{documents: map[string]*Document{
+		"den-services/oversize": document,
+	}}, fixedClock, maxBytes)
+
+	packet, err := service.Resolve(context.Background(), ResolveQuery{ProjectID: "den-services", IncludeContent: true})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if len(packet.Sources) != 0 || !packet.Truncated || !packet.Incomplete {
+		t.Fatalf("packet = %#v, want no sources and truncated incomplete packet", packet)
+	}
+	if len(packet.SkippedSources) != 1 || !packet.SkippedSources[0].Required {
+		t.Fatalf("skipped = %#v, want one required skipped source", packet.SkippedSources)
+	}
+}
+
+func TestServiceResolveKeepsStableOrderWhenRequiredAggregateExceedsBudget(t *testing.T) {
+	first := Entry{ID: 1, ProjectID: "den-services", DocumentProjectID: "den-services", DocumentSlug: "first", Importance: ImportanceRequired}
+	second := Entry{ID: 2, ProjectID: "den-services", DocumentProjectID: "den-services", DocumentSlug: "second", Importance: ImportanceRequired}
+	firstDocument := &Document{ProjectID: "den-services", Slug: "first", Title: "First", Content: "first", Visibility: VisibilityNormal}
+	secondDocument := &Document{ProjectID: "den-services", Slug: "second", Title: "Second", Content: "second", Visibility: VisibilityNormal}
+	maxBytes := len(guidancePreamble("den-services")) + len(guidanceSection(first, firstDocument, true))
+	service := NewService(&memoryStore{entries: []Entry{first, second}}, fakeProjects{}, &fakeDocuments{documents: map[string]*Document{
+		"den-services/first":  firstDocument,
+		"den-services/second": secondDocument,
+	}}, fixedClock, maxBytes)
+
+	packet, err := service.Resolve(context.Background(), ResolveQuery{ProjectID: "den-services", IncludeContent: true})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if len(packet.Sources) != 1 || packet.Sources[0].EntryID != first.ID {
+		t.Fatalf("sources = %#v, want first required source", packet.Sources)
+	}
+	if len(packet.SkippedSources) != 1 || packet.SkippedSources[0].EntryID != second.ID || !packet.SkippedSources[0].Required {
+		t.Fatalf("skipped = %#v, want second required source", packet.SkippedSources)
+	}
+}
+
+func TestAudienceMatchesAllWildcard(t *testing.T) {
+	tests := []struct {
+		name      string
+		entry     []string
+		requested []string
+		want      bool
+	}{
+		{name: "all matches named audience", entry: []string{"all"}, requested: []string{"runner"}, want: true},
+		{name: "all matches multiple audiences", entry: []string{"reviewer", "all"}, requested: []string{"runner", "playtester"}, want: true},
+		{name: "named audience remains exact", entry: []string{"reviewer"}, requested: []string{"runner"}, want: false},
+		{name: "requested all does not broaden named entry", entry: []string{"reviewer"}, requested: []string{"all"}, want: false},
+		{name: "empty request remains unrestricted", entry: []string{"reviewer"}, want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := audienceMatches(test.entry, test.requested); got != test.want {
+				t.Fatalf("audienceMatches(%q, %q) = %t, want %t", test.entry, test.requested, got, test.want)
+			}
+		})
+	}
+}
+
+func guidancePreamble(projectID string) string {
+	return "# Den Agent Guidance for " + projectID + "\n\n"
 }
 
 type memoryStore struct {
