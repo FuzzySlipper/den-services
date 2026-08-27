@@ -55,6 +55,12 @@ Board service. Board search uses the hidden exact-name operation
 `search_board_posts`; it is routed by MCP but remains absent from `tools/list`
 and from the 86-operation callable-catalog parity count.
 
+The `board github-sync` and `board github-visibility` shortcuts also use MCP.
+Their internal MCP operations are hidden because the user-facing catalog
+already documents the shortcuts. MCP attaches the relay service credential and
+routes them to the loopback-only Board relay; callers need no relay-specific
+environment or SSH setup.
+
 Results are JSON. A response larger than 1 MiB is rejected rather than streamed
 unbounded into an agent context. Domain adapters retain their existing bounded
 summaries and detail-reference behavior within that outer limit.

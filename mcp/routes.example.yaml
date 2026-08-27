@@ -2,6 +2,19 @@
 # Generated from the live den-mcp tools/list compatibility snapshot for #3554.
 
 routes:
+  - operation: "sync_board_github"
+    backend: "board-relay"
+    method: "POST"
+    path: "/v1/projects/{project_id}/board/github-sync"
+    request_adapter: "mcp_board_relay_rest"
+    response_adapter: "mcp_tool_result_json"
+    timeout: "30s"
+  - operation: "set_board_github_visibility"
+    backend: "board-relay"
+    method: "PATCH"
+    path: "/v1/board/github-visibility"
+    request_adapter: "mcp_board_relay_rest"
+    response_adapter: "mcp_tool_result_json"
   - operation: "create_board_post"
     backend: "board"
     method: "POST"

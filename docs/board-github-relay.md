@@ -17,9 +17,9 @@ Every run names its project explicitly:
 den-tool board github-sync --project rusty-engine --json
 ```
 
-The command calls the loopback `board-relay` service by default. Set
-`DEN_BOARD_RELAY_URL` and `DEN_BOARD_RELAY_SERVICE_TOKEN` only when the local
-operator needs a different authenticated owner endpoint.
+The command uses den-tool's normal authenticated LAN MCP transport. MCP routes
+the hidden relay operation to the loopback-only `board-relay` owner service.
+Agents do not need relay-specific URLs, tokens, SSH commands, or shell setup.
 
 The relay preserves imported GitHub title and body Markdown verbatim. It maps a
 Board post to one Issue and a Board comment to one Issue comment, records stable
@@ -68,4 +68,5 @@ material that is genuinely suitable for that exposure.
 token, Board token, database URL, and service token are environment-backed
 secrets. The relay owns `den_board_relay` only and uses the Board HTTP API for
 all Board reads and writes. Its deployment entry is `board-relay` on loopback
-port 8101.
+port 8101. MCP owns the authenticated LAN ingress; the relay port is never
+exposed directly.

@@ -16,6 +16,14 @@ BOARD_BACKEND = [
     '  service_token_env: "DEN_BOARD_SERVICE_TOKEN"\n',
 ]
 
+BOARD_RELAY_BACKEND = [
+    '- name: "board-relay"\n',
+    '  base_url: "http://127.0.0.1:8101"\n',
+    '  health_path: "/health"\n',
+    '  timeout: "30s"\n',
+    '  service_token_env: "DEN_BOARD_RELAY_SERVICE_TOKEN"\n',
+]
+
 BOARD_ROUTES = """
   - name: "board-project-routes"
     path_pattern: "/v1/projects/{project_id}/board"
@@ -41,9 +49,9 @@ BOARD_ROUTES = """
 """.lstrip("\n")
 
 
-def ensure_mcp_backend(path: pathlib.Path) -> None:
+def ensure_mcp_backend(path: pathlib.Path, name: str, backend_lines: list[str]) -> None:
     text = path.read_text(encoding="utf-8")
-    if re.search(r"(?m)^\s*-\s+name:\s*['\"]?board['\"]?\s*$", text):
+    if re.search(rf"(?m)^\s*-\s+name:\s*['\"]?{re.escape(name)}['\"]?\s*$", text):
         return
     lines = text.splitlines(keepends=True)
     start = next(
@@ -68,7 +76,7 @@ def ensure_mcp_backend(path: pathlib.Path) -> None:
             break
     if item_indent is None:
         item_indent = "  "
-    block = [item_indent + line if index == 0 else item_indent + line for index, line in enumerate(BOARD_BACKEND)]
+    block = [item_indent + line for line in backend_lines]
     lines[end:end] = block
     path.write_text("".join(lines), encoding="utf-8")
 
@@ -98,13 +106,15 @@ def ensure_gateway_routes(path: pathlib.Path) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 3 or sys.argv[1] not in {"gateway-routes", "mcp-backend"}:
-        raise SystemExit("usage: ensure-board-config.py gateway-routes|mcp-backend PATH")
+    if len(sys.argv) != 3 or sys.argv[1] not in {"gateway-routes", "mcp-backend", "mcp-board-relay-backend"}:
+        raise SystemExit("usage: ensure-board-config.py gateway-routes|mcp-backend|mcp-board-relay-backend PATH")
     path = pathlib.Path(sys.argv[2])
     if sys.argv[1] == "gateway-routes":
         ensure_gateway_routes(path)
+    elif sys.argv[1] == "mcp-backend":
+        ensure_mcp_backend(path, "board", BOARD_BACKEND)
     else:
-        ensure_mcp_backend(path)
+        ensure_mcp_backend(path, "board-relay", BOARD_RELAY_BACKEND)
 
 
 if __name__ == "__main__":

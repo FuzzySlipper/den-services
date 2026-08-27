@@ -1,5 +1,5 @@
 {
-  "version": "1.1.2",
+  "version": "1.1.3",
   "tools": [
     {
       "id": "board.create-post",
@@ -101,7 +101,7 @@
       "tags": ["board", "github", "relay", "sync", "write"],
       "repo": "den-services", "root": "/home/dev/den-services", "working_directory": "/home/dev/den-services",
       "argv": ["den-tool", "board", "github-sync"], "risk": "write", "source": "cmd/den-tool board github-sync",
-      "requirements": ["board-relay service reachable through DEN_BOARD_RELAY_URL or its loopback default", "DEN_BOARD_RELAY_SERVICE_TOKEN when relay authentication is enabled"],
+      "requirements": ["den-tool installed on PATH", "Den MCP reachable through DEN_MCP_URL or the built-in LAN default"],
       "examples": ["den-tool board github-sync --project rusty-engine --json"]
     },
     {
@@ -110,7 +110,7 @@
       "tags": ["board", "github", "relay", "visibility", "write"],
       "repo": "den-services", "root": "/home/dev/den-services", "working_directory": "/home/dev/den-services",
       "argv": ["den-tool", "board", "github-visibility"], "risk": "write", "source": "cmd/den-tool board github-visibility",
-      "requirements": ["board-relay service reachable through DEN_BOARD_RELAY_URL or its loopback default", "DEN_BOARD_RELAY_SERVICE_TOKEN when relay authentication is enabled"],
+      "requirements": ["den-tool installed on PATH", "Den MCP reachable through DEN_MCP_URL or the built-in LAN default"],
       "examples": ["den-tool board github-visibility --visibility private"]
     },
     {

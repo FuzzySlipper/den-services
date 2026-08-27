@@ -37,25 +37,8 @@ func runBoardCommand(args []string, stdout, stderr io.Writer) int {
 		return boardUsageError(stderr, err.Error())
 	}
 	var body []byte
-	if args[0] == "github-sync" || args[0] == "github-visibility" {
-		client, clientErr := BoardRelayClientFromEnv()
-		if clientErr != nil {
-			return writeRuntimeError(stderr, clientErr)
-		}
-		if args[0] == "github-sync" {
-			body, err = client.Sync(context.Background(), *flags.project)
-		} else {
-			body, err = client.SetVisibility(context.Background(), *flags.visibility)
-		}
-		if err != nil {
-			return writeRuntimeError(stderr, err)
-		}
-		if *flags.json {
-			return writeJSON(stdout, json.RawMessage(body))
-		}
-		return writeHumanServiceJSON(stdout, body)
-	}
-	if strings.TrimSpace(os.Getenv("DEN_BOARD_URL")) != "" {
+	usesRelay := args[0] == "github-sync" || args[0] == "github-visibility"
+	if !usesRelay && strings.TrimSpace(os.Getenv("DEN_BOARD_URL")) != "" {
 		client, clientErr := BoardClientFromEnv()
 		if clientErr != nil {
 			return writeRuntimeError(stderr, clientErr)
@@ -165,6 +148,18 @@ func boardMCPCall(command string, flags boardFlags) (string, map[string]any, err
 		}
 		arguments["comment_id"], arguments["actor_identity"], arguments["reason"] = *flags.comment, *flags.actor, *flags.reason
 		return "purge_board_comment", arguments, nil
+	case "github-sync":
+		if strings.TrimSpace(*flags.project) == "" {
+			return "", nil, fmt.Errorf("board github-sync requires project")
+		}
+		arguments["project_id"] = *flags.project
+		return "sync_board_github", arguments, nil
+	case "github-visibility":
+		if *flags.visibility != "public" && *flags.visibility != "private" {
+			return "", nil, fmt.Errorf("board github-visibility requires public or private visibility")
+		}
+		arguments["visibility"] = *flags.visibility
+		return "set_board_github_visibility", arguments, nil
 	default:
 		return "", nil, fmt.Errorf("unknown Board subcommand %q", command)
 	}

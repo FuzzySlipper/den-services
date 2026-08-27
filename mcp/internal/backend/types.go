@@ -23,6 +23,7 @@ const (
 	RequestAdapterMCPLibrarianREST                    = "mcp_librarian_rest"
 	RequestAdapterMCPHandoffREST                      = "mcp_handoff_rest"
 	RequestAdapterMCPBoardREST                        = "mcp_board_rest"
+	RequestAdapterMCPBoardRelayREST                   = "mcp_board_relay_rest"
 	ResponseAdapterMCPJSONRPC                         = "mcp_jsonrpc_result"
 	ResponseAdapterMCPToolResultJSON                  = "mcp_tool_result_json"
 	StateReady                                  State = "ready"

@@ -168,6 +168,8 @@ func supportedAdapterPair(requestAdapter string, responseAdapter string) bool {
 		return true
 	case requestAdapter == RequestAdapterMCPBoardREST && responseAdapter == ResponseAdapterMCPToolResultJSON:
 		return true
+	case requestAdapter == RequestAdapterMCPBoardRelayREST && responseAdapter == ResponseAdapterMCPToolResultJSON:
+		return true
 	default:
 		return false
 	}

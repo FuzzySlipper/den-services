@@ -2,60 +2,43 @@ package main
 
 import (
 	"bytes"
-	"context"
-	"net/http"
-	"net/http/httptest"
-	"strings"
+	"reflect"
 	"testing"
 )
 
-func TestBoardRelayClientSyncRequiresProjectAndUsesExplicitPath(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/v1/projects/rusty-engine/board/github-sync" {
-			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
-		}
-		if r.Header.Get("Authorization") != "Bearer relay-token" {
-			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
-		}
-		_, _ = w.Write([]byte(`{"project_id":"rusty-engine"}`))
-	}))
-	defer server.Close()
-	client, err := NewBoardRelayClient(server.URL, "relay-token", server.Client())
+func TestBoardRelayCommandsUseMCPTransport(t *testing.T) {
+	syncFlags, err := parseBoardFlags("github-sync", []string{"--project", "rusty-engine"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Sync(context.Background(), ""); err == nil {
-		t.Fatal("Sync accepted no project")
-	}
-	if _, err := client.Sync(context.Background(), "rusty-engine"); err != nil {
+	operation, arguments, err := boardMCPCall("github-sync", syncFlags)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if operation != "sync_board_github" || !reflect.DeepEqual(arguments, map[string]any{"project_id": "rusty-engine"}) {
+		t.Fatalf("sync call = %q %#v", operation, arguments)
+	}
+	visibilityFlags, err := parseBoardFlags("github-visibility", []string{"--visibility", "private"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation, arguments, err = boardMCPCall("github-visibility", visibilityFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if operation != "set_board_github_visibility" || !reflect.DeepEqual(arguments, map[string]any{"visibility": "private"}) {
+		t.Fatalf("visibility call = %q %#v", operation, arguments)
 	}
 }
 
-func TestRunBoardGitHubVisibilityUsesRelayOnly(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPatch || r.URL.Path != "/v1/board/github-visibility" {
-			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
-		}
-		if !strings.Contains(readTestRequestBody(t, r), `"visibility":"private"`) {
-			t.Fatalf("visibility body missing")
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer server.Close()
-	t.Setenv("DEN_BOARD_RELAY_URL", server.URL)
-	t.Setenv("DEN_BOARD_RELAY_SERVICE_TOKEN", "relay-token")
+func TestBoardRelayCommandsIgnoreDirectBoardOverride(t *testing.T) {
+	t.Setenv("DEN_BOARD_URL", "://invalid-direct-board-url")
+	t.Setenv("DEN_MCP_URL", "://invalid-mcp-url")
 	var stdout, stderr bytes.Buffer
-	if code := runBoardCommand([]string{"github-visibility", "--visibility", "private"}, &stdout, &stderr); code != 0 {
-		t.Fatalf("code=%d stderr=%s", code, stderr.String())
+	if code := runBoardCommand([]string{"github-sync", "--project", "rusty-engine"}, &stdout, &stderr); code == 0 {
+		t.Fatal("relay command unexpectedly succeeded")
 	}
-}
-
-func readTestRequestBody(t *testing.T, r *http.Request) string {
-	t.Helper()
-	var body bytes.Buffer
-	if _, err := body.ReadFrom(r.Body); err != nil {
-		t.Fatal(err)
+	if got := stderr.String(); !bytes.Contains([]byte(got), []byte("MCP URL")) {
+		t.Fatalf("stderr = %q, want MCP transport error", got)
 	}
-	return body.String()
 }

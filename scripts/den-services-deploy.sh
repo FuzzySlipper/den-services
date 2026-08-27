@@ -199,6 +199,7 @@ validate_deployment_prerequisites() {
   if [[ "${service}" == "mcp" ]]; then
     den_require_env_assignment "${env_file}" DEN_HANDOFF_SERVICE_TOKEN
     den_require_env_assignment "${env_file}" DEN_BOARD_SERVICE_TOKEN
+    den_require_env_assignment "${env_file}" DEN_BOARD_RELAY_SERVICE_TOKEN
     den_mcp_backend_configured "${service_root}/config/config.yaml" handoff || {
       echo "missing required handoff backend in ${service_root}/config/config.yaml" >&2
       return 1
@@ -209,6 +210,10 @@ validate_deployment_prerequisites() {
     }
     /bin/systemctl is-active --quiet den-go@board.service || {
       echo "den-go@board.service must be active before deploying MCP" >&2
+      return 1
+    }
+    /bin/systemctl is-active --quiet den-go@board-relay.service || {
+      echo "den-go@board-relay.service must be active before deploying MCP" >&2
       return 1
     }
   fi
@@ -429,6 +434,30 @@ ensure_mcp_board_backend() {
   fi
 }
 
+ensure_mcp_board_relay_backend() {
+  local config_target="${service_root}/config/config.yaml"
+  local staged_config=""
+  local write_target="${config_target}"
+
+  [[ "${service}" == "mcp" ]] || return 0
+  [[ -f "${config_target}" ]] || return 0
+  den_mcp_backend_configured "${config_target}" board-relay && return 0
+
+  backup_config_file "${config_target}" "config.yaml"
+  if [[ ! -w "${config_target}" ]]; then
+    staged_config="$(mktemp /tmp/den-mcp-config.XXXXXX)"
+    cp "${config_target}" "${staged_config}"
+    write_target="${staged_config}"
+  fi
+
+  python3 scripts/lib/ensure-board-config.py mcp-board-relay-backend "${write_target}"
+
+  if [[ -n "${staged_config}" ]]; then
+    run_systemctl install -m 0644 "${staged_config}" "${config_target}"
+    rm -f "${staged_config}"
+  fi
+}
+
 install_mcp_routes() {
   local routes_target="${service_root}/config/routes.yaml"
 
@@ -505,6 +534,10 @@ install_mcp_routes() {
     "/v1/board/comments/{comment_id}" "mcp_board_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "den_knowledge_delete" "knowledge" "DELETE" \
     "/v1/knowledge/entries/{slug}" "mcp_knowledge_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "sync_board_github" "board-relay" "POST" \
+    "/v1/projects/{project_id}/board/github-sync" "mcp_board_relay_rest" "mcp_tool_result_json" "30s"
+  append_mcp_route_if_missing "${routes_target}" "set_board_github_visibility" "board-relay" "PATCH" \
+    "/v1/board/github-visibility" "mcp_board_relay_rest" "mcp_tool_result_json" "30s"
 }
 
 cd "${repo_root}"
@@ -598,6 +631,7 @@ ensure_gateway_knowledge_route
 ensure_gateway_board_routes
 if [[ "${service}" == "mcp" && -f mcp/routes.example.yaml ]]; then
   ensure_mcp_board_backend
+  ensure_mcp_board_relay_backend
   install_mcp_routes
 fi
 

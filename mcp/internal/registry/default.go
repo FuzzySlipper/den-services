@@ -88,12 +88,26 @@ func DefaultTools() ([]ToolDefinition, error) {
 	tools = append(tools, handoffTools()...)
 	tools = append(tools, knowledgeTools()...)
 	tools = append(tools, boardTools()...)
+	tools = append(tools, boardRelayTools()...)
 	for index := range tools {
 		if _, ok := longTailToolNames[tools[index].Name]; ok {
 			tools[index].DiscoveryClass = DiscoveryClassLongTail
 		}
 	}
 	return tools, nil
+}
+
+func boardRelayTools() []ToolDefinition {
+	return []ToolDefinition{
+		{
+			Name: "sync_board_github", Description: "Synchronize exactly one project Board with the configured GitHub Issues relay. Imported content remains passive conversation and never schedules work.", Backend: "board-relay", Operation: "sync_board_github", Hidden: true,
+			InputSchema: ObjectSchema(map[string]Schema{"project_id": StringSchema("Exact Den project ID to synchronize.")}, "project_id"),
+		},
+		{
+			Name: "set_board_github_visibility", Description: "Explicitly set the dedicated Board relay repository visibility to public or private.", Backend: "board-relay", Operation: "set_board_github_visibility", Hidden: true,
+			InputSchema: ObjectSchema(map[string]Schema{"visibility": StringSchema("Repository visibility: public or private.")}, "visibility"),
+		},
+	}
 }
 
 func boardTools() []ToolDefinition {
