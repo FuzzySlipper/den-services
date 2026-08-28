@@ -332,9 +332,21 @@
             ]
           },
           "inherited_refs": {
-            "description": "Optional bounded handle cards inherited from a parent manifest.",
+            "description": "Optional bounded handle cards inherited from a parent manifest. Each card must preserve its intrinsic summary, freshness marker, and contextual read trigger.",
             "items": {
               "additionalProperties": false,
+              "anyOf": [
+                {
+                  "required": [
+                    "revision"
+                  ]
+                },
+                {
+                  "required": [
+                    "update_marker"
+                  ]
+                }
+              ],
               "properties": {
                 "authority": {
                   "maxLength": 128,
@@ -413,7 +425,9 @@
                 }
               },
               "required": [
-                "reference"
+                "reference",
+                "summary",
+                "read_when"
               ],
               "type": "object"
             },

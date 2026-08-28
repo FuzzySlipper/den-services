@@ -394,7 +394,8 @@ func assignmentBindingCandidate(selection assignmentBindingSelection) (assignmen
 
 func normalizedInheritedCandidate(ref assignmentManifestRef) (assignmentManifestCandidate, bool) {
 	ref.Reference, ref.Title, ref.Kind = strings.TrimSpace(ref.Reference), strings.TrimSpace(ref.Title), strings.TrimSpace(ref.Kind)
-	if ref.Reference == "" {
+	ref.Summary, ref.UpdateMarker, ref.ReadWhen = strings.TrimSpace(ref.Summary), strings.TrimSpace(ref.UpdateMarker), strings.TrimSpace(ref.ReadWhen)
+	if ref.Reference == "" || ref.Summary == "" || (ref.Revision == nil && ref.UpdateMarker == "") || ref.ReadWhen == "" {
 		return assignmentManifestCandidate{}, false
 	}
 	if ref.Title == "" {
@@ -413,6 +414,9 @@ func normalizedInheritedCandidate(ref assignmentManifestRef) (assignmentManifest
 	ref.Title = boundedManifestText(ref.Title, 512)
 	ref.Summary = boundedManifestText(ref.Summary, 2048)
 	ref.ReadWhen = boundedManifestText(ref.ReadWhen, 1024)
+	if ref.ReadCostBytes == 0 {
+		ref.ReadCostBytes = len(ref.Summary)
+	}
 	if ref.ReadPolicy == "" {
 		ref.ReadPolicy = "on_demand"
 	}

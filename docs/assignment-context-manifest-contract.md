@@ -11,6 +11,12 @@ is never supplied by the caller. `assignment` is required and separate from
 optional `background`. Optional `agent_profile` and `capabilities` become
 Guidance applicability scopes. Explicit Knowledge slugs and inherited handle
 cards are orchestrator selections, not new bindings.
+Inherited cards are portable visible-card metadata, not bare pointers: callers
+must preserve a non-empty intrinsic summary, either a revision or update marker,
+and a contextual `read_when`. Incomplete inherited cards are excluded rather
+than emitting handles whose freshness or purpose cannot be judged. When a card
+omits its summary reading-cost estimate, the composer derives it from the
+preserved summary.
 
 The composer calls Guidance `context-resolve`, asks Librarian a bounded
 assignment query, and reads explicit Knowledge metadata only. It never reads

@@ -45,12 +45,12 @@ func TestAssignmentManifestOrdersDeduplicatesAndKeepsInstructionsSeparate(t *tes
 	}))
 	defer server.Close()
 	locator := newAssignmentManifestLocator(t, server)
-	result, failure, err := locator.Call(context.Background(), ToolCall{ToolName: "compose_assignment_manifest", Operation: "compose_assignment_manifest", Arguments: json.RawMessage(`{"task_id":7426,"assignment":"Implement MCP route adapter","background":"Do not preload bodies.","agent_profile":"coder","capabilities":["mcp"],"explicit_knowledge_refs":["explicit-guide"],"inherited_refs":[{"reference":"knowledge:mcp-routing","title":"Parent copy","kind":"reference"}],"limits":{"max_handles":4,"inline_budget":256,"librarian_items":2}}`)})
+	result, failure, err := locator.Call(context.Background(), ToolCall{ToolName: "compose_assignment_manifest", Operation: "compose_assignment_manifest", Arguments: json.RawMessage(`{"task_id":7426,"assignment":"Implement MCP route adapter","background":"Do not preload bodies.","agent_profile":"coder","capabilities":["mcp"],"explicit_knowledge_refs":["explicit-guide"],"inherited_refs":[{"reference":"knowledge:parent-only","title":"Parent-only contract","summary":"Contract selected by the parent assignment.","kind":"reference","revision":9,"read_when":"When preserving the parent boundary."}],"limits":{"max_handles":5,"inline_budget":256,"librarian_items":2}}`)})
 	if err != nil || failure != nil {
 		t.Fatalf("Call() = %v, %#v", err, failure)
 	}
 	manifest := decodeAssignmentManifest(t, result)
-	if len(manifest.References) != 3 {
+	if len(manifest.References) != 4 {
 		t.Fatalf("references = %#v", manifest.References)
 	}
 	if manifest.References[0].Reference != "knowledge:mcp-routing" || manifest.References[0].SelectionSource != "knowledge_binding" {
@@ -59,8 +59,11 @@ func TestAssignmentManifestOrdersDeduplicatesAndKeepsInstructionsSeparate(t *tes
 	if manifest.References[1].Reference != "knowledge:explicit-guide" || manifest.References[1].SelectionSource != "explicit" {
 		t.Fatalf("explicit entry = %#v", manifest.References[1])
 	}
-	if manifest.References[2].Reference != "document:den-services/map" {
-		t.Fatalf("librarian entry = %#v", manifest.References[2])
+	if manifest.References[2].Reference != "knowledge:parent-only" || manifest.References[2].SelectionSource != "inherited_manifest" || manifest.References[2].Revision == nil || *manifest.References[2].Revision != 9 || manifest.References[2].ReadCostBytes == 0 {
+		t.Fatalf("inherited entry = %#v", manifest.References[2])
+	}
+	if manifest.References[3].Reference != "document:den-services/map" {
+		t.Fatalf("librarian entry = %#v", manifest.References[3])
 	}
 	if strings.Contains(manifest.Markdown, "Route adapter boundary.") || !strings.Contains(manifest.Markdown, "### Instructions") || !strings.Contains(manifest.Markdown, "### Optional background") {
 		t.Fatalf("markdown did not preserve compact separation: %s", manifest.Markdown)
@@ -117,7 +120,7 @@ func TestAssignmentManifestHonorsBudgetAndReportsUnavailableOptionalSources(t *t
 	}))
 	defer server.Close()
 	locator := newAssignmentManifestLocator(t, server)
-	result, failure, err := locator.Call(context.Background(), ToolCall{Operation: "compose_assignment_manifest", Arguments: json.RawMessage(`{"task_id":7426,"assignment":"Narrow work","inherited_refs":[{"reference":"knowledge:one","title":"One","kind":"reference"},{"reference":"knowledge:two","title":"Two","kind":"reference"}],"limits":{"max_handles":1,"inline_budget":0,"librarian_items":0}}`)})
+	result, failure, err := locator.Call(context.Background(), ToolCall{Operation: "compose_assignment_manifest", Arguments: json.RawMessage(`{"task_id":7426,"assignment":"Narrow work","inherited_refs":[{"reference":"knowledge:one","title":"One","summary":"First inherited card.","kind":"reference","revision":1,"read_when":"When one applies."},{"reference":"knowledge:two","title":"Two","summary":"Second inherited card.","kind":"reference","update_marker":"2026-08-28T00:00:00Z","read_when":"When two applies."}],"limits":{"max_handles":1,"inline_budget":0,"librarian_items":0}}`)})
 	if err != nil || failure != nil {
 		t.Fatalf("Call() = %v, %#v", err, failure)
 	}
@@ -127,6 +130,29 @@ func TestAssignmentManifestHonorsBudgetAndReportsUnavailableOptionalSources(t *t
 	}
 	if !strings.Contains(string(result.Value), `"source":"guidance","state":"unavailable"`) {
 		t.Fatalf("missing degraded source: %s", result.Value)
+	}
+}
+
+func TestAssignmentManifestExcludesIncompleteInheritedCards(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/tasks/7426":
+			_, _ = w.Write([]byte(`{"task":{"id":7426,"project_id":"den-services","title":"Task","status":"planned"}}`))
+		case "/v1/guidance/context-resolve":
+			_, _ = w.Write([]byte(`{"selections":[]}`))
+		default:
+			t.Fatalf("unexpected request %s", r.URL.String())
+		}
+	}))
+	defer server.Close()
+	locator := newAssignmentManifestLocatorWithoutOptional(t, server)
+	result, failure, err := locator.Call(context.Background(), ToolCall{Operation: "compose_assignment_manifest", Arguments: json.RawMessage(`{"task_id":7426,"assignment":"Narrow work","inherited_refs":[{"reference":"knowledge:missing-summary","revision":1,"read_when":"When relevant."},{"reference":"knowledge:missing-freshness","summary":"No revision.","read_when":"When relevant."},{"reference":"knowledge:missing-trigger","summary":"No trigger.","revision":1}],"limits":{"librarian_items":0}}`)})
+	if err != nil || failure != nil {
+		t.Fatalf("Call() = %v, %#v", err, failure)
+	}
+	manifest := decodeAssignmentManifest(t, result)
+	if len(manifest.References) != 0 {
+		t.Fatalf("incomplete inherited cards were emitted: %#v", manifest.References)
 	}
 }
 

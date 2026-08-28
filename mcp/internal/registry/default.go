@@ -514,7 +514,10 @@ func assignmentStringArraySchema(description string, maximum int) Schema {
 func assignmentInheritedRefsSchema() Schema {
 	return mustSchema(map[string]any{"type": []string{"array", "null"}, "maxItems": 100, "items": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
 		"reference": map[string]any{"type": "string", "minLength": 1, "maxLength": 512}, "title": map[string]any{"type": "string", "maxLength": 512}, "summary": map[string]any{"type": "string", "maxLength": 2048}, "kind": map[string]any{"type": "string", "maxLength": 128}, "authority": map[string]any{"type": "string", "maxLength": 128}, "authority_state": map[string]any{"type": "string", "maxLength": 128}, "curation_state": map[string]any{"type": "string", "maxLength": 128}, "tags": map[string]any{"type": "array", "maxItems": 32, "items": map[string]any{"type": "string", "maxLength": 128}}, "revision": map[string]any{"type": "integer", "minimum": 1}, "update_marker": map[string]any{"type": "string", "maxLength": 128}, "read_cost_bytes": map[string]any{"type": "integer", "minimum": 0}, "selection_source": map[string]any{"type": "string", "maxLength": 128}, "read_when": map[string]any{"type": "string", "maxLength": 1024}, "read_policy": map[string]any{"type": "string", "enum": []string{"inline", "must_read", "on_demand", "latent"}}, "group": map[string]any{"type": "string", "enum": []string{"must-read", "task-local", "likely-useful", "nearby-maps"}},
-	}, "required": []string{"reference"}}, "description": "Optional bounded handle cards inherited from a parent manifest."})
+	}, "required": []string{"reference", "summary", "read_when"}, "anyOf": []any{
+		map[string]any{"required": []string{"revision"}},
+		map[string]any{"required": []string{"update_marker"}},
+	}}, "description": "Optional bounded handle cards inherited from a parent manifest. Each card must preserve its intrinsic summary, freshness marker, and contextual read trigger."})
 }
 
 func assignmentManifestLimitsSchema() Schema {
