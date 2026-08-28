@@ -458,6 +458,30 @@ ensure_mcp_board_relay_backend() {
   fi
 }
 
+ensure_mcp_crew_review_backend() {
+  local config_target="${service_root}/config/config.yaml"
+  local staged_config=""
+  local write_target="${config_target}"
+
+  [[ "${service}" == "mcp" ]] || return 0
+  [[ -f "${config_target}" ]] || return 0
+  den_mcp_backend_configured "${config_target}" crew-review && return 0
+
+  backup_config_file "${config_target}" "config.yaml"
+  if [[ ! -w "${config_target}" ]]; then
+    staged_config="$(mktemp /tmp/den-mcp-config.XXXXXX)"
+    cp "${config_target}" "${staged_config}"
+    write_target="${staged_config}"
+  fi
+
+  python3 scripts/lib/ensure-board-config.py mcp-crew-review-backend "${write_target}"
+
+  if [[ -n "${staged_config}" ]]; then
+    run_systemctl install -m 0644 "${staged_config}" "${config_target}"
+    rm -f "${staged_config}"
+  fi
+}
+
 install_mcp_routes() {
   local routes_target="${service_root}/config/routes.yaml"
 
@@ -484,6 +508,8 @@ install_mcp_routes() {
     "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "watch_github_checks" "review" "POST" \
     "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates" "mcp_review_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "submit_task_for_review" "crew-review" "POST" \
+    "/v1/review-submissions" "mcp_review_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "get_github_check_gate" "review" "GET" \
     "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}" "mcp_review_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "wait_for_github_checks" "review" "GET" \
@@ -632,6 +658,7 @@ ensure_gateway_board_routes
 if [[ "${service}" == "mcp" && -f mcp/routes.example.yaml ]]; then
   ensure_mcp_board_backend
   ensure_mcp_board_relay_backend
+  ensure_mcp_crew_review_backend
   install_mcp_routes
 fi
 

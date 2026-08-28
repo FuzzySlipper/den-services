@@ -24,6 +24,13 @@ BOARD_RELAY_BACKEND = [
     '  service_token_env: "DEN_BOARD_RELAY_SERVICE_TOKEN"\n',
 ]
 
+CREW_REVIEW_BACKEND = [
+    '- name: "crew-review"\n',
+    '  base_url: "http://127.0.0.1:8413"\n',
+    '  health_path: "/healthz"\n',
+    '  timeout: "5s"\n',
+]
+
 BOARD_ROUTES = """
   - name: "board-project-routes"
     path_pattern: "/v1/projects/{project_id}/board"
@@ -106,15 +113,17 @@ def ensure_gateway_routes(path: pathlib.Path) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 3 or sys.argv[1] not in {"gateway-routes", "mcp-backend", "mcp-board-relay-backend"}:
-        raise SystemExit("usage: ensure-board-config.py gateway-routes|mcp-backend|mcp-board-relay-backend PATH")
+    if len(sys.argv) != 3 or sys.argv[1] not in {"gateway-routes", "mcp-backend", "mcp-board-relay-backend", "mcp-crew-review-backend"}:
+        raise SystemExit("usage: ensure-board-config.py gateway-routes|mcp-backend|mcp-board-relay-backend|mcp-crew-review-backend PATH")
     path = pathlib.Path(sys.argv[2])
     if sys.argv[1] == "gateway-routes":
         ensure_gateway_routes(path)
     elif sys.argv[1] == "mcp-backend":
         ensure_mcp_backend(path, "board", BOARD_BACKEND)
-    else:
+    elif sys.argv[1] == "mcp-board-relay-backend":
         ensure_mcp_backend(path, "board-relay", BOARD_RELAY_BACKEND)
+    else:
+        ensure_mcp_backend(path, "crew-review", CREW_REVIEW_BACKEND)
 
 
 if __name__ == "__main__":
