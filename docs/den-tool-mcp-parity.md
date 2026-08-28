@@ -5,7 +5,7 @@
 As of MCP catalog revision `mcp-catalog-v4`, `den-tool` maps every supported,
 non-retired MCP operation, including long-tail operations omitted from ordinary
 MCP discovery. The checked-in machine-readable inventory is
-`cmd/den-tool/mcp_catalog.json`; it contains 86 operations and their exact input
+`cmd/den-tool/mcp_catalog.json`; it contains 94 operations and their exact input
 schemas, owning routed backend, workflow tier, description, and risk class.
 
 This inventory is generated from `mcp/internal/registry` plus
@@ -53,7 +53,7 @@ operations and uses `DEN_MCP_URL`/`DEN_MCP_TOKEN`. `DEN_BOARD_URL` is reserved
 for operator diagnostics on a host that can actually reach the loopback-only
 Board service. Board search uses the hidden exact-name operation
 `search_board_posts`; it is routed by MCP but remains absent from `tools/list`
-and from the 86-operation callable-catalog parity count.
+and from the 94-operation callable-catalog parity count.
 
 The `board github-sync` and `board github-visibility` shortcuts also use MCP.
 Their internal MCP operations are hidden because the user-facing catalog
@@ -70,22 +70,23 @@ summaries and detail-reference behavior within that outer limit.
 | Owning backend | Count |
 | --- | ---: |
 | board | 9 |
+| crew-review | 1 |
 | documents | 15 |
 | guidance | 4 |
 | handoff | 2 |
-| knowledge | 5 |
+| knowledge | 11 |
 | librarian | 1 |
 | mcp-facade | 1 |
 | messages | 12 |
 | projects | 9 |
 | review | 17 |
-| tasks | 11 |
-| **Total** | **86** |
+| tasks | 12 |
+| **Total** | **94** |
 
 | Risk | Count | Meaning |
 | --- | ---: | --- |
-| read | 43 | Observation or bounded wait; no requested durable mutation. |
-| write | 37 | Creates or updates durable/workflow state. |
+| read | 48 | Observation or bounded wait; no requested durable mutation. |
+| write | 40 | Creates or updates durable/workflow state. |
 | destructive | 6 | Purges, deletes, or archives accessible state. |
 
 The destructive set is explicit: `archive_space`,
@@ -97,8 +98,8 @@ repository utilities. They do not count toward MCP parity.
 
 ## MCP discovery projection
 
-Ordinary direct-profile discovery exposes the approved 38 common operations.
-The other 48 operations in this inventory are classified `long_tail`, remain
+Ordinary direct-profile discovery exposes the approved 39 common operations.
+The other 55 operations in this inventory are classified `long_tail`, remain
 callable by exact MCP name, and remain discoverable through `den-tool search`,
 `den-tool describe den.<operation>`, and `den-tool den <operation>`. Managed
 runtime discovery applies its primitive-workflow filter on top of the same
