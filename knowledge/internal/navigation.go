@@ -207,7 +207,7 @@ func (s *Service) GetMap(ctx context.Context, slug string) (KnowledgeMapResponse
 }
 
 func cardFromEntry(entry *Entry, revision int) EntryCardResponse {
-	return EntryCardResponse{Slug: entry.Slug(), Title: entry.Title(), Summary: entry.Summary(), Kind: entry.Kind(), Status: entry.Status(), CurationState: entry.CurationState(), Tags: entry.Tags(), SourceRefs: entry.SourceRefs(), ReplacementSlug: entry.ReplacementSlug(), Revision: revision, Digest: entryDigest(entry), UpdatedAt: entry.UpdatedAt()}
+	return EntryCardResponse{Slug: entry.Slug(), Title: entry.Title(), Summary: entry.Summary(), Kind: entry.Kind(), Status: entry.Status(), CurationState: entry.CurationState(), Tags: entry.Tags(), SourceRefs: entry.SourceRefs(), ReplacementSlug: entry.ReplacementSlug(), Revision: revision, Digest: entryDigest(entry), LastReviewedAt: entry.LastReviewedAt(), UpdatedAt: entry.UpdatedAt()}
 }
 
 func appendReplacementLink(ctx context.Context, service *Service, entry *Entry, links []ResolvedLink) ([]ResolvedLink, error) {

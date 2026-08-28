@@ -50,6 +50,7 @@ type EntryCardResponse struct {
 	Replacement     *LinkTarget `json:"replacement,omitempty"`
 	Revision        int         `json:"revision"`
 	Digest          string      `json:"digest"`
+	LastReviewedAt  *time.Time  `json:"last_reviewed_at,omitempty"`
 	UpdatedAt       time.Time   `json:"updated_at"`
 }
 

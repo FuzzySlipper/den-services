@@ -102,6 +102,9 @@ func TestNavigationHandlerCardsOmitBodiesAndExposeContinuation(t *testing.T) {
 	if len(result.Cards) != 1 || len(result.Missing) != 1 {
 		t.Fatalf("cards response = %#v", result)
 	}
+	if result.Cards[0].LastReviewedAt == nil {
+		t.Fatal("reviewed card omitted last_reviewed_at")
+	}
 }
 
 func TestBatchCardsLinksAndMapsAreBoundedAndValidated(t *testing.T) {

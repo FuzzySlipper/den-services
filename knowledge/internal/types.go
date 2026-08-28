@@ -349,16 +349,23 @@ type OutlineSection struct {
 
 func entryDigest(entry *Entry) string {
 	payload, _ := json.Marshal(struct {
-		Slug, Title, Summary, Body, Kind, Status, CurationState, ReplacementSlug, UpdatedAt string
-		Tags, Audience, Aliases                                                             []string
-		SourceRefs                                                                          []SourceRef
+		Slug, Title, Summary, Body, Kind, Status, CurationState, ReplacementSlug, LastReviewedAt, UpdatedAt string
+		Tags, Audience, Aliases                                                                             []string
+		SourceRefs                                                                                          []SourceRef
 	}{
 		Slug: entry.Slug(), Title: entry.Title(), Summary: entry.Summary(), Body: entry.BodyMarkdown(), Kind: entry.Kind(), Status: entry.Status(),
-		CurationState: entry.CurationState(), ReplacementSlug: entry.ReplacementSlug(), UpdatedAt: entry.UpdatedAt().UTC().Format(time.RFC3339Nano),
+		CurationState: entry.CurationState(), ReplacementSlug: entry.ReplacementSlug(), LastReviewedAt: formatOptionalTime(entry.LastReviewedAt()), UpdatedAt: entry.UpdatedAt().UTC().Format(time.RFC3339Nano),
 		Tags: entry.Tags(), Audience: entry.Audience(), Aliases: entry.Aliases(), SourceRefs: entry.SourceRefs(),
 	})
 	hash := sha256.Sum256(payload)
 	return hex.EncodeToString(hash[:])
+}
+
+func formatOptionalTime(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
 }
 
 func validLinkKind(kind string) bool {

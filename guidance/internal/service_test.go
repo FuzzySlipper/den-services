@@ -615,13 +615,14 @@ func TestCombinedResolutionCapRetainsMustRead(t *testing.T) {
 }
 
 func TestKnowledgeClientRequestsArchivedMetadata(t *testing.T) {
+	reviewedAt := fixedClock().Add(-time.Hour)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/knowledge/entries/archived-card/card":
 			if r.URL.Query().Get("include_archived") != "true" {
 				t.Fatalf("include_archived = %q, want true", r.URL.Query().Get("include_archived"))
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"slug": "archived-card", "title": "Archived", "status": "archived", "revision": 3, "updated_at": fixedClock().Format(time.RFC3339)})
+			_ = json.NewEncoder(w).Encode(map[string]any{"slug": "archived-card", "title": "Archived", "status": "archived", "revision": 3, "last_reviewed_at": reviewedAt.Format(time.RFC3339), "updated_at": fixedClock().Format(time.RFC3339)})
 		default:
 			http.NotFound(w, r)
 		}
@@ -636,6 +637,9 @@ func TestKnowledgeClientRequestsArchivedMetadata(t *testing.T) {
 	}
 	if metadata.Revision != 3 || !metadata.RevisionKnown {
 		t.Fatalf("revision = %d/%t, want 3/true", metadata.Revision, metadata.RevisionKnown)
+	}
+	if metadata.LastReviewedAt == nil || !metadata.LastReviewedAt.Equal(reviewedAt) {
+		t.Fatalf("last_reviewed_at = %v, want %v", metadata.LastReviewedAt, reviewedAt)
 	}
 }
 
