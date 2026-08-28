@@ -340,6 +340,8 @@ Build the CLI, then configure an MCP client to launch:
 
 The server exposes the eight `playtest_*` tools described above. All tool input schemas accept additional properties. Every MCP result includes text and structured content. A successful `playtest_observe` additionally returns the screenshot and current frame-burst files as MCP `image` content blocks, in capture order, so vision clients receive the same pixels retained by the evidence packet. Image attachment warnings are appended as text without discarding the structured observation.
 
+`playtest_list` is a bounded discovery surface: it returns 20 newest-first summaries by default and accepts `limit` from 1 through 100. Use exact `session_id`, `project`, `status`, `owner`, or `scenario` filters and follow `next_offset` with `offset` to page older matches. Its continuation metadata includes `returned`, `total_matched`, `truncated`, and `has_more`; retrieve a selected session's full record with `playtest_get`.
+
 For a repository-owned Codex skill and `gpt-5.6-luna` custom playtester that
 uses this stdio surface, see [Codex Luna playtester](codex-playtester.md).
 

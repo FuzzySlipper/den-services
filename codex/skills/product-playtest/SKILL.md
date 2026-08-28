@@ -11,21 +11,30 @@ uncertainty are all successful worker outcomes when backed by evidence.
 
 ## Route the playtest to the dedicated profile
 
-This skill contains the dedicated playtester worker protocol. Before applying
-that protocol, inspect the current agent's tool surface:
+This skill contains the dedicated playtester worker protocol. An ordinary
+coding, reviewing, or orchestrating parent must spawn the dedicated worker even
+when the inherited `playtest_*` tools are searchable in its own task.
+Spawn `agent_type: "playtester"`; global MCP registration is an inheritance
+mechanism, not permission to collapse the observation lane into the parent.
 
-- If all eight `playtest_*` tools are present, continue with the worker
-  lifecycle below.
-- If they are absent from an ordinary coding, reviewing, or orchestrating
-  agent, do **not** report an infrastructure error. Their absence is expected.
-  Spawn `agent_type: "playtester"` and pass one complete mission packet with the
-  repository, explicit manifest when needed, neutral mission, controls,
-  requested artifacts, project/scenario labels, and optional Den context.
+- In the dedicated playtester, inspect the current tool surface. If all eight
+  `playtest_*` tools are present, continue with the worker lifecycle below.
+- If they are absent from an ordinary parent, do **not** report an infrastructure error.
+  Spawn the dedicated playtester and pass one complete
+  mission packet with the repository, explicit manifest when needed, neutral
+  mission, controls, requested artifacts, project/scenario labels, and optional
+  Den context.
 - Keep acceptance mapping and any follow-up engineering in the parent agent.
   The spawned playtester only operates and observes the product.
 - Classify `infrastructure_error` only when the dedicated playtester lacks its
   configured tools, cannot call `playtest_list`/`playtest_start`, or the broker,
   browser, manifest, or harness prevents the run.
+
+When the dedicated playtester lacks the tools, report the ownership boundary:
+the parent Codex configuration owns `mcp_servers.den_playtest`; the
+repository installer owns its bounded config block, local binary, and broker
+configuration; and a fresh Codex task is required after repair. Do not diagnose
+the parent configuration from inside the worker.
 
 After installing or updating the playtester profile, start a fresh Codex task;
 agent and MCP catalogs do not update inside an already-running task.

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -111,7 +112,6 @@ func handleMCPRequest(ctx context.Context, manager *broker.PlaytestManager, requ
 }
 
 func playtestTools() []map[string]any {
-	openSchema := map[string]any{"type": "object", "additionalProperties": true}
 	sessionSchema := map[string]any{
 		"type":                 "object",
 		"properties":           map[string]any{"session_id": map[string]any{"type": "string"}},
@@ -144,7 +144,23 @@ func playtestTools() []map[string]any {
 		{"name": "playtest_finish", "description": "Finalize evidence and best-effort cleanup. Optional neutral_observation, operational_outcome, acceptance_mapping, field_guide_usage, and complete field_guide_replacement fields are retained independently; exit_interview records tester difficulties, workarounds, confidence, and suggestions.", "inputSchema": sessionSchema},
 		{"name": "playtest_cancel", "description": "Cancel a session, finalize partial evidence, and attempt cleanup.", "inputSchema": sessionSchema},
 		{"name": "playtest_get", "description": "Get the persisted local session record.", "inputSchema": sessionSchema},
-		{"name": "playtest_list", "description": "List persisted local playtest session records.", "inputSchema": openSchema},
+		{
+			"name":        "playtest_list",
+			"description": "List newest persisted playtest sessions as bounded summaries. Defaults to 20, permits 1-100, and returns next_offset when more matches exist. Filter by exact session_id, project, status, owner, or scenario; use playtest_get for one complete record.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"limit":      map[string]any{"type": "integer", "minimum": 1, "maximum": broker.MaxPlaytestListPageSize, "default": broker.DefaultPlaytestListPageSize},
+					"offset":     map[string]any{"type": "integer", "minimum": 0, "default": 0},
+					"session_id": map[string]any{"type": "string"},
+					"project":    map[string]any{"type": "string"},
+					"status":     map[string]any{"type": "string"},
+					"owner":      map[string]any{"type": "string"},
+					"scenario":   map[string]any{"type": "string"},
+				},
+				"additionalProperties": true,
+			},
+		},
 	}
 }
 
@@ -180,7 +196,23 @@ func callMCPTool(ctx context.Context, manager *broker.PlaytestManager, name stri
 	case "playtest_get":
 		return manager.Get(stringValue(arguments["session_id"]))
 	case "playtest_list":
-		return manager.List()
+		limit, err := optionalIntegerArgument(arguments, "limit")
+		if err != nil {
+			return nil, err
+		}
+		offset, err := optionalIntegerArgument(arguments, "offset")
+		if err != nil {
+			return nil, err
+		}
+		return manager.ListPage(broker.PlaytestListOptions{
+			Limit:     limit,
+			Offset:    offset,
+			SessionID: stringValue(arguments["session_id"]),
+			Project:   stringValue(arguments["project"]),
+			Status:    stringValue(arguments["status"]),
+			Owner:     stringValue(arguments["owner"]),
+			Scenario:  stringValue(arguments["scenario"]),
+		})
 	case "playtest_observe", "playtest_act", "playtest_inspect", "playtest_finish", "playtest_cancel":
 		sessionID := stringValue(arguments["session_id"])
 		if strings.TrimSpace(sessionID) == "" {
@@ -191,6 +223,22 @@ func callMCPTool(ctx context.Context, manager *broker.PlaytestManager, name stri
 	default:
 		return nil, fmt.Errorf("unknown tool %q", name)
 	}
+}
+
+func optionalIntegerArgument(arguments map[string]any, name string) (int, error) {
+	value, ok := arguments[name]
+	if !ok || value == nil {
+		return 0, nil
+	}
+	if number, ok := value.(int); ok {
+		return number, nil
+	}
+	number, ok := value.(float64)
+	const maxExactJSONInteger = 1<<53 - 1
+	if !ok || math.Trunc(number) != number || number > maxExactJSONInteger || number < -maxExactJSONInteger {
+		return 0, fmt.Errorf("%s must be an integer", name)
+	}
+	return int(number), nil
 }
 
 func toolResult(value any, isError bool) map[string]any {

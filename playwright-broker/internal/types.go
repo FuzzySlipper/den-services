@@ -6,10 +6,13 @@ import (
 )
 
 const (
-	DefaultHost           = "127.0.0.1"
-	DefaultManifestName   = ".den-playwright.json"
-	SchemaVersion         = "den-playwright-run/v0"
-	PlaytestSchemaVersion = "den-playwright-playtest/v1"
+	DefaultHost                 = "127.0.0.1"
+	DefaultManifestName         = ".den-playwright.json"
+	SchemaVersion               = "den-playwright-run/v0"
+	PlaytestSchemaVersion       = "den-playwright-playtest/v1"
+	PlaytestListSchemaVersion   = "den-playwright-playtest-list/v1"
+	DefaultPlaytestListPageSize = 20
+	MaxPlaytestListPageSize     = 100
 )
 
 type Config struct {
@@ -166,6 +169,51 @@ type PlaytestSession struct {
 	StatePath         string    `json:"state_path"`
 	Warnings          []string  `json:"warnings,omitempty"`
 	ExitInterview     any       `json:"exit_interview,omitempty"`
+}
+
+type PlaytestListOptions struct {
+	Limit     int
+	Offset    int
+	SessionID string
+	Project   string
+	Status    string
+	Owner     string
+	Scenario  string
+}
+
+type PlaytestListFilters struct {
+	SessionID string `json:"session_id,omitempty"`
+	Project   string `json:"project,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Owner     string `json:"owner,omitempty"`
+	Scenario  string `json:"scenario,omitempty"`
+}
+
+type PlaytestSessionSummary struct {
+	SessionID    string    `json:"session_id"`
+	Project      string    `json:"project"`
+	Owner        string    `json:"owner,omitempty"`
+	Scenario     string    `json:"scenario,omitempty"`
+	Status       string    `json:"status"`
+	StartedAt    time.Time `json:"started_at"`
+	FinishedAt   time.Time `json:"finished_at,omitempty"`
+	IndexPath    string    `json:"index_path"`
+	WarningCount int       `json:"warning_count"`
+}
+
+type PlaytestListPage struct {
+	SchemaVersion string                   `json:"schema_version"`
+	Sessions      []PlaytestSessionSummary `json:"sessions"`
+	Filters       PlaytestListFilters      `json:"filters"`
+	Limit         int                      `json:"limit"`
+	Offset        int                      `json:"offset"`
+	Returned      int                      `json:"returned"`
+	TotalMatched  int                      `json:"total_matched"`
+	Truncated     bool                     `json:"truncated"`
+	HasMore       bool                     `json:"has_more"`
+	NextOffset    *int                     `json:"next_offset,omitempty"`
+	Order         string                   `json:"order"`
+	DetailTool    string                   `json:"detail_tool"`
 }
 
 var (

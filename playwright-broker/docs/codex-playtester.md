@@ -21,12 +21,22 @@ The command:
 - links the repository-owned `product-playtest` skill;
 - renders the `playtester` custom agent with `gpt-5.6-luna` and `max` reasoning;
 - renders a host-local broker configuration and artifact root;
+- registers the host-local broker as the parent Codex configuration's
+  `mcp_servers.den_playtest` server with exactly eight enabled tools;
 - initializes the stdio MCP and verifies all eight tools;
-- when the active Codex root already configures `mcp_servers.den.url`, renders
-  a separate `den_reference` MCP exposing only read-only Knowledge/document
-  retrieval tools.
 
-The installer marks the agent, configuration, and binary it owns. Re-running
+Codex agent-role files cannot add MCP servers or otherwise increase the parent
+task's authority. The global registration is therefore intentional: a fresh
+playtester child inherits the already-approved local server. MCP tools are
+deferred/searchable in current Codex tasks, so their full schemas are not
+eagerly copied into every model prompt. The role instructions and the server's
+eight-tool allowlist keep the intended playtest lane narrow. This is an
+ergonomic boundary, not authorization: ordinary parent agents inherit the
+server too and must still delegate product operation to `agent_type:
+"playtester"`.
+
+The installer marks the agent, broker configuration, binary, and bounded
+`config.toml` MCP block it owns. Re-running
 it updates those owned targets. If a target path already contains unrelated
 content, installation stops before changing any target; move or rename that
 customization explicitly before installing the repository playtester.

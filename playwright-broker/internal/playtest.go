@@ -271,6 +271,93 @@ func (m *PlaytestManager) List() ([]PlaytestSession, error) {
 	return sessions, nil
 }
 
+func (m *PlaytestManager) ListPage(options PlaytestListOptions) (PlaytestListPage, error) {
+	limit := options.Limit
+	if limit == 0 {
+		limit = DefaultPlaytestListPageSize
+	}
+	if limit < 1 || limit > MaxPlaytestListPageSize {
+		return PlaytestListPage{}, fmt.Errorf("playtest list limit must be between 1 and %d", MaxPlaytestListPageSize)
+	}
+	if options.Offset < 0 {
+		return PlaytestListPage{}, errors.New("playtest list offset must be non-negative")
+	}
+
+	filters := PlaytestListFilters{
+		SessionID: strings.TrimSpace(options.SessionID),
+		Project:   strings.TrimSpace(options.Project),
+		Status:    strings.TrimSpace(options.Status),
+		Owner:     strings.TrimSpace(options.Owner),
+		Scenario:  strings.TrimSpace(options.Scenario),
+	}
+	sessions, err := m.List()
+	if err != nil {
+		return PlaytestListPage{}, err
+	}
+	matched := make([]PlaytestSession, 0, len(sessions))
+	for _, session := range sessions {
+		if filters.SessionID != "" && session.SessionID != filters.SessionID {
+			continue
+		}
+		if filters.Project != "" && session.Project != filters.Project {
+			continue
+		}
+		if filters.Status != "" && session.Status != filters.Status {
+			continue
+		}
+		if filters.Owner != "" && session.Owner != filters.Owner {
+			continue
+		}
+		if filters.Scenario != "" && session.Scenario != filters.Scenario {
+			continue
+		}
+		matched = append(matched, session)
+	}
+	sort.Slice(matched, func(i int, j int) bool {
+		if matched[i].StartedAt.Equal(matched[j].StartedAt) {
+			return matched[i].SessionID > matched[j].SessionID
+		}
+		return matched[i].StartedAt.After(matched[j].StartedAt)
+	})
+
+	start := min(options.Offset, len(matched))
+	end := min(start+limit, len(matched))
+	summaries := make([]PlaytestSessionSummary, 0, end-start)
+	for _, session := range matched[start:end] {
+		summaries = append(summaries, PlaytestSessionSummary{
+			SessionID:    session.SessionID,
+			Project:      session.Project,
+			Owner:        session.Owner,
+			Scenario:     session.Scenario,
+			Status:       session.Status,
+			StartedAt:    session.StartedAt,
+			FinishedAt:   session.FinishedAt,
+			IndexPath:    session.IndexPath,
+			WarningCount: len(session.Warnings),
+		})
+	}
+	hasMore := end < len(matched)
+	var nextOffset *int
+	if hasMore {
+		value := end
+		nextOffset = &value
+	}
+	return PlaytestListPage{
+		SchemaVersion: PlaytestListSchemaVersion,
+		Sessions:      summaries,
+		Filters:       filters,
+		Limit:         limit,
+		Offset:        options.Offset,
+		Returned:      len(summaries),
+		TotalMatched:  len(matched),
+		Truncated:     len(summaries) != len(matched),
+		HasMore:       hasMore,
+		NextOffset:    nextOffset,
+		Order:         "started_at_desc",
+		DetailTool:    "playtest_get",
+	}, nil
+}
+
 func (m *PlaytestManager) startDriver(options map[string]any, environment map[string]string, artifactRoot string) (int, error) {
 	encoded, err := json.Marshal(options)
 	if err != nil {

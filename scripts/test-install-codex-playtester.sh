@@ -52,19 +52,22 @@ printf '%s\n' \
   > "${reference_home}/config.toml"
 "${installer}" --codex-home "${reference_home}"
 "${installer}" --check --codex-home "${reference_home}"
-python3 - "${reference_home}/agents/playtester.toml" <<'PY'
-import pathlib
-import sys
-import tomllib
+grep -Fqx '[mcp_servers.den]' "${reference_home}/config.toml"
+grep -Fqx '[mcp_servers.den_playtest]' "${reference_home}/config.toml"
 
-agent = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())
-server = agent["mcp_servers"]["den_reference"]
-assert server["url"] == "http://127.0.0.1:5199/mcp?tool_profile=planner"
-assert set(server["enabled_tools"]) == {
-    "den_knowledge_get", "den_knowledge_guide", "den_knowledge_search", "get_document",
-}
-assert "den_knowledge_store" not in server["enabled_tools"]
-PY
+conflict_home="${test_root}/conflict"
+mkdir -p "${conflict_home}"
+printf '%s\n' \
+  '[mcp_servers.den_playtest]' \
+  'command = "unrelated-playtest-server"' \
+  > "${conflict_home}/config.toml"
+cp "${conflict_home}/config.toml" "${test_root}/conflict.before"
+if "${installer}" --codex-home "${conflict_home}" \
+  > "${test_root}/conflict.stdout" 2> "${test_root}/conflict.stderr"; then
+  echo "installer unexpectedly replaced unrelated den_playtest MCP configuration" >&2
+  exit 1
+fi
+cmp "${test_root}/conflict.before" "${conflict_home}/config.toml"
 
 printf 'unrelated replacement binary\n' > "${test_root}/replacement-binary"
 chmod +x "${test_root}/replacement-binary"

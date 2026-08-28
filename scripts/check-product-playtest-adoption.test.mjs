@@ -11,6 +11,7 @@ const productPlaytestSkill = new URL("../codex/skills/product-playtest/SKILL.md"
 test("routes ordinary agents through the dedicated playtester profile", () => {
   const skill = readFileSync(productPlaytestSkill, "utf8");
   assert.match(skill, /Spawn `agent_type: "playtester"`/);
+  assert.match(skill, /even\s+when the inherited `playtest_\*` tools are searchable/);
   assert.match(skill, /do \*\*not\*\* report an infrastructure error/);
   assert.match(skill, /on-demand `den-playwright mcp` stdio process/);
   assert.match(skill, /`den-serve` centrally owns long-running local/);

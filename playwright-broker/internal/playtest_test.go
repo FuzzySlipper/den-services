@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -183,6 +184,93 @@ func TestPlaytestGetAcceptsExistingSessionWithoutExitInterview(t *testing.T) {
 	}
 	if persisted.ExitInterview != nil {
 		t.Fatalf("ExitInterview = %#v, want nil", persisted.ExitInterview)
+	}
+}
+
+func TestPlaytestListPageDefaultsToBoundedNewestSummaries(t *testing.T) {
+	manager := NewPlaytestManager(playtestTestConfig(t))
+	base := time.Date(2026, time.August, 27, 12, 0, 0, 0, time.UTC)
+	for index := 0; index < DefaultPlaytestListPageSize+5; index++ {
+		session := PlaytestSession{
+			SchemaVersion: PlaytestSchemaVersion,
+			SessionID:     fmt.Sprintf("session-%02d", index),
+			Project:       "fixture",
+			Owner:         "tester",
+			Scenario:      "bounded-list",
+			Status:        "pass",
+			StartedAt:     base.Add(time.Duration(index) * time.Minute),
+			IndexPath:     fmt.Sprintf("/evidence/session-%02d/playtest-index.json", index),
+			Warnings:      []string{"one", "two"},
+			ExitInterview: map[string]any{"confidence": "high"},
+		}
+		if err := manager.saveSession(session); err != nil {
+			t.Fatalf("saveSession() error = %v", err)
+		}
+	}
+
+	page, err := manager.ListPage(PlaytestListOptions{})
+	if err != nil {
+		t.Fatalf("ListPage() error = %v", err)
+	}
+	if page.Limit != DefaultPlaytestListPageSize || page.Returned != DefaultPlaytestListPageSize || page.TotalMatched != DefaultPlaytestListPageSize+5 {
+		t.Fatalf("page bounds = %#v", page)
+	}
+	if !page.Truncated || !page.HasMore || page.NextOffset == nil || *page.NextOffset != DefaultPlaytestListPageSize {
+		t.Fatalf("page continuation = %#v", page)
+	}
+	if page.Sessions[0].SessionID != "session-24" || page.Sessions[0].WarningCount != 2 || page.DetailTool != "playtest_get" {
+		t.Fatalf("newest summary = %#v", page.Sessions[0])
+	}
+
+	lastPage, err := manager.ListPage(PlaytestListOptions{Offset: *page.NextOffset})
+	if err != nil {
+		t.Fatalf("ListPage(second page) error = %v", err)
+	}
+	if lastPage.Returned != 5 || lastPage.HasMore || lastPage.NextOffset != nil || !lastPage.Truncated {
+		t.Fatalf("last page continuation = %#v", lastPage)
+	}
+
+	legacy, err := manager.List()
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(legacy) != DefaultPlaytestListPageSize+5 || legacy[0].ExitInterview == nil {
+		t.Fatalf("legacy full records = %#v", legacy)
+	}
+}
+
+func TestPlaytestListPageFiltersExactSessions(t *testing.T) {
+	manager := NewPlaytestManager(playtestTestConfig(t))
+	sessions := []PlaytestSession{
+		{SessionID: "target", Project: "alpha", Owner: "one", Scenario: "smoke", Status: "pass", StartedAt: time.Now().UTC()},
+		{SessionID: "other", Project: "beta", Owner: "two", Scenario: "regression", Status: "fail", StartedAt: time.Now().UTC()},
+	}
+	for _, session := range sessions {
+		if err := manager.saveSession(session); err != nil {
+			t.Fatalf("saveSession() error = %v", err)
+		}
+	}
+	page, err := manager.ListPage(PlaytestListOptions{
+		SessionID: " target ", Project: " alpha ", Owner: " one ", Scenario: " smoke ", Status: " pass ",
+	})
+	if err != nil {
+		t.Fatalf("ListPage() error = %v", err)
+	}
+	if page.Returned != 1 || page.Sessions[0].SessionID != "target" || page.Truncated {
+		t.Fatalf("filtered page = %#v", page)
+	}
+}
+
+func TestPlaytestListPageRejectsInvalidBounds(t *testing.T) {
+	manager := NewPlaytestManager(playtestTestConfig(t))
+	for _, options := range []PlaytestListOptions{
+		{Limit: -1},
+		{Limit: MaxPlaytestListPageSize + 1},
+		{Offset: -1},
+	} {
+		if _, err := manager.ListPage(options); err == nil {
+			t.Fatalf("ListPage(%#v) error = nil", options)
+		}
 	}
 }
 

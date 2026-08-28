@@ -1,13 +1,18 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	broker "den-services/playwright-broker/internal"
 )
 
 func TestPlaytestMCPToolsAdvertisePermissiveEscapeHatches(t *testing.T) {
@@ -26,6 +31,88 @@ func TestPlaytestMCPToolsAdvertisePermissiveEscapeHatches(t *testing.T) {
 		if strings.Contains(strings.ToLower(text), forbidden) {
 			t.Fatalf("tools contain restrictive phrase %q: %s", forbidden, text)
 		}
+	}
+}
+
+func TestPlaytestListMCPToolAdvertisesBoundedPaginationAndFilters(t *testing.T) {
+	var listTool map[string]any
+	for _, tool := range playtestTools() {
+		if tool["name"] == "playtest_list" {
+			listTool = tool
+			break
+		}
+	}
+	if listTool == nil {
+		t.Fatal("playtest_list tool not found")
+	}
+	schema := listTool["inputSchema"].(map[string]any)
+	properties := schema["properties"].(map[string]any)
+	limit := properties["limit"].(map[string]any)
+	if limit["default"] != broker.DefaultPlaytestListPageSize || limit["maximum"] != broker.MaxPlaytestListPageSize {
+		t.Fatalf("limit schema = %#v", limit)
+	}
+	for _, name := range []string{"offset", "session_id", "project", "status", "owner", "scenario"} {
+		if _, ok := properties[name]; !ok {
+			t.Fatalf("missing playtest_list property %q: %#v", name, properties)
+		}
+	}
+}
+
+func TestOptionalIntegerArgumentAcceptsDecodedJSONAndDirectInts(t *testing.T) {
+	for _, arguments := range []map[string]any{{"limit": float64(20)}, {"limit": 20}} {
+		value, err := optionalIntegerArgument(arguments, "limit")
+		if err != nil || value != 20 {
+			t.Fatalf("optionalIntegerArgument(%#v) = %d, %v", arguments, value, err)
+		}
+	}
+	for _, value := range []any{20.5, "20", float64(1 << 54)} {
+		if _, err := optionalIntegerArgument(map[string]any{"limit": value}, "limit"); err == nil {
+			t.Fatalf("optionalIntegerArgument(%#v) error = nil", value)
+		}
+	}
+}
+
+func TestPlaytestListMCPDispatchBoundsDiscoveryAndKeepsGetDetail(t *testing.T) {
+	stateDir := t.TempDir()
+	sessionDir := filepath.Join(stateDir, "playtest-sessions")
+	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, time.August, 27, 12, 0, 0, 0, time.UTC)
+	for index := 0; index < broker.DefaultPlaytestListPageSize+1; index++ {
+		session := broker.PlaytestSession{
+			SessionID:     fmt.Sprintf("session-%02d", index),
+			Project:       "fixture",
+			Status:        "pass",
+			StartedAt:     base.Add(time.Duration(index) * time.Minute),
+			ExitInterview: map[string]any{"confidence": "high"},
+		}
+		data, err := json.Marshal(session)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(sessionDir, session.SessionID+".json"), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manager := broker.NewPlaytestManager(&broker.Config{StateDir: stateDir})
+
+	value, err := callMCPTool(context.Background(), manager, "playtest_list", map[string]any{})
+	if err != nil {
+		t.Fatalf("callMCPTool(playtest_list) error = %v", err)
+	}
+	page := value.(broker.PlaytestListPage)
+	if page.Returned != broker.DefaultPlaytestListPageSize || page.TotalMatched != broker.DefaultPlaytestListPageSize+1 || page.NextOffset == nil {
+		t.Fatalf("MCP list page = %#v", page)
+	}
+
+	value, err = callMCPTool(context.Background(), manager, "playtest_get", map[string]any{"session_id": "session-20"})
+	if err != nil {
+		t.Fatalf("callMCPTool(playtest_get) error = %v", err)
+	}
+	detail := value.(broker.PlaytestSession)
+	if detail.ExitInterview.(map[string]any)["confidence"] != "high" {
+		t.Fatalf("MCP get detail = %#v", detail)
 	}
 }
 

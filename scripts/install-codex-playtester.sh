@@ -6,7 +6,8 @@ usage() {
 Usage: scripts/install-codex-playtester.sh [--check] [--codex-home PATH]
 
 Install (default): build den-playwright, link the repository-owned skill, render
-the Luna/max playtester agent and local MCP config, then validate the result.
+the Luna/max playtester agent and local MCP config, register the local MCP in
+Codex's parent configuration, then validate the result.
 
 Check: validate an existing installation and MCP tool catalog without changing it.
 USAGE
@@ -54,6 +55,8 @@ codex_config="${codex_root}/config.toml"
 driver_script="${repo_root}/playwright-broker/driver/playtest-driver.mjs"
 owner_record="${codex_root}/playtester/install-owner"
 owner_marker="# Managed by den-services: scripts/install-codex-playtester.sh"
+mcp_block_begin="# BEGIN den-services playtester MCP (managed)"
+mcp_block_end="# END den-services playtester MCP (managed)"
 
 require_file() {
   [[ -f "$1" ]] || { echo "missing required file: $1" >&2; exit 1; }
@@ -186,6 +189,31 @@ preflight_install_targets() {
   if path_exists "${owner_record}" && ! has_owner_record; then
     refuse_unowned_target "${owner_record}" "ownership record"
   fi
+
+  python3 - "${codex_config}" "${mcp_block_begin}" "${mcp_block_end}" <<'PY'
+import pathlib
+import sys
+import tomllib
+
+path = pathlib.Path(sys.argv[1])
+begin, end = sys.argv[2:]
+if not path.exists():
+    raise SystemExit(0)
+text = path.read_text()
+try:
+    config = tomllib.loads(text)
+except tomllib.TOMLDecodeError as error:
+    raise SystemExit(f"cannot inspect Codex config {path}: {error}")
+server = config.get("mcp_servers", {}).get("den_playtest")
+managed = begin in text and end in text and text.index(begin) < text.index(end)
+if managed:
+    managed_text = text[text.index(begin):text.index(end) + len(end)]
+    managed = "[mcp_servers.den_playtest]" in managed_text
+if server is not None and not managed:
+    raise SystemExit(f"refusing to replace unrelated mcp_servers.den_playtest in {path}")
+if (begin in text or end in text) and not managed:
+    raise SystemExit(f"malformed managed playtester MCP block in {path}")
+PY
 }
 
 write_owner_record() {
@@ -227,33 +255,9 @@ import tomllib
 agent = agent_template.read_text()
 for marker, value in {
     "@SKILL_PATH_TOML@": skill_path,
-    "@BINARY_PATH_TOML@": binary_path,
-    "@CONFIG_PATH_TOML@": installed_config,
-    "@REPO_ROOT_TOML@": repo_root,
 }.items():
     agent = agent.replace(marker, json.dumps(str(value)))
 
-den_reference_server = ""
-if codex_config.is_file():
-    try:
-        root_config = tomllib.loads(codex_config.read_text())
-    except tomllib.TOMLDecodeError as error:
-        raise SystemExit(f"cannot discover Den reference MCP from {codex_config}: {error}")
-    den_server = root_config.get("mcp_servers", {}).get("den", {})
-    den_url = den_server.get("url") if isinstance(den_server, dict) else None
-    if isinstance(den_url, str) and den_url.strip():
-        den_reference_server = f'''[mcp_servers.den_reference]
-url = {json.dumps(den_url)}
-enabled = true
-enabled_tools = [
-  "den_knowledge_get",
-  "den_knowledge_guide",
-  "den_knowledge_search",
-  "get_document",
-]
-default_tools_approval_mode = "approve"
-'''
-agent = agent.replace("@DEN_REFERENCE_SERVER_TOML@", den_reference_server.rstrip())
 installed_agent.write_text(agent)
 
 config = config_template.read_text()
@@ -265,6 +269,51 @@ for marker, value in {
 }.items():
     config = config.replace(marker, json.dumps(str(value)))
 installed_config.write_text(config)
+PY
+}
+
+install_root_mcp_server() {
+  python3 - \
+    "${codex_config}" "${mcp_block_begin}" "${mcp_block_end}" \
+    "${installed_binary}" "${installed_config}" "${repo_root}" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+begin, end, binary, config, repo = sys.argv[2:]
+block = f'''{begin}
+[mcp_servers.den_playtest]
+command = {json.dumps(binary)}
+args = ["mcp", "-config", {json.dumps(config)}]
+cwd = {json.dumps(repo)}
+startup_timeout_sec = 30
+tool_timeout_sec = 180
+enabled = true
+enabled_tools = [
+  "playtest_start",
+  "playtest_observe",
+  "playtest_act",
+  "playtest_inspect",
+  "playtest_finish",
+  "playtest_cancel",
+  "playtest_get",
+  "playtest_list",
+]
+default_tools_approval_mode = "approve"
+{end}'''
+
+text = path.read_text() if path.exists() else ""
+if begin in text or end in text:
+    if begin not in text or end not in text or text.index(begin) > text.index(end):
+        raise SystemExit(f"malformed managed playtester MCP block in {path}")
+    start = text.index(begin)
+    finish = text.index(end, start) + len(end)
+    text = text[:start].rstrip() + "\n\n" + block + text[finish:]
+else:
+    text = text.rstrip() + ("\n\n" if text.strip() else "") + block + "\n"
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(text)
 PY
 }
 
@@ -304,14 +353,14 @@ validate_installation() {
   python3 - \
     "${installed_agent}" "${installed_config}" "${installed_skill}/SKILL.md" \
     "${installed_binary}" "${driver_script}" "${installed_input_helper}" "${validation_dir}/mcp.jsonl" \
-    "${codex_config}" <<'PY'
+    "${codex_config}" "${repo_root}" <<'PY'
 import json
 import pathlib
 import re
 import sys
 import tomllib
 
-agent_path, config_path, skill_path, binary_path, driver_path, input_helper_path, mcp_path, codex_config = map(pathlib.Path, sys.argv[1:])
+agent_path, config_path, skill_path, binary_path, driver_path, input_helper_path, mcp_path, codex_config, repo_root = map(pathlib.Path, sys.argv[1:])
 agent = tomllib.loads(agent_path.read_text())
 expected_tools = {
     "playtest_start", "playtest_observe", "playtest_act", "playtest_inspect",
@@ -321,23 +370,19 @@ expected_tools = {
 assert agent["name"] == "playtester"
 assert agent["model"] == "gpt-5.6-luna"
 assert agent["model_reasoning_effort"] == "max"
-assert agent["skills"]["config"][0]["path"] == str(skill_path)
-server = agent["mcp_servers"]["den_playtest"]
+assert "mcp_servers" not in agent
+assert "skills" not in agent
+
+root_config = tomllib.loads(codex_config.read_text())
+server = root_config["mcp_servers"]["den_playtest"]
 assert server["command"] == str(binary_path)
 assert server["args"] == ["mcp", "-config", str(config_path)]
+assert server["cwd"] == str(repo_root)
+assert server["enabled"] is True
+assert server["startup_timeout_sec"] == 30
+assert server["tool_timeout_sec"] == 180
+assert server["default_tools_approval_mode"] == "approve"
 assert set(server["enabled_tools"]) == expected_tools
-
-root_config = tomllib.loads(codex_config.read_text()) if codex_config.is_file() else {}
-root_den = root_config.get("mcp_servers", {}).get("den", {})
-root_den_url = root_den.get("url") if isinstance(root_den, dict) else None
-reference = agent.get("mcp_servers", {}).get("den_reference")
-if isinstance(root_den_url, str) and root_den_url.strip():
-    assert reference["url"] == root_den_url
-    assert set(reference["enabled_tools"]) == {
-        "den_knowledge_get", "den_knowledge_guide", "den_knowledge_search", "get_document",
-    }
-else:
-    assert reference is None
 
 config = config_path.read_text()
 match = re.search(r'^\s*driver_script:\s*(.+?)\s*$', config, re.MULTILINE)
@@ -355,12 +400,7 @@ PY
 
   rm -rf "${validation_dir}"
   trap - RETURN
-  if grep -Fq '[mcp_servers.den_reference]' "${installed_agent}"; then
-    echo "playtester installation valid: gpt-5.6-luna / max / 8 playtest tools + read-only Den references"
-  else
-    echo "playtester installation valid: gpt-5.6-luna / max / 8 playtest tools"
-    echo "No root Den URL was discovered; pass resolved source material in the mission packet."
-  fi
+  echo "playtester installation valid: gpt-5.6-luna / max / parent-owned local MCP / 8 playtest tools"
   echo "Start a fresh Codex task to load the installed agent, skill, and MCP server."
 }
 
@@ -379,6 +419,7 @@ if [[ "${mode}" == "install" ]]; then
   install -m 0755 "${build_dir}/den-playwright" "${installed_binary}"
   install -m 0755 "${build_dir}/den-playwright-x11-input" "${installed_input_helper}"
   render_templates
+  install_root_mcp_server
   write_owner_record
   rm -rf "${build_dir}"
   trap - EXIT

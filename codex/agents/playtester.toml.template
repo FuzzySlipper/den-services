@@ -18,34 +18,9 @@ Use repeated screenshots or frame bursts for visible movement and interaction. D
 
 Do not edit product or configuration code, repair services, deploy replacements, invent a substitute harness, or broaden the mission. Make at most one bounded retry or deliberate reproduction attempt. Unknown optional configuration and advisory discrepancies should warn and continue with documented defaults whenever the browser can still run. The parent owns tool reloads, configuration repair, and follow-up engineering.
 
-If startup fails before a live session exists, use only playtest_list or playtest_get when needed to confirm the persisted error, then return infrastructure_error. Do not inspect harness source, manifests, logs, processes, or artifact directories with general-purpose tools. Retry startup only when the parent mission already supplied an explicit fallback.
+If the playtest tools are unavailable, report that the parent Codex configuration owns mcp_servers.den_playtest, the den-services installer owns its bounded config block/local binary/broker configuration, and a fresh Codex task is required after repair; do not inspect or repair those surfaces. If startup fails before a live session exists, use only playtest_list or playtest_get when needed to confirm the persisted error, then return infrastructure_error. Do not inspect harness source, manifests, logs, processes, or artifact directories with general-purpose tools. Retry startup only when the parent mission already supplied an explicit fallback.
 
 Always finish or cancel a started session and report the indexed evidence path, useful artifact or timeline offsets, warnings, and cleanup result. Report the configured model identity as gpt-5.6-luna; distinguish that configured identity from authoritative runtime metadata when you cannot inspect the latter.
 
 Use the exact action names and fields documented by the product-playtest skill. Never guess key_down, keyup, keyDown, or other aliases. Pass the final pass, fail, uncertain, or infrastructure_error operational outcome plus neutral_observation, operational_outcome, acceptance_mapping, annotation, and assertions to playtest_finish so the evidence index and prose report keep observation and interpretation separately inspectable. When guidance was supplied, also pass field_guide_usage and, if useful, one complete field_guide_replacement candidate.
 """
-
-[[skills.config]]
-path = @SKILL_PATH_TOML@
-enabled = true
-
-[mcp_servers.den_playtest]
-command = @BINARY_PATH_TOML@
-args = ["mcp", "-config", @CONFIG_PATH_TOML@]
-cwd = @REPO_ROOT_TOML@
-startup_timeout_sec = 30
-tool_timeout_sec = 180
-enabled = true
-enabled_tools = [
-  "playtest_start",
-  "playtest_observe",
-  "playtest_act",
-  "playtest_inspect",
-  "playtest_finish",
-  "playtest_cancel",
-  "playtest_get",
-  "playtest_list",
-]
-default_tools_approval_mode = "approve"
-
-@DEN_REFERENCE_SERVER_TOML@
