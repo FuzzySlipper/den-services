@@ -100,6 +100,21 @@ func TestMarkdownFenceRequiresMatchingMarkerAndRunLength(t *testing.T) {
 	}
 }
 
+func TestMarkdownFenceCloserCannotCarryInfoText(t *testing.T) {
+	markdown := "# Intro\n````\n````not-a-closer\n# hidden\n````\n# Visible"
+	sections := outlineMarkdown(markdown)
+	if len(sections) != 2 || sections[0].Title != "Intro" || sections[1].Title != "Visible" {
+		t.Fatalf("outline with info-text closer = %#v", sections)
+	}
+	intro, body, err := selectMarkdownSection(markdown, "intro")
+	if err != nil {
+		t.Fatalf("select intro: %v", err)
+	}
+	if intro.Title != "Intro" || !strings.Contains(body, "# hidden") || strings.Contains(body, "# Visible") {
+		t.Fatalf("intro section body = %q", body)
+	}
+}
+
 func TestNavigationHandlerCardsOmitBodiesAndExposeContinuation(t *testing.T) {
 	service := NewService(newMemoryStore(), fixedClock())
 	if _, err := service.StoreEntry(context.Background(), StoreEntryRequest{Slug: "http-card", Title: "HTTP Card", Summary: "safe summary", BodyMarkdown: "private full body", Kind: KindReference, Status: StatusReviewed, CurationState: CurationAgentCurated}); err != nil {

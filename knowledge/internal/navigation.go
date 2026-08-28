@@ -308,7 +308,7 @@ func markdownHeadings(markdown string) []markdownHeading {
 				fenceMarker = marker
 				fenceLength = length
 			}
-		} else if isFence && marker == fenceMarker && length >= fenceLength {
+		} else if isFence && marker == fenceMarker && length >= fenceLength && markdownFenceCloses(trimmed, length) {
 			fenceMarker = 0
 			fenceLength = 0
 		}
@@ -340,6 +340,10 @@ func markdownFence(line string) (byte, int, bool) {
 		length++
 	}
 	return marker, length, length >= 3
+}
+
+func markdownFenceCloses(line string, markerLength int) bool {
+	return strings.TrimSpace(line[markerLength:]) == ""
 }
 
 func headingID(title string) string {
