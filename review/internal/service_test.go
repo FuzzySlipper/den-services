@@ -2,6 +2,7 @@ package review
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -209,6 +210,56 @@ func TestFinalizeReviewCreatesCurrentFindingsAtomically(t *testing.T) {
 	}
 	if len(messages.appended) != 1 {
 		t.Fatalf("message count = %d, want 1", len(messages.appended))
+	}
+}
+
+func TestFinalizeReviewAcceptsUsefulEvidenceAboveLegacyBudget(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
+	}}
+	service := newTestService(store, messages, tasks)
+	round, err := service.CreateRound(ctx, "den-services", 42, CreateReviewRoundRequest{
+		RequestedBy: "reviewer", Branch: "task/large-verdict", BaseBranch: "main",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := FinalizeReviewRequest{
+		ReviewRoundID: round.ID,
+		Verdict:       VerdictLooksGood,
+		DecidedBy:     "reviewer",
+		Notes:         strings.Repeat("review evidence ", 320),
+	}
+	encoded, err := json.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoded) <= 4096 || len(encoded) >= finalizeReviewMaxRequestBytes {
+		t.Fatalf("test request bytes = %d, want legacy budget < bytes < %d", len(encoded), finalizeReviewMaxRequestBytes)
+	}
+	receipt, err := service.FinalizeReview(ctx, req)
+	if err != nil {
+		t.Fatalf("FinalizeReview() error = %v", err)
+	}
+	if receipt.TaskStatus != TaskStatusDone || len(messages.appended) != 1 {
+		t.Fatalf("finalization receipt/messages = %+v/%d", receipt, len(messages.appended))
+	}
+}
+
+func TestFinalizeReviewRejectsRequestAboveBound(t *testing.T) {
+	service := newTestService(newMemoryStore(), &fakeMessages{}, &fakeTasks{})
+	_, err := service.FinalizeReview(context.Background(), FinalizeReviewRequest{
+		ReviewRoundID: 1,
+		Verdict:       VerdictLooksGood,
+		DecidedBy:     "reviewer",
+		Notes:         strings.Repeat("x", finalizeReviewMaxRequestBytes),
+	})
+	var serviceErr *ServiceError
+	if !errors.As(err, &serviceErr) || serviceErr.Code() != "review_request_too_large" {
+		t.Fatalf("FinalizeReview() error = %T %v, want review_request_too_large", err, err)
 	}
 }
 

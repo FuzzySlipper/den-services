@@ -23,6 +23,7 @@ const (
 	defaultGitHubEventWaitMax      = 55 * time.Second
 	defaultGitHubEventWaitPoll     = 500 * time.Millisecond
 	defaultGitHubToolWaitMax       = 50 * time.Second
+	finalizeReviewMaxRequestBytes  = 16 * 1024
 )
 
 type ProjectValidator interface {
@@ -737,7 +738,7 @@ func (s *Service) SetVerdict(ctx context.Context, roundID int64, req SetReviewVe
 func (s *Service) FinalizeReview(ctx context.Context, req FinalizeReviewRequest) (*ReviewFinalizationReceipt, error) {
 	if encoded, err := json.Marshal(req); err != nil {
 		return nil, fmt.Errorf("encoding finalization request: %w", err)
-	} else if len(encoded) > 4096 {
+	} else if len(encoded) > finalizeReviewMaxRequestBytes {
 		return nil, validationError(ErrReviewRequestTooLarge, "review_request_too_large", "review_request", "review_findings.finalize")
 	}
 	req.ReviewRoundID = max(req.ReviewRoundID, 0)

@@ -178,6 +178,10 @@ metadata or from an untrusted source-control claim.
 7. returns a compact `den_review.completion_receipt.v1` with IDs, statuses,
    timestamps, and evidence handles.
 
+The structured finalization request is bounded at 16 KiB. This leaves room for
+normal verdict evidence and several structured findings while still rejecting
+unbounded review transcripts; large supporting material remains pointer-first.
+
 Retries with the same normalized decision identity return the existing receipt.
 A different decision for a committed round returns a typed conflict. Packet
 delivery or task transition failures remain retryable and are reconciled
