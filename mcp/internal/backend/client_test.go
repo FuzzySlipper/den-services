@@ -1129,6 +1129,66 @@ func TestClientCallsReviewRESTRequestCampaignReview(t *testing.T) {
 	}
 }
 
+func TestClientCallsCrewReviewRESTSubmitTaskForReview(t *testing.T) {
+	var sawPath string
+	var sawBody submitReviewBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.Path
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer crew-review-token" {
+			t.Fatalf("authorization = %q", got)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"schema":"crew_review.submission.v1","schema_version":1,"ok":true,"phase":"gate_pending","submission_id":"sub-1","project_id":"dsh-crew","task_id":7416,"commit_sha":"0123456789abcdef0123456789abcdef01234567","gate_status":"pending"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	backendConfig := testBackend("crew-review", server.URL)
+	backendConfig.ServiceToken = "crew-review-token"
+	_, failure, err := client.Call(context.Background(), backendConfig, Route{
+		Operation: "submit_task_for_review", Backend: "crew-review", Method: http.MethodPost,
+		Path: "/v1/review-submissions", RequestAdapter: RequestAdapterMCPReviewREST,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}, ToolCall{
+		ToolName: "submit_task_for_review", Operation: "submit_task_for_review", RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"project_id":"dsh-crew","task_id":7416,"repository":"owner/repo","commit_sha":"0123456789abcdef0123456789abcdef01234567","ref":"main","required_checks":["go test ./...","lint"],"base_commit":"fedcba9876543210fedcba9876543210fedcba98","review_summary_md":"Please review the implementation.","reviewer":"@reviewer"}`),
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("Call() failure = %#v", failure)
+	}
+	if sawPath != "/v1/review-submissions" || sawBody.ProjectID != "dsh-crew" || sawBody.TaskID != 7416 ||
+		sawBody.Repository != "owner/repo" || sawBody.CommitSHA == "" || sawBody.Ref != "main" ||
+		len(sawBody.RequiredChecks) != 2 || sawBody.BaseCommit == "" || sawBody.ReviewSummary != "Please review the implementation." || sawBody.Reviewer != "@reviewer" {
+		t.Fatalf("path=%q body=%#v", sawPath, sawBody)
+	}
+}
+
+func TestClientReportsCrewReviewUnavailableWithoutFallback(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	endpoint := server.URL
+	server.Close()
+	_, failure, err := NewClient(nil).Call(context.Background(), testBackend("crew-review", endpoint), Route{
+		Operation: "submit_task_for_review", Backend: "crew-review", Method: http.MethodPost,
+		Path: "/v1/review-submissions", RequestAdapter: RequestAdapterMCPReviewREST,
+		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}, ToolCall{ToolName: "submit_task_for_review", Operation: "submit_task_for_review", RequestID: json.RawMessage(`1`), Arguments: json.RawMessage(`{"project_id":"dsh-crew","task_id":7416,"repository":"owner/repo","commit_sha":"0123456789abcdef0123456789abcdef01234567","ref":"main","required_checks":["lint"],"review_summary_md":"review"}`)})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if failure == nil || !failure.Retryable || failure.Error != "den_backend_unavailable" || failure.Backend != "crew-review" {
+		t.Fatalf("failure=%#v, want retryable crew-review unavailable", failure)
+	}
+}
+
 func TestClientCallsReviewRESTFinalizeReview(t *testing.T) {
 	var sawPath string
 	var sawBody finalizeReviewBody

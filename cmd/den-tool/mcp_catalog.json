@@ -3289,6 +3289,76 @@
       }
     },
     {
+      "name": "submit_task_for_review",
+      "description": "Submit one exact-SHA task review through the configured managed review runtime. Den remains authoritative for the review round, GitHub check gate, and current review context; this returns a durable submission/job receipt and never duplicates findings or finalization.",
+      "backend": "crew-review",
+      "operation": "submit_task_for_review",
+      "workflow_tier": "green_path",
+      "risk": "write",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "base_commit": {
+            "description": "Optional full 40-character diff base commit.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commit_sha": {
+            "description": "Full 40-character commit SHA to review. The managed path never substitutes a branch head.",
+            "type": "string"
+          },
+          "project_id": {
+            "description": "Exact Den project ID owning the task.",
+            "type": "string"
+          },
+          "ref": {
+            "description": "Branch or ref associated with the submitted commit.",
+            "type": "string"
+          },
+          "repository": {
+            "description": "GitHub repository as owner/name.",
+            "type": "string"
+          },
+          "required_checks": {
+            "description": "Exact GitHub check-run names required before reviewer admission.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "review_summary_md": {
+            "description": "Markdown summary supplied to the Den review request.",
+            "type": "string"
+          },
+          "reviewer": {
+            "description": "Optional reviewer identity; defaults to the configured review identity.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "task_id": {
+            "description": "Canonical Den task ID to submit for review.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "task_id",
+          "repository",
+          "commit_sha",
+          "ref",
+          "required_checks",
+          "review_summary_md"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "update_discussion_thread",
       "description": "Update a discussion thread's status, summary, resolution_summary, or title. Common use: mark threads as resolved or archived after discussion concludes.",
       "backend": "documents",

@@ -57,6 +57,9 @@ type reviewToolArguments struct {
 	CommitSHA               string          `json:"commit_sha"`
 	Ref                     string          `json:"ref"`
 	RequiredChecks          json.RawMessage `json:"required_checks"`
+	BaseCommit              string          `json:"base_commit"`
+	ReviewSummaryMD         string          `json:"review_summary_md"`
+	Reviewer                string          `json:"reviewer"`
 	CampaignChildren        json.RawMessage `json:"children"`
 	CampaignRepositories    json.RawMessage `json:"repositories"`
 	TimeoutSeconds          *int            `json:"timeout_seconds"`
@@ -79,6 +82,18 @@ type reviewRoundBody struct {
 	Notes       string   `json:"notes,omitempty"`
 	ThreadID    *int64   `json:"thread_id,omitempty"`
 	RunID       string   `json:"run_id,omitempty"`
+}
+
+type submitReviewBody struct {
+	ProjectID      string   `json:"project_id"`
+	TaskID         int64    `json:"task_id"`
+	Repository     string   `json:"repository"`
+	CommitSHA      string   `json:"commit_sha"`
+	Ref            string   `json:"ref"`
+	RequiredChecks []string `json:"required_checks"`
+	BaseCommit     string   `json:"base_commit,omitempty"`
+	ReviewSummary  string   `json:"review_summary_md"`
+	Reviewer       string   `json:"reviewer,omitempty"`
 }
 
 type campaignReviewBody struct {
@@ -257,6 +272,16 @@ func decodeReviewToolArguments(raw json.RawMessage) (reviewToolArguments, error)
 
 func reviewRESTRequestBody(operation string, arguments reviewToolArguments) ([]byte, error) {
 	switch operation {
+	case "submit_task_for_review":
+		requiredChecks, err := parseStringList(arguments.RequiredChecks)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(submitReviewBody{
+			ProjectID: arguments.ProjectID, TaskID: arguments.TaskID, Repository: strings.TrimSpace(arguments.Repository),
+			CommitSHA: strings.TrimSpace(arguments.CommitSHA), Ref: strings.TrimSpace(arguments.Ref), RequiredChecks: requiredChecks,
+			BaseCommit: strings.TrimSpace(arguments.BaseCommit), ReviewSummary: strings.TrimSpace(arguments.ReviewSummaryMD), Reviewer: strings.TrimSpace(arguments.Reviewer),
+		})
 	case "create_review_round", "request_review":
 		testsRun, err := parseStringList(arguments.TestsRun)
 		if err != nil {

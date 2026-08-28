@@ -84,7 +84,7 @@ func riskFor(name string) string {
 	case "await_github_checks", "den_knowledge_store":
 		return "write"
 	}
-	for _, prefix := range []string{"add_", "comment_", "create_", "ensure_", "finalize_", "mark_", "post_", "record_", "remove_", "request_", "respond_", "send_", "set_", "split_", "store_", "update_", "watch_"} {
+	for _, prefix := range []string{"add_", "comment_", "create_", "ensure_", "finalize_", "mark_", "post_", "record_", "remove_", "request_", "respond_", "send_", "set_", "split_", "store_", "submit_", "update_", "watch_"} {
 		if strings.HasPrefix(name, prefix) {
 			return "write"
 		}

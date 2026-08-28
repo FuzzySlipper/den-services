@@ -62,8 +62,13 @@ The runtime-neutral review envelope, ownership split, byte budgets, and
 staleness/coalescing rules live in
 [`docs/review-pointer-first-contract.md`](../docs/review-pointer-first-contract.md).
 The important boundary is that MCP exposes Den Review facts and handles; it
-does not become the Rusty Crew wake/reply authority. Managed runtimes use their
-own `submit_task_for_review` / `rusty_crew.submit_task_for_review` and
+does not become the Rusty Crew wake/reply authority. The
+`submit_task_for_review` green path is routed to the separately configured
+`crew-review` backend, which owns durable submission admission and runtime
+choice while calling Den back for the round, exact-SHA gate, and current
+context. A backend outage is surfaced as a retryable actionable result; this
+route has no automatic Rusty fallback. Managed runtimes may still expose their
+own native `rusty_crew.submit_task_for_review` and
 `complete_routed_review` / `rusty_crew.complete_routed_review` green paths,
 while direct sessions retain typed Review/GitHub primitives for deliberate
 direct review and recovery. Generic messaging, app-thread steering, and an
@@ -126,7 +131,7 @@ Expected output contains these checkpoints:
 
 ```text
 ok: local initialize
-ok: local tools/list returned 38 tools
+ok: local tools/list returned 39 tools
 ok: local read tool proxied through backend
 ok: local non-representative tool proxied through backend
 ok: local get_agent_guidance returned MCP-compatible successor shape
@@ -195,7 +200,7 @@ Expected live output includes:
 
 ```text
 ok: live initialize
-ok: live tools/list returned 38 tools
+ok: live tools/list returned 39 tools
 ok: live read tool proxied to tasks successor
 ok: live non-representative tool proxied to documents successor
 ok: live get_agent_guidance returned MCP-compatible successor shape

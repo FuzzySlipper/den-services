@@ -128,6 +128,9 @@ func TestRoutesExampleCoversDefaultRegistry(t *testing.T) {
 		if reviewRoute(tool.Name) {
 			wantBackend = "review"
 		}
+		if tool.Name == "submit_task_for_review" {
+			wantBackend = "crew-review"
+		}
 		if knowledgeRoute(tool.Name) {
 			wantBackend = "knowledge"
 		}
@@ -535,6 +538,7 @@ func reviewRoute(operation string) bool {
 		"list_review_findings",
 		"request_review",
 		"request_campaign_review",
+		"submit_task_for_review",
 		"post_review_findings",
 		"split_review_findings_to_follow_up",
 		"create_review_finding",

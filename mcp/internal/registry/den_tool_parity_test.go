@@ -97,7 +97,7 @@ func TestDenToolCatalogMatchesDirectMCPRegistry(t *testing.T) {
 			t.Errorf("den-tool risk for %s = %q, want write", name, riskByName[name])
 		}
 	}
-	wantRiskCounts := map[string]int{"read": 43, "write": 37, "destructive": 6}
+	wantRiskCounts := map[string]int{"read": 43, "write": 38, "destructive": 6}
 	if !reflect.DeepEqual(riskCounts, wantRiskCounts) {
 		t.Errorf("den-tool risk counts = %v, want %v", riskCounts, wantRiskCounts)
 	}

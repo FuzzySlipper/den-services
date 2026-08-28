@@ -19,8 +19,8 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 38 {
-		t.Fatalf("tool count = %d, want 38", len(names))
+	if len(names) != 39 {
+		t.Fatalf("tool count = %d, want 39", len(names))
 	}
 	for _, name := range []string{
 		"comment_on_document",
@@ -56,6 +56,7 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		"send_message",
 		"send_user_notification",
 		"set_handoff",
+		"submit_task_for_review",
 		"store_document",
 		"update_task",
 		"wait_for_github_checks",
@@ -135,8 +136,8 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 			t.Fatalf("%s discovery class = %q", name, tool.DiscoveryClass)
 		}
 	}
-	if catalog := registry.CatalogTools(); len(catalog) != 86 {
-		t.Fatalf("catalog tool count = %d, want 86", len(catalog))
+	if catalog := registry.CatalogTools(); len(catalog) != 87 {
+		t.Fatalf("catalog tool count = %d, want 87", len(catalog))
 	}
 	if len(longTailToolNames) != len(longTailNames) {
 		t.Fatalf("long-tail policy count = %d, want %d", len(longTailToolNames), len(longTailNames))
@@ -268,6 +269,46 @@ func TestDefaultRegistryExposesFinalizeReviewGreenPath(t *testing.T) {
 	}
 }
 
+func TestManagedSubmissionToolIsProviderNeutralAndKeepsPublicInput(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, err := registry.Resolve("submit_task_for_review")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tool.Backend != "crew-review" || tool.Operation != "submit_task_for_review" || tool.WorkflowTier != WorkflowTierGreenPath {
+		t.Fatalf("tool ownership = %#v", tool)
+	}
+	lower := strings.ToLower(tool.Description + string(tool.InputSchema))
+	if strings.Contains(lower, "codex") || strings.Contains(lower, "rusty") {
+		t.Fatalf("provider vocabulary leaked into managed submission schema: %s", tool.InputSchema)
+	}
+	var schema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []string                   `json:"required"`
+	}
+	if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"project_id", "task_id", "repository", "commit_sha", "ref", "required_checks", "review_summary_md"} {
+		if schema.Properties[field] == nil || !slices.Contains(schema.Required, field) {
+			t.Fatalf("submission schema missing required %s: %#v", field, schema)
+		}
+	}
+	if schema.Properties["reviewer"] == nil || slices.Contains(schema.Required, "reviewer") {
+		t.Fatalf("reviewer must remain optional: %#v", schema)
+	}
+	var checks map[string]any
+	if err := json.Unmarshal(schema.Properties["required_checks"], &checks); err != nil {
+		t.Fatal(err)
+	}
+	if checks["type"] != "array" || checks["minItems"] != float64(1) {
+		t.Fatalf("required_checks schema = %#v", checks)
+	}
+}
+
 func TestDefaultRegistryReviewInputsDoNotExposeCheckoutRevisionFields(t *testing.T) {
 	registry, err := DefaultRegistry()
 	if err != nil {
@@ -315,14 +356,14 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if err != nil {
 		t.Fatalf("ToolsForProfile(managed-runtime) error = %v", err)
 	}
-	if len(direct) != 38 {
-		t.Fatalf("direct tool count = %d, want 38", len(direct))
+	if len(direct) != 39 {
+		t.Fatalf("direct tool count = %d, want 39", len(direct))
 	}
 	if len(managed) >= len(direct) {
 		t.Fatalf("managed tool count = %d, want fewer than direct %d", len(managed), len(direct))
 	}
-	if len(managed) != 33 {
-		t.Fatalf("managed tool count = %d, want 33", len(managed))
+	if len(managed) != 34 {
+		t.Fatalf("managed tool count = %d, want 34", len(managed))
 	}
 	for _, name := range []string{"discover_github_checks", "watch_github_checks", "get_github_check_gate", "wait_for_github_checks", "await_github_checks", "request_review", "create_review_round"} {
 		if containsListedTool(managed, name) {
@@ -334,6 +375,9 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	}
 	if !containsListedTool(managed, "finalize_review") {
 		t.Fatal("managed profile hides finalize_review green path")
+	}
+	if !containsListedTool(managed, "submit_task_for_review") {
+		t.Fatal("managed profile hides submit_task_for_review green path")
 	}
 	for _, name := range []string{"get_task", "get_task_context", "list_tasks", "store_document", "update_task"} {
 		if !containsListedTool(managed, name) {
@@ -356,7 +400,7 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if catalog.HiddenToolCount == 0 || catalog.WorkflowTiers[WorkflowTierPrimitive] != 0 {
 		t.Fatalf("managed catalog = %#v", catalog)
 	}
-	if catalog.VisibleToolCount != 33 || catalog.HiddenToolCount != 53 {
+	if catalog.VisibleToolCount != 34 || catalog.HiddenToolCount != 53 {
 		t.Fatalf("managed catalog counts = %#v", catalog)
 	}
 	if !slices.Contains(catalog.HiddenWorkflowTiers, WorkflowTierPrimitive) {
@@ -439,7 +483,7 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 			tool.Name != "record_human_acceptance_review" && tool.Name != "set_handoff" &&
 			tool.Name != "get_handoff" && tool.Name != "den_knowledge_delete" && !strings.HasSuffix(tool.Name, "_board_post") &&
 			!strings.HasSuffix(tool.Name, "_board_comment") && tool.Name != "list_board_posts" &&
-			tool.Name != "list_board_comments" && tool.Name != "get_board_comment_path" {
+			tool.Name != "list_board_comments" && tool.Name != "get_board_comment_path" && tool.Name != "submit_task_for_review" {
 			t.Fatalf("unexpected non-snapshot tool %q", tool.Name)
 		}
 	}

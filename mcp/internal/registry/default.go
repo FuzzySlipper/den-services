@@ -80,6 +80,7 @@ func DefaultTools() ([]ToolDefinition, error) {
 	}
 	tools = append(tools, githubCheckGateTools()...)
 	tools = append(tools, reviewFinalizationTools()...)
+	tools = append(tools, reviewSubmissionTools()...)
 	tools = append(tools, campaignReviewTools()...)
 	tools = append(tools, taskContextTools()...)
 	tools = append(tools, reviewContextTools()...)
@@ -530,6 +531,30 @@ func reviewFinalizationTools() []ToolDefinition {
 			"prior_finding_resolutions": AnySchema("Optional JSON array of {finding_id, status, verification_note} terminal prior-finding resolutions."),
 			"new_findings":              AnySchema("Optional JSON array of structured current-round findings; each has category, summary, notes, file_references, and test_commands."),
 		}, "review_round_id", "verdict", "decided_by"),
+	}}
+}
+
+func reviewSubmissionTools() []ToolDefinition {
+	return []ToolDefinition{{
+		Name:         "submit_task_for_review",
+		Description:  "Submit one exact-SHA task review through the configured managed review runtime. Den remains authoritative for the review round, GitHub check gate, and current review context; this returns a durable submission/job receipt and never duplicates findings or finalization.",
+		Backend:      "crew-review",
+		Operation:    "submit_task_for_review",
+		WorkflowTier: WorkflowTierGreenPath,
+		InputSchema: ObjectSchema(map[string]Schema{
+			"project_id": StringSchema("Exact Den project ID owning the task."),
+			"task_id":    IntegerSchema("Canonical Den task ID to submit for review."),
+			"repository": StringSchema("GitHub repository as owner/name."),
+			"commit_sha": StringSchema("Full 40-character commit SHA to review. The managed path never substitutes a branch head."),
+			"ref":        StringSchema("Branch or ref associated with the submitted commit."),
+			"required_checks": mustSchema(map[string]any{
+				"type": "array", "items": map[string]any{"type": "string", "minLength": 1}, "minItems": 1,
+				"description": "Exact GitHub check-run names required before reviewer admission.",
+			}),
+			"base_commit":       NullableStringSchema("Optional full 40-character diff base commit."),
+			"review_summary_md": StringSchema("Markdown summary supplied to the Den review request."),
+			"reviewer":          NullableStringSchema("Optional reviewer identity; defaults to the configured review identity."),
+		}, "project_id", "task_id", "repository", "commit_sha", "ref", "required_checks", "review_summary_md"),
 	}}
 }
 

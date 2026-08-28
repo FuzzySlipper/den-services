@@ -51,6 +51,12 @@ backends:
     health_path: "/health"
     timeout: "3s"
     service_token_env: "DEN_REVIEW_SERVICE_TOKEN"
+  # Optional managed review runtime. Keep this loopback-only; an unavailable
+  # runtime is surfaced to callers and is never silently replaced by Rusty.
+  - name: "crew-review"
+    base_url: "http://127.0.0.1:8413"
+    health_path: "/healthz"
+    timeout: "5s"
   - name: "knowledge"
     base_url: "http://127.0.0.1:8095"
     health_path: "/health"
