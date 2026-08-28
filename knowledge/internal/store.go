@@ -223,6 +223,120 @@ func (s *Store) ListRevisions(ctx context.Context, slug string) ([]RevisionSumma
 	return revisions, nil
 }
 
+func (s *Store) CurrentRevision(ctx context.Context, slug string) (int, error) {
+	var revision int
+	if err := s.pool.QueryRow(ctx, currentRevisionSQL, slug).Scan(&revision); errors.Is(err, pgx.ErrNoRows) {
+		return 0, entryNotFound(slug)
+	} else if err != nil {
+		return 0, fmt.Errorf("reading knowledge revision: %w", err)
+	}
+	return revision, nil
+}
+
+func (s *Store) ReplaceLinks(ctx context.Context, fromSlug string, links []EntryLink) error {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("beginning knowledge link replacement: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var entryID int64
+	if err := tx.QueryRow(ctx, entryIDBySlugForUpdateSQL, fromSlug).Scan(&entryID); errors.Is(err, pgx.ErrNoRows) {
+		return entryNotFound(fromSlug)
+	} else if err != nil {
+		return fmt.Errorf("locking knowledge link source: %w", err)
+	}
+	if _, err := tx.Exec(ctx, deleteLinksSQL, entryID); err != nil {
+		return fmt.Errorf("deleting knowledge links: %w", err)
+	}
+	for _, link := range links {
+		if _, err := tx.Exec(ctx, insertLinkSQL, entryID, link.ToSlug, link.Kind, emptyToNil(link.Description)); err != nil {
+			return fmt.Errorf("inserting knowledge link: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing knowledge link replacement: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListLinks(ctx context.Context, slug string, limit int) ([]ResolvedLink, error) {
+	rows, err := s.pool.Query(ctx, listLinksSQL, slug, limit)
+	if err != nil {
+		return nil, fmt.Errorf("listing knowledge links: %w", err)
+	}
+	defer rows.Close()
+	links := []ResolvedLink{}
+	for rows.Next() {
+		var link ResolvedLink
+		var title, summary, status *string
+		if err := rows.Scan(&link.Kind, &link.Description, &link.Target.Slug, &title, &summary, &status); err != nil {
+			return nil, fmt.Errorf("scanning knowledge link: %w", err)
+		}
+		if title == nil {
+			link.Target.Missing = true
+		} else {
+			link.Target.Title = *title
+			link.Target.Summary = *summary
+			link.Target.Status = *status
+		}
+		links = append(links, link)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating knowledge links: %w", err)
+	}
+	return links, nil
+}
+
+func (s *Store) StoreMap(ctx context.Context, knowledgeMap KnowledgeMap) (*KnowledgeMap, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("beginning knowledge map upsert: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	stored := KnowledgeMap{Entries: append([]KnowledgeMapEntry(nil), knowledgeMap.Entries...)}
+	if err := tx.QueryRow(ctx, upsertMapSQL, knowledgeMap.Slug, knowledgeMap.Title, emptyToNil(knowledgeMap.Summary), emptyToNil(knowledgeMap.CreatedBy), emptyToNil(knowledgeMap.UpdatedBy), knowledgeMap.CreatedAt, knowledgeMap.UpdatedAt).Scan(&stored.Slug, &stored.Title, &stored.Summary, &stored.CreatedBy, &stored.UpdatedBy, &stored.CreatedAt, &stored.UpdatedAt); err != nil {
+		return nil, fmt.Errorf("upserting knowledge map: %w", err)
+	}
+	if _, err := tx.Exec(ctx, deleteMapEntriesSQL, stored.Slug); err != nil {
+		return nil, fmt.Errorf("deleting knowledge map entries: %w", err)
+	}
+	for _, entry := range stored.Entries {
+		if _, err := tx.Exec(ctx, insertMapEntrySQL, stored.Slug, entry.EntrySlug, emptyToNil(entry.GroupName), entry.Position, emptyToNil(entry.Note)); err != nil {
+			return nil, fmt.Errorf("inserting knowledge map entry: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing knowledge map: %w", err)
+	}
+	return &stored, nil
+}
+
+func (s *Store) GetMap(ctx context.Context, slug string) (*KnowledgeMap, error) {
+	knowledgeMap := KnowledgeMap{}
+	if err := s.pool.QueryRow(ctx, getMapSQL, slug).Scan(&knowledgeMap.Slug, &knowledgeMap.Title, &knowledgeMap.Summary, &knowledgeMap.CreatedBy, &knowledgeMap.UpdatedBy, &knowledgeMap.CreatedAt, &knowledgeMap.UpdatedAt); errors.Is(err, pgx.ErrNoRows) {
+		return nil, NewServiceError(fmt.Errorf("%w: %s", ErrMapNotFound, slug), "knowledge_map_not_found", 404)
+	} else if err != nil {
+		return nil, fmt.Errorf("getting knowledge map: %w", err)
+	}
+	rows, err := s.pool.Query(ctx, listMapEntriesSQL, slug)
+	if err != nil {
+		return nil, fmt.Errorf("listing knowledge map entries: %w", err)
+	}
+	defer rows.Close()
+	knowledgeMap.Entries = []KnowledgeMapEntry{}
+	for rows.Next() {
+		var entry KnowledgeMapEntry
+		if err := rows.Scan(&entry.EntrySlug, &entry.GroupName, &entry.Position, &entry.Note); err != nil {
+			return nil, fmt.Errorf("scanning knowledge map entry: %w", err)
+		}
+		knowledgeMap.Entries = append(knowledgeMap.Entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating knowledge map entries: %w", err)
+	}
+	return &knowledgeMap, nil
+}
+
 func insertRevision(ctx context.Context, tx pgx.Tx, existing *Entry, changedBy string, changeNote string) error {
 	var nextRevision int
 	if err := tx.QueryRow(ctx, nextRevisionSQL, existing.ID()).Scan(&nextRevision); err != nil {
@@ -495,6 +609,10 @@ limit $11`
 
 const nextRevisionSQL = `select coalesce(max(revision_number), 0) + 1 from den_knowledge.knowledge_entry_revisions where entry_id = $1`
 
+const currentRevisionSQL = `
+select coalesce((select max(revision_number) from den_knowledge.knowledge_entry_revisions where entry_id = ke.id), 0) + 1
+from den_knowledge.knowledge_entries ke where ke.slug = $1`
+
 const insertRevisionSQL = `
 insert into den_knowledge.knowledge_entry_revisions(entry_id, revision_number, title, summary, body_markdown, kind, status, curation_state, tags_json, audience_json, aliases_json, source_refs_json, accuracy_notes, replacement_slug, changed_by, change_note)
 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`
@@ -509,6 +627,36 @@ order by kr.revision_number desc`
 const deleteInboundLinksSQL = `delete from den_knowledge.knowledge_entry_links where to_entry_slug = $1`
 
 const deleteEntrySQL = `delete from den_knowledge.knowledge_entries where slug = $1 returning id`
+
+const entryIDBySlugForUpdateSQL = `select id from den_knowledge.knowledge_entries where slug = $1 for update`
+
+const deleteLinksSQL = `delete from den_knowledge.knowledge_entry_links where from_entry_id = $1`
+
+const insertLinkSQL = `insert into den_knowledge.knowledge_entry_links(from_entry_id, to_entry_slug, link_kind, description) values ($1, $2, $3, $4)`
+
+const listLinksSQL = `
+select kel.link_kind, coalesce(kel.description, ''), kel.to_entry_slug, target.title, coalesce(target.summary, ''), target.status
+from den_knowledge.knowledge_entry_links kel
+join den_knowledge.knowledge_entries source on source.id = kel.from_entry_id
+left join den_knowledge.knowledge_entries target on target.slug = kel.to_entry_slug
+where source.slug = $1
+  and kel.link_kind in ('related', 'embed', 'replacement')
+order by kel.id asc
+limit $2`
+
+const upsertMapSQL = `
+insert into den_knowledge.knowledge_maps(slug, title, summary, created_by, updated_by, created_at, updated_at)
+values ($1, $2, $3, $4, $5, $6, $7)
+on conflict (slug) do update set title = excluded.title, summary = excluded.summary, updated_by = excluded.updated_by, updated_at = excluded.updated_at
+returning slug, title, coalesce(summary, ''), coalesce(created_by, ''), coalesce(updated_by, ''), created_at, updated_at`
+
+const deleteMapEntriesSQL = `delete from den_knowledge.knowledge_map_entries where map_slug = $1`
+
+const insertMapEntrySQL = `insert into den_knowledge.knowledge_map_entries(map_slug, entry_slug, group_name, position, note) values ($1, $2, $3, $4, $5)`
+
+const getMapSQL = `select slug, title, coalesce(summary, ''), coalesce(created_by, ''), coalesce(updated_by, ''), created_at, updated_at from den_knowledge.knowledge_maps where slug = $1`
+
+const listMapEntriesSQL = `select entry_slug, coalesce(group_name, ''), position, coalesce(note, '') from den_knowledge.knowledge_map_entries where map_slug = $1 order by position asc, entry_slug asc`
 
 const (
 	deleteTagsSQL     = `delete from den_knowledge.knowledge_entry_tags where entry_id = $1`

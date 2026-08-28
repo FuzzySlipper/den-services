@@ -181,15 +181,61 @@ func reviewPipelineTools() []ToolDefinition {
 }
 
 func knowledgeTools() []ToolDefinition {
+	slug := StringSchema("Exact Knowledge entry or map slug.")
+	includeArchived := BooleanSchema("Include archived entries. Defaults to false.")
 	return []ToolDefinition{{
 		Name:        "den_knowledge_delete",
 		Description: "Permanently delete one Knowledge entry by exact slug, including its revision history, tags, and links. This is irreversible and should be used only for deliberate curation of obsolete, duplicate, or low-value records; do not archive entries selected for removal.",
 		Backend:     "knowledge",
 		Operation:   "den_knowledge_delete",
 		InputSchema: ObjectSchema(map[string]Schema{
-			"slug": StringSchema("Exact Knowledge entry slug to hard delete."),
+			"slug": slug,
 		}, "slug"),
+	}, {
+		Name: "den_knowledge_card", Description: "Get one compact Knowledge decision card with metadata, revision, digest, replacement target, and no body_markdown.",
+		Backend: "knowledge", Operation: "den_knowledge_card",
+		InputSchema: ObjectSchema(map[string]Schema{"slug": slug, "include_archived": includeArchived}, "slug"),
+	}, {
+		Name: "den_knowledge_cards", Description: "Get one bounded page of compact Knowledge cards for explicit slugs. Missing entries are returned as handles; no entry body is read.",
+		Backend: "knowledge", Operation: "den_knowledge_cards",
+		InputSchema: ObjectSchema(map[string]Schema{"slugs": knowledgeSlugArraySchema(), "offset": BoundedIntegerSchema("Optional non-negative continuation offset within supplied handles.", 0, 99), "include_archived": includeArchived}, "slugs"),
+	}, {
+		Name: "den_knowledge_read", Description: "Read one Knowledge entry progressively as an outline, named section, or explicit full body. Known revision or digest returns a compact unchanged receipt when current.",
+		Backend: "knowledge", Operation: "den_knowledge_read",
+		InputSchema: ObjectSchema(map[string]Schema{"slug": slug, "view": knowledgeReadViewSchema(), "section": NullableStringSchema("Required when view is section; use a heading ID from an outline."), "known_revision": nullableBoundedIntegerSchema("Optional previously-read revision. Must be non-negative.", 0, 2147483647), "known_digest": NullableStringSchema("Optional previously-read digest."), "include_archived": includeArchived}, "slug"),
+	}, {
+		Name: "den_knowledge_replace_links", Description: "Replace one Knowledge entry's bounded explicit outgoing links. Link kinds are related, embed, or replacement.",
+		Backend: "knowledge", Operation: "den_knowledge_replace_links",
+		InputSchema: ObjectSchema(map[string]Schema{"slug": slug, "links": knowledgeLinksSchema()}, "slug", "links"),
+	}, {
+		Name: "den_knowledge_store_map", Description: "Create or replace a compact curated Knowledge Map of ordered entry handles. Maps own no Markdown body.",
+		Backend: "knowledge", Operation: "den_knowledge_store_map",
+		InputSchema: ObjectSchema(map[string]Schema{"slug": slug, "title": StringSchema("Knowledge Map title."), "summary": NullableStringSchema("Optional compact map summary."), "entries": knowledgeMapEntriesSchema(), "changed_by": NullableStringSchema("Optional curator identity for the map revision.")}, "slug", "title", "entries"),
+	}, {
+		Name: "den_knowledge_get_map", Description: "Get one curated Knowledge Map with ordered grouped compact entry cards and no entry bodies.",
+		Backend: "knowledge", Operation: "den_knowledge_get_map",
+		InputSchema: ObjectSchema(map[string]Schema{"slug": slug}, "slug"),
 	}}
+}
+
+func knowledgeSlugArraySchema() Schema {
+	return mustSchema(map[string]any{"type": "array", "minItems": 1, "maxItems": 100, "items": map[string]any{"type": "string", "minLength": 1}, "description": "Explicit Knowledge slugs. At most 25 distinct cards are returned per page."})
+}
+
+func nullableBoundedIntegerSchema(description string, minimum, maximum int) Schema {
+	return mustSchema(map[string]any{"type": []string{"integer", "null"}, "minimum": minimum, "maximum": maximum, "description": description})
+}
+
+func knowledgeReadViewSchema() Schema {
+	return mustSchema(map[string]any{"type": []string{"string", "null"}, "enum": []any{"outline", "section", "full", nil}, "description": "Read view. Omit for outline; full is an explicit full-body opt-in."})
+}
+
+func knowledgeLinksSchema() Schema {
+	return mustSchema(map[string]any{"type": "array", "maxItems": 20, "items": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"to_slug": map[string]any{"type": "string", "minLength": 1}, "kind": map[string]any{"type": "string", "enum": []string{"related", "embed", "replacement"}}, "description": map[string]any{"type": "string"}}, "required": []string{"to_slug", "kind"}}, "description": "Replacement outgoing link set; at most 20 links."})
+}
+
+func knowledgeMapEntriesSchema() Schema {
+	return mustSchema(map[string]any{"type": "array", "minItems": 1, "maxItems": 100, "items": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"entry_slug": map[string]any{"type": "string", "minLength": 1}, "group_name": map[string]any{"type": "string"}, "position": map[string]any{"type": "integer", "minimum": 0, "maximum": 99}, "note": map[string]any{"type": "string"}}, "required": []string{"entry_slug", "position"}}, "description": "Ordered, optionally grouped Knowledge entry references."})
 }
 
 func handoffTools() []ToolDefinition {
@@ -444,7 +490,35 @@ func taskContextTools() []ToolDefinition {
 		InputSchema: ObjectSchema(map[string]Schema{
 			"task_id": IntegerSchema("Canonical task ID to brief."),
 		}, "task_id"),
+	}, {
+		Name:        "compose_assignment_manifest",
+		Description: "Compose a bounded, read-only, assignment-specific Context Manifest from the canonical task, Guidance bindings, explicit or inherited Knowledge handles, and optional Librarian suggestions. It keeps assignment instructions separate from optional context and never copies entry bodies.",
+		Backend:     "tasks", Operation: "compose_assignment_manifest",
+		InputSchema: ObjectSchema(map[string]Schema{
+			"task_id":                 IntegerSchema("Canonical parent task ID. The task supplies project scope."),
+			"assignment":              StringSchema("Non-empty instructions for this one assignment."),
+			"background":              NullableStringSchema("Optional background kept visibly separate from assignment instructions."),
+			"agent_profile":           NullableStringSchema("Optional agent-profile scope used by Guidance binding resolution."),
+			"capabilities":            assignmentStringArraySchema("Optional capability scope names.", 32),
+			"explicit_knowledge_refs": assignmentStringArraySchema("Optional exact Knowledge slugs selected by the orchestrator.", 100),
+			"inherited_refs":          assignmentInheritedRefsSchema(),
+			"limits":                  assignmentManifestLimitsSchema(),
+		}, "task_id", "assignment"),
 	}}
+}
+
+func assignmentStringArraySchema(description string, maximum int) Schema {
+	return mustSchema(map[string]any{"type": []string{"array", "null"}, "maxItems": maximum, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 512}, "description": description})
+}
+
+func assignmentInheritedRefsSchema() Schema {
+	return mustSchema(map[string]any{"type": []string{"array", "null"}, "maxItems": 100, "items": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
+		"reference": map[string]any{"type": "string", "minLength": 1, "maxLength": 512}, "title": map[string]any{"type": "string", "maxLength": 512}, "summary": map[string]any{"type": "string", "maxLength": 2048}, "kind": map[string]any{"type": "string", "maxLength": 128}, "authority": map[string]any{"type": "string", "maxLength": 128}, "authority_state": map[string]any{"type": "string", "maxLength": 128}, "curation_state": map[string]any{"type": "string", "maxLength": 128}, "tags": map[string]any{"type": "array", "maxItems": 32, "items": map[string]any{"type": "string", "maxLength": 128}}, "revision": map[string]any{"type": "integer", "minimum": 1}, "update_marker": map[string]any{"type": "string", "maxLength": 128}, "read_cost_bytes": map[string]any{"type": "integer", "minimum": 0}, "selection_source": map[string]any{"type": "string", "maxLength": 128}, "read_when": map[string]any{"type": "string", "maxLength": 1024}, "read_policy": map[string]any{"type": "string", "enum": []string{"inline", "must_read", "on_demand", "latent"}}, "group": map[string]any{"type": "string", "enum": []string{"must-read", "task-local", "likely-useful", "nearby-maps"}},
+	}, "required": []string{"reference"}}, "description": "Optional bounded handle cards inherited from a parent manifest."})
+}
+
+func assignmentManifestLimitsSchema() Schema {
+	return mustSchema(map[string]any{"type": []string{"object", "null"}, "additionalProperties": false, "properties": map[string]any{"max_handles": map[string]any{"type": "integer", "minimum": 1, "maximum": 24}, "inline_budget": map[string]any{"type": "integer", "minimum": 0, "maximum": 4096}, "librarian_items": map[string]any{"type": "integer", "minimum": 0, "maximum": 8}}, "description": "Optional bounded composition limits."})
 }
 
 func reviewContextTools() []ToolDefinition {
@@ -649,6 +723,7 @@ var longTailToolNames = map[string]struct{}{
 	"add_dependency":                     {},
 	"archive_document_preflight":         {},
 	"archive_space":                      {},
+	"compose_assignment_manifest":        {},
 	"await_github_checks":                {},
 	"create_discussion_comment":          {},
 	"create_project":                     {},
@@ -658,6 +733,12 @@ var longTailToolNames = map[string]struct{}{
 	"delete_agent_guidance_entry":        {},
 	"delete_document":                    {},
 	"den_knowledge_delete":               {},
+	"den_knowledge_card":                 {},
+	"den_knowledge_cards":                {},
+	"den_knowledge_read":                 {},
+	"den_knowledge_replace_links":        {},
+	"den_knowledge_store_map":            {},
+	"den_knowledge_get_map":              {},
 	"den_knowledge_search":               {},
 	"den_knowledge_store":                {},
 	"ensure_document_discussion":         {},

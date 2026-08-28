@@ -58,3 +58,29 @@ func TestGuidanceAudienceNormalizationMigrationIsSafeAndForwardOnly(t *testing.T
 
 	t.Fatal("den_guidance version 2 migration not discovered")
 }
+
+func TestKnowledgeBindingsMigrationKeepsCanonicalKnowledgeOutOfGuidance(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("discover migrations: %v", err)
+	}
+	for _, migration := range migrations {
+		if migration.Schema != "den_guidance" || migration.Version != 3 {
+			continue
+		}
+		for _, fragment := range []string{
+			"create table den_guidance.knowledge_bindings", "target_kind = 'knowledge'", "target_ref", "scope_kind in ('global', 'project', 'task', 'agent_profile', 'capability')", "read_policy in ('inline', 'must_read', 'on_demand', 'latent')", "unique (target_kind, target_ref, scope_kind, scope_ref)", "shadows_global",
+		} {
+			if !strings.Contains(migration.SQL, fragment) {
+				t.Fatalf("knowledge binding migration missing %q", fragment)
+			}
+		}
+		for _, forbidden := range []string{"body_markdown", "summary", "tags", "provenance", "curation_state", "replacement_slug", "revision"} {
+			if strings.Contains(migration.SQL, forbidden) {
+				t.Fatalf("knowledge binding migration must not duplicate canonical knowledge %q", forbidden)
+			}
+		}
+		return
+	}
+	t.Fatal("den_guidance version 3 migration not discovered")
+}

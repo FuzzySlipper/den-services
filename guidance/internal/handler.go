@@ -16,6 +16,13 @@ type GuidanceUseCases interface {
 	DeleteEntry(ctx context.Context, projectID string, entryID int64) error
 	Resolve(ctx context.Context, query ResolveQuery) (GuidancePacket, error)
 	DocumentReferences(ctx context.Context, documentProjectID string, documentSlug string) ([]DocumentReference, error)
+	CreateKnowledgeBinding(ctx context.Context, req CreateKnowledgeBindingRequest) (*KnowledgeBinding, error)
+	GetKnowledgeBinding(ctx context.Context, bindingID int64) (*KnowledgeBinding, error)
+	ListKnowledgeBindings(ctx context.Context, query BindingListQuery) (BindingListResult, error)
+	UpdateKnowledgeBinding(ctx context.Context, bindingID int64, req UpdateKnowledgeBindingRequest) (*KnowledgeBinding, error)
+	DeleteKnowledgeBinding(ctx context.Context, bindingID int64) error
+	ResolveKnowledgeBindings(ctx context.Context, query BindingResolveQuery) (BindingResolution, error)
+	ResolveContext(ctx context.Context, projectID string, query BindingResolveQuery) (BindingResolution, error)
 }
 
 type Handler struct {
@@ -32,6 +39,128 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/projects/{project_id}/agent-guidance/entries", h.addEntry)
 	mux.HandleFunc("DELETE /v1/projects/{project_id}/agent-guidance/entries/{entry_id}", h.deleteEntry)
 	mux.HandleFunc("GET /v1/guidance/document-references", h.documentReferences)
+	mux.HandleFunc("GET /v1/guidance/knowledge-bindings", h.listKnowledgeBindings)
+	mux.HandleFunc("POST /v1/guidance/knowledge-bindings", h.createKnowledgeBinding)
+	mux.HandleFunc("GET /v1/guidance/knowledge-bindings/{binding_id}", h.getKnowledgeBinding)
+	mux.HandleFunc("PUT /v1/guidance/knowledge-bindings/{binding_id}", h.updateKnowledgeBinding)
+	mux.HandleFunc("DELETE /v1/guidance/knowledge-bindings/{binding_id}", h.deleteKnowledgeBinding)
+	mux.HandleFunc("POST /v1/guidance/knowledge-bindings/resolve", h.resolveKnowledgeBindings)
+	mux.HandleFunc("POST /v1/guidance/context-resolve", h.resolveContext)
+}
+
+func (h *Handler) createKnowledgeBinding(w http.ResponseWriter, r *http.Request) {
+	var req CreateKnowledgeBindingRequest
+	if err := api.DecodeJSON(r, &req); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	binding, err := h.service.CreateKnowledgeBinding(r.Context(), req)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusCreated, toKnowledgeBindingResponse(*binding))
+}
+
+func (h *Handler) listKnowledgeBindings(w http.ResponseWriter, r *http.Request) {
+	limit, err := optionalInt(r.URL.Query().Get("limit"))
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	offset, err := optionalInt(r.URL.Query().Get("offset"))
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	result, err := h.service.ListKnowledgeBindings(r.Context(), BindingListQuery{Limit: limit, Offset: offset})
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, KnowledgeBindingListResponse{Bindings: toKnowledgeBindingResponses(result.Bindings), Count: len(result.Bindings), NextOffset: result.NextOffset})
+}
+
+func (h *Handler) getKnowledgeBinding(w http.ResponseWriter, r *http.Request) {
+	bindingID, err := bindingIDFromRequest(r)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	binding, err := h.service.GetKnowledgeBinding(r.Context(), bindingID)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, toKnowledgeBindingResponse(*binding))
+}
+
+func (h *Handler) updateKnowledgeBinding(w http.ResponseWriter, r *http.Request) {
+	bindingID, err := bindingIDFromRequest(r)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	var req UpdateKnowledgeBindingRequest
+	if err := api.DecodeJSON(r, &req); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	binding, err := h.service.UpdateKnowledgeBinding(r.Context(), bindingID, req)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, toKnowledgeBindingResponse(*binding))
+}
+
+func (h *Handler) deleteKnowledgeBinding(w http.ResponseWriter, r *http.Request) {
+	bindingID, err := bindingIDFromRequest(r)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	if err := h.service.DeleteKnowledgeBinding(r.Context(), bindingID); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, DeleteResponse{Deleted: true, Message: "Knowledge binding deleted."})
+}
+
+func (h *Handler) resolveKnowledgeBindings(w http.ResponseWriter, r *http.Request) {
+	var req BindingResolveRequest
+	if err := api.DecodeJSON(r, &req); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	resolution, err := h.service.ResolveKnowledgeBindings(r.Context(), BindingResolveQuery{Scopes: req.Scopes, Audience: req.Audience, InlineBudget: req.InlineBudget})
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, toBindingResolutionResponse(resolution))
+}
+
+func (h *Handler) resolveContext(w http.ResponseWriter, r *http.Request) {
+	var req ContextResolveRequest
+	if err := api.DecodeJSON(r, &req); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	resolution, err := h.service.ResolveContext(r.Context(), req.ProjectID, BindingResolveQuery{Scopes: req.Scopes, Audience: req.Audience, InlineBudget: req.InlineBudget})
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, toBindingResolutionResponse(resolution))
+}
+
+func bindingIDFromRequest(r *http.Request) (int64, error) {
+	value, err := strconv.ParseInt(r.PathValue("binding_id"), 10, 64)
+	if err != nil || value <= 0 {
+		return 0, validationFailed(ErrBindingNotFound)
+	}
+	return value, nil
 }
 
 func (h *Handler) resolve(w http.ResponseWriter, r *http.Request) {

@@ -2,6 +2,8 @@ package knowledge
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 )
@@ -12,6 +14,8 @@ type memoryStore struct {
 	nextRevID int64
 	entries   []*Entry
 	revisions []RevisionSummary
+	links     []EntryLink
+	maps      []KnowledgeMap
 }
 
 func newMemoryStore() *memoryStore {
@@ -35,6 +39,13 @@ func (s *memoryStore) DeleteEntry(_ context.Context, slug string) error {
 			}
 		}
 		s.revisions = kept
+		keptLinks := s.links[:0]
+		for _, link := range s.links {
+			if link.FromSlug != slug && link.ToSlug != slug {
+				keptLinks = append(keptLinks, link)
+			}
+		}
+		s.links = keptLinks
 		return nil
 	}
 	return entryNotFound(slug)
@@ -47,10 +58,16 @@ func (s *memoryStore) UpsertEntry(_ context.Context, entry *Entry, changeNote st
 		if existing.Slug() != entry.Slug() {
 			continue
 		}
+		revisionNumber := 1
+		for _, revision := range s.revisions {
+			if revision.EntryID == existing.ID() {
+				revisionNumber++
+			}
+		}
 		s.revisions = append(s.revisions, RevisionSummary{
 			ID:             s.nextRevID,
 			EntryID:        existing.ID(),
-			RevisionNumber: len(s.revisions) + 1,
+			RevisionNumber: revisionNumber,
 			Title:          existing.Title(),
 			Kind:           existing.Kind(),
 			Status:         existing.Status(),
@@ -226,6 +243,89 @@ func (s *memoryStore) ListRevisions(_ context.Context, slug string) ([]RevisionS
 		}
 	}
 	return revisions, nil
+}
+
+func (s *memoryStore) CurrentRevision(_ context.Context, slug string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var entryID int64
+	for _, entry := range s.entries {
+		if entry.Slug() == slug {
+			entryID = entry.ID()
+			break
+		}
+	}
+	if entryID == 0 {
+		return 0, entryNotFound(slug)
+	}
+	count := 0
+	for _, revision := range s.revisions {
+		if revision.EntryID == entryID {
+			count++
+		}
+	}
+	return count + 1, nil
+}
+
+func (s *memoryStore) ReplaceLinks(_ context.Context, fromSlug string, links []EntryLink) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.links[:0]
+	for _, link := range s.links {
+		if link.FromSlug != fromSlug {
+			kept = append(kept, link)
+		}
+	}
+	s.links = append(kept, links...)
+	return nil
+}
+
+func (s *memoryStore) ListLinks(_ context.Context, slug string, limit int) ([]ResolvedLink, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	links := make([]ResolvedLink, 0, limit)
+	for _, link := range s.links {
+		if link.FromSlug != slug || len(links) >= limit {
+			continue
+		}
+		resolved := ResolvedLink{Kind: link.Kind, Description: link.Description, Target: LinkTarget{Slug: link.ToSlug, Missing: true}}
+		for _, entry := range s.entries {
+			if entry.Slug() == link.ToSlug {
+				resolved.Target = LinkTarget{Slug: entry.Slug(), Title: entry.Title(), Summary: entry.Summary(), Status: entry.Status()}
+				break
+			}
+		}
+		links = append(links, resolved)
+	}
+	return links, nil
+}
+
+func (s *memoryStore) StoreMap(_ context.Context, knowledgeMap KnowledgeMap) (*KnowledgeMap, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.maps {
+		if existing.Slug == knowledgeMap.Slug {
+			knowledgeMap.CreatedAt = existing.CreatedAt
+			knowledgeMap.CreatedBy = existing.CreatedBy
+			s.maps[i] = knowledgeMap
+			return &s.maps[i], nil
+		}
+	}
+	s.maps = append(s.maps, knowledgeMap)
+	return &s.maps[len(s.maps)-1], nil
+}
+
+func (s *memoryStore) GetMap(_ context.Context, slug string) (*KnowledgeMap, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, knowledgeMap := range s.maps {
+		if knowledgeMap.Slug == slug {
+			copy := knowledgeMap
+			copy.Entries = append([]KnowledgeMapEntry(nil), knowledgeMap.Entries...)
+			return &copy, nil
+		}
+	}
+	return nil, NewServiceError(fmt.Errorf("%w: %s", ErrMapNotFound, slug), "knowledge_map_not_found", http.StatusNotFound)
 }
 
 func entryMatches(explicit string, includeDeprecated bool, includeUnreviewed bool, includeArchived bool, status string) bool {

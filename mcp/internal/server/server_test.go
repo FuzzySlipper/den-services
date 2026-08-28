@@ -88,7 +88,7 @@ func TestMCPToolsListIsStatic(t *testing.T) {
 	if catalog["toolProfile"] != "direct" {
 		t.Fatalf("catalog profile = %v, want direct", catalog["toolProfile"])
 	}
-	if catalog["visibleToolCount"] != float64(39) || catalog["hiddenToolCount"] != float64(48) {
+	if catalog["visibleToolCount"] != float64(39) || catalog["hiddenToolCount"] != float64(55) {
 		t.Fatalf("catalog counts = %#v", catalog)
 	}
 }
@@ -130,7 +130,7 @@ func TestMCPToolsListManagedRuntimeProfileFiltersPrimitives(t *testing.T) {
 	if catalog["hiddenToolCount"].(float64) == 0 {
 		t.Fatal("managed catalog reports no hidden tools")
 	}
-	if catalog["visibleToolCount"] != float64(34) || catalog["hiddenToolCount"] != float64(53) {
+	if catalog["visibleToolCount"] != float64(34) || catalog["hiddenToolCount"] != float64(60) {
 		t.Fatalf("managed catalog counts = %#v", catalog)
 	}
 

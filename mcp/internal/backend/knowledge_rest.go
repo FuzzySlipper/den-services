@@ -36,6 +36,14 @@ type knowledgeToolArguments struct {
 	Limit             int             `json:"limit"`
 	ChangedBy         string          `json:"changed_by"`
 	ChangeNote        string          `json:"change_note"`
+	Slugs             []string        `json:"slugs"`
+	Offset            *int            `json:"offset"`
+	View              string          `json:"view"`
+	Section           string          `json:"section"`
+	KnownRevision     *int            `json:"known_revision"`
+	KnownDigest       string          `json:"known_digest"`
+	Links             json.RawMessage `json:"links"`
+	MapEntries        json.RawMessage `json:"entries"`
 }
 
 type knowledgeStoreBody struct {
@@ -74,6 +82,36 @@ type knowledgeGuideBody struct {
 	IncludeFollowUps  *bool    `json:"include_follow_ups,omitempty"`
 	IncludeDeprecated bool     `json:"include_deprecated,omitempty"`
 	IncludeUnreviewed bool     `json:"include_unreviewed,omitempty"`
+}
+
+type knowledgeCardsBody struct {
+	Slugs           []string `json:"slugs"`
+	IncludeArchived bool     `json:"include_archived,omitempty"`
+}
+
+type knowledgeLinkBody struct {
+	ToSlug      string `json:"to_slug"`
+	Kind        string `json:"kind"`
+	Description string `json:"description,omitempty"`
+}
+
+type knowledgeReplaceLinksBody struct {
+	Links []knowledgeLinkBody `json:"links"`
+}
+
+type knowledgeMapEntryBody struct {
+	EntrySlug string `json:"entry_slug"`
+	GroupName string `json:"group_name,omitempty"`
+	Position  int    `json:"position"`
+	Note      string `json:"note,omitempty"`
+}
+
+type knowledgeStoreMapBody struct {
+	Slug      string                  `json:"slug"`
+	Title     string                  `json:"title"`
+	Summary   string                  `json:"summary,omitempty"`
+	Entries   []knowledgeMapEntryBody `json:"entries"`
+	ChangedBy string                  `json:"changed_by,omitempty"`
 }
 
 func (c *Client) callKnowledgeREST(ctx context.Context, backend config.BackendConfig, route Route, call ToolCall) (Result, *Failure, error) {
@@ -181,7 +219,28 @@ func knowledgeRESTRequestBody(operation string, arguments knowledgeToolArguments
 			ContextBudget: contextBudget, IncludeFollowUps: arguments.IncludeFollowUps, IncludeDeprecated: arguments.IncludeDeprecated,
 			IncludeUnreviewed: arguments.IncludeUnreviewed,
 		})
-	case "den_knowledge_get", "den_knowledge_delete":
+	case "den_knowledge_cards":
+		slugs, err := normalizedKnowledgeSlugs(arguments.Slugs)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(knowledgeCardsBody{Slugs: slugs, IncludeArchived: arguments.IncludeArchived})
+	case "den_knowledge_replace_links":
+		links, err := decodeKnowledgeLinks(arguments.Links)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(knowledgeReplaceLinksBody{Links: links})
+	case "den_knowledge_store_map":
+		entries, err := decodeKnowledgeMapEntries(arguments.MapEntries)
+		if err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(arguments.Slug) == "" || strings.TrimSpace(arguments.Title) == "" {
+			return nil, fmt.Errorf("knowledge map requires slug and title")
+		}
+		return json.Marshal(knowledgeStoreMapBody{Slug: strings.TrimSpace(arguments.Slug), Title: strings.TrimSpace(arguments.Title), Summary: strings.TrimSpace(arguments.Summary), Entries: entries, ChangedBy: strings.TrimSpace(arguments.ChangedBy)})
+	case "den_knowledge_get", "den_knowledge_delete", "den_knowledge_card", "den_knowledge_read", "den_knowledge_get_map":
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("%w: knowledge operation %s", ErrUnsupportedAdapter, operation)
@@ -198,11 +257,106 @@ func knowledgeRESTURL(baseURL string, route Route, arguments knowledgeToolArgume
 		return "", fmt.Errorf("parsing knowledge backend URL: %w", err)
 	}
 	query := parsedURL.Query()
-	if route.Operation == "den_knowledge_get" && arguments.IncludeArchived {
-		query.Set("include_archived", strconv.FormatBool(arguments.IncludeArchived))
+	switch route.Operation {
+	case "den_knowledge_get", "den_knowledge_card":
+		if arguments.IncludeArchived {
+			query.Set("include_archived", strconv.FormatBool(arguments.IncludeArchived))
+		}
+	case "den_knowledge_cards":
+		if arguments.Offset != nil {
+			if *arguments.Offset < 0 {
+				return "", fmt.Errorf("knowledge cards offset must not be negative")
+			}
+			query.Set("offset", strconv.Itoa(*arguments.Offset))
+		}
+	case "den_knowledge_read":
+		view := strings.TrimSpace(arguments.View)
+		if view == "" {
+			view = "outline"
+		}
+		if view != "outline" && view != "section" && view != "full" {
+			return "", fmt.Errorf("knowledge read view must be outline, section, or full")
+		}
+		if view == "section" && strings.TrimSpace(arguments.Section) == "" {
+			return "", fmt.Errorf("knowledge section read requires section")
+		}
+		query.Set("view", view)
+		if strings.TrimSpace(arguments.Section) != "" {
+			query.Set("section", strings.TrimSpace(arguments.Section))
+		}
+		if arguments.KnownRevision != nil {
+			if *arguments.KnownRevision < 0 {
+				return "", fmt.Errorf("knowledge known_revision must not be negative")
+			}
+			query.Set("known_revision", strconv.Itoa(*arguments.KnownRevision))
+		}
+		if strings.TrimSpace(arguments.KnownDigest) != "" {
+			query.Set("known_digest", strings.TrimSpace(arguments.KnownDigest))
+		}
+		if arguments.IncludeArchived {
+			query.Set("include_archived", strconv.FormatBool(arguments.IncludeArchived))
+		}
 	}
 	parsedURL.RawQuery = query.Encode()
 	return parsedURL.String(), nil
+}
+
+func normalizedKnowledgeSlugs(values []string) ([]string, error) {
+	if len(values) == 0 || len(values) > 100 {
+		return nil, fmt.Errorf("knowledge cards require from 1 to 100 slugs")
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return nil, fmt.Errorf("knowledge card slug is required")
+		}
+		result = append(result, value)
+	}
+	return result, nil
+}
+
+func decodeKnowledgeLinks(raw json.RawMessage) ([]knowledgeLinkBody, error) {
+	var links []knowledgeLinkBody
+	if err := json.Unmarshal(raw, &links); err != nil {
+		return nil, fmt.Errorf("decoding knowledge links: %w", err)
+	}
+	if len(links) > 20 {
+		return nil, fmt.Errorf("knowledge links exceed maximum of 20")
+	}
+	for index := range links {
+		links[index].ToSlug = strings.TrimSpace(links[index].ToSlug)
+		links[index].Kind = strings.TrimSpace(links[index].Kind)
+		links[index].Description = strings.TrimSpace(links[index].Description)
+		if links[index].ToSlug == "" {
+			return nil, fmt.Errorf("knowledge link target is required")
+		}
+		switch links[index].Kind {
+		case "related", "embed", "replacement":
+		default:
+			return nil, fmt.Errorf("knowledge link kind must be related, embed, or replacement")
+		}
+	}
+	return links, nil
+}
+
+func decodeKnowledgeMapEntries(raw json.RawMessage) ([]knowledgeMapEntryBody, error) {
+	var entries []knowledgeMapEntryBody
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return nil, fmt.Errorf("decoding knowledge map entries: %w", err)
+	}
+	if len(entries) == 0 || len(entries) > 100 {
+		return nil, fmt.Errorf("knowledge map requires from 1 to 100 entries")
+	}
+	for index := range entries {
+		entries[index].EntrySlug = strings.TrimSpace(entries[index].EntrySlug)
+		entries[index].GroupName = strings.TrimSpace(entries[index].GroupName)
+		entries[index].Note = strings.TrimSpace(entries[index].Note)
+		if entries[index].EntrySlug == "" || entries[index].Position < 0 || entries[index].Position > 99 {
+			return nil, fmt.Errorf("knowledge map entry has invalid slug or position")
+		}
+	}
+	return entries, nil
 }
 
 func expandKnowledgePath(path string, arguments knowledgeToolArguments) (string, error) {

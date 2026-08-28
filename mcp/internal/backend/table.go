@@ -129,7 +129,7 @@ func validateRoute(route Route) error {
 
 func supportedMethod(method string) bool {
 	switch method {
-	case http.MethodDelete, http.MethodGet, http.MethodPatch, http.MethodPost:
+	case http.MethodDelete, http.MethodGet, http.MethodPatch, http.MethodPost, http.MethodPut:
 		return true
 	default:
 		return false
@@ -147,6 +147,8 @@ func supportedAdapterPair(requestAdapter string, responseAdapter string) bool {
 	case requestAdapter == RequestAdapterMCPTaskWorkflowSummaryCompose && responseAdapter == ResponseAdapterMCPToolResultJSON:
 		return true
 	case requestAdapter == RequestAdapterMCPTaskContextCompose && responseAdapter == ResponseAdapterMCPToolResultJSON:
+		return true
+	case requestAdapter == RequestAdapterMCPAssignmentManifestCompose && responseAdapter == ResponseAdapterMCPToolResultJSON:
 		return true
 	case requestAdapter == RequestAdapterMCPReviewContextCompose && responseAdapter == ResponseAdapterMCPToolResultJSON:
 		return true

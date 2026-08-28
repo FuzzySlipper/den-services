@@ -21,6 +21,8 @@ type Config struct {
 	ProjectsToken    string
 	DocumentsBaseURL string
 	DocumentsToken   string
+	KnowledgeBaseURL string
+	KnowledgeToken   string
 	MaxPacketBytes   int
 	HTTP             HTTPConfig
 }
@@ -37,6 +39,8 @@ type configFile struct {
 	ProjectsTokenEnv    string         `yaml:"projects_token_env"`
 	DocumentsBaseURLEnv string         `yaml:"documents_base_url_env"`
 	DocumentsTokenEnv   string         `yaml:"documents_token_env"`
+	KnowledgeBaseURLEnv string         `yaml:"knowledge_base_url_env"`
+	KnowledgeTokenEnv   string         `yaml:"knowledge_token_env"`
 	MaxPacketBytes      int            `yaml:"max_packet_bytes"`
 	HTTP                httpConfigFile `yaml:"http"`
 }
@@ -93,6 +97,8 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 		ProjectsToken:    values.String(f.ProjectsTokenEnv, ""),
 		DocumentsBaseURL: values.String(f.DocumentsBaseURLEnv, ""),
 		DocumentsToken:   values.String(f.DocumentsTokenEnv, ""),
+		KnowledgeBaseURL: values.String(f.KnowledgeBaseURLEnv, ""),
+		KnowledgeToken:   values.String(f.KnowledgeTokenEnv, ""),
 		MaxPacketBytes:   maxPacketBytes,
 		HTTP:             HTTPConfig{ReadHeaderTimeout: readHeaderTimeout},
 	}, nil

@@ -44,10 +44,10 @@ func TestEmbeddedMCPCatalogIsIncludedInDiscovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(mcpCatalog.Tools) != 86 {
-		t.Fatalf("MCP catalog contains %d tools, want complete callable count 86", len(mcpCatalog.Tools))
+	if len(mcpCatalog.Tools) != 94 {
+		t.Fatalf("MCP catalog contains %d tools, want complete callable count 94", len(mcpCatalog.Tools))
 	}
-	for _, operation := range []string{"create_board_post", "create_task", "get_task_context", "wait_for_messages"} {
+	for _, operation := range []string{"compose_assignment_manifest", "den_knowledge_card", "den_knowledge_read", "create_board_post", "create_task", "get_task_context", "wait_for_messages"} {
 		tool, found := catalog.Find("den." + operation)
 		if !found {
 			t.Errorf("catalog omitted den.%s", operation)

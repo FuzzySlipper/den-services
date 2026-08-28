@@ -77,6 +77,7 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		"archive_document_preflight",
 		"archive_space",
 		"await_github_checks",
+		"compose_assignment_manifest",
 		"create_discussion_comment",
 		"create_project",
 		"create_review_finding",
@@ -85,6 +86,12 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		"delete_agent_guidance_entry",
 		"delete_document",
 		"den_knowledge_delete",
+		"den_knowledge_card",
+		"den_knowledge_cards",
+		"den_knowledge_read",
+		"den_knowledge_replace_links",
+		"den_knowledge_store_map",
+		"den_knowledge_get_map",
 		"den_knowledge_search",
 		"den_knowledge_store",
 		"ensure_document_discussion",
@@ -136,8 +143,8 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 			t.Fatalf("%s discovery class = %q", name, tool.DiscoveryClass)
 		}
 	}
-	if catalog := registry.CatalogTools(); len(catalog) != 87 {
-		t.Fatalf("catalog tool count = %d, want 87", len(catalog))
+	if catalog := registry.CatalogTools(); len(catalog) != 94 {
+		t.Fatalf("catalog tool count = %d, want 94", len(catalog))
 	}
 	if len(longTailToolNames) != len(longTailNames) {
 		t.Fatalf("long-tail policy count = %d, want %d", len(longTailToolNames), len(longTailNames))
@@ -400,7 +407,7 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if catalog.HiddenToolCount == 0 || catalog.WorkflowTiers[WorkflowTierPrimitive] != 0 {
 		t.Fatalf("managed catalog = %#v", catalog)
 	}
-	if catalog.VisibleToolCount != 34 || catalog.HiddenToolCount != 53 {
+	if catalog.VisibleToolCount != 34 || catalog.HiddenToolCount != 60 {
 		t.Fatalf("managed catalog counts = %#v", catalog)
 	}
 	if !slices.Contains(catalog.HiddenWorkflowTiers, WorkflowTierPrimitive) {
@@ -475,6 +482,9 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 	for _, tool := range listed[visibleIndex:] {
 		if tool.Name != "await_github_checks" && tool.Name != "discover_github_checks" && tool.Name != "watch_github_checks" &&
 			tool.Name != "get_github_check_gate" && tool.Name != "wait_for_github_checks" && tool.Name != "get_task_context" &&
+			tool.Name != "compose_assignment_manifest" &&
+			tool.Name != "den_knowledge_card" && tool.Name != "den_knowledge_cards" && tool.Name != "den_knowledge_read" &&
+			tool.Name != "den_knowledge_replace_links" && tool.Name != "den_knowledge_store_map" && tool.Name != "den_knowledge_get_map" &&
 			tool.Name != "get_review_context" &&
 			tool.Name != "list_review_pipeline" &&
 			tool.Name != "finalize_review" && tool.Name != "request_campaign_review" &&

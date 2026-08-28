@@ -42,10 +42,12 @@ func main() {
 	}
 	defer pool.Close()
 
-	service := guidance.NewService(
+	service := guidance.NewServiceWithKnowledge(
+		guidance.NewStore(pool),
 		guidance.NewStore(pool),
 		guidance.NewProjectScopeClient(cfg.ProjectsBaseURL, cfg.ProjectsToken),
 		guidance.NewDocumentsClient(cfg.DocumentsBaseURL, cfg.DocumentsToken),
+		knowledgeReader(cfg),
 		time.Now,
 		cfg.MaxPacketBytes,
 	)
@@ -59,6 +61,13 @@ func main() {
 		slog.Error("guidance server", "error", err)
 		os.Exit(1)
 	}
+}
+
+func knowledgeReader(cfg *guidance.Config) guidance.KnowledgeReader {
+	if cfg.KnowledgeBaseURL == "" {
+		return nil
+	}
+	return guidance.NewKnowledgeClient(cfg.KnowledgeBaseURL, cfg.KnowledgeToken)
 }
 
 func buildInfo() (health.BuildInfo, error) {

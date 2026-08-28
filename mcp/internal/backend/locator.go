@@ -80,6 +80,8 @@ func (l *Locator) Call(ctx context.Context, call ToolCall) (Result, *Failure, er
 		result, failure, err = l.client.callTaskWorkflowSummaryCompose(ctx, backends, route, call)
 	case RequestAdapterMCPTaskContextCompose:
 		result, failure, err = l.client.callTaskContextCompose(ctx, backends, route, call)
+	case RequestAdapterMCPAssignmentManifestCompose:
+		result, failure, err = l.client.callAssignmentManifestCompose(ctx, backends, route, call)
 	case RequestAdapterMCPReviewContextCompose:
 		result, failure, err = l.client.callReviewContextCompose(ctx, backends, route, call)
 	default:

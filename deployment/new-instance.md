@@ -843,7 +843,7 @@ done
 | documents | `DOCUMENTS_CONFIG_PATH` | `den_documents_app` | projects; guidance callback optional |
 | knowledge | `KNOWLEDGE_CONFIG_PATH` | `den_knowledge_app` | none |
 | review | `REVIEW_CONFIG_PATH` | `den_review_app` | projects, tasks, messages, and optionally GitHub |
-| guidance | `GUIDANCE_CONFIG_PATH` | `den_guidance_app` | projects and documents |
+| guidance | `GUIDANCE_CONFIG_PATH` | `den_guidance_app` | projects, documents, and knowledge when Knowledge bindings are enabled |
 | board | `BOARD_CONFIG_PATH` | `den_board_app` | projects |
 | librarian | `LIBRARIAN_CONFIG_PATH` | none | projects, tasks, messages, documents, knowledge |
 | mcp | `MCP_CONFIG_PATH` | none | configured MCP backends |
@@ -860,6 +860,8 @@ DEN_PROJECTS_SERVICE_TOKEN=<projects-token>
 The same service token must be used consistently by callers. For example,
 `DEN_PROJECTS_SERVICE_TOKEN` in the Tasks, Messages, Documents, Review,
 Guidance, Librarian, and MCP env files must match the Projects service token.
+When Guidance Knowledge bindings are enabled, its `DEN_KNOWLEDGE_SERVICE_TOKEN`
+must likewise match the Knowledge service token.
 The MCP env file similarly needs `DEN_MCP_SERVICE_TOKEN` plus the matching
 service token for every enabled backend in the hardened profile. Gateway needs
 separate caller tokens and the matching upstream service tokens for every
@@ -961,7 +963,8 @@ the guide with the diagnosis.
    curl -fsS http://127.0.0.1:8100/version
    ```
 
-3. Composite database-backed services:
+3. Composite database-backed services. Deploy Guidance only after Knowledge
+   when Knowledge bindings are enabled:
 
    ```sh
    for service in messages guidance observation timeline; do

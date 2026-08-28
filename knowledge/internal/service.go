@@ -15,6 +15,7 @@ type KnowledgeStore interface {
 	ListEntries(ctx context.Context, query ListQuery) ([]EntrySummary, error)
 	SearchEntries(ctx context.Context, query SearchQuery) ([]SearchResult, error)
 	ListRevisions(ctx context.Context, slug string) ([]RevisionSummary, error)
+	NavigationStore
 }
 
 func (s *Service) DeleteEntry(ctx context.Context, slug string) error {
@@ -26,12 +27,13 @@ func (s *Service) DeleteEntry(ctx context.Context, slug string) error {
 }
 
 type Service struct {
-	store KnowledgeStore
-	clock func() time.Time
+	store      KnowledgeStore
+	navigation NavigationStore
+	clock      func() time.Time
 }
 
 func NewService(store KnowledgeStore, clock func() time.Time) *Service {
-	return &Service{store: store, clock: clock}
+	return &Service{store: store, navigation: store, clock: clock}
 }
 
 func (s *Service) CheckStore(ctx context.Context) error {

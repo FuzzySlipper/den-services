@@ -1,6 +1,9 @@
 package knowledge
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -36,6 +39,18 @@ const (
 	MaxSearchLimit       = 200
 	DefaultContextBudget = 1600
 	MaxTopGuideEntries   = 5
+	DefaultCardLimit     = 20
+	MaxCardLimit         = 50
+	MaxBatchCards        = 25
+	MaxBatchCardHandles  = 100
+	MaxNavigationLinks   = 20
+	MaxOutlineSections   = 64
+	MaxSectionBytes      = 48 * 1024
+	MaxMapEntries        = 100
+
+	LinkKindRelated     = "related"
+	LinkKindEmbed       = "embed"
+	LinkKindReplacement = "replacement"
 )
 
 var (
@@ -50,6 +65,12 @@ var (
 	ErrInvalidStatus         = errors.New("invalid knowledge status")                  //nolint:gochecknoglobals
 	ErrInvalidCurationState  = errors.New("invalid knowledge curation state")          //nolint:gochecknoglobals
 	ErrKnowledgeNotDocuments = errors.New("knowledge entries are not document search") //nolint:gochecknoglobals
+	ErrInvalidLinkKind       = errors.New("invalid knowledge link kind")               //nolint:gochecknoglobals
+	ErrInvalidLinkTarget     = errors.New("knowledge link target does not exist")      //nolint:gochecknoglobals
+	ErrSectionNotFound       = errors.New("knowledge section not found")               //nolint:gochecknoglobals
+	ErrSectionTooLarge       = errors.New("knowledge section exceeds read bound")      //nolint:gochecknoglobals
+	ErrInvalidMap            = errors.New("invalid knowledge map")                     //nolint:gochecknoglobals
+	ErrMapNotFound           = errors.New("knowledge map not found")                   //nolint:gochecknoglobals
 )
 
 type ServiceError struct {
@@ -79,6 +100,10 @@ func badRequest(err error) error {
 
 func entryNotFound(slug string) error {
 	return NewServiceError(fmt.Errorf("%w: %s", ErrEntryNotFound, slug), "knowledge_entry_not_found", http.StatusNotFound)
+}
+
+func sectionNotFound(sectionID string) error {
+	return NewServiceError(fmt.Errorf("%w: %s", ErrSectionNotFound, sectionID), "knowledge_section_not_found", http.StatusNotFound)
 }
 
 type SourceRef struct {
@@ -274,6 +299,75 @@ type RevisionSummary struct {
 	ChangeNote     string
 	ChangedBy      string
 	CreatedAt      time.Time
+}
+
+// EntryLink is deliberately a navigation edge, not inferred Markdown semantics.
+type EntryLink struct {
+	FromSlug    string
+	ToSlug      string
+	Kind        string
+	Description string
+}
+
+type ResolvedLink struct {
+	Kind        string     `json:"kind"`
+	Description string     `json:"description,omitempty"`
+	Target      LinkTarget `json:"target"`
+}
+
+type LinkTarget struct {
+	Slug    string `json:"slug"`
+	Title   string `json:"title,omitempty"`
+	Summary string `json:"summary,omitempty"`
+	Status  string `json:"status,omitempty"`
+	Missing bool   `json:"missing,omitempty"`
+}
+
+type KnowledgeMap struct {
+	Slug      string
+	Title     string
+	Summary   string
+	CreatedBy string
+	UpdatedBy string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Entries   []KnowledgeMapEntry
+}
+
+type KnowledgeMapEntry struct {
+	EntrySlug string
+	GroupName string
+	Position  int
+	Note      string
+}
+
+type OutlineSection struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Level int    `json:"level"`
+}
+
+func entryDigest(entry *Entry) string {
+	payload, _ := json.Marshal(struct {
+		Slug, Title, Summary, Body, Kind, Status, CurationState, ReplacementSlug, UpdatedAt string
+		Tags, Audience, Aliases                                                             []string
+		SourceRefs                                                                          []SourceRef
+	}{
+		Slug: entry.Slug(), Title: entry.Title(), Summary: entry.Summary(), Body: entry.BodyMarkdown(), Kind: entry.Kind(), Status: entry.Status(),
+		CurationState: entry.CurationState(), ReplacementSlug: entry.ReplacementSlug(), UpdatedAt: entry.UpdatedAt().UTC().Format(time.RFC3339Nano),
+		Tags: entry.Tags(), Audience: entry.Audience(), Aliases: entry.Aliases(), SourceRefs: entry.SourceRefs(),
+	})
+	hash := sha256.Sum256(payload)
+	return hex.EncodeToString(hash[:])
+}
+
+func validLinkKind(kind string) bool {
+	switch kind {
+	case LinkKindRelated, LinkKindEmbed, LinkKindReplacement:
+		return true
+	default:
+		return false
+	}
 }
 
 type ListQuery struct {

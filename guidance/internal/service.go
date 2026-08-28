@@ -26,17 +26,23 @@ type DocumentReader interface {
 
 type Service struct {
 	store          GuidanceStore
+	bindings       BindingStore
 	projects       ProjectValidator
 	documents      DocumentReader
+	knowledge      KnowledgeReader
 	clock          func() time.Time
 	maxPacketBytes int
 }
 
 func NewService(store GuidanceStore, projects ProjectValidator, documents DocumentReader, clock func() time.Time, maxPacketBytes int) *Service {
+	return NewServiceWithKnowledge(store, nil, projects, documents, nil, clock, maxPacketBytes)
+}
+
+func NewServiceWithKnowledge(store GuidanceStore, bindings BindingStore, projects ProjectValidator, documents DocumentReader, knowledge KnowledgeReader, clock func() time.Time, maxPacketBytes int) *Service {
 	if maxPacketBytes <= 0 {
 		maxPacketBytes = defaultMaxPacketBytes
 	}
-	return &Service{store: store, projects: projects, documents: documents, clock: clock, maxPacketBytes: maxPacketBytes}
+	return &Service{store: store, bindings: bindings, projects: projects, documents: documents, knowledge: knowledge, clock: clock, maxPacketBytes: maxPacketBytes}
 }
 
 func (s *Service) CheckStore(ctx context.Context) error {

@@ -455,7 +455,7 @@ func taskWorkflowSummaryComposeRoute(operation string) bool {
 }
 
 func taskContextComposeRoute(operation string) bool {
-	return operation == "get_task_context"
+	return operation == "get_task_context" || operation == "compose_assignment_manifest"
 }
 
 func reviewContextComposeRoute(operation string) bool {
@@ -563,7 +563,13 @@ func knowledgeRoute(operation string) bool {
 		"den_knowledge_get",
 		"den_knowledge_guide",
 		"den_knowledge_store",
-		"den_knowledge_delete":
+		"den_knowledge_delete",
+		"den_knowledge_card",
+		"den_knowledge_cards",
+		"den_knowledge_read",
+		"den_knowledge_replace_links",
+		"den_knowledge_store_map",
+		"den_knowledge_get_map":
 		return true
 	default:
 		return false

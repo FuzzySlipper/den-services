@@ -31,4 +31,23 @@ func TestKnowledgeMigrationDiscovered(t *testing.T) {
 			t.Fatalf("migration missing %q", fragment)
 		}
 	}
+	var navigation *Migration
+	for i := range migrations {
+		if migrations[i].Schema == "den_knowledge" && migrations[i].Version == 2 {
+			navigation = &migrations[i]
+			break
+		}
+	}
+	if navigation == nil {
+		t.Fatal("den_knowledge version 2 migration not discovered")
+	}
+	for _, fragment := range []string{
+		"knowledge_entry_links_kind_check",
+		"create table den_knowledge.knowledge_maps",
+		"create table den_knowledge.knowledge_map_entries",
+	} {
+		if !strings.Contains(navigation.SQL, fragment) {
+			t.Fatalf("navigation migration missing %q", fragment)
+		}
+	}
 }

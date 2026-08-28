@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -95,6 +96,83 @@ func (s *Store) DocumentReferences(ctx context.Context, documentProjectID string
 	return refs, nil
 }
 
+func (s *Store) CreateBinding(ctx context.Context, binding *KnowledgeBinding) (*KnowledgeBinding, error) {
+	created, err := scanBinding(s.pool.QueryRow(ctx, createBindingSQL,
+		binding.TargetKind, binding.TargetRef, binding.ScopeKind, binding.ScopeRef, jsonOrNil(binding.Audience), binding.Priority,
+		binding.SortOrder, binding.ReadPolicy, emptyToNil(binding.ReadWhen), binding.ShadowsGlobal, binding.CreatedAt, binding.UpdatedAt,
+	))
+	if err != nil {
+		if isUniqueViolation(err) {
+			return nil, ErrDuplicateBinding
+		}
+		return nil, fmt.Errorf("creating knowledge binding: %w", err)
+	}
+	return created, nil
+}
+
+func (s *Store) GetBinding(ctx context.Context, bindingID int64) (*KnowledgeBinding, error) {
+	binding, err := scanBinding(s.pool.QueryRow(ctx, getBindingSQL, bindingID))
+	if err != nil {
+		return nil, fmt.Errorf("getting knowledge binding: %w", err)
+	}
+	return binding, nil
+}
+
+func (s *Store) ListBindings(ctx context.Context, query BindingListQuery) (BindingListResult, error) {
+	queryLimit := query.Limit
+	if queryLimit > 0 {
+		queryLimit++
+	}
+	rows, err := s.pool.Query(ctx, listBindingsSQL, queryLimit, query.Offset)
+	if err != nil {
+		return BindingListResult{}, fmt.Errorf("listing knowledge bindings: %w", err)
+	}
+	defer rows.Close()
+	bindings := []KnowledgeBinding{}
+	for rows.Next() {
+		binding, scanErr := scanBinding(rows)
+		if scanErr != nil {
+			return BindingListResult{}, scanErr
+		}
+		bindings = append(bindings, *binding)
+	}
+	if err := rows.Err(); err != nil {
+		return BindingListResult{}, fmt.Errorf("scanning knowledge bindings: %w", err)
+	}
+	result := BindingListResult{Bindings: bindings}
+	if query.Limit > 0 && len(result.Bindings) > query.Limit {
+		result.Bindings = result.Bindings[:query.Limit]
+		next := query.Offset + query.Limit
+		result.NextOffset = &next
+	}
+	return result, nil
+}
+
+func (s *Store) UpdateBinding(ctx context.Context, binding *KnowledgeBinding) (*KnowledgeBinding, error) {
+	updated, err := scanBinding(s.pool.QueryRow(ctx, updateBindingSQL,
+		binding.ID, binding.ScopeKind, binding.ScopeRef, jsonOrNil(binding.Audience), binding.Priority, binding.SortOrder,
+		binding.ReadPolicy, emptyToNil(binding.ReadWhen), binding.ShadowsGlobal, binding.UpdatedAt,
+	))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrBindingNotFound
+		}
+		if isUniqueViolation(err) {
+			return nil, ErrDuplicateBinding
+		}
+		return nil, fmt.Errorf("updating knowledge binding: %w", err)
+	}
+	return updated, nil
+}
+
+func (s *Store) DeleteBinding(ctx context.Context, bindingID int64) (bool, error) {
+	tag, err := s.pool.Exec(ctx, deleteBindingSQL, bindingID)
+	if err != nil {
+		return false, fmt.Errorf("deleting knowledge binding: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -114,6 +192,29 @@ func scanEntry(row rowScanner) (*Entry, error) {
 		entry.Notes = *notes
 	}
 	return &entry, nil
+}
+
+func scanBinding(row rowScanner) (*KnowledgeBinding, error) {
+	var binding KnowledgeBinding
+	var audience []byte
+	var readWhen *string
+	if err := row.Scan(&binding.ID, &binding.TargetKind, &binding.TargetRef, &binding.ScopeKind, &binding.ScopeRef, &audience,
+		&binding.Priority, &binding.SortOrder, &binding.ReadPolicy, &readWhen, &binding.ShadowsGlobal, &binding.CreatedAt, &binding.UpdatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrBindingNotFound
+		}
+		return nil, fmt.Errorf("scanning knowledge binding: %w", err)
+	}
+	binding.Audience = audienceFromJSON(audience)
+	if readWhen != nil {
+		binding.ReadWhen = *readWhen
+	}
+	return &binding, nil
+}
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 func jsonOrNil(values []string) []byte {
@@ -181,3 +282,22 @@ select id, project_id, importance, audience, sort_order, coalesce(notes, ''), cr
 from den_guidance.agent_guidance_entries
 where document_project_id = $1 and document_slug = $2
 order by project_id asc, sort_order asc, id asc`
+
+const bindingColumns = `id, target_kind, target_ref, scope_kind, scope_ref, audience, priority, sort_order, read_policy, read_when, shadows_global, created_at, updated_at`
+
+const createBindingSQL = `
+insert into den_guidance.knowledge_bindings(target_kind, target_ref, scope_kind, scope_ref, audience, priority, sort_order, read_policy, read_when, shadows_global, created_at, updated_at)
+values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+returning ` + bindingColumns
+
+const getBindingSQL = `select ` + bindingColumns + ` from den_guidance.knowledge_bindings where id = $1`
+
+const listBindingsSQL = `select ` + bindingColumns + ` from den_guidance.knowledge_bindings order by scope_kind, scope_ref, target_ref, id limit nullif($1, 0) offset $2`
+
+const updateBindingSQL = `
+update den_guidance.knowledge_bindings
+set scope_kind = $2, scope_ref = $3, audience = $4, priority = $5, sort_order = $6, read_policy = $7, read_when = $8, shadows_global = $9, updated_at = $10
+where id = $1
+returning ` + bindingColumns
+
+const deleteBindingSQL = `delete from den_guidance.knowledge_bindings where id = $1`

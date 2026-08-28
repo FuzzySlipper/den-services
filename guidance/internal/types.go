@@ -30,6 +30,12 @@ var (
 	ErrEntryNotFound          = errors.New("agent guidance entry not found")          //nolint:gochecknoglobals
 	ErrDocumentUnavailable    = errors.New("guidance document is unavailable")        //nolint:gochecknoglobals
 	ErrDocumentNotVisible     = errors.New("guidance document is not normal-visible") //nolint:gochecknoglobals
+	ErrMissingBindingTarget   = errors.New("binding target_ref is required")          //nolint:gochecknoglobals
+	ErrInvalidBindingTarget   = errors.New("invalid binding target_kind")             //nolint:gochecknoglobals
+	ErrInvalidBindingScope    = errors.New("invalid binding scope")                   //nolint:gochecknoglobals
+	ErrInvalidReadPolicy      = errors.New("invalid binding read_policy")             //nolint:gochecknoglobals
+	ErrBindingNotFound        = errors.New("knowledge binding not found")             //nolint:gochecknoglobals
+	ErrDuplicateBinding       = errors.New("knowledge binding already exists")        //nolint:gochecknoglobals
 )
 
 type ServiceError struct {
@@ -199,6 +205,132 @@ type DocumentReference struct {
 	Notes          string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+}
+
+const (
+	BindingTargetKnowledge = "knowledge"
+
+	ScopeGlobal       = "global"
+	ScopeProject      = "project"
+	ScopeTask         = "task"
+	ScopeAgentProfile = "agent_profile"
+	ScopeCapability   = "capability"
+	GlobalScopeRef    = "_global"
+
+	ReadPolicyInline   = "inline"
+	ReadPolicyMustRead = "must_read"
+	ReadPolicyOnDemand = "on_demand"
+	ReadPolicyLatent   = "latent"
+)
+
+type KnowledgeBinding struct {
+	ID            int64
+	TargetKind    string
+	TargetRef     string
+	ScopeKind     string
+	ScopeRef      string
+	Audience      []string
+	Priority      int
+	SortOrder     int
+	ReadPolicy    string
+	ReadWhen      string
+	ShadowsGlobal bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+type KnowledgeBindingParams struct {
+	ID            int64
+	TargetKind    string
+	TargetRef     string
+	ScopeKind     string
+	ScopeRef      string
+	Audience      []string
+	Priority      int
+	SortOrder     int
+	ReadPolicy    string
+	ReadWhen      string
+	ShadowsGlobal bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+func NewKnowledgeBinding(params KnowledgeBindingParams) (*KnowledgeBinding, error) {
+	targetKind := strings.TrimSpace(params.TargetKind)
+	if targetKind == "" {
+		targetKind = BindingTargetKnowledge
+	}
+	if targetKind != BindingTargetKnowledge {
+		return nil, fmt.Errorf("%w: %s", ErrInvalidBindingTarget, targetKind)
+	}
+	targetRef := strings.TrimSpace(params.TargetRef)
+	if targetRef == "" {
+		return nil, ErrMissingBindingTarget
+	}
+	scopeKind := strings.TrimSpace(params.ScopeKind)
+	scopeRef := strings.TrimSpace(params.ScopeRef)
+	if err := validateBindingScope(scopeKind, scopeRef, params.ShadowsGlobal); err != nil {
+		return nil, err
+	}
+	policy := strings.TrimSpace(params.ReadPolicy)
+	if policy == "" {
+		policy = ReadPolicyOnDemand
+	}
+	if !validReadPolicy(policy) {
+		return nil, fmt.Errorf("%w: %s", ErrInvalidReadPolicy, policy)
+	}
+	audience, err := normalizeAudience(params.Audience)
+	if err != nil {
+		return nil, err
+	}
+	createdAt := params.CreatedAt.UTC()
+	if createdAt.IsZero() {
+		createdAt = time.Now().UTC()
+	}
+	updatedAt := params.UpdatedAt.UTC()
+	if updatedAt.IsZero() {
+		updatedAt = createdAt
+	}
+	return &KnowledgeBinding{
+		ID: params.ID, TargetKind: targetKind, TargetRef: targetRef, ScopeKind: scopeKind, ScopeRef: scopeRef,
+		Audience: audience, Priority: params.Priority, SortOrder: params.SortOrder, ReadPolicy: policy,
+		ReadWhen: strings.TrimSpace(params.ReadWhen), ShadowsGlobal: params.ShadowsGlobal,
+		CreatedAt: createdAt, UpdatedAt: updatedAt,
+	}, nil
+}
+
+func validateBindingScope(scopeKind string, scopeRef string, shadowsGlobal bool) error {
+	switch scopeKind {
+	case ScopeGlobal:
+		if scopeRef != GlobalScopeRef || shadowsGlobal {
+			return fmt.Errorf("%w: global scope_ref must be %q and cannot shadow global", ErrInvalidBindingScope, GlobalScopeRef)
+		}
+	case ScopeProject, ScopeAgentProfile, ScopeCapability:
+		if scopeRef == "" || scopeRef == GlobalScopeRef {
+			return fmt.Errorf("%w: %s scope_ref is required", ErrInvalidBindingScope, scopeKind)
+		}
+	case ScopeTask:
+		if scopeRef == "" || scopeRef[0] == '0' {
+			return fmt.Errorf("%w: task scope_ref must be a positive task id", ErrInvalidBindingScope)
+		}
+		for _, character := range scopeRef {
+			if character < '0' || character > '9' {
+				return fmt.Errorf("%w: task scope_ref must be a positive task id", ErrInvalidBindingScope)
+			}
+		}
+	default:
+		return fmt.Errorf("%w: %s", ErrInvalidBindingScope, scopeKind)
+	}
+	return nil
+}
+
+func validReadPolicy(value string) bool {
+	switch value {
+	case ReadPolicyInline, ReadPolicyMustRead, ReadPolicyOnDemand, ReadPolicyLatent:
+		return true
+	default:
+		return false
+	}
 }
 
 func validImportance(value string) bool {

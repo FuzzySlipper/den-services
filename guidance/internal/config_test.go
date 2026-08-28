@@ -17,6 +17,8 @@ projects_base_url_env: "DEN_PROJECTS_BASE_URL"
 projects_token_env: "DEN_PROJECTS_SERVICE_TOKEN"
 documents_base_url_env: "DEN_DOCUMENTS_BASE_URL"
 documents_token_env: "DEN_DOCUMENTS_SERVICE_TOKEN"
+knowledge_base_url_env: "DEN_KNOWLEDGE_BASE_URL"
+knowledge_token_env: "DEN_KNOWLEDGE_SERVICE_TOKEN"
 max_packet_bytes: 1234
 http:
   read_header_timeout: "5s"
@@ -28,6 +30,8 @@ http:
 		"DEN_PROJECTS_SERVICE_TOKEN":  "projects-token",
 		"DEN_DOCUMENTS_BASE_URL":      "http://127.0.0.1:8094",
 		"DEN_DOCUMENTS_SERVICE_TOKEN": "documents-token",
+		"DEN_KNOWLEDGE_BASE_URL":      "http://127.0.0.1:8095",
+		"DEN_KNOWLEDGE_SERVICE_TOKEN": "knowledge-token",
 	})
 
 	cfg, err := LoadConfigFromPathWithValues(path, values)
@@ -43,7 +47,7 @@ http:
 	if cfg.HTTP.ReadHeaderTimeout != 5*time.Second {
 		t.Fatalf("ReadHeaderTimeout = %s", cfg.HTTP.ReadHeaderTimeout)
 	}
-	if cfg.ProjectsToken != "projects-token" || cfg.DocumentsToken != "documents-token" {
+	if cfg.ProjectsToken != "projects-token" || cfg.DocumentsToken != "documents-token" || cfg.KnowledgeToken != "knowledge-token" {
 		t.Fatalf("tokens not expanded: %#v", cfg)
 	}
 }

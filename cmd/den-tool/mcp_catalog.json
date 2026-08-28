@@ -278,6 +278,189 @@
       }
     },
     {
+      "name": "compose_assignment_manifest",
+      "description": "Compose a bounded, read-only, assignment-specific Context Manifest from the canonical task, Guidance bindings, explicit or inherited Knowledge handles, and optional Librarian suggestions. It keeps assignment instructions separate from optional context and never copies entry bodies.",
+      "backend": "tasks",
+      "operation": "compose_assignment_manifest",
+      "workflow_tier": "operator",
+      "risk": "read",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_profile": {
+            "description": "Optional agent-profile scope used by Guidance binding resolution.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assignment": {
+            "description": "Non-empty instructions for this one assignment.",
+            "type": "string"
+          },
+          "background": {
+            "description": "Optional background kept visibly separate from assignment instructions.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "capabilities": {
+            "description": "Optional capability scope names.",
+            "items": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "explicit_knowledge_refs": {
+            "description": "Optional exact Knowledge slugs selected by the orchestrator.",
+            "items": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "inherited_refs": {
+            "description": "Optional bounded handle cards inherited from a parent manifest.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                "authority_state": {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                "curation_state": {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                "group": {
+                  "enum": [
+                    "must-read",
+                    "task-local",
+                    "likely-useful",
+                    "nearby-maps"
+                  ],
+                  "type": "string"
+                },
+                "kind": {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                "read_cost_bytes": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "read_policy": {
+                  "enum": [
+                    "inline",
+                    "must_read",
+                    "on_demand",
+                    "latent"
+                  ],
+                  "type": "string"
+                },
+                "read_when": {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                "reference": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "revision": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "selection_source": {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                "summary": {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                "tags": {
+                  "items": {
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "maxItems": 32,
+                  "type": "array"
+                },
+                "title": {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                "update_marker": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reference"
+              ],
+              "type": "object"
+            },
+            "maxItems": 100,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "limits": {
+            "additionalProperties": false,
+            "description": "Optional bounded composition limits.",
+            "properties": {
+              "inline_budget": {
+                "maximum": 4096,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "librarian_items": {
+                "maximum": 8,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "max_handles": {
+                "maximum": 24,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "task_id": {
+            "description": "Canonical parent task ID. The task supplies project scope.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "task_id",
+          "assignment"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "create_board_comment",
       "description": "Reply to a Board post or directly to one comment. parent_comment_id identifies the immediate parent; omit it to comment on the original post.",
       "backend": "board",
@@ -762,6 +945,68 @@
       }
     },
     {
+      "name": "den_knowledge_card",
+      "description": "Get one compact Knowledge decision card with metadata, revision, digest, replacement target, and no body_markdown.",
+      "backend": "knowledge",
+      "operation": "den_knowledge_card",
+      "workflow_tier": "operator",
+      "risk": "read",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "include_archived": {
+            "description": "Include archived entries. Defaults to false.",
+            "type": "boolean"
+          },
+          "slug": {
+            "description": "Exact Knowledge entry or map slug.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "den_knowledge_cards",
+      "description": "Get one bounded page of compact Knowledge cards for explicit slugs. Missing entries are returned as handles; no entry body is read.",
+      "backend": "knowledge",
+      "operation": "den_knowledge_cards",
+      "workflow_tier": "operator",
+      "risk": "read",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "include_archived": {
+            "description": "Include archived entries. Defaults to false.",
+            "type": "boolean"
+          },
+          "offset": {
+            "description": "Optional non-negative continuation offset within supplied handles.",
+            "maximum": 99,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "slugs": {
+            "description": "Explicit Knowledge slugs. At most 25 distinct cards are returned per page.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "slugs"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "den_knowledge_delete",
       "description": "Permanently delete one Knowledge entry by exact slug, including its revision history, tags, and links. This is irreversible and should be used only for deliberate curation of obsolete, duplicate, or low-value records; do not archive entries selected for removal.",
       "backend": "knowledge",
@@ -772,7 +1017,7 @@
         "additionalProperties": false,
         "properties": {
           "slug": {
-            "description": "Exact Knowledge entry slug to hard delete.",
+            "description": "Exact Knowledge entry or map slug.",
             "type": "string"
           }
         },
@@ -793,6 +1038,27 @@
         "properties": {
           "slug": {
             "description": "Knowledge entry slug.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "den_knowledge_get_map",
+      "description": "Get one curated Knowledge Map with ordered grouped compact entry cards and no entry bodies.",
+      "backend": "knowledge",
+      "operation": "den_knowledge_get_map",
+      "workflow_tier": "operator",
+      "risk": "read",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "slug": {
+            "description": "Exact Knowledge entry or map slug.",
             "type": "string"
           }
         },
@@ -879,6 +1145,119 @@
         },
         "required": [
           "question"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "den_knowledge_read",
+      "description": "Read one Knowledge entry progressively as an outline, named section, or explicit full body. Known revision or digest returns a compact unchanged receipt when current.",
+      "backend": "knowledge",
+      "operation": "den_knowledge_read",
+      "workflow_tier": "operator",
+      "risk": "read",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "include_archived": {
+            "description": "Include archived entries. Defaults to false.",
+            "type": "boolean"
+          },
+          "known_digest": {
+            "description": "Optional previously-read digest.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "known_revision": {
+            "description": "Optional previously-read revision. Must be non-negative.",
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "section": {
+            "description": "Required when view is section; use a heading ID from an outline.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slug": {
+            "description": "Exact Knowledge entry or map slug.",
+            "type": "string"
+          },
+          "view": {
+            "description": "Read view. Omit for outline; full is an explicit full-body opt-in.",
+            "enum": [
+              "outline",
+              "section",
+              "full",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "den_knowledge_replace_links",
+      "description": "Replace one Knowledge entry's bounded explicit outgoing links. Link kinds are related, embed, or replacement.",
+      "backend": "knowledge",
+      "operation": "den_knowledge_replace_links",
+      "workflow_tier": "operator",
+      "risk": "write",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "links": {
+            "description": "Replacement outgoing link set; at most 20 links.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "related",
+                    "embed",
+                    "replacement"
+                  ],
+                  "type": "string"
+                },
+                "to_slug": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "to_slug",
+                "kind"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "slug": {
+            "description": "Exact Knowledge entry or map slug.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "links"
         ],
         "type": "object"
       }
@@ -1068,6 +1447,78 @@
           "slug",
           "title",
           "body_markdown"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "den_knowledge_store_map",
+      "description": "Create or replace a compact curated Knowledge Map of ordered entry handles. Maps own no Markdown body.",
+      "backend": "knowledge",
+      "operation": "den_knowledge_store_map",
+      "workflow_tier": "operator",
+      "risk": "write",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed_by": {
+            "description": "Optional curator identity for the map revision.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entries": {
+            "description": "Ordered, optionally grouped Knowledge entry references.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "entry_slug": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "group_name": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "position": {
+                  "maximum": 99,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "entry_slug",
+                "position"
+              ],
+              "type": "object"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          },
+          "slug": {
+            "description": "Exact Knowledge entry or map slug.",
+            "type": "string"
+          },
+          "summary": {
+            "description": "Optional compact map summary.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "description": "Knowledge Map title.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "entries"
         ],
         "type": "object"
       }

@@ -27,6 +27,86 @@ type StoreEntryRequest struct {
 	ChangeNote      string      `json:"change_note,omitempty"`
 }
 
+type EntryLinkRequest struct {
+	ToSlug      string `json:"to_slug"`
+	Kind        string `json:"kind"`
+	Description string `json:"description,omitempty"`
+}
+
+type ReplaceLinksRequest struct {
+	Links []EntryLinkRequest `json:"links"`
+}
+
+type EntryCardResponse struct {
+	Slug            string      `json:"slug"`
+	Title           string      `json:"title"`
+	Summary         string      `json:"summary,omitempty"`
+	Kind            string      `json:"kind"`
+	Status          string      `json:"status"`
+	CurationState   string      `json:"curation_state"`
+	Tags            []string    `json:"tags,omitempty"`
+	SourceRefs      []SourceRef `json:"source_refs,omitempty"`
+	ReplacementSlug string      `json:"replacement_slug,omitempty"`
+	Replacement     *LinkTarget `json:"replacement,omitempty"`
+	Revision        int         `json:"revision"`
+	Digest          string      `json:"digest"`
+	UpdatedAt       time.Time   `json:"updated_at"`
+}
+
+type CardsRequest struct {
+	Slugs           []string `json:"slugs"`
+	IncludeArchived bool     `json:"include_archived,omitempty"`
+}
+
+type CardsResponse struct {
+	Cards      []EntryCardResponse `json:"cards"`
+	Missing    []string            `json:"missing,omitempty"`
+	NextOffset *int                `json:"next_offset,omitempty"`
+}
+
+type ReadResponse struct {
+	Slug      string            `json:"slug"`
+	View      string            `json:"view"`
+	Revision  int               `json:"revision"`
+	Digest    string            `json:"digest"`
+	Unchanged bool              `json:"unchanged,omitempty"`
+	Card      EntryCardResponse `json:"card"`
+	Outline   []OutlineSection  `json:"outline,omitempty"`
+	Section   *OutlineSection   `json:"section,omitempty"`
+	Body      string            `json:"body_markdown,omitempty"`
+	Links     []ResolvedLink    `json:"links,omitempty"`
+}
+
+type KnowledgeMapEntryRequest struct {
+	EntrySlug string `json:"entry_slug"`
+	GroupName string `json:"group_name,omitempty"`
+	Position  int    `json:"position"`
+	Note      string `json:"note,omitempty"`
+}
+
+type StoreKnowledgeMapRequest struct {
+	Slug      string                     `json:"slug"`
+	Title     string                     `json:"title"`
+	Summary   string                     `json:"summary,omitempty"`
+	Entries   []KnowledgeMapEntryRequest `json:"entries"`
+	ChangedBy string                     `json:"changed_by,omitempty"`
+}
+
+type KnowledgeMapResponse struct {
+	Slug      string                  `json:"slug"`
+	Title     string                  `json:"title"`
+	Summary   string                  `json:"summary,omitempty"`
+	Entries   []KnowledgeMapEntryView `json:"entries"`
+	UpdatedAt time.Time               `json:"updated_at"`
+}
+
+type KnowledgeMapEntryView struct {
+	GroupName string            `json:"group_name,omitempty"`
+	Position  int               `json:"position"`
+	Note      string            `json:"note,omitempty"`
+	Card      EntryCardResponse `json:"card"`
+}
+
 type SearchRequest struct {
 	Query             string   `json:"query"`
 	RequiredTags      []string `json:"required_tags,omitempty"`

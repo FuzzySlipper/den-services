@@ -18,13 +18,14 @@ import (
 )
 
 const (
-	taskContextSchemaVersion = "1"
-	taskContextMessageLimit  = 12
-	taskContextFindingLimit  = 12
-	taskContextItemLimit     = 12
-	taskContextPacketLimit   = 6
-	taskContextTextLimit     = 8000
-	taskContextMessageBytes  = 4000
+	taskContextSchemaVersion   = "1"
+	taskContextMessageLimit    = 12
+	taskContextFindingLimit    = 12
+	taskContextItemLimit       = 12
+	taskContextPacketLimit     = 6
+	taskContextTextLimit       = 8000
+	taskContextMessageBytes    = 4000
+	taskContextMaxBackendBytes = 2 * 1024 * 1024
 )
 
 type taskContextArguments struct {
@@ -100,6 +101,7 @@ type taskContextLibrarianWire struct {
 	RelevantItems   []json.RawMessage `json:"relevant_items"`
 	Recommendations []string          `json:"recommendations"`
 	Confidence      string            `json:"confidence,omitempty"`
+	Warnings        []json.RawMessage `json:"warnings,omitempty"`
 }
 
 type taskContextSourceStatus struct {
@@ -441,9 +443,12 @@ func (c *Client) taskContextDo(request *http.Request, backend config.BackendConf
 	}
 	defer cancel()
 	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
+	body, err := io.ReadAll(io.LimitReader(response.Body, taskContextMaxBackendBytes+1))
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading task context response: %w", err)
+	}
+	if len(body) > taskContextMaxBackendBytes {
+		return nil, nil, fmt.Errorf("task context backend response exceeds %d bytes", taskContextMaxBackendBytes)
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return nil, statusFailure(backend.Name, call.Operation, call.ToolName, response.StatusCode, body), nil

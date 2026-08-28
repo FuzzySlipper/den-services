@@ -17,6 +17,12 @@ type KnowledgeUseCases interface {
 	SearchEntries(ctx context.Context, query SearchQuery) ([]SearchResult, error)
 	Guide(ctx context.Context, query GuideQuery) (GuideResponse, error)
 	ListRevisions(ctx context.Context, slug string) ([]RevisionSummary, error)
+	EntryCard(ctx context.Context, slug string, includeArchived bool) (EntryCardResponse, error)
+	BatchCards(ctx context.Context, slugs []string, includeArchived bool, offset int) (CardsResponse, error)
+	ReadEntry(ctx context.Context, slug string, view string, sectionID string, knownRevision int, knownDigest string, includeArchived bool) (ReadResponse, error)
+	ReplaceLinks(ctx context.Context, slug string, requests []EntryLinkRequest) error
+	StoreMap(ctx context.Context, request StoreKnowledgeMapRequest) (*KnowledgeMap, error)
+	GetMap(ctx context.Context, slug string) (KnowledgeMapResponse, error)
 }
 
 type Handler struct {
@@ -33,8 +39,96 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/knowledge/entries/{slug}", h.getEntry)
 	mux.HandleFunc("DELETE /v1/knowledge/entries/{slug}", h.deleteEntry)
 	mux.HandleFunc("GET /v1/knowledge/entries/{slug}/revisions", h.listRevisions)
+	mux.HandleFunc("GET /v1/knowledge/entries/{slug}/card", h.entryCard)
+	mux.HandleFunc("POST /v1/knowledge/entries/cards", h.batchCards)
+	mux.HandleFunc("GET /v1/knowledge/entries/{slug}/read", h.readEntry)
+	mux.HandleFunc("PUT /v1/knowledge/entries/{slug}/links", h.replaceLinks)
+	mux.HandleFunc("POST /v1/knowledge/maps", h.storeMap)
+	mux.HandleFunc("GET /v1/knowledge/maps/{slug}", h.getMap)
 	mux.HandleFunc("POST /v1/knowledge/search", h.searchEntries)
 	mux.HandleFunc("POST /v1/knowledge/guide", h.guide)
+}
+
+func (h *Handler) entryCard(w http.ResponseWriter, r *http.Request) {
+	card, err := h.service.EntryCard(r.Context(), r.PathValue("slug"), boolQuery(r, "include_archived"))
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, card)
+}
+
+func (h *Handler) batchCards(w http.ResponseWriter, r *http.Request) {
+	var request CardsRequest
+	if err := api.DecodeJSON(r, &request); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	offset, err := optionalInt(r.URL.Query().Get("offset"))
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	result, err := h.service.BatchCards(r.Context(), request.Slugs, request.IncludeArchived, offset)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) readEntry(w http.ResponseWriter, r *http.Request) {
+	knownRevision, err := optionalInt(r.URL.Query().Get("known_revision"))
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	view := r.URL.Query().Get("view")
+	if view == "" {
+		view = "outline"
+	}
+	result, err := h.service.ReadEntry(r.Context(), r.PathValue("slug"), view, r.URL.Query().Get("section"), knownRevision, r.URL.Query().Get("known_digest"), boolQuery(r, "include_archived"))
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) replaceLinks(w http.ResponseWriter, r *http.Request) {
+	var request ReplaceLinksRequest
+	if err := api.DecodeJSON(r, &request); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	if err := h.service.ReplaceLinks(r.Context(), r.PathValue("slug"), request.Links); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) storeMap(w http.ResponseWriter, r *http.Request) {
+	var request StoreKnowledgeMapRequest
+	if err := api.DecodeJSON(r, &request); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	knowledgeMap, err := h.service.StoreMap(r.Context(), request)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusCreated, KnowledgeMapResponse{Slug: knowledgeMap.Slug, Title: knowledgeMap.Title, Summary: knowledgeMap.Summary, UpdatedAt: knowledgeMap.UpdatedAt})
+}
+
+func (h *Handler) getMap(w http.ResponseWriter, r *http.Request) {
+	result, err := h.service.GetMap(r.Context(), r.PathValue("slug"))
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, result)
 }
 
 func (h *Handler) deleteEntry(w http.ResponseWriter, r *http.Request) {
