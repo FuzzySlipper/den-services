@@ -304,7 +304,7 @@ func TestManagedSubmissionToolIsProviderNeutralAndKeepsPublicInput(t *testing.T)
 	if err := json.Unmarshal(schema.Properties["required_checks"], &checks); err != nil {
 		t.Fatal(err)
 	}
-	if checks["type"] != "array" || checks["minItems"] != float64(1) {
+	if checks["type"] != "array" || checks["minItems"] != nil {
 		t.Fatalf("required_checks schema = %#v", checks)
 	}
 }

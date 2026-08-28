@@ -537,7 +537,7 @@ func reviewFinalizationTools() []ToolDefinition {
 func reviewSubmissionTools() []ToolDefinition {
 	return []ToolDefinition{{
 		Name:         "submit_task_for_review",
-		Description:  "Submit one exact-SHA task review through the configured managed review runtime. Den remains authoritative for the review round, GitHub check gate, and current review context; this returns a durable submission/job receipt and never duplicates findings or finalization.",
+		Description:  "Submit one exact-SHA task review through the configured managed review runtime. Den remains authoritative for the review round and current review context; supplied GitHub checks are gated before admission, while [] records a passed no_required_checks evidence state. This returns a durable submission/job receipt and never duplicates findings or finalization.",
 		Backend:      "crew-review",
 		Operation:    "submit_task_for_review",
 		WorkflowTier: WorkflowTierGreenPath,
@@ -548,8 +548,8 @@ func reviewSubmissionTools() []ToolDefinition {
 			"commit_sha": StringSchema("Full 40-character commit SHA to review. The managed path never substitutes a branch head."),
 			"ref":        StringSchema("Branch or ref associated with the submitted commit."),
 			"required_checks": mustSchema(map[string]any{
-				"type": "array", "items": map[string]any{"type": "string", "minLength": 1}, "minItems": 1,
-				"description": "Exact GitHub check-run names required before reviewer admission.",
+				"type": "array", "items": map[string]any{"type": "string", "minLength": 1},
+				"description": "Exact GitHub check-run names required before reviewer admission. Supply [] when no GitHub gate is required.",
 			}),
 			"base_commit":       NullableStringSchema("Optional full 40-character diff base commit."),
 			"review_summary_md": StringSchema("Markdown summary supplied to the Den review request."),

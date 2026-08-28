@@ -3290,7 +3290,7 @@
     },
     {
       "name": "submit_task_for_review",
-      "description": "Submit one exact-SHA task review through the configured managed review runtime. Den remains authoritative for the review round, GitHub check gate, and current review context; this returns a durable submission/job receipt and never duplicates findings or finalization.",
+      "description": "Submit one exact-SHA task review through the configured managed review runtime. Den remains authoritative for the review round and current review context; supplied GitHub checks are gated before admission, while [] records a passed no_required_checks evidence state. This returns a durable submission/job receipt and never duplicates findings or finalization.",
       "backend": "crew-review",
       "operation": "submit_task_for_review",
       "workflow_tier": "green_path",
@@ -3322,12 +3322,11 @@
             "type": "string"
           },
           "required_checks": {
-            "description": "Exact GitHub check-run names required before reviewer admission.",
+            "description": "Exact GitHub check-run names required before reviewer admission. Supply [] when no GitHub gate is required.",
             "items": {
               "minLength": 1,
               "type": "string"
             },
-            "minItems": 1,
             "type": "array"
           },
           "review_summary_md": {
