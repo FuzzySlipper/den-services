@@ -526,6 +526,8 @@ install_mcp_routes() {
   set_mcp_route_timeout "${routes_target}" "wait_for_messages" "65s"
   append_mcp_route_if_missing "${routes_target}" "get_task_context" "tasks" "GET" \
     "/v1/tasks/{task_id}/context" "mcp_task_context_compose" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "compose_assignment_manifest" "tasks" "POST" \
+    "/v1/tasks/{task_id}/assignment-manifest" "mcp_assignment_manifest_compose" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "record_human_acceptance_review" "tasks" "POST" \
     "/v1/tasks/{task_id}/human-acceptance-reviews" "mcp_tasks_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "ensure_document_discussion" "documents" "POST" \
@@ -560,6 +562,18 @@ install_mcp_routes() {
     "/v1/board/comments/{comment_id}" "mcp_board_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "den_knowledge_delete" "knowledge" "DELETE" \
     "/v1/knowledge/entries/{slug}" "mcp_knowledge_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "den_knowledge_card" "knowledge" "GET" \
+    "/v1/knowledge/entries/{slug}/card" "mcp_knowledge_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "den_knowledge_cards" "knowledge" "POST" \
+    "/v1/knowledge/entries/cards" "mcp_knowledge_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "den_knowledge_read" "knowledge" "GET" \
+    "/v1/knowledge/entries/{slug}/read" "mcp_knowledge_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "den_knowledge_replace_links" "knowledge" "PUT" \
+    "/v1/knowledge/entries/{slug}/links" "mcp_knowledge_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "den_knowledge_store_map" "knowledge" "POST" \
+    "/v1/knowledge/maps" "mcp_knowledge_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "den_knowledge_get_map" "knowledge" "GET" \
+    "/v1/knowledge/maps/{slug}" "mcp_knowledge_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "sync_board_github" "board-relay" "POST" \
     "/v1/projects/{project_id}/board/github-sync" "mcp_board_relay_rest" "mcp_tool_result_json" "30s"
   append_mcp_route_if_missing "${routes_target}" "set_board_github_visibility" "board-relay" "PATCH" \
