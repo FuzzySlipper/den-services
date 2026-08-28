@@ -32,9 +32,6 @@ func (s *Store) DeleteEntry(ctx context.Context, slug string) error {
 		return fmt.Errorf("beginning knowledge delete: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, deleteInboundLinksSQL, slug); err != nil {
-		return fmt.Errorf("deleting inbound knowledge links: %w", err)
-	}
 	var deletedID int64
 	if err := tx.QueryRow(ctx, deleteEntrySQL, slug).Scan(&deletedID); errors.Is(err, pgx.ErrNoRows) {
 		return entryNotFound(slug)
@@ -623,8 +620,6 @@ from den_knowledge.knowledge_entry_revisions kr
 join den_knowledge.knowledge_entries ke on ke.id = kr.entry_id
 where ke.slug = $1
 order by kr.revision_number desc`
-
-const deleteInboundLinksSQL = `delete from den_knowledge.knowledge_entry_links where to_entry_slug = $1`
 
 const deleteEntrySQL = `delete from den_knowledge.knowledge_entries where slug = $1 returning id`
 

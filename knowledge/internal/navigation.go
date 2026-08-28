@@ -298,13 +298,21 @@ func markdownHeadings(markdown string) []markdownHeading {
 	headings := []markdownHeading{}
 	counts := map[string]int{}
 	offset := 0
-	inFence := false
+	var fenceMarker byte
+	fenceLength := 0
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
-			inFence = !inFence
+		marker, length, isFence := markdownFence(trimmed)
+		if fenceMarker == 0 {
+			if isFence {
+				fenceMarker = marker
+				fenceLength = length
+			}
+		} else if isFence && marker == fenceMarker && length >= fenceLength {
+			fenceMarker = 0
+			fenceLength = 0
 		}
-		if !inFence {
+		if fenceMarker == 0 {
 			match := headingPattern.FindStringSubmatch(strings.TrimRight(line, "\r\n"))
 			if len(match) == 3 {
 				title := strings.TrimSpace(closingHeadingPattern.ReplaceAllString(match[2], ""))
@@ -320,6 +328,18 @@ func markdownHeadings(markdown string) []markdownHeading {
 		offset += len(line)
 	}
 	return headings
+}
+
+func markdownFence(line string) (byte, int, bool) {
+	if len(line) < 3 || (line[0] != '`' && line[0] != '~') {
+		return 0, 0, false
+	}
+	marker := line[0]
+	length := 0
+	for length < len(line) && line[length] == marker {
+		length++
+	}
+	return marker, length, length >= 3
 }
 
 func headingID(title string) string {

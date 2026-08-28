@@ -23,6 +23,7 @@ func TestStorePostgresKnowledgeFTSRepresentativeFlow(t *testing.T) {
 	defer pool.Close()
 	store := NewStore(pool)
 	_ = store.DeleteEntry(ctx, "fts-knowledge")
+	_ = store.DeleteEntry(ctx, "fts-linked-target")
 	now := time.Now().UTC()
 	entry, err := NewEntry(NewEntryParams{
 		Slug:          "fts-knowledge",
@@ -48,6 +49,35 @@ func TestStorePostgresKnowledgeFTSRepresentativeFlow(t *testing.T) {
 	}
 	if len(results) == 0 {
 		t.Fatal("SearchEntries() returned no results")
+	}
+	target, err := NewEntry(NewEntryParams{
+		Slug:          "fts-linked-target",
+		Title:         "FTS Linked Target",
+		BodyMarkdown:  "A target used to prove retained missing links.",
+		Kind:          KindReference,
+		Status:        StatusReviewed,
+		CurationState: CurationAgentCurated,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	})
+	if err != nil {
+		t.Fatalf("NewEntry(target) error = %v", err)
+	}
+	if _, err := store.UpsertEntry(ctx, target, "postgres link smoke"); err != nil {
+		t.Fatalf("UpsertEntry(target) error = %v", err)
+	}
+	if err := store.ReplaceLinks(ctx, "fts-knowledge", []EntryLink{{ToSlug: "fts-linked-target", Kind: LinkKindRelated}}); err != nil {
+		t.Fatalf("ReplaceLinks() error = %v", err)
+	}
+	if err := store.DeleteEntry(ctx, "fts-linked-target"); err != nil {
+		t.Fatalf("DeleteEntry(target) error = %v", err)
+	}
+	links, err := store.ListLinks(ctx, "fts-knowledge", MaxNavigationLinks)
+	if err != nil {
+		t.Fatalf("ListLinks() error = %v", err)
+	}
+	if len(links) != 1 || links[0].Target.Slug != "fts-linked-target" || !links[0].Target.Missing {
+		t.Fatalf("links after target delete = %#v", links)
 	}
 	if err := store.DeleteEntry(ctx, "fts-knowledge"); err != nil {
 		t.Fatalf("DeleteEntry() error = %v", err)

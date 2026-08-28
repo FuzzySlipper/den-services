@@ -56,6 +56,26 @@ func TestHandlerDeletesKnowledgeEntry(t *testing.T) {
 	}
 }
 
+func TestServiceDeletePreservesLinksToMissingTargets(t *testing.T) {
+	ctx := context.Background()
+	service := NewService(newMemoryStore(), fixedClock())
+	seedEntry(t, service, "source", "Source", StatusReviewed, nil, "source")
+	seedEntry(t, service, "target", "Target", StatusReviewed, nil, "target")
+	if err := service.ReplaceLinks(ctx, "source", []EntryLinkRequest{{ToSlug: "target", Kind: LinkKindRelated}}); err != nil {
+		t.Fatalf("ReplaceLinks() error = %v", err)
+	}
+	if err := service.DeleteEntry(ctx, "target"); err != nil {
+		t.Fatalf("DeleteEntry(target) error = %v", err)
+	}
+	read, err := service.ReadEntry(ctx, "source", "outline", "", 0, "", false)
+	if err != nil {
+		t.Fatalf("ReadEntry(source) error = %v", err)
+	}
+	if len(read.Links) != 1 || read.Links[0].Target.Slug != "target" || !read.Links[0].Target.Missing {
+		t.Fatalf("links after target deletion = %#v", read.Links)
+	}
+}
+
 func TestServiceKnowledgeReviewedDefaultsAndTagGates(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()

@@ -81,6 +81,25 @@ func TestMarkdownHeadingIDsSupportUnicodeAndLiteralHashes(t *testing.T) {
 	}
 }
 
+func TestMarkdownFenceRequiresMatchingMarkerAndRunLength(t *testing.T) {
+	markdown := "# Intro\n`````go\n# hidden-one\n~~~\n# hidden-two\n````\n# hidden-three\n`````\n# Visible\nvisible body\n"
+	sections := outlineMarkdown(markdown)
+	if len(sections) != 2 || sections[0].Title != "Intro" || sections[1].Title != "Visible" {
+		t.Fatalf("outline with mixed fences = %#v", sections)
+	}
+	intro, body, err := selectMarkdownSection(markdown, "intro")
+	if err != nil {
+		t.Fatalf("select intro: %v", err)
+	}
+	if intro.Title != "Intro" || !strings.Contains(body, "# hidden-three") || strings.Contains(body, "# Visible") {
+		t.Fatalf("intro section body = %q", body)
+	}
+	visible, visibleBody, err := selectMarkdownSection(markdown, "visible")
+	if err != nil || visible.Title != "Visible" || visibleBody != "# Visible\nvisible body" {
+		t.Fatalf("visible section = %#v %q %v", visible, visibleBody, err)
+	}
+}
+
 func TestNavigationHandlerCardsOmitBodiesAndExposeContinuation(t *testing.T) {
 	service := NewService(newMemoryStore(), fixedClock())
 	if _, err := service.StoreEntry(context.Background(), StoreEntryRequest{Slug: "http-card", Title: "HTTP Card", Summary: "safe summary", BodyMarkdown: "private full body", Kind: KindReference, Status: StatusReviewed, CurationState: CurationAgentCurated}); err != nil {

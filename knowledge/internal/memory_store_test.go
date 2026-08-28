@@ -41,7 +41,7 @@ func (s *memoryStore) DeleteEntry(_ context.Context, slug string) error {
 		s.revisions = kept
 		keptLinks := s.links[:0]
 		for _, link := range s.links {
-			if link.FromSlug != slug && link.ToSlug != slug {
+			if link.FromSlug != slug {
 				keptLinks = append(keptLinks, link)
 			}
 		}
