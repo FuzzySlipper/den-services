@@ -460,8 +460,10 @@ func modernizeDescription(name, description string) string {
 	description = strings.TrimSpace(verboseSentence.ReplaceAllString(description, "."))
 	description = strings.ReplaceAll(description, "..", ".")
 	switch name {
-	case "create_review_round", "request_review":
+	case "create_review_round":
 		return "Create or idempotently reuse a review request for the current checkout and task context. The reviewer reads the current repository state when the request is handled."
+	case "request_review":
+		return "Direct-review fallback only: create or idempotently reuse a Den review round without enqueueing or routing a managed reviewer. Ordinary agent review submissions must use submit_task_for_review."
 	case "mark_notifications_read":
 		return "Mark explicit user notification IDs as read for an agent identity. For scoped operations, use mark_project_notifications_read or mark_task_notifications_read."
 	case "get_document_discussion":

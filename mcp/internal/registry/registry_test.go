@@ -316,6 +316,26 @@ func TestManagedSubmissionToolIsProviderNeutralAndKeepsPublicInput(t *testing.T)
 	}
 }
 
+func TestDirectReviewFallbackCannotBeMistakenForManagedSubmission(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, err := registry.Resolve("request_review")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lower := strings.ToLower(tool.Description)
+	for _, required := range []string{"direct-review fallback", "without enqueueing", "submit_task_for_review"} {
+		if !strings.Contains(lower, required) {
+			t.Fatalf("request_review description does not distinguish direct and managed routing: %q", tool.Description)
+		}
+	}
+	if tool.WorkflowTier != WorkflowTierPrimitive {
+		t.Fatalf("request_review workflow tier = %q, want primitive", tool.WorkflowTier)
+	}
+}
+
 func TestDefaultRegistryReviewInputsDoNotExposeCheckoutRevisionFields(t *testing.T) {
 	registry, err := DefaultRegistry()
 	if err != nil {

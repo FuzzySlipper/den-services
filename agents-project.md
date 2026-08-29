@@ -145,3 +145,5 @@ When implementing under Den workflow:
 - Update or comment on the relevant Den document if a boundary decision changes.
 - Record branch/commit/test evidence in the Den task thread or handoff.
 - Move implementation tasks to review rather than silently treating local code as done.
+- Submit ordinary agent reviews with `submit_task_for_review`; `request_review`
+  is direct recovery only and does not enqueue managed routing.

@@ -12,17 +12,20 @@ boundary and must remain faithful to that document.
 ## Normal path
 
 ```text
-managed implementer   submit_task_for_review | rusty_crew.submit_task_for_review
-external implementer  role-bound review:cli submit/status
-direct implementer    request_review
+ordinary implementer  submit_task_for_review
+runtime adapter       provider-specific submit/complete behind managed service
+direct recovery       request_review (explicit fallback only)
 reviewer              get_review_context + inspect the current checkout
-managed closeout      complete_routed_review | rusty_crew.complete_routed_review
+managed closeout      managed service completion route
 direct closeout       finalize_review + compact receipt
 ```
 
-Managed and direct submission are different authorities. A reviewer must use
-the routed submission record when one exists and must not recreate it by
-calling low-level tools one at a time. `request_review` is the direct fallback.
+Managed and direct submission are different authorities. Ordinary agents use
+`submit_task_for_review`; the dedicated managed service owns queueing, retries,
+and selection of a routable reviewer runtime. A reviewer must use the routed
+submission record when one exists and must not recreate it by calling low-level
+tools one at a time. `request_review` is an explicit direct fallback: it creates
+a Den round but does not enqueue or route a managed reviewer.
 
 Review packets and messages point to durable task, round, finding, and
 repository records. They are not copies of source code or checkout identity.
@@ -36,7 +39,7 @@ time.
 | Concern | Authority | Boundary |
 | --- | --- | --- |
 | review rounds, findings, finalization, receipts | Den Review | Review REST/MCP APIs and `den_review` schema |
-| managed submission, session identity, wake coalescing, routed reply | Rusty Crew | Crew-owned workflow and adapter calls |
+| managed submission, queueing, retry, runtime selection, routed reply | dedicated managed review service | `crew-review` MCP backend and provider adapters |
 | model-facing procedure | Codex skill | Guidance only |
 | CI execution and check-run identity | GitHub Actions / Review gate | Separate deterministic gate APIs |
 | human-readable task-thread projection | Messages | Idempotent packet/message append |

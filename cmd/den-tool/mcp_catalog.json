@@ -3268,7 +3268,7 @@
     },
     {
       "name": "request_review",
-      "description": "Create or idempotently reuse a review request for the current checkout and task context. The reviewer reads the current repository state when the request is handled.",
+      "description": "Direct-review fallback only: create or idempotently reuse a Den review round without enqueueing or routing a managed reviewer. Ordinary agent review submissions must use submit_task_for_review.",
       "backend": "review",
       "operation": "request_review",
       "workflow_tier": "primitive",

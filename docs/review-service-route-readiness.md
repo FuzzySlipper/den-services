@@ -53,9 +53,12 @@ packet and task transition as one retryable workflow.
 
 The pointer-first review envelope and bounded wake/event contract are defined in
 [`docs/review-pointer-first-contract.md`](./review-pointer-first-contract.md).
-Normal managed submission is owned by Rusty Crew's `submit_task_for_review`;
-Review supplies current-round facts, packet/gate handles, and deterministic
-receipts but does not own Crew routing or wake scheduling.
+Normal agent submission uses `submit_task_for_review`, owned by the dedicated
+managed review service behind MCP's `crew-review` backend. That service owns
+queueing, retry, and selection of a routable runtime. Review supplies
+current-round facts, packet/gate handles, and deterministic receipts but does
+not own routing or wake scheduling. `request_review` is a direct fallback only;
+it creates a Den round and does not place work in the managed queue.
 
 The pipeline route composes Tasks-owned `review` status with the latest
 Review-owned round and GitHub gate. Missing `latest_round` and `latest_gate`

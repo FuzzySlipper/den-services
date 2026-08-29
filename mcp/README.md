@@ -42,10 +42,11 @@ The MCP catalog labels every discovered tool with `workflowTier`:
   invoke through its trusted service adapter;
 - `green_path` — a canonical managed workflow entry point owned by the runtime.
 
-Direct Codex/CLI callers use the `direct` profile by default and retain the
-low-level Review/GitHub-gate tools. A managed runtime can request the narrower
-catalog with either the `X-Den-MCP-Tool-Profile: managed-runtime` HTTP header or
-the equivalent `toolProfile` field on `initialize`/`tools/list` parameters.
+The server retains the `direct` profile for deliberate recovery and operator
+use, including low-level Review/GitHub-gate tools. Ordinary agent clients should
+request the narrower `managed-runtime` catalog with either the
+`X-Den-MCP-Tool-Profile: managed-runtime` HTTP header or the equivalent
+`toolProfile` field on `initialize`/`tools/list` parameters.
 The response includes a `catalog` object with the selected profile, catalog
 revision, visible count, and tier counts so startup diagnostics can verify the
 projection. The managed profile omits primitive review/gate tools from
@@ -53,8 +54,8 @@ projection. The managed profile omits primitive review/gate tools from
 persisted review workflow remains completable.
 
 The default can be set in `server.default_tool_profile`, but shared endpoints
-should normally remain `direct`; select `managed-runtime` per adapter request
-when direct and managed callers share the same MCP listener.
+should remain capable of direct recovery; select `managed-runtime` per ordinary
+agent request when direct operators and managed callers share one MCP listener.
 
 ## Pointer-first review contract
 
@@ -62,17 +63,16 @@ The runtime-neutral review envelope, ownership split, byte budgets, and
 staleness/coalescing rules live in
 [`docs/review-pointer-first-contract.md`](../docs/review-pointer-first-contract.md).
 The important boundary is that MCP exposes Den Review facts and handles; it
-does not become the Rusty Crew wake/reply authority. The
+does not become the managed-review routing or reply authority. The
 `submit_task_for_review` green path is routed to the separately configured
-`crew-review` backend, which owns durable submission admission and runtime
-choice while calling Den back for the round, exact-SHA gate, and current
-context. A backend outage is surfaced as a retryable actionable result; this
-route has no automatic Rusty fallback. Managed runtimes may still expose their
-own native `rusty_crew.submit_task_for_review` and
-`complete_routed_review` / `rusty_crew.complete_routed_review` green paths,
-while direct sessions retain typed Review/GitHub primitives for deliberate
-direct review and recovery. Generic messaging, app-thread steering, and an
-`@reviewer` address do not create managed submission authority. Discovery
+`crew-review` backend, which owns durable submission admission, queueing, retry,
+and runtime choice while calling Den back for the round, exact-SHA gate, and
+current context. A backend outage is surfaced as a retryable actionable result.
+Runtime-specific adapters live behind that boundary; agents should not select
+one themselves. Direct sessions retain typed Review/GitHub primitives only for
+deliberate recovery. In particular, `request_review` creates a direct Den round
+and does not enqueue managed routing. Generic messaging, app-thread steering,
+and a reviewer address do not create managed submission authority. Discovery
 filtering is ergonomic rather than authorization and must not strand completion
 of persisted work.
 
