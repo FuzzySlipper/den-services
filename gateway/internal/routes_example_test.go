@@ -57,6 +57,8 @@ func TestDeployableRouteExampleCoversBrowserOwners(t *testing.T) {
 		{"GET", "/v1/knowledge/entries/global-boundaries", "127.0.0.1:8095"},
 		{"GET", "/v1/projects/den-web/agent-guidance/entries", "127.0.0.1:8097"},
 		{"POST", "/v1/projects/den-web/tasks/42/review/request", "127.0.0.1:8096"},
+		{"GET", "/v1/projects/den-web/tasks/42/manual-review", "127.0.0.1:8413"},
+		{"POST", "/v1/projects/den-web/tasks/42/manual-review", "127.0.0.1:8413"},
 		{"GET", "/v1/artifacts/12/content", "127.0.0.1:8090"},
 		{"POST", "/v1/visual-contracts/compare", "127.0.0.1:8086"},
 		{"POST", "/v1/projects/den-web/librarian/query", "127.0.0.1:8098"},

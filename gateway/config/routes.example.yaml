@@ -38,6 +38,17 @@ routes:
     successor_auth:
       bearer_token: "${DEN_GATEWAY_REVIEW_UPSTREAM_TOKEN}"
 
+  - name: "manual-review-project-task-routes"
+    path_pattern: "/v1/projects/{project_id}/tasks/{task_id}/manual-review"
+    methods: ["GET", "POST"]
+    legacy_upstream_url: "http://127.0.0.1:8413"
+    successor_upstream_url: "http://127.0.0.1:8413"
+    successor_mode: "always"
+    caller_auth:
+      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
+    successor_auth:
+      bearer_token: "${DEN_GATEWAY_REVIEW_UPSTREAM_TOKEN}"
+
   - name: "review-project-routes"
     path_pattern: "/v1/projects/{project_id}/review"
     methods: ["GET"]
