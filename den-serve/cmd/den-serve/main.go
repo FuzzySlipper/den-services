@@ -120,20 +120,7 @@ func runRestart(args []string) error {
 }
 
 func restart(ctx context.Context, manager restartManager, options devserver.UpOptions) (devserver.UpResult, error) {
-	session, err := manager.Status(ctx, devserver.StatusOptions{Project: options.Project, RepoRoot: options.RepoRoot})
-	switch {
-	case errors.Is(err, devserver.ErrSessionNotFound):
-		// Nothing is up yet, so restart has the same result as up.
-	case err != nil:
-		return devserver.UpResult{}, err
-	case session.Ownership != "broker_owned" && session.Status != "stopped":
-		return devserver.UpResult{}, errors.New("session is not broker-owned; refusing to restart an external process")
-	case session.Status != "stopped":
-		if _, err := manager.Stop(ctx, devserver.StopOptions{Project: options.Project, RepoRoot: options.RepoRoot}); err != nil {
-			return devserver.UpResult{}, err
-		}
-	}
-	return manager.Up(ctx, options)
+	return serve.NewRestartService(manager).Restart(ctx, options)
 }
 
 func runStatus(args []string) error {

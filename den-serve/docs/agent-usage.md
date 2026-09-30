@@ -51,6 +51,13 @@ hostname used to open the status page. Keep the command running while using the
 page; override `status_page.bind_host` or `status_page.port` in the config file
 only when the defaults conflict with another local service.
 
+Broker-owned rows include a **Restart** button. It uses the same owner-aware
+stop-and-up flow as `den-serve restart`, then redirects back to the refreshed
+listing. Explicitly reused external processes remain visible but cannot be
+restarted from the page. Historical records whose manifest no longer exists do
+not count as identity-healthy, even if another project later answers on the old
+port.
+
 `restart` stops a running broker-owned session and starts it again. If no
 session exists (or the previous session is already stopped), it behaves like
 `up`. It refuses to stop an explicitly reused external process.

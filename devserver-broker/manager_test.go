@@ -43,6 +43,38 @@ func TestLoadServeManifestDoesNotRequirePlaywrightTestsBlock(t *testing.T) {
 	}
 }
 
+func TestRefreshSessionDoesNotTrustIdentityFreeHealthWhenPersistedManifestIsMissing(t *testing.T) {
+	server, _, port := startHTTPServer(t, "different-project", "different-project")
+	t.Cleanup(func() { _ = server.Close() })
+	cfg := testConfig(t)
+	manager := newTestManager(t, cfg)
+	missingRoot := filepath.Join(t.TempDir(), "removed-project")
+	session := SessionState{
+		Project:      "old-project",
+		RepoRoot:     missingRoot,
+		ManifestPath: filepath.Join(missingRoot, ".den-serve.json"),
+		ProbeHost:    "127.0.0.1",
+		Port:         port,
+		HealthURL:    fmt.Sprintf("http://127.0.0.1:%d/health", port),
+		PID:          99999999,
+		Ownership:    "broker_owned",
+	}
+
+	refreshed, err := manager.refreshSession(t.Context(), NewSessionStore(cfg.SessionRoot), session)
+	if err != nil {
+		t.Fatalf("refreshSession() error = %v", err)
+	}
+	if refreshed.Health.Matched {
+		t.Fatalf("Health.Matched = true for missing persisted manifest: %+v", refreshed.Health)
+	}
+	if !strings.Contains(refreshed.Health.Error, "loading persisted manifest") {
+		t.Fatalf("Health.Error = %q, want persisted manifest error", refreshed.Health.Error)
+	}
+	if refreshed.Status != "stopped" {
+		t.Fatalf("Status = %q, want stopped", refreshed.Status)
+	}
+}
+
 func TestUpBindsLanFacingProbesLoopbackAndReusesBrokerOwnedSession(t *testing.T) {
 	cfg := testConfig(t)
 	manager := newTestManager(t, cfg)

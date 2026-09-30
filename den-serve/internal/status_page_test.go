@@ -19,15 +19,32 @@ import (
 type fakeSessionLister struct {
 	sessions []devserver.SessionState
 	err      error
+	session  devserver.SessionState
+	calls    []string
 }
 
-func (f fakeSessionLister) List(context.Context) ([]devserver.SessionState, error) {
+func (f *fakeSessionLister) List(context.Context) ([]devserver.SessionState, error) {
 	return f.sessions, f.err
 }
 
+func (f *fakeSessionLister) Status(context.Context, devserver.StatusOptions) (devserver.SessionState, error) {
+	f.calls = append(f.calls, "status")
+	return f.session, nil
+}
+
+func (f *fakeSessionLister) Stop(context.Context, devserver.StopOptions) (devserver.StopResult, error) {
+	f.calls = append(f.calls, "stop")
+	return devserver.StopResult{}, nil
+}
+
+func (f *fakeSessionLister) Up(context.Context, devserver.UpOptions) (devserver.UpResult, error) {
+	f.calls = append(f.calls, "up")
+	return devserver.UpResult{}, nil
+}
+
 func TestStatusPageListsOnlyRunningProjectsWithClickableAssignments(t *testing.T) {
-	page, err := NewStatusPage(fakeSessionLister{sessions: []devserver.SessionState{
-		{Project: "zeta", Status: "running", Ownership: "broker_owned", Port: 37302, LANURL: "http://192.168.1.22:37302/", Health: devserver.HealthResult{Matched: true}},
+	page, err := NewStatusPage(&fakeSessionLister{sessions: []devserver.SessionState{
+		{Project: "zeta", RepoRoot: "/repos/zeta", Status: "running", Ownership: "broker_owned", Port: 37302, LANURL: "http://192.168.1.22:37302/", Health: devserver.HealthResult{Matched: true}},
 		{Project: "unreachable", Status: "stopped", Ownership: "broker_owned", Port: 37301, LANURL: "http://192.168.1.22:37301/"},
 		{Project: "external", Status: "running", Ownership: "unowned", Port: 37303, LANURL: "http://192.168.1.22:37303/", Health: devserver.HealthResult{Matched: true}},
 		{Project: "alpha", Status: "running", Ownership: "broker_owned", Port: 5173, LANURL: "http://192.168.1.22:5173/", Health: devserver.HealthResult{Matched: true}},
@@ -50,6 +67,9 @@ func TestStatusPageListsOnlyRunningProjectsWithClickableAssignments(t *testing.T
 		`href="http://192.168.1.22:37303/">external</a>`,
 		`href="http://192.168.1.22:37302/">zeta</a>`,
 		"Refreshed 2026-08-12T10:00:00Z",
+		`name="repo_root" value="/repos/zeta"`,
+		">Restart</button>",
+		">External</td>",
 	} {
 		if !strings.Contains(body, marker) {
 			t.Fatalf("body missing %q:\n%s", marker, body)
@@ -69,7 +89,7 @@ func TestStatusPageListsOnlyRunningProjectsWithClickableAssignments(t *testing.T
 }
 
 func TestStatusPageEscapesProjectNamesAndUsesRequestHostFallback(t *testing.T) {
-	page, err := NewStatusPage(fakeSessionLister{sessions: []devserver.SessionState{
+	page, err := NewStatusPage(&fakeSessionLister{sessions: []devserver.SessionState{
 		{Project: `<script>alert("no")</script>`, Status: "running", Ownership: "broker_owned", Port: 4040, Health: devserver.HealthResult{Matched: true}},
 	}})
 	if err != nil {
@@ -176,7 +196,7 @@ func TestStatusPageUsesRefreshedManagerIdentityHealthRegardlessOfStaleProcessMet
 }
 
 func TestStatusPageRewritesWildcardAndLoopbackLANURLsUsingRequestHost(t *testing.T) {
-	page, err := NewStatusPage(fakeSessionLister{sessions: []devserver.SessionState{
+	page, err := NewStatusPage(&fakeSessionLister{sessions: []devserver.SessionState{
 		{
 			Project:    "rusty-dagger",
 			Status:     "stopped",
@@ -211,7 +231,7 @@ func TestStatusPageRewritesWildcardAndLoopbackLANURLsUsingRequestHost(t *testing
 }
 
 func TestStatusPageReturnsErrorWhenLiveListFails(t *testing.T) {
-	page, err := NewStatusPage(fakeSessionLister{err: errors.New("state unavailable")})
+	page, err := NewStatusPage(&fakeSessionLister{err: errors.New("state unavailable")})
 	if err != nil {
 		t.Fatalf("NewStatusPage() error = %v", err)
 	}
@@ -223,7 +243,7 @@ func TestStatusPageReturnsErrorWhenLiveListFails(t *testing.T) {
 }
 
 func TestStatusPageRejectsMutatingMethods(t *testing.T) {
-	page, err := NewStatusPage(fakeSessionLister{})
+	page, err := NewStatusPage(&fakeSessionLister{})
 	if err != nil {
 		t.Fatalf("NewStatusPage() error = %v", err)
 	}
@@ -231,5 +251,84 @@ func TestStatusPageRejectsMutatingMethods(t *testing.T) {
 	page.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "http://localhost/", nil))
 	if response.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want 405", response.Code)
+	}
+}
+
+func TestStatusPageRestartsBrokerOwnedProjectAndRedirects(t *testing.T) {
+	manager := &fakeSessionLister{session: devserver.SessionState{
+		Project:   "alpha",
+		RepoRoot:  "/repos/alpha",
+		Status:    "running",
+		Ownership: "broker_owned",
+	}}
+	manager.sessions = []devserver.SessionState{manager.session}
+	manager.sessions[0].Health.Matched = true
+	page, err := NewStatusPage(manager)
+	if err != nil {
+		t.Fatalf("NewStatusPage() error = %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/restart", strings.NewReader("project=alpha&repo_root=%2Frepos%2Falpha"))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+
+	page.ServeHTTP(response, request)
+
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303: %s", response.Code, response.Body.String())
+	}
+	if got := response.Header().Get("Location"); got != "/?restarted=alpha" {
+		t.Fatalf("Location = %q, want restart notice", got)
+	}
+	if got := strings.Join(manager.calls, ","); got != "status,stop,up" {
+		t.Fatalf("manager calls = %q, want status,stop,up", got)
+	}
+}
+
+func TestStatusPageRestartRequiresProjectAndRepoRoot(t *testing.T) {
+	page, err := NewStatusPage(&fakeSessionLister{})
+	if err != nil {
+		t.Fatalf("NewStatusPage() error = %v", err)
+	}
+	response := httptest.NewRecorder()
+	page.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/restart", nil))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", response.Code)
+	}
+}
+
+func TestStatusPageRestartRejectsProjectThatIsNotOnCurrentListing(t *testing.T) {
+	manager := &fakeSessionLister{session: devserver.SessionState{
+		Project:   "hidden",
+		RepoRoot:  "/repos/hidden",
+		Status:    "running",
+		Ownership: "broker_owned",
+	}}
+	page, err := NewStatusPage(manager)
+	if err != nil {
+		t.Fatalf("NewStatusPage() error = %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/restart", strings.NewReader("project=hidden&repo_root=%2Frepos%2Fhidden"))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+
+	page.ServeHTTP(response, request)
+
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", response.Code)
+	}
+	if len(manager.calls) != 0 {
+		t.Fatalf("restart manager calls = %v, want none", manager.calls)
+	}
+}
+
+func TestStatusPageShowsRestartNotice(t *testing.T) {
+	page, err := NewStatusPage(&fakeSessionLister{})
+	if err != nil {
+		t.Fatalf("NewStatusPage() error = %v", err)
+	}
+	response := httptest.NewRecorder()
+	page.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/?restarted=alpha", nil))
+	if !strings.Contains(response.Body.String(), "alpha restarted") {
+		t.Fatalf("body missing restart notice: %s", response.Body.String())
 	}
 }

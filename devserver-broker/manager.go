@@ -359,6 +359,7 @@ func (m *Manager) refreshSession(ctx context.Context, store *SessionStore, sessi
 		ReadyText:      "",
 		IdentityHeader: "",
 	}
+	var manifestLoadErr error
 	if session.ManifestPath != "" {
 		loaded, err := LoadServeManifest(session.ManifestPath, session.RepoRoot, m.cfg)
 		if err == nil {
@@ -366,10 +367,14 @@ func (m *Manager) refreshSession(ctx context.Context, store *SessionStore, sessi
 			if session.PublicHostOverride != "" {
 				manifest.PublicHost = session.PublicHostOverride
 			}
+		} else {
+			manifestLoadErr = fmt.Errorf("loading persisted manifest: %w", err)
 		}
 	}
 	currentFingerprint, fingerprintErr := ResolveLaunchFingerprint(ctx, manifest)
-	if fingerprintErr != nil {
+	if manifestLoadErr != nil {
+		session.FingerprintError = manifestLoadErr.Error()
+	} else if fingerprintErr != nil {
 		session.FingerprintError = fingerprintErr.Error()
 	} else {
 		session.CurrentFingerprint = currentFingerprint
@@ -381,7 +386,12 @@ func (m *Manager) refreshSession(ctx context.Context, store *SessionStore, sessi
 			session.StaleReason = ""
 		}
 	}
-	health := checkHealth(ctx, m.httpClient, manifest, session.Port)
+	health := HealthResult{URL: healthURL(manifest.ProbeHost, session.Port, manifest.HealthPath)}
+	if manifestLoadErr != nil {
+		health.Error = manifestLoadErr.Error()
+	} else {
+		health = checkHealth(ctx, m.httpClient, manifest, session.Port)
+	}
 	session.Health = health
 	session.LastCheckedAt = m.clock()
 	switch {
