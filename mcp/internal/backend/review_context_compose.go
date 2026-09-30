@@ -61,13 +61,15 @@ type reviewContextTask struct {
 	Title            string `json:"title,omitempty"`
 	Status           string `json:"status"`
 	Repository       string `json:"repository,omitempty"`
+	RepositoryURL    string `json:"repository_url,omitempty"`
 	RootPath         string `json:"root_path,omitempty"`
 	RepositoryHandle string `json:"repository_handle,omitempty"`
 }
 
 type reviewContextProject struct {
-	RootPath     string          `json:"root_path,omitempty"`
-	SettingsJSON json.RawMessage `json:"settings_json,omitempty"`
+	RootPath      string          `json:"root_path,omitempty"`
+	RepositoryURL string          `json:"repository_url,omitempty"`
+	SettingsJSON  json.RawMessage `json:"settings_json,omitempty"`
 }
 
 type reviewContextGate struct {
@@ -201,6 +203,7 @@ func (c *Client) callReviewContextCompose(ctx context.Context, backends map[stri
 				return Result{}, nil, fmt.Errorf("parsing review context project: %w", err)
 			}
 			response.Task.RootPath = strings.TrimSpace(project.RootPath)
+			response.Task.RepositoryURL = strings.TrimSpace(project.RepositoryURL)
 			var settings struct {
 				Repository string `json:"repository"`
 			}

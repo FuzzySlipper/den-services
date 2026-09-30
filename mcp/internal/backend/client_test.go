@@ -280,7 +280,7 @@ func TestClientCallsProjectsRESTCreateProject(t *testing.T) {
 		ToolName:  "create_project",
 		Operation: "create_project",
 		RequestID: json.RawMessage(`1`),
-		Arguments: json.RawMessage(`{"id":"project-a","name":"Project A","root_path":"/tmp/project-a"}`),
+		Arguments: json.RawMessage(`{"id":"project-a","name":"Project A","root_path":"/tmp/project-a","repository_url":"https://github.com/example/project-a.git"}`),
 	})
 	if err != nil {
 		t.Fatalf("Call() error = %v", err)
@@ -294,7 +294,7 @@ func TestClientCallsProjectsRESTCreateProject(t *testing.T) {
 	if sawMethod != http.MethodPost || sawPath != "/v1/projects" {
 		t.Fatalf("request = %s %s, want POST /v1/projects", sawMethod, sawPath)
 	}
-	if sawBody.ID != "project-a" || sawBody.Name != "Project A" || sawBody.RootPath != "/tmp/project-a" {
+	if sawBody.ID != "project-a" || sawBody.Name != "Project A" || sawBody.RootPath != "/tmp/project-a" || sawBody.RepositoryURL != "https://github.com/example/project-a.git" {
 		t.Fatalf("body = %#v", sawBody)
 	}
 	if !strings.Contains(string(result.Value), `"structuredContent":{"id":"project-a"`) {
@@ -354,7 +354,7 @@ func TestClientCallsProjectsRESTUpdateProjectPathParameter(t *testing.T) {
 		ToolName:  "update_project",
 		Operation: "update_project",
 		RequestID: json.RawMessage(`1`),
-		Arguments: json.RawMessage(`{"project_id":"project/a","name":"Renamed"}`),
+		Arguments: json.RawMessage(`{"project_id":"project/a","name":"Renamed","repository_url":"git@github.com:owner/repo.git"}`),
 	})
 	if err != nil {
 		t.Fatalf("Call() error = %v", err)
@@ -367,6 +367,9 @@ func TestClientCallsProjectsRESTUpdateProjectPathParameter(t *testing.T) {
 	}
 	if sawBody.Name == nil || *sawBody.Name != "Renamed" {
 		t.Fatalf("body = %#v", sawBody)
+	}
+	if sawBody.RepositoryURL == nil || *sawBody.RepositoryURL != "git@github.com:owner/repo.git" {
+		t.Fatalf("repository_url body = %#v", sawBody.RepositoryURL)
 	}
 }
 

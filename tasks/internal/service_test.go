@@ -438,3 +438,76 @@ func assertHistoryField(t *testing.T, entries []TaskHistoryEntry, field string, 
 	}
 	t.Fatalf("history missing %s %q -> %q in %+v", field, oldValue, newValue, entries)
 }
+
+func TestBacklogRemainsVisibleButNeverAvailable(t *testing.T) {
+	service := newTestService()
+	ctx := t.Context()
+	backlog, err := service.CreateTask(ctx, "den-services", CreateTaskRequest{Title: "Deferred work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := StatusBacklog
+	backlog, err = service.UpdateTask(ctx, backlog.ID(), UpdateTaskRequest{Agent: "tester", Status: &status})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if terminalStatus(backlog.Status()) || dependencySatisfiedStatus(backlog.Status()) {
+		t.Fatal("backlog must remain unfinished")
+	}
+	if _, err := service.CreateTask(ctx, "den-services", CreateTaskRequest{Title: "Waiting", DependsOn: []int64{backlog.ID()}}); err != nil {
+		t.Fatal(err)
+	}
+	next, err := service.NextTask(ctx, "den-services", "")
+	if err != nil || next != nil {
+		t.Fatalf("next = %v, error = %v", next, err)
+	}
+	listed, err := service.ListTasks(ctx, "den-services", ListTasksQuery{})
+	if err != nil || len(listed) != 2 {
+		t.Fatalf("list = %v, error = %v", listed, err)
+	}
+	planned := StatusPlanned
+	if _, err := service.UpdateTask(ctx, backlog.ID(), UpdateTaskRequest{Agent: "tester", Status: &planned}); err != nil {
+		t.Fatal(err)
+	}
+	next, err = service.NextTask(ctx, "den-services", "")
+	if err != nil || next == nil || next.ID() != backlog.ID() {
+		t.Fatalf("reactivated next = %v, error = %v", next, err)
+	}
+	status = StatusBacklog
+	if _, err := service.UpdateTask(ctx, backlog.ID(), UpdateTaskRequest{Agent: "tester", Status: &status}); err != nil {
+		t.Fatal(err)
+	}
+	next, err = service.NextTask(ctx, "den-services", "")
+	if err != nil || next != nil {
+		t.Fatalf("deferred next = %v, error = %v", next, err)
+	}
+}
+
+func TestBacklogSubtaskIsNotRecommended(t *testing.T) {
+	service := newTestService()
+	ctx := t.Context()
+	parent, err := service.CreateTask(ctx, "den-services", CreateTaskRequest{Title: "Active parent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := StatusInProgress
+	if _, err := service.UpdateTask(ctx, parent.ID(), UpdateTaskRequest{Agent: "tester", Status: &active}); err != nil {
+		t.Fatal(err)
+	}
+	child, err := service.CreateTask(ctx, "den-services", CreateTaskRequest{Title: "Deferred child", ParentID: int64Ptr(parent.ID())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backlog := StatusBacklog
+	if _, err := service.UpdateTask(ctx, child.ID(), UpdateTaskRequest{Agent: "tester", Status: &backlog}); err != nil {
+		t.Fatal(err)
+	}
+	next, err := service.NextTask(ctx, "den-services", "")
+	if err != nil || next != nil {
+		t.Fatalf("next = %v, error = %v", next, err)
+	}
+	listed, err := service.ListTasks(ctx, "den-services", ListTasksQuery{ParentID: int64Ptr(parent.ID()), Statuses: []string{StatusBacklog}})
+	if err != nil || len(listed) != 1 || listed[0].Task.ID() != child.ID() {
+		t.Fatalf("backlog filter = %v, error = %v", listed, err)
+	}
+}

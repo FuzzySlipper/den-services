@@ -25,16 +25,17 @@ func TestPostgresStoreScopeLifecycle(t *testing.T) {
 	store := NewStore(pool)
 	id := "projects-store-test-" + time.Now().UTC().Format("20060102150405000000000")
 	scope, err := NewScope(NewScopeParams{
-		ID:           id,
-		Name:         "Projects Store Test",
-		Kind:         KindAssistant,
-		Visibility:   VisibilityNormal,
-		Owner:        "codex",
-		RootPath:     "/tmp/projects-store-test",
-		Description:  "store smoke",
-		SettingsJSON: []byte(`{"test":true}`),
-		CreatedAt:    fixedClock(),
-		UpdatedAt:    fixedClock(),
+		ID:            id,
+		Name:          "Projects Store Test",
+		Kind:          KindAssistant,
+		Visibility:    VisibilityNormal,
+		Owner:         "codex",
+		RootPath:      "/tmp/projects-store-test",
+		RepositoryURL: "https://example.test/projects-store-test.git",
+		Description:   "store smoke",
+		SettingsJSON:  []byte(`{"test":true}`),
+		CreatedAt:     fixedClock(),
+		UpdatedAt:     fixedClock(),
 	})
 	if err != nil {
 		t.Fatalf("NewScope() error = %v", err)
@@ -47,18 +48,19 @@ func TestPostgresStoreScopeLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetScope() error = %v", err)
 	}
-	if read.Kind() != KindAssistant || read.RootPath() != "/tmp/projects-store-test" {
+	if read.Kind() != KindAssistant || read.RootPath() != "/tmp/projects-store-test" || read.RepositoryURL() != "https://example.test/projects-store-test.git" {
 		t.Fatalf("read scope = %+v", read)
 	}
 	empty := ""
 	updated, err := store.UpdateScope(ctx, created.ID(), ScopePatch{
-		RootPath: &empty,
+		RootPath:      &empty,
+		RepositoryURL: &empty,
 	}, fixedClock().Add(time.Minute))
 	if err != nil {
 		t.Fatalf("UpdateScope() error = %v", err)
 	}
-	if updated.RootPath() != "" {
-		t.Fatalf("updated root path = %q", updated.RootPath())
+	if updated.RootPath() != "" || updated.RepositoryURL() != "" {
+		t.Fatalf("updated paths = root_path:%q repository_url:%q", updated.RootPath(), updated.RepositoryURL())
 	}
 	archived, err := store.UpdateVisibility(ctx, created.ID(), VisibilityArchived, fixedClock().Add(2*time.Minute))
 	if err != nil {

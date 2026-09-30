@@ -19,7 +19,7 @@ func TestLocatorComposesBoundedReviewContextWithoutTaskBody(t *testing.T) {
 		case "/v1/projects/den-services/tasks/6608/review/workflow-summary":
 			_, _ = w.Write([]byte(`{"current_round":{"id":88,"project_id":"den-services","task_id":6608,"round_number":2,"target_kind":"code_diff","base_branch":"main","campaign_children":[{"project_id":"den-services","task_id":6607,"review_round_id":87}],"campaign_repositories":[{"repository":"FuzzySlipper/den-services"}]},"open_findings":[{"id":11,"status":"open"}]}`))
 		case "/v1/projects/den-services":
-			_, _ = w.Write([]byte(`{"id":"den-services","root_path":"/home/dev/den-services","settings_json":{"repository":"FuzzySlipper/den-services"}}`))
+			_, _ = w.Write([]byte(`{"id":"den-services","root_path":"/home/dev/den-services","repository_url":"https://github.com/FuzzySlipper/den-services.git","settings_json":{"repository":"FuzzySlipper/den-services"}}`))
 		case "/v1/projects/den-services/tasks/6608/packets/latest":
 			_, _ = w.Write([]byte(`{"id":41,"project_id":"den-services","task_id":6608,"sender":"reviewer","intent":"review_request","metadata":{"kind":"review_request"},"created_at":"2026-08-03T01:02:03Z"}`))
 		case "/v1/projects/den-services/agent-guidance":
@@ -57,7 +57,7 @@ func TestLocatorComposesBoundedReviewContextWithoutTaskBody(t *testing.T) {
 	if len(first.Value) > reviewContextMaxBytes {
 		t.Fatalf("review context bytes = %d, want <= %d", len(first.Value), reviewContextMaxBytes)
 	}
-	for _, want := range []string{`"schema":"den_review.reviewer_context.v1"`, `"campaign_children"`, `"campaign_repositories"`, `"next_state":"source_review_ready"`, `"repository":"FuzzySlipper/den-services"`, `"root_path":"/home/dev/den-services"`, `"detail_refs"`, `"document_slug":"go-codestyle"`, `"material_digest":"sha256:`} {
+	for _, want := range []string{`"schema":"den_review.reviewer_context.v1"`, `"campaign_children"`, `"campaign_repositories"`, `"next_state":"source_review_ready"`, `"repository":"FuzzySlipper/den-services"`, `"repository_url":"https://github.com/FuzzySlipper/den-services.git"`, `"root_path":"/home/dev/den-services"`, `"detail_refs"`, `"document_slug":"go-codestyle"`, `"material_digest":"sha256:`} {
 		if !strings.Contains(string(first.Value), want) {
 			t.Fatalf("review context missing %s: %s", want, first.Value)
 		}

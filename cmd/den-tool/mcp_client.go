@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	defaultMCPURL       = "http://192.168.1.10:5199/mcp"
+	defaultMCPURL       = "http://192.168.1.5:5199/mcp"
 	maxMCPResponseBytes = 1024 * 1024
 )
 

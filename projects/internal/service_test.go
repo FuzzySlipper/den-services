@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -69,5 +70,68 @@ func TestServicePatchRootPathClearAndNameValidation(t *testing.T) {
 	blank := " "
 	if _, err := service.UpdateProject(ctx, "project-a", UpdateProjectRequest{Name: &blank}); !errors.Is(err, ErrMissingName) {
 		t.Fatalf("blank name error = %v", err)
+	}
+}
+
+func TestServiceRepositoryURLAcceptsGitRemoteFormsAndCanClear(t *testing.T) {
+	ctx := context.Background()
+	service := NewService(newMemoryStore(), fixedClock)
+	for index, repositoryURL := range []string{
+		"http://git.internal/example/project.git",
+		"https://github.com/example/project.git",
+		"ssh://git@github.com/example/project.git",
+		"git://git.internal/example/project.git",
+		"git@github.com:example/project.git",
+		"github.com:example/project.git",
+	} {
+		id := fmt.Sprintf("project-%d", index)
+		created, err := service.CreateProject(ctx, CreateProjectRequest{
+			ID: id, Name: id, RepositoryURL: " " + repositoryURL + " ",
+		})
+		if err != nil {
+			t.Fatalf("CreateProject(%q) error = %v", repositoryURL, err)
+		}
+		if created.RepositoryURL() != repositoryURL {
+			t.Fatalf("repository_url = %q, want trimmed %q", created.RepositoryURL(), repositoryURL)
+		}
+	}
+
+	for _, repositoryURL := range []string{
+		"ftp://github.com/example/project.git",
+		"https://github.com",
+		"https://github.com/example/project?token=secret",
+		"https://user:secret@github.com/example/project.git",
+		"../project.git",
+	} {
+		if _, err := service.CreateProject(ctx, CreateProjectRequest{
+			ID: "invalid-project", Name: "Invalid Project", RepositoryURL: repositoryURL,
+		}); !errors.Is(err, ErrInvalidRepositoryURL) {
+			t.Fatalf("CreateProject(%q) error = %v, want ErrInvalidRepositoryURL", repositoryURL, err)
+		}
+	}
+
+	created, err := service.CreateProject(ctx, CreateProjectRequest{ID: "clear-project", Name: "Clear Project"})
+	if err != nil {
+		t.Fatalf("CreateProject(without repository_url) error = %v", err)
+	}
+	repositoryURL := "ssh://git@github.com/example/renamed.git"
+	updated, err := service.UpdateProject(ctx, created.ID(), UpdateProjectRequest{RepositoryURL: &repositoryURL})
+	if err != nil {
+		t.Fatalf("UpdateProject(repository_url) error = %v", err)
+	}
+	if updated.RepositoryURL() != repositoryURL {
+		t.Fatalf("updated repository_url = %q, want %q", updated.RepositoryURL(), repositoryURL)
+	}
+	empty := ""
+	cleared, err := service.UpdateProject(ctx, created.ID(), UpdateProjectRequest{RepositoryURL: &empty})
+	if err != nil {
+		t.Fatalf("UpdateProject(clear repository_url) error = %v", err)
+	}
+	if cleared.RepositoryURL() != "" {
+		t.Fatalf("cleared repository_url = %q, want empty", cleared.RepositoryURL())
+	}
+	invalid := "file:///tmp/project.git"
+	if _, err := service.UpdateProject(ctx, created.ID(), UpdateProjectRequest{RepositoryURL: &invalid}); !errors.Is(err, ErrInvalidRepositoryURL) {
+		t.Fatalf("UpdateProject(%q) error = %v, want ErrInvalidRepositoryURL", invalid, err)
 	}
 }

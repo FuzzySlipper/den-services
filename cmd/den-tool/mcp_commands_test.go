@@ -58,3 +58,53 @@ func TestEmbeddedMCPCatalogIsIncludedInDiscovery(t *testing.T) {
 		}
 	}
 }
+
+func TestEmbeddedMCPCatalogProjectsExposeRepositoryURL(t *testing.T) {
+	catalog, err := ParseMCPCatalog(embeddedMCPCatalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"create_project", "update_project"} {
+		var tool *mcpCatalogTool
+		for index := range catalog.Tools {
+			if catalog.Tools[index].Name == name {
+				tool = &catalog.Tools[index]
+				break
+			}
+		}
+		if tool == nil {
+			t.Fatalf("MCP catalog is missing %s", name)
+		}
+		var schema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+			Required   []string                   `json:"required"`
+		}
+		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+			t.Fatalf("Unmarshal(%s schema) error = %v", name, err)
+		}
+		property, ok := schema.Properties["repository_url"]
+		if !ok {
+			t.Fatalf("%s schema is missing repository_url", name)
+		}
+		for _, required := range schema.Required {
+			if required == "repository_url" {
+				t.Fatalf("%s requires optional repository_url", name)
+			}
+		}
+		var propertySchema struct {
+			Type []string `json:"type"`
+		}
+		if err := json.Unmarshal(property, &propertySchema); err != nil {
+			t.Fatalf("Unmarshal(%s.repository_url) error = %v", name, err)
+		}
+		containsString := false
+		for _, value := range propertySchema.Type {
+			if value == "string" {
+				containsString = true
+			}
+		}
+		if !containsString {
+			t.Fatalf("%s.repository_url schema type = %#v, want string", name, propertySchema.Type)
+		}
+	}
+}

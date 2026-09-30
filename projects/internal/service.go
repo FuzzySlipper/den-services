@@ -25,12 +25,13 @@ type ListScopesQuery struct {
 }
 
 type ScopePatch struct {
-	Name         *string
-	RootPath     *string
-	Description  *string
-	Owner        *string
-	SettingsJSON []byte
-	HasSettings  bool
+	Name          *string
+	RootPath      *string
+	RepositoryURL *string
+	Description   *string
+	Owner         *string
+	SettingsJSON  []byte
+	HasSettings   bool
 }
 
 type Service struct {
@@ -48,13 +49,14 @@ func (s *Service) CheckStore(ctx context.Context) error {
 
 func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (*Scope, error) {
 	scope, err := NewScope(NewScopeParams{
-		ID:          req.ID,
-		Name:        req.Name,
-		Kind:        KindProject,
-		Visibility:  VisibilityNormal,
-		RootPath:    req.RootPath,
-		Description: req.Description,
-		CreatedAt:   s.clock().UTC(),
+		ID:            req.ID,
+		Name:          req.Name,
+		Kind:          KindProject,
+		Visibility:    VisibilityNormal,
+		RootPath:      req.RootPath,
+		RepositoryURL: req.RepositoryURL,
+		Description:   req.Description,
+		CreatedAt:     s.clock().UTC(),
 	})
 	if err != nil {
 		return nil, validationFailed(err)
@@ -124,17 +126,22 @@ func (s *Service) UpdateProject(ctx context.Context, id string, req UpdateProjec
 	if req.Name != nil && strings.TrimSpace(*req.Name) == "" {
 		return nil, validationFailed(ErrMissingName)
 	}
+	repositoryURL := trimStringPointer(req.RepositoryURL)
+	if repositoryURL != nil && !validRepositoryURL(*repositoryURL) {
+		return nil, validationFailed(ErrInvalidRepositoryURL)
+	}
 	settings, hasSettings, err := normalizePatchSettings(req.SettingsJSON)
 	if err != nil {
 		return nil, validationFailed(err)
 	}
 	patch := ScopePatch{
-		Name:         trimStringPointer(req.Name),
-		RootPath:     trimStringPointer(req.RootPath),
-		Description:  trimStringPointer(req.Description),
-		Owner:        trimStringPointer(req.Owner),
-		SettingsJSON: settings,
-		HasSettings:  hasSettings,
+		Name:          trimStringPointer(req.Name),
+		RootPath:      trimStringPointer(req.RootPath),
+		RepositoryURL: repositoryURL,
+		Description:   trimStringPointer(req.Description),
+		Owner:         trimStringPointer(req.Owner),
+		SettingsJSON:  settings,
+		HasSettings:   hasSettings,
 	}
 	return s.store.UpdateScope(ctx, strings.TrimSpace(id), patch, s.clock().UTC())
 }

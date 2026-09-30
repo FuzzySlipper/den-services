@@ -596,6 +596,43 @@ func TestParitySchemasExposeOnlySupportedBoundedControls(t *testing.T) {
 	}
 }
 
+func TestProjectCatalogSupportsRepositoryURLOnCreateAndUpdate(t *testing.T) {
+	toolRegistry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"create_project", "update_project"} {
+		tool, err := toolRegistry.Resolve(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var schema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+			Required   []string                   `json:"required"`
+		}
+		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+			t.Fatalf("Unmarshal(%s) error = %v", name, err)
+		}
+		repositoryURL, ok := schema.Properties["repository_url"]
+		if !ok {
+			t.Fatalf("%s is missing repository_url", name)
+		}
+		if slices.Contains(schema.Required, "repository_url") {
+			t.Fatalf("%s requires optional repository_url", name)
+		}
+		var property struct {
+			Type        []string `json:"type"`
+			Description string   `json:"description"`
+		}
+		if err := json.Unmarshal(repositoryURL, &property); err != nil {
+			t.Fatalf("Unmarshal(%s.repository_url) error = %v", name, err)
+		}
+		if !slices.Contains(property.Type, "string") || !slices.Contains(property.Type, "null") || !strings.Contains(property.Description, "SSH") {
+			t.Fatalf("%s repository_url schema = %#v", name, property)
+		}
+	}
+}
+
 func TestBoardSearchRemainsOutsideMCPDiscovery(t *testing.T) {
 	registry, err := DefaultRegistry()
 	if err != nil {

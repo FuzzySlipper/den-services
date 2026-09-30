@@ -31,6 +31,7 @@ type projectSummaryResponse struct {
 }
 
 type statusCounts struct {
+	Backlog    int64 `json:"backlog"`
 	Planned    int64 `json:"planned"`
 	InProgress int64 `json:"in_progress"`
 	Review     int64 `json:"review"`
@@ -149,6 +150,8 @@ func (c *Client) projectTaskCounts(ctx context.Context, backend config.BackendCo
 	var counts statusCounts
 	for _, task := range tasks {
 		switch task.Status {
+		case "backlog":
+			counts.Backlog++
 		case "planned":
 			counts.Planned++
 		case "in_progress":

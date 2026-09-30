@@ -22,6 +22,7 @@ type projectsToolArguments struct {
 	Visibility      string          `json:"visibility"`
 	Owner           *string         `json:"owner"`
 	RootPath        *string         `json:"root_path"`
+	RepositoryURL   *string         `json:"repository_url"`
 	Description     *string         `json:"description"`
 	SettingsJSON    json.RawMessage `json:"settings_json"`
 	IncludeHidden   bool            `json:"include_hidden"`
@@ -30,18 +31,20 @@ type projectsToolArguments struct {
 }
 
 type createProjectBody struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	RootPath    string `json:"root_path,omitempty"`
-	Description string `json:"description,omitempty"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	RootPath      string `json:"root_path,omitempty"`
+	RepositoryURL string `json:"repository_url,omitempty"`
+	Description   string `json:"description,omitempty"`
 }
 
 type updateProjectBody struct {
-	Name         *string         `json:"name,omitempty"`
-	RootPath     *string         `json:"root_path,omitempty"`
-	Description  *string         `json:"description,omitempty"`
-	Owner        *string         `json:"owner,omitempty"`
-	SettingsJSON json.RawMessage `json:"settings_json,omitempty"`
+	Name          *string         `json:"name,omitempty"`
+	RootPath      *string         `json:"root_path,omitempty"`
+	RepositoryURL *string         `json:"repository_url,omitempty"`
+	Description   *string         `json:"description,omitempty"`
+	Owner         *string         `json:"owner,omitempty"`
+	SettingsJSON  json.RawMessage `json:"settings_json,omitempty"`
 }
 
 type createSpaceBody struct {
@@ -142,18 +145,20 @@ func projectsRESTRequestBody(operation string, arguments projectsToolArguments) 
 	switch operation {
 	case "create_project":
 		return json.Marshal(createProjectBody{
-			ID:          arguments.ID,
-			Name:        stringValue(arguments.Name),
-			RootPath:    stringValue(arguments.RootPath),
-			Description: stringValue(arguments.Description),
+			ID:            arguments.ID,
+			Name:          stringValue(arguments.Name),
+			RootPath:      stringValue(arguments.RootPath),
+			RepositoryURL: stringValue(arguments.RepositoryURL),
+			Description:   stringValue(arguments.Description),
 		})
 	case "update_project":
 		return json.Marshal(updateProjectBody{
-			Name:         arguments.Name,
-			RootPath:     arguments.RootPath,
-			Description:  arguments.Description,
-			Owner:        arguments.Owner,
-			SettingsJSON: arguments.SettingsJSON,
+			Name:          arguments.Name,
+			RootPath:      arguments.RootPath,
+			RepositoryURL: arguments.RepositoryURL,
+			Description:   arguments.Description,
+			Owner:         arguments.Owner,
+			SettingsJSON:  arguments.SettingsJSON,
 		})
 	case "create_space":
 		return json.Marshal(createSpaceBody{

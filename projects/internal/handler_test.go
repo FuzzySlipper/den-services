@@ -19,6 +19,7 @@ func TestHTTPProjectsAndSpacesLifecycle(t *testing.T) {
 		"id": "den-services",
 		"name": "Den Services",
 		"root_path": "/home/dev/den-services",
+		"repository_url": "https://github.com/FuzzySlipper/den-services.git",
 		"description": "successor services"
 	}`)
 	createProjectResponse := httptest.NewRecorder()
@@ -31,9 +32,13 @@ func TestHTTPProjectsAndSpacesLifecycle(t *testing.T) {
 	if created.Kind != KindProject || created.Visibility != VisibilityNormal || !created.Writable {
 		t.Fatalf("created project = %+v", created)
 	}
+	if created.RepositoryURL != "https://github.com/FuzzySlipper/den-services.git" {
+		t.Fatalf("created repository_url = %q", created.RepositoryURL)
+	}
 
 	patchProject := authedJSONRequest(http.MethodPatch, "/v1/projects/den-services", `{
 		"root_path": "",
+		"repository_url": "",
 		"owner": "patch",
 		"settings_json": {"lane":"lifeboat"}
 	}`)
@@ -44,7 +49,7 @@ func TestHTTPProjectsAndSpacesLifecycle(t *testing.T) {
 	}
 	var patched ScopeResponse
 	decodeJSON(t, patchProjectResponse.Body, &patched)
-	if patched.RootPath != "" || patched.Owner != "patch" {
+	if patched.RootPath != "" || patched.RepositoryURL != "" || patched.Owner != "patch" {
 		t.Fatalf("patched project = %+v", patched)
 	}
 	if string(patched.SettingsJSON) != `{"lane":"lifeboat"}` {
@@ -160,6 +165,20 @@ func TestHTTPRejectsInvalidVisibility(t *testing.T) {
 		"id": "bad-space",
 		"name": "Bad Space",
 		"visibility": "gone"
+	}`)
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestHTTPRejectsInvalidRepositoryURL(t *testing.T) {
+	server := testServer(t)
+	request := authedJSONRequest(http.MethodPost, "/v1/projects", `{
+		"id": "bad-project",
+		"name": "Bad Project",
+		"repository_url": "file:///tmp/project.git"
 	}`)
 	response := httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, request)

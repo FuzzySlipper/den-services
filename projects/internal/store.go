@@ -28,13 +28,15 @@ func (s *Store) Ping(ctx context.Context) error {
 }
 
 func (s *Store) CreateScope(ctx context.Context, scope *Scope) (*Scope, error) {
-	created, err := scanScope(s.pool.QueryRow(ctx, createScopeSQL,
+	created, err := scanScope(s.pool.QueryRow(
+		ctx, createScopeSQL,
 		scope.ID(),
 		scope.Name(),
 		scope.Kind(),
 		scope.Visibility(),
 		emptyToNil(scope.Owner()),
 		emptyToNil(scope.RootPath()),
+		emptyToNil(scope.RepositoryURL()),
 		emptyToNil(scope.Description()),
 		jsonOrNil(scope.SettingsJSON()),
 		scope.CreatedAt(),
@@ -70,10 +72,12 @@ func (s *Store) ListScopes(ctx context.Context, query ListScopesQuery) ([]*Scope
 }
 
 func (s *Store) UpdateScope(ctx context.Context, id string, patch ScopePatch, updatedAt time.Time) (*Scope, error) {
-	scope, err := scanScope(s.pool.QueryRow(ctx, updateScopeSQL,
+	scope, err := scanScope(s.pool.QueryRow(
+		ctx, updateScopeSQL,
 		id,
 		patch.Name,
 		patch.RootPath,
+		patch.RepositoryURL,
 		patch.Description,
 		patch.Owner,
 		patch.HasSettings,
@@ -137,6 +141,7 @@ func scanScope(row rowScanner) (*Scope, error) {
 	var visibility string
 	var owner *string
 	var rootPath *string
+	var repositoryURL *string
 	var description *string
 	var settingsJSON []byte
 	var createdAt time.Time
@@ -148,6 +153,7 @@ func scanScope(row rowScanner) (*Scope, error) {
 		&visibility,
 		&owner,
 		&rootPath,
+		&repositoryURL,
 		&description,
 		&settingsJSON,
 		&createdAt,
@@ -156,16 +162,17 @@ func scanScope(row rowScanner) (*Scope, error) {
 		return nil, err
 	}
 	return NewScope(NewScopeParams{
-		ID:           id,
-		Name:         name,
-		Kind:         kind,
-		Visibility:   visibility,
-		Owner:        nilToString(owner),
-		RootPath:     nilToString(rootPath),
-		Description:  nilToString(description),
-		SettingsJSON: settingsJSON,
-		CreatedAt:    createdAt,
-		UpdatedAt:    updatedAt,
+		ID:            id,
+		Name:          name,
+		Kind:          kind,
+		Visibility:    visibility,
+		Owner:         nilToString(owner),
+		RootPath:      nilToString(rootPath),
+		RepositoryURL: nilToString(repositoryURL),
+		Description:   nilToString(description),
+		SettingsJSON:  settingsJSON,
+		CreatedAt:     createdAt,
+		UpdatedAt:     updatedAt,
 	})
 }
 
@@ -196,14 +203,14 @@ func isUniqueViolation(err error) bool {
 }
 
 const scopeColumns = `
-id, name, kind, visibility, owner, root_path, description, settings_json,
+id, name, kind, visibility, owner, root_path, repository_url, description, settings_json,
 created_at, updated_at`
 
 const createScopeSQL = `
 insert into den_projects.projects (
-	id, name, kind, visibility, owner, root_path, description, settings_json, created_at, updated_at
+	id, name, kind, visibility, owner, root_path, repository_url, description, settings_json, created_at, updated_at
 )
-values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 returning ` + scopeColumns
 
 const getScopeSQL = `
@@ -223,10 +230,11 @@ const updateScopeSQL = `
 update den_projects.projects
 set name = coalesce($2, name),
     root_path = case when $3::text is null then root_path when $3::text = '' then null else $3::text end,
-    description = case when $4::text is null then description when $4::text = '' then null else $4::text end,
-    owner = case when $5::text is null then owner when $5::text = '' then null else $5::text end,
-    settings_json = case when $6::boolean then $7::jsonb else settings_json end,
-    updated_at = $8
+    repository_url = case when $4::text is null then repository_url when $4::text = '' then null else $4::text end,
+    description = case when $5::text is null then description when $5::text = '' then null else $5::text end,
+    owner = case when $6::text is null then owner when $6::text = '' then null else $6::text end,
+    settings_json = case when $7::boolean then $8::jsonb else settings_json end,
+    updated_at = $9
 where id = $1
 returning ` + scopeColumns
 

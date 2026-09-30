@@ -374,3 +374,12 @@ Run against a migrated staging copy before flipping MCP routes:
 
 The goal is a clean task lifecycle service, not a hidden replacement for all
 task-adjacent Core behavior.
+
+## Backlog status
+
+`backlog` preserves an unfinished task for later. Update an existing task to
+`backlog` to defer it, and return it to `planned` to make it eligible again.
+Backlog tasks remain readable and searchable and can be listed with the explicit
+status filter. They never qualify for next-task selection, including subtasks
+of active parents. A backlog dependency remains unsatisfied. Den Web excludes
+backlog rows from Active and includes them in All and Backlog views.

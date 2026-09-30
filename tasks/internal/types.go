@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	StatusBacklog    = "backlog"
 	StatusPlanned    = "planned"
 	StatusInProgress = "in_progress"
 	StatusReview     = "review"
@@ -237,7 +238,7 @@ func defaultStatus(status string) string {
 
 func validStatus(status string) bool {
 	switch status {
-	case StatusPlanned, StatusInProgress, StatusReview, StatusBlocked, StatusDone, StatusCancelled:
+	case StatusBacklog, StatusPlanned, StatusInProgress, StatusReview, StatusBlocked, StatusDone, StatusCancelled:
 		return true
 	default:
 		return false

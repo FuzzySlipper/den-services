@@ -71,22 +71,26 @@ func (s *memoryStore) UpdateScope(_ context.Context, id string, patch ScopePatch
 		return nil, notFound(id)
 	}
 	params := NewScopeParams{
-		ID:           scope.ID(),
-		Name:         scope.Name(),
-		Kind:         scope.Kind(),
-		Visibility:   scope.Visibility(),
-		Owner:        scope.Owner(),
-		RootPath:     scope.RootPath(),
-		Description:  scope.Description(),
-		SettingsJSON: scope.SettingsJSON(),
-		CreatedAt:    scope.CreatedAt(),
-		UpdatedAt:    updatedAt,
+		ID:            scope.ID(),
+		Name:          scope.Name(),
+		Kind:          scope.Kind(),
+		Visibility:    scope.Visibility(),
+		Owner:         scope.Owner(),
+		RootPath:      scope.RootPath(),
+		RepositoryURL: scope.RepositoryURL(),
+		Description:   scope.Description(),
+		SettingsJSON:  scope.SettingsJSON(),
+		CreatedAt:     scope.CreatedAt(),
+		UpdatedAt:     updatedAt,
 	}
 	if patch.Name != nil {
 		params.Name = *patch.Name
 	}
 	if patch.RootPath != nil {
 		params.RootPath = *patch.RootPath
+	}
+	if patch.RepositoryURL != nil {
+		params.RepositoryURL = *patch.RepositoryURL
 	}
 	if patch.Description != nil {
 		params.Description = *patch.Description
@@ -113,16 +117,17 @@ func (s *memoryStore) UpdateVisibility(_ context.Context, id string, visibility 
 		return nil, notFound(id)
 	}
 	updated, err := NewScope(NewScopeParams{
-		ID:           scope.ID(),
-		Name:         scope.Name(),
-		Kind:         scope.Kind(),
-		Visibility:   visibility,
-		Owner:        scope.Owner(),
-		RootPath:     scope.RootPath(),
-		Description:  scope.Description(),
-		SettingsJSON: scope.SettingsJSON(),
-		CreatedAt:    scope.CreatedAt(),
-		UpdatedAt:    updatedAt,
+		ID:            scope.ID(),
+		Name:          scope.Name(),
+		Kind:          scope.Kind(),
+		Visibility:    visibility,
+		Owner:         scope.Owner(),
+		RootPath:      scope.RootPath(),
+		RepositoryURL: scope.RepositoryURL(),
+		Description:   scope.Description(),
+		SettingsJSON:  scope.SettingsJSON(),
+		CreatedAt:     scope.CreatedAt(),
+		UpdatedAt:     updatedAt,
 	})
 	if err != nil {
 		return nil, err
@@ -144,16 +149,17 @@ func (s *memoryStore) DeleteScope(_ context.Context, id string) (*Scope, error) 
 
 func cloneScope(scope *Scope) *Scope {
 	clone, err := NewScope(NewScopeParams{
-		ID:           scope.ID(),
-		Name:         scope.Name(),
-		Kind:         scope.Kind(),
-		Visibility:   scope.Visibility(),
-		Owner:        scope.Owner(),
-		RootPath:     scope.RootPath(),
-		Description:  scope.Description(),
-		SettingsJSON: scope.SettingsJSON(),
-		CreatedAt:    scope.CreatedAt(),
-		UpdatedAt:    scope.UpdatedAt(),
+		ID:            scope.ID(),
+		Name:          scope.Name(),
+		Kind:          scope.Kind(),
+		Visibility:    scope.Visibility(),
+		Owner:         scope.Owner(),
+		RootPath:      scope.RootPath(),
+		RepositoryURL: scope.RepositoryURL(),
+		Description:   scope.Description(),
+		SettingsJSON:  scope.SettingsJSON(),
+		CreatedAt:     scope.CreatedAt(),
+		UpdatedAt:     scope.UpdatedAt(),
 	})
 	if err != nil {
 		panic(err)

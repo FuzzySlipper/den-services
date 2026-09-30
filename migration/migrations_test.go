@@ -67,7 +67,7 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 		"den_delivery":    2,
 		"den_messages":    2,
 		"den_observation": 2,
-		"den_projects":    2,
+		"den_projects":    3,
 		"den_runtime":     2,
 		"den_review":      7,
 	}

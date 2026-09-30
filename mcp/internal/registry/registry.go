@@ -42,7 +42,7 @@ type ToolProfile string
 const (
 	ToolProfileDirect         ToolProfile = "direct"
 	ToolProfileManagedRuntime ToolProfile = "managed-runtime"
-	ToolCatalogRevision                   = "mcp-catalog-v4"
+	ToolCatalogRevision                   = "mcp-catalog-v5"
 )
 
 // CatalogMetadata is returned alongside tools/list so managed runtimes can

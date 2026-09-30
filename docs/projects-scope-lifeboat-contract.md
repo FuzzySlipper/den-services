@@ -123,6 +123,7 @@ create table den_projects.projects (
     visibility text not null default 'normal',
     owner text,
     root_path text,
+    repository_url text,
     description text,
     settings_json jsonb,
     created_at timestamptz not null default now(),
@@ -140,6 +141,9 @@ Service rules:
   friction for dependent domains.
 - `root_path` is optional and may be cleared by sending an empty string through
   the compatibility update path.
+- `repository_url` is an optional HTTP(S), SSH/git, or scp-style Git remote URL used
+  by review hosts to identify matching local checkouts. It may be cleared with
+  an empty string.
 - `settings_json` is opaque JSON owned by the project registry; callers must
   not infer schema beyond their own documented keys.
 - `created_at` is immutable after insert.
@@ -148,7 +152,7 @@ Service rules:
 Recommended read projections:
 
 - `den_projects.project_refs`: `id`, `kind`, `visibility`, `owner`,
-  `root_path`, `updated_at`.
+  `root_path`, `updated_at`, `repository_url`.
 - `den_projects.visible_projects`: normal `kind='project'` rows.
 - `den_projects.visible_spaces`: all rows except hidden/archived rows.
 
@@ -163,7 +167,7 @@ facade can adapt legacy tool names to these routes.
 Project routes:
 
 - `POST /v1/projects`
-  - Request: `id`, `name`, optional `root_path`, `description`.
+  - Request: `id`, `name`, optional `root_path`, `repository_url`, `description`.
   - Creates `kind='project'`, `visibility='normal'`.
 - `GET /v1/projects?include_hidden=false&include_archived=false`
   - Default response matches current `list_projects`: only normal project rows.
@@ -171,8 +175,8 @@ Project routes:
   - Returns the project row, including `kind`, `visibility`, metadata, and
     timestamps.
 - `PATCH /v1/projects/{id}`
-  - Updates non-null `name`, `root_path`, `description`, `owner`,
-    `settings_json`.
+  - Updates non-null `name`, `root_path`, `repository_url`, `description`,
+    `owner`, `settings_json`.
 
 Space routes:
 

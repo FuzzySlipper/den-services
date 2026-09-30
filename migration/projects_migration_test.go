@@ -12,12 +12,16 @@ func TestProjectsMigrationDiscovered(t *testing.T) {
 	}
 	var initial *Migration
 	var deleteGrant *Migration
+	var repositoryURL *Migration
 	for i := range migrations {
 		if migrations[i].Schema == "den_projects" && migrations[i].Version == 1 {
 			initial = &migrations[i]
 		}
 		if migrations[i].Schema == "den_projects" && migrations[i].Version == 2 {
 			deleteGrant = &migrations[i]
+		}
+		if migrations[i].Schema == "den_projects" && migrations[i].Version == 3 {
+			repositoryURL = &migrations[i]
 		}
 	}
 	if initial == nil {
@@ -37,5 +41,18 @@ func TestProjectsMigrationDiscovered(t *testing.T) {
 	}
 	if !strings.Contains(deleteGrant.SQL, "grant delete on den_projects.projects to den_projects_app") {
 		t.Fatal("projects delete grant migration missing exact table privilege grant")
+	}
+	if repositoryURL == nil {
+		t.Fatal("den_projects version 3 repository URL migration not discovered")
+	}
+	for _, want := range []string{
+		"add column repository_url text",
+		"create or replace view den_projects.project_refs",
+		"create or replace view den_projects.visible_projects",
+		"create or replace view den_projects.visible_spaces",
+	} {
+		if !strings.Contains(repositoryURL.SQL, want) {
+			t.Fatalf("projects repository URL migration missing %q", want)
+		}
 	}
 }

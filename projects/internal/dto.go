@@ -7,10 +7,11 @@ import (
 )
 
 type CreateProjectRequest struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	RootPath    string `json:"root_path,omitempty"`
-	Description string `json:"description,omitempty"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	RootPath      string `json:"root_path,omitempty"`
+	RepositoryURL string `json:"repository_url,omitempty"`
+	Description   string `json:"description,omitempty"`
 }
 
 type CreateSpaceRequest struct {
@@ -25,16 +26,18 @@ type CreateSpaceRequest struct {
 }
 
 type UpdateProjectRequest struct {
-	Name         *string         `json:"name,omitempty"`
-	RootPath     *string         `json:"root_path,omitempty"`
-	Description  *string         `json:"description,omitempty"`
-	Owner        *string         `json:"owner,omitempty"`
-	SettingsJSON json.RawMessage `json:"settings_json,omitempty"`
+	Name          *string         `json:"name,omitempty"`
+	RootPath      *string         `json:"root_path,omitempty"`
+	RepositoryURL *string         `json:"repository_url,omitempty"`
+	Description   *string         `json:"description,omitempty"`
+	Owner         *string         `json:"owner,omitempty"`
+	SettingsJSON  json.RawMessage `json:"settings_json,omitempty"`
 }
 
 func (r UpdateProjectRequest) HasChanges() bool {
 	return r.Name != nil ||
 		r.RootPath != nil ||
+		r.RepositoryURL != nil ||
 		r.Description != nil ||
 		r.Owner != nil ||
 		r.SettingsJSON != nil
@@ -53,17 +56,18 @@ type DeleteSpaceRequest struct {
 }
 
 type ScopeResponse struct {
-	ID           string          `json:"id"`
-	Name         string          `json:"name"`
-	Kind         string          `json:"kind"`
-	Visibility   string          `json:"visibility"`
-	Owner        string          `json:"owner,omitempty"`
-	RootPath     string          `json:"root_path,omitempty"`
-	Description  string          `json:"description,omitempty"`
-	SettingsJSON json.RawMessage `json:"settings_json,omitempty"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
-	Writable     bool            `json:"writable"`
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	Kind          string          `json:"kind"`
+	Visibility    string          `json:"visibility"`
+	Owner         string          `json:"owner,omitempty"`
+	RootPath      string          `json:"root_path,omitempty"`
+	RepositoryURL string          `json:"repository_url,omitempty"`
+	Description   string          `json:"description,omitempty"`
+	SettingsJSON  json.RawMessage `json:"settings_json,omitempty"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
+	Writable      bool            `json:"writable"`
 }
 
 type AssertWritableResponse struct {
@@ -82,16 +86,17 @@ type DeleteSpaceResponse struct {
 
 func toScopeResponse(scope *Scope) ScopeResponse {
 	response := ScopeResponse{
-		ID:          scope.ID(),
-		Name:        scope.Name(),
-		Kind:        scope.Kind(),
-		Visibility:  scope.Visibility(),
-		Owner:       scope.Owner(),
-		RootPath:    scope.RootPath(),
-		Description: scope.Description(),
-		CreatedAt:   scope.CreatedAt(),
-		UpdatedAt:   scope.UpdatedAt(),
-		Writable:    scope.Writable(),
+		ID:            scope.ID(),
+		Name:          scope.Name(),
+		Kind:          scope.Kind(),
+		Visibility:    scope.Visibility(),
+		Owner:         scope.Owner(),
+		RootPath:      scope.RootPath(),
+		RepositoryURL: scope.RepositoryURL(),
+		Description:   scope.Description(),
+		CreatedAt:     scope.CreatedAt(),
+		UpdatedAt:     scope.UpdatedAt(),
+		Writable:      scope.Writable(),
 	}
 	if settings := scope.SettingsJSON(); len(settings) > 0 {
 		response.SettingsJSON = json.RawMessage(settings)

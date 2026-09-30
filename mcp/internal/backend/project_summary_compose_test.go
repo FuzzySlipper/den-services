@@ -17,14 +17,15 @@ func TestLocatorComposesProjectSummary(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/projects/den-services":
-			_, _ = w.Write([]byte(`{"id":"den-services","name":"Den Services","kind":"project","visibility":"normal","root_path":"/home/dev/den-services","description":"Go successors","created_at":"2026-06-18T01:44:05Z","updated_at":"2026-06-18T01:44:05Z"}`))
+			_, _ = w.Write([]byte(`{"id":"den-services","name":"Den Services","kind":"project","visibility":"normal","root_path":"/home/dev/den-services","repository_url":"https://github.com/FuzzySlipper/den-services.git","description":"Go successors","created_at":"2026-06-18T01:44:05Z","updated_at":"2026-06-18T01:44:05Z"}`))
 		case "/v1/projects/den-services/tasks":
 			sawTasksQuery = r.URL.RawQuery
 			_, _ = w.Write([]byte(`[
 				{"id":1,"project_id":"den-services","title":"A","status":"planned","priority":1},
 				{"id":2,"project_id":"den-services","title":"B","status":"planned","priority":2},
 				{"id":3,"project_id":"den-services","title":"C","status":"done","priority":3},
-				{"id":4,"project_id":"den-services","title":"D","status":"blocked","priority":4}
+				{"id":4,"project_id":"den-services","title":"D","status":"blocked","priority":4},
+				{"id":5,"project_id":"den-services","title":"Deferred","status":"backlog","priority":1}
 			]`))
 		case "/v1/projects/den-services/messages/unread-count":
 			sawUnreadQuery = r.URL.RawQuery
@@ -63,7 +64,8 @@ func TestLocatorComposesProjectSummary(t *testing.T) {
 	}
 	for _, want := range []string{
 		`"project":{"id":"den-services"`,
-		`"task_counts_by_status":{"planned":2,"in_progress":0,"review":0,"blocked":1,"done":1,"cancelled":0}`,
+		`"repository_url":"https://github.com/FuzzySlipper/den-services.git"`,
+		`"task_counts_by_status":{"backlog":1,"planned":2,"in_progress":0,"review":0,"blocked":1,"done":1,"cancelled":0}`,
 		`"unread_message_count":17`,
 	} {
 		if !strings.Contains(toolResult.Content[0].Text, want) {

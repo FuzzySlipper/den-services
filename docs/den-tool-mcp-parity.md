@@ -2,11 +2,13 @@
 
 ## Status
 
-As of MCP catalog revision `mcp-catalog-v4`, `den-tool` maps every supported,
+As of MCP catalog revision `mcp-catalog-v5`, `den-tool` maps every supported,
 non-retired MCP operation, including long-tail operations omitted from ordinary
 MCP discovery. The checked-in machine-readable inventory is
 `cmd/den-tool/mcp_catalog.json`; it contains 94 operations and their exact input
 schemas, owning routed backend, workflow tier, description, and risk class.
+Project creation and updates accept optional `repository_url` metadata, which
+can use HTTP(S), SSH/git, or scp-style Git remote forms.
 
 This inventory is generated from `mcp/internal/registry` plus
 `mcp/routes.example.yaml`:
@@ -39,7 +41,7 @@ payloads, callers may pass one complete object with `--args-json`; it cannot be
 mixed with field flags. The CLI rejects unknown fields, missing required fields,
 and top-level type mismatches before making a request.
 
-The default transport is `http://192.168.1.10:5199/mcp`, overrideable with
+The default transport is `http://192.168.1.5:5199/mcp`, overrideable with
 `DEN_MCP_URL`; optional bearer authentication uses `DEN_MCP_TOKEN`. MCP remains
 the stable authenticated LAN transport because owning service ports are
 loopback-only. The facade routes each typed operation to its owning service; the

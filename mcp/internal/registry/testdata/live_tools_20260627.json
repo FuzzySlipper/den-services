@@ -388,7 +388,7 @@
           },
           "status": {
             "default": null,
-            "description": "Filter by statuses (comma-separated): planned,in_progress,review,blocked,done,cancelled.",
+            "description": "Filter by statuses (comma-separated): backlog,planned,in_progress,review,blocked,done,cancelled.",
             "type": [
               "string",
               "null"
@@ -764,7 +764,7 @@
           },
           "status": {
             "default": null,
-            "description": "New status: planned, in_progress, review, blocked, done, cancelled.",
+            "description": "New status: backlog, planned, in_progress, review, blocked, done, cancelled.",
             "type": [
               "string",
               "null"
@@ -2221,7 +2221,7 @@
       "name": "create_orchestrator_lease"
     },
     {
-      "description": "Update mutable metadata fields for an existing project. Only fields explicitly provided (non-null) are changed; all other fields are left as-is. Safe \u2014 will not overwrite existing data with blanks.",
+      "description": "Update mutable metadata fields for an existing project. Only fields explicitly provided (non-null) are changed; empty root_path and repository_url clear those fields.",
       "execution": {
         "taskSupport": "optional"
       },
@@ -2254,6 +2254,14 @@
           "project_id": {
             "description": "Project ID to update.",
             "type": "string"
+          },
+          "repository_url": {
+            "default": null,
+            "description": "Optional HTTP(S), ssh://, git://, or scp-style SSH Git remote URL. Set to an empty string to clear it; omit or use null to leave it unchanged.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "root_path": {
             "default": null,
@@ -4501,6 +4509,14 @@
           "root_path": {
             "default": null,
             "description": "Absolute path to the project root on disk.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repository_url": {
+            "default": null,
+            "description": "Optional HTTP(S), ssh://, git://, or scp-style SSH Git remote URL used to find local checkouts.",
             "type": [
               "string",
               "null"
