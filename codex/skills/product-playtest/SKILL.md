@@ -1,325 +1,317 @@
 ---
 name: product-playtest
-description: Run persistent, evidence-backed browser product playtests through the local Den playtest MCP. Use when Codex is asked to play a game or application through its visible UI, exercise real keyboard or mouse controls, reproduce a user-visible failure, compare behavior across repeated observations, or return indexed screenshots, traces, and diagnostics without editing the product.
+description: Test games and web applications through crew-services playtest using persistent sessions, native controller/keyboard/mouse input or headless browser operations, supervised JavaScript, and original capture evidence. Use for visible product evaluation, interaction testing, reproduction, and visual comparisons without editing the product.
 ---
 
 # Product Playtest
 
-Produce a trustworthy observation of the running product. Mission completion,
-an observed product failure, a harness/configuration error, and honest
-uncertainty are all successful worker outcomes when backed by evidence.
+Use the installed crew-services `playtest` CLI or its matching MCP tools.
+The maintained capability and setup reference is
+[the service guide](/home/agent/dev/crew-services/docs/playtest.md); read the relevant
+sections when choosing controls or scripting operations. This skill uses
+crew-services throughout. Do not fall back to the retired Den browser broker,
+Python controller, or an independently launched browser when a session fails.
 
-## Route the playtest to the dedicated profile
+## Parent and observer roles
 
-This skill contains the dedicated playtester worker protocol. An ordinary
-coding, reviewing, or orchestrating parent must spawn the dedicated worker even
-when the inherited `playtest_*` tools are searchable in its own task.
-Spawn `agent_type: "playtester"`; global MCP registration is an inheritance
-mechanism, not permission to collapse the observation lane into the parent.
+For independent product observation, the coding/reviewing parent spawns
+`agent_type: "playtester"` with a neutral mission. The worker operates and
+observes; the parent owns implementation changes and acceptance mapping.
+A worker already in that role does not spawn another playtester.
 
-- In the dedicated playtester, inspect the current tool surface. If all eight
-  `playtest_*` tools are present, continue with the worker lifecycle below.
-- If they are absent from an ordinary parent, do **not** report an infrastructure error.
-  Spawn the dedicated playtester and pass one complete
-  mission packet with the repository, explicit manifest when needed, neutral
-  mission, controls, requested artifacts, project/scenario labels, and optional
-  Den context.
-- Keep acceptance mapping and any follow-up engineering in the parent agent.
-  The spawned playtester only operates and observes the product.
-- Classify `infrastructure_error` only when the dedicated playtester lacks its
-  configured tools, cannot call `playtest_list`/`playtest_start`, or the broker,
-  browser, manifest, or harness prevents the run.
+Supply the product/repository identity, profile or owned session ID, service URL
+when nondefault, ordinary controls, requested observations, and any useful
+scenario guidance. State whether an existing session should be retained or
+stopped. A URL alone is not a configured profile: the parent owns adding a
+profile or arranging service setup when discovery finds none.
 
-When the dedicated playtester lacks the tools, report the ownership boundary:
-the parent Codex configuration owns `mcp_servers.den_playtest`; the
-repository installer owns its bounded config block, local binary, and broker
-configuration; and a fresh Codex task is required after repair. Do not diagnose
-the parent configuration from inside the worker.
+The worker may read this skill and the service guide, use the playtest CLI/MCP,
+write temporary JS test programs, inspect returned JSON evidence, and open
+original images with its image tool. It must not inspect/edit product source,
+repair services, change profiles, deploy replacements, or construct another
+harness. Missing MCP registration is not a blocker when the CLI works.
 
-After installing or updating the playtester profile, start a fresh Codex task;
-agent and MCP catalogs do not update inside an already-running task.
+## Local workstation service
 
-The playtest broker is an on-demand `den-playwright mcp` stdio process, not a
-`den-srv` or user-systemd service. `den-serve` centrally owns long-running local
-dev/demo servers and their LAN status page; it does not provide the browser
-session, actions, observations, or indexed evidence required by this skill.
+On `den-agents`, the default service runs browsers locally on the RX 9070 XT.
+The API binds only to `127.0.0.1:48200`; no SSH, Wolf, Moonlight, den-srv or
+Den Kubernetes connection is needed. Use `backend: "browser"` and
+`environment: "service"` for this installation. Local product servers use
+`http://127.0.0.1:PORT/`; do not copy historical `192.168.1.22` profile URLs.
 
-## Accept the mission
+Profiles are in `/home/agent/.config/crew-playtest/games.json`, pool size in
+`/home/agent/.config/crew-playtest/pool.json`, and evidence under
+`/home/agent/.local/state/crew-playtest-local`. `local-gpu-check` is an
+infrastructure check, not a game acceptance test. The parent adds product
+profiles or changes pool size, then runs `playtest reload`. Reload preserves
+existing sessions; invalid files and shrinks that would remove occupied slots
+are refused. Do not restart the service to register a product.
+See [local setup](/home/agent/dev/crew-services/docs/playtest-local.md).
 
-Require the parent prompt to identify:
+The configured Chromium launcher uses Vulkan; setup verified WebGL2 on the
+RX 9070 XT and a non-fallback AMD RDNA 4 WebGPU adapter. GPU presence alone does not prove every product's renderer.
+This backend supplies browser keyboard/pointer actions and virtual gamepad
+input, including relative `move` while the main document holds pointer lock.
+Acquire lock with an ordinary click first. Use integer `dx`/`dy` in
+-32767..32767; unlocking rejects subsequent relative movement. These are
+trusted Chromium events, not OS mouse injection.
 
-- repository/current checkout;
-- an explicit manifest path when the repository does not use the broker's
-  auto-discovered `.den-playwright.json` name;
-- a neutral player goal; do not require a desired verdict or a statement that
-  the expected fix already succeeded;
-- ordinary user controls;
-- desired screenshots, frame bursts, trace, or video;
-- project/scenario labels and an optional Den task;
-- an optional complete current field-guide snapshot and optional source handles.
+## Discover the execution environment
 
-If optional details are absent, use the manifest and documented defaults. Pass
-any parent-supplied manifest path directly to `playtest_start`; do not search
-for a replacement inside the worker turn. Warn
-about discrepancies and continue whenever the browser can still run. If the
-repository, mission, or controls are too ambiguous to test meaningfully, return
-`uncertain` instead of inventing them.
-
-Trust the mission packet from the parent. Do not use shell commands, filesystem
-searches, source inspection, git commands, memory lookup, or repository reads to
-reconstruct or verify it. The playtest MCP owns the application launch and
-evidence paths. Default `headed` to `false` unless the parent explicitly asks
-for a headed browser and confirms a display is available.
-
-## Use guidance without surrendering observation
-
-Keep two knowledge layers distinct:
-
-- Generic gameplay concepts are reviewed Den Knowledge entries. Retrieve a
-  supplied handle on demand with the optional `den_reference` tools; do not
-  preload a large corpus and do not send retrieval through the Playwright
-  broker.
-- A game/scenario field guide is a volatile, complete Markdown-friendly
-  snapshot supplied by the parent. It may contain controls, landmarks, spatial
-  relationships, strategies, confusing affordances, failed approaches, and
-  open questions. It is not Den Knowledge and is not an acceptance rubric.
-
-If practical, capture the initial neutral scene before reading game-specific
-guidance. Treat all notes as fallible hints. When current visible evidence
-contradicts a note, retain both the contradiction and what was visibly
-observed; the observation wins.
-
-At the end of a run, optionally emit one complete replacement candidate. The
-parent owns publication to a latest-value Den document, authored repository
-document, or other explicit owner. `replacement_mode` must be
-`replace-complete`: rewrite everything still useful and omit displaced claims.
-Never append or patch the old guide, never publish it from the worker, and
-never concatenate historical snapshots into a later worker's context. The
-evidence index retains the exact input snapshot, handles, usage, and proposed
-replacement for audit.
-
-## Observe before judging
-
-The first account is evidence, not a verdict. Before applying acceptance
-criteria or answering a targeted visual question:
-
-- describe the visible scene in concrete spatial terms;
-- identify conspicuous or unexpected details, including details unrelated to
-  the apparent desired result;
-- distinguish what is visible now from what changed after an action;
-- preserve ambiguity instead of completing the parent's implied story.
-
-For primarily visual classification, the parent/orchestrator normally owns the
-acceptance mapping. It may keep its criteria private until the neutral account
-exists. The worker still owns ordinary operational outcomes: whether it
-completed the player goal, encountered a visible failure, remained uncertain,
-or could not run the harness.
-
-A targeted follow-up is appropriate after the neutral account when it asks for
-missing evidence, disambiguates a concrete spatial or temporal detail, or
-continues the intended player affordance. Do not use a follow-up merely to ask
-the worker to agree with a desired verdict.
-
-## Stay in the playtester role
-
-- Operate and observe the supplied application. Do not edit product or
-  configuration code, repair services, deploy replacements, or create a
-  substitute harness.
-- Use only the eight `playtest_*` tools plus the optional read-only
-  `den_reference` tools (`den_knowledge_get`, `den_knowledge_guide`,
-  `den_knowledge_search`, and `get_document`) during the worker turn. Do not diagnose
-  the harness by reading its source, logs, manifests, processes, or artifact
-  directories with general-purpose tools.
-- Use ordinary visible controls for gameplay and product judgement.
-- Use eval, inspect, CDP, DOM, application state, network data, and test hooks
-  only as diagnostic or reproduction evidence. State when they influenced the
-  conclusion.
-- Make at most one bounded retry or deliberate reproduction attempt.
-- Let the parent decide whether to reload tools, repair configuration, or start
-  follow-up engineering.
-
-## Run the lifecycle
-
-1. Confirm that all eight playtest tools are available:
-   `playtest_start`, `playtest_observe`, `playtest_act`, `playtest_inspect`,
-   `playtest_finish`, `playtest_cancel`, `playtest_get`, and `playtest_list`.
-   If the configured MCP is absent or cannot start, return
-   `infrastructure_error`; do not replace it inside this turn.
-2. Call `playtest_start` with `project`, `repo_root`, `scenario`, artifact
-   preferences, and useful correlation fields. Include the mission, controls,
-   model identity, and Den references as additional evidence metadata. The
-   broker records the run start timestamp for reconstruction.
-   Include `field_guide` and `source_handles` as received so the
-   evidence index records the run's guidance input.
-3. Capture an initial screenshot or frame burst. Before mapping it to acceptance,
-   record a neutral visible account of startup state, spatial relationships,
-   focus, pointer lock, conspicuous details, and discrepancies.
-4. Alternate `playtest_act` with `playtest_observe`. Use genuine keyboard and
-   mouse actions. For held movement, prefer key-down, a bounded wait, and
-   key-up. Capture before/after observations around important interactions.
-   When testing an affordance, continue beyond its first local reaction:
-   activate it, observe the effect, attempt the intended downstream use, and
-   verify the resulting player state.
-5. Do not infer movement, collision, targeting, camera handedness, or a state
-   transition from one still image when another observation/action sequence is
-   practical. Use frame bursts or separated before/after screenshots.
-6. If the mission fails or remains ambiguous, optionally call
-   `playtest_inspect` to gather bounded reproduction evidence. Keep visible
-   judgement separate from diagnostic readback.
-7. Call `playtest_finish` for every live session. Use `playtest_cancel` only
-   when normal finalization is unavailable. Record cleanup discrepancies rather
-   than discarding the run.
-8. Use `playtest_get` when needed to confirm the final evidence index and
-   cleanup fields.
-
-When the parent explicitly requests a verbose action trace, set
-`verbose_trace: true` on start. For each cycle, put a concise `trace` object on
-the act with `cycle_id`, `observe`, `hypothesis`, `intent`, and
-`expected_effect`; put the same `cycle_id` plus `observed_effect`,
-`matched_expectation`, `confidence`, and `plan_update` on the following
-observe. These are short user-facing decision summaries, not private
-chain-of-thought. They link to the existing action and screenshot/frame burst,
-so do not take extra screenshots solely for tracing. Leave tracing off for
-normal playtests.
-
-Use the broker's exact typed action names. Do not guess framework-style aliases:
-
-```json
-{
-  "session_id": "<session>",
-  "sequence": 2,
-  "actions": [
-    { "type": "click", "selector": "#world" },
-    { "type": "keyboard_down", "key": "w" },
-    { "type": "wait", "ms": 300 },
-    { "type": "keyboard_up", "key": "w" },
-    { "type": "mouse_move", "x": 700, "y": 300, "options": { "steps": 10 } }
-  ]
-}
+```sh
+playtest games
+playtest game show PROFILE
+playtest status
 ```
 
-Use `mouse_click` with numeric `x`/`y` for a viewport-coordinate click such as
-canvas capture. `click` with a `selector` is a locator action. The broker also
-accepts `click` with numeric coordinates as a recovery shorthand, but do not
-combine selector and coordinate forms.
+The CLI is `/home/agent/.local/bin/playtest`. The default API is
+`http://127.0.0.1:48200`, owned by `crew-playtest.service`. Use `PLAYTEST_URL` or
+`playtest --url URL ...` for a supplied alternative loopback service.
+`playtest mcp` exposes the same service operations; discover their current
+schemas rather than assuming a tool-name prefix or a fixed tool count.
 
-For a frame sequence, request `frameBurst` exactly:
+- `backend: "browser"` runs headless Chromium on the service machine. Use its
+  DOM inspection/actions and absolute pointer/keyboard capabilities. It does
+  not provide native relative mouse movement. When `capabilities.gamepad` is
+  true, gamepad steps inject a standard browser Gamepad API device; this is
+  virtual controller input, not native hardware evidence.
+- `backend: "wolf"` is an optional legacy remote backend, not configured on
+  this local service. It requires an explicitly supplied separate installation.
+  Its native input evidence is different from browser virtual gamepad input.
+- Read returned capabilities and report unsupported operations explicitly.
+  Do not substitute one input/backend type and call the evidence equivalent.
 
-```json
-{
-  "session_id": "<session>",
-  "sequence": 3,
-  "screenshot": true,
-  "label": "after-input",
-  "frameBurst": { "count": 6, "intervalMs": 100 }
-}
+`den-serve` owns building and serving a repository demo at a URL reachable from
+the execution machine. crew-services owns test sessions, interaction, scripts,
+observations and cleanup. The worker does not start or stop the demo server.
+The service allocates an independent slot from its configured pool. `playtest
+status` lists `pool` occupancy and per-slot `slots`; `status SESSION` inspects
+your session. Retain both returned session ID and slot ID. Never stop or recover
+another agent's session. If all slots are occupied, start queues briefly and may
+return `pool_busy`; report that limitation or retry later without taking over a
+slot. Other demos may keep rendering while their agents are idle; capture
+`pool_activity` records occupancy, not a guarantee of isolated performance.
+
+## Run the session
+
+1. Use the supplied owned session, or `playtest start PROFILE`. Retain the
+   returned session ID. If start fails, inspect the returned error and
+   `playtest status`; return the observed limitation instead of provisioning a
+   workaround. A degraded/interrupted owned session can be stopped or recovered.
+2. Capture with `playtest observe SESSION` or `playtest capture SESSION` and
+   open the returned original image. Record the visible initial scene before
+   deciding whether it satisfies the mission. `connected` establishes launch,
+   not asset readiness, focus, game input consumption, or visual acceptance.
+   Wolf startup can deliver a native focus click, so the initial state is not
+   guaranteed pristine.
+3. Alternate bounded actions and observations. Use JS for a useful sequence,
+   loop or conditional; direct commands remain appropriate for short probes.
+   Verify the downstream effect of an interaction, not only its first reaction.
+   Use before/after images for movement, camera changes and state transitions.
+4. On uncertainty, inspect bounded diagnostics and distinguish them from what
+   was visible. Treat scenario hints as fallible: retain contradictions rather
+   than adjusting the observation to fit an expected answer.
+5. Stop owned sessions with `playtest stop SESSION`, including after a failed
+   mission, unless explicitly asked to retain them. Check the cleanup receipt;
+   use `status` for discrepancies. Client disconnection does not stop a session.
+
+## Inputs and browser operations
+
+Use profile controls. Native batches have explicit kinds and millisecond holds:
+
+```sh
+playtest input SESSION --json '[{"kind":"gamepad","lx":0.3,"rt":0.5,"ms":400}]'
+playtest input SESSION --json '[{"kind":"hold","keys":[87],"ms":200}]'
+playtest input SESSION --json '[{"kind":"move","dx":35,"dy":-15}]'
+playtest input SESSION --json '[{"kind":"point","x":640,"y":460,"width":1280,"height":720},{"kind":"click","button":1,"ms":100}]'
 ```
 
-Finalize with the classified outcome in the evidence packet, not only in the
-prose report:
+Raw keyboard holds use Windows virtual-key integers; the JS helper accepts
+named keys. Controller sticks range -1..1, positive X right and positive Y up;
+triggers range 0..1. Buttons use `buttons: ["a"]`, not `a: true`.
+Holds release afterward. Native batches are bounded to 10 seconds. These are
+real-time inputs, not admitted simulation-update counts or deterministic replay.
+Wolf lock readback is unavailable: a delivered movement does not establish
+pointer lock or game consumption. Use ordinary click/Escape/refocus controls
+and observations when testing acquisition/loss; do not fabricate a lock state.
 
-```json
-{
-  "session_id": "<session>",
-  "sequence": 4,
-  "outcome": "pass",
-  "annotation": "operational mission result and bounded diagnostics",
-  "neutral_observation": {
-    "initial": "concrete spatial account before acceptance mapping",
-    "trajectory": ["visible change after an important action"],
-    "unexpected": ["conspicuous detail or contradiction"]
-  },
-  "operational_outcome": {
-    "status": "completed",
-    "summary": "furthest player-level state reached"
-  },
-  "acceptance_mapping": {
-    "owner": "orchestrator",
-    "status": "pending"
-  },
-  "field_guide_usage": {
-    "handles_read": ["den-knowledge:gameplay-interaction-completion"],
-    "useful_claims": ["verify the downstream player state after activation"],
-    "contradictions": ["a supplied traversal claim conflicted with visible collision"]
-  },
-  "field_guide_replacement": {
-    "schema_version": 1,
-    "guide_id": "project/scenario",
-    "observed_at": "<UTC timestamp>",
-    "replacement_mode": "replace-complete",
-    "provenance": ["playtest session <session>"],
-    "freshness": "observed this run",
-    "confidence": "medium",
-    "notes_markdown": "Complete next-run controls, landmarks, strategies, and caveats.",
-    "unresolved_questions": ["question retained for a future run"]
-  },
-  "assertions": [
-    { "name": "mission result", "pass": true, "artifact": "timeline offset 3" }
-  ],
-  "exit_interview": {
-    "difficulties": ["free-form operating difficulty"],
-    "failed_approaches": ["failed probe and any workaround"],
-    "confidence": "high, medium, low, or free-form",
-    "suggestions": ["game, controls, mission, or harness improvement"]
-  }
-}
+For a browser-capable session:
+
+```sh
+playtest browser SESSION --json '{"op":"inspect"}'
+playtest browser SESSION --json '{"op":"fill","selector":".new-todo","value":"Example"}'
+playtest browser SESSION --json '{"op":"press","selector":".new-todo","key":"Enter"}'
+playtest browser SESSION --json '{"op":"click","selector":"button[type=submit]"}'
+playtest browser SESSION --json '{"op":"near","x":300,"y":200,"max_distance":80}'
+playtest browser SESSION --json '{"op":"select","token":"RETURNED_TOKEN","action":"click"}'
 ```
 
-The exit interview is optional. Include it when the parent asks for tester
-feedback or when a concrete control, prompt, navigation, or harness difficulty
-would help the next run. Partial and uncertain feedback is useful; do not
-invent suggestions to fill fields.
+DOM assistance is bounded near-cursor selection, not game-world targeting.
+`select` defaults to moving only; activation requires explicit `action: "click"`.
+Tokens are short-lived and single-use. Respect stale, obstructed, disabled,
+ambiguous and no-candidate outcomes. Use a specific locator after a strict-mode
+ambiguity rather than assuming the first matching element is intended.
+Record when DOM/semantic inspection or assistance influenced the result;
+assisted interaction evidence does not prove unaided visual discovery or aiming.
 
-If start fails before a live session exists, use only `playtest_list` or
-`playtest_get` for bounded persisted-record confirmation, then return
-`infrastructure_error`. Do not inspect code or host processes. Retry startup
-only when the original mission packet already supplied an explicit fallback;
-do not derive a workaround from diagnostics.
+## World objects: avoid repeated pixel hunting
 
-The lifecycle order is a convention, not a reason to stop. Advisory owner,
-sequence, manifest, focus, or optional-metadata discrepancies should be
-reported while useful execution continues.
+For a world container, door or talk target, inspect the product's Engine debug
+catalog before spending a long sequence guessing screen coordinates. Products
+using `InteractionDebugModule` expose `interaction.help` and `interaction.inspect`.
+The latter returns current labels, IDs/revisions, reach/visibility/availability,
+rejection reasons and exact `useCommand` values. Use the matching runtime's
+`rusty-live-debug --origin URL --command "interaction.inspect"`.
 
-## Classify the outcome
+When target-ID assistance fits the requested test, execute the reported
+`interaction.use <id> <revision>` through that same CLI. It is an explicit
+mutating assisted action using the product's ordinary use handler; it removes
+reticle precision only. Approach normally when out of reach, resolve occlusion,
+and reinspect stale identities. Verify the actual resulting UI with the normal
+playtest browser tools. Record this as assisted interaction, not proof of a
+physical click. If the mission tests picking itself, use ordinary pointer input.
 
-Return exactly one primary outcome:
+Missing commands are a product integration gap, not a reason to invent browser
+gameplay hooks. The parent can adopt the shared Engine `WorldInteraction` and
+`InteractionDebugModule`; see `/home/dev/rusty-engine/docs/controller-interaction.md`.
+The existing `playtest interaction` query below remains read-only.
 
-- `pass`: the visible mission succeeded with repeated visual evidence;
-- `fail`: a product failure was observed or reproduced;
-- `uncertain`: evidence does not support a reliable judgement;
-- `infrastructure_error`: the browser, MCP, manifest, or harness prevented a
-  meaningful run.
+## Optional product interaction queries
 
-These are operational mission outcomes. For a visual-description mission,
-`pass` can mean the requested neutral account was captured; it does not mean a
-withheld product criterion passed. Preserve the separate acceptance owner and
-status in `acceptance_mapping`.
+For a profile with `interaction_queries: true`, use `playtest interaction SESSION`
+or `await interaction()` in a script. The service checks the product's generated
+Engine catalog; missing support reports `capability_unavailable`. Read returned
+`facts` and retain `query_id`/`evidence_path`. Query facts are semantic assistance,
+not screenshot freshness or permission to activate an old target observation.
+Approach, cycle and use through ordinary controller/keyboard input, then query
+again. Preserve product availability, visibility and unknown route outcomes.
 
-Do not turn deterministic assertions or diagnostics into model judgement.
-Conversely, do not present visual model judgement as a deterministic check.
+Free-cursor queries use `interaction({mode:"cursor",x:0.5,y:0.5,aspect:width/height})`.
+Supply known viewport-local normalized bottom-left coordinates and viewport aspect;
+do not substitute mouse-look deltas. Queries never turn, navigate or activate.
+Label captures and reports when these facts guided the test.
 
-## Report evidence
+## Jev-assisted control intervals
 
-Return a compact report containing:
+For repeated navigation/combat decisions with useful text observations, consider
+`playtest-assist` on the existing owned session. Read the
+[assistant guide](/home/agent/dev/crew-services/docs/playtest-assistant.md) for setup,
+spatial-map interpretation and the complete gamepad + concurrent-parent example.
+The supervising agent supplies the goal, finite tactics and stop conditions;
+Jev selects actions while an optional parent model periodically revises guidance.
+Use this as a bounded debugging tool, with visual inspection before and afterward.
 
-```text
-Model: gpt-5.6-luna (configured); <runtime verification source or unverified>
-Repository: <path>
-Started: <UTC timestamp>
-Mission: <requested visible outcome>
-Outcome: <pass|fail|uncertain|infrastructure_error>
-Neutral observation: <initial concrete account, trajectory, unexpected details>
-Operational result: <furthest player state reached or blocker>
-Acceptance mapping: <orchestrator owner/status, or why worker judgement applies>
-Guidance: <input snapshot timestamp, handles read, contradictions, replacement candidate or none>
-Reproduction: <attempt count and result>
-Diagnostics: <none, or what influenced the conclusion>
-Warnings: <manifest/tool/discrepancy warnings>
-Evidence: <absolute playtest-index.json path>
-Key artifacts: <timeline offsets, screenshots/frame bursts, trace/video>
-Cleanup: <browser, driver, dev server, lease; discrepancies>
+Combine compact product facts with a small `spatial.map ascii` read when supported.
+Read its axes, legend, Y intervals and revisions: collision blanks do not prove
+walkability, navigation may be unknown, and maps are omniscient assistance.
+Use fresh target/weapon/interaction facts for immediate actions. Jev receives text only. The harness parent is text-only by default;
+`parent_vision: true` attaches the current PNG pixels to its request. Use
+`capture_every: 1` for a current image on every parent request and ensure capture
+paths are readable where `playtest-assist` runs. Check transcript `input_image`
+provenance; screenshot paths alone do not give either model vision.
+New product commands require explicit harness allowlist support, not merely a
+catalog entry. The guide explains the supported observation commands.
+
+The parent arranges configuration, profile and model routes; an observer can run
+an already supplied interval without editing the product or repairing services.
+Do not drive the session manually or with a second script while it runs. Preserve
+the JSONL transcript, inspect the actual handback reason and input cleanup, then
+capture/inspect the result. A reached kill/objective threshold ends the interval
+before its budget expires; continuing requires a revised goal/threshold. The
+runner leaves the session open, so stop it when the mission is finished unless
+asked to retain it. Record semantic/gamepad aim assistance in the final report.
+
+## Compose supervised JavaScript
+
+Write a temporary `.js` file and submit it with:
+
+```sh
+playtest run SESSION --file /absolute/path/trial.js --budget-ms 60000
+playtest script SCRIPT_ID
+playtest resume SESSION --json '{"keys":["W"]}'
 ```
 
-The custom agent is configured for `gpt-5.6-luna`. Self-identification text is
-not authoritative runtime proof; when exact model certification matters, ask
-the parent to verify the spawned thread's recorded model metadata.
+`run` returns immediately. Poll `script` for completion, failure or a yielded
+checkpoint; submitting a program is not evidence that it finished. Examples
+below use different backend-specific capabilities; select those the session
+supports.
+
+```js
+// Native game session: combine simultaneous movement/look in one state.
+await controller.hold({ly: 0.5, rx: 0.25}, 300);
+checkpoint('After movement', await observe());
+const choice = await yieldToAgent('Choose the next action', await observe());
+await keyboard.hold(choice.keys, 200);
+```
+
+```js
+// Browser session: compose UI actions and preserve original comparison images.
+await browser({op: 'fill', selector: '.new-todo', value: 'Example'});
+await browser({op: 'press', selector: '.new-todo', key: 'Enter'});
+const before = await capture({label: 'created'});
+await browser({op: 'click', selector: '.toggle'});
+checkpoint('Compare originals', await capture({label: 'completed', compare_to: before.capture_id}));
+```
+
+Other APIs are `input(steps)`, `sleep(ms)` and journaled `console.log(...)`.
+Calls serialize; parallel promises do not create simultaneous controller/key
+holds. The default program budget is 60 seconds, configurable from 100 ms to
+120 seconds, with at most 512 API calls. Yield pauses count against the budget.
+Split longer evaluations into programs and inspect results between them.
+
+`cancel SESSION` terminates a running script and requests input cleanup. An
+idle browser stays alive; cancelling an active browser operation can terminate
+that browser and require explicit recovery. `recover SESSION` stops the old
+session and returns a new session ID for the same profile. Re-inspect it before
+continuing: progress may be lost, and product state may persist elsewhere.
+Never automatically replay an action with unknown delivery. Report
+`cleanup_uncertain` as uncertainty, not verified neutralization.
+
+## Evidence and judgment
+
+`observe` and `capture` return original image paths and metadata; the MCP can
+return images inline. `capture` accepts `label`, `compare_to` (a previous
+capture ID), caller-supplied `viewpoint` and `assistance`, and overlay policy
+`preserve`. Do not hide product UI or diagnostics. Comparison metadata describes
+known geometry and supplied viewpoint agreement; it is not a visual verdict.
+
+For Engine products, `capture({engine_presentation:true})` (or the same CLI/MCP
+capture option) records separate submitted camera/viewport/publication facts.
+Profiles may enable this with `presentation_observations:true`. Inspect
+`engine_presentation.facts` and `comparison.engine_presentation`, including
+pending state, observation age and runtime/surface identity. A pending snapshot
+can still show an older submitted camera. Requested viewpoint metadata is not
+an observed pose; product viewpoint visits are explicit assisted movement.
+The readback does not identify the PNG frame or establish GPU completion,
+whole-world readiness or acceleration. Missing support is recorded while the
+original capture remains useful.
+
+Inspect originals directly. The final visual judge must see the original
+images, record neutral observations, then map acceptance and state uncertainty.
+Keep screenshot evidence, runtime diagnostics and ordinary-control usability
+separate. Supplied viewpoint/assistance is not independently observed state;
+screenshot dimensions do not establish canvas backing resolution, GPU rendering
+or frame freshness. Use actual available metadata and leave missing facts
+unknown. Engine readiness and world-target integration must be advertised by
+the current service before use; do not invent a debug endpoint or game state.
+
+Retain returned session/script/capture IDs, absolute image/sidecar paths and
+journal paths. Cleanup success and evidence completeness are separate: report
+persistence errors while preserving original artifacts. Do not reconstruct a
+canonical history after a partial journal write. Private Moonlight logs can
+contain credentials and should not be copied into reports.
+
+Return a compact report:
+
+- Mission and profile/session, with the execution backend.
+- Primary outcome: `pass` (visible mission succeeded), `fail` (observed product
+  failure), `uncertain`, or `infrastructure_error` (environment prevented testing).
+- Neutral initial scene, important changes and unexpected details.
+- Actions/reproduction steps; scripts, assistance or diagnostics used.
+- Direct original-image links and relevant capture/script/journal paths.
+- Cleanup receipt and any evidence or input-release uncertainty.
+
+Useful control/navigation difficulties or replacement scenario notes can be
+included for the parent. The worker does not publish shared guidance or create
+follow-up engineering work. A successful neutral-observation mission need not
+imply that the product passed a separate visual acceptance criterion.

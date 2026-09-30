@@ -1,5 +1,13 @@
 # Playwright Broker
 
+> **Retired for playtesting.** Agent playtests now use the crew-services
+> `playtest` CLI/MCP (`crew-services/docs/playtest.md`), which gives each
+> session its own product host and world, Engine-aware assist tools and
+> step-correlated captures. The Codex `product-playtest` skill and playtester
+> profile already point there. `den-playwright run` for conventional Playwright
+> suites is unchanged. Remove the Codex `mcp_servers.den_playtest` registration
+> when no remaining caller needs the persistent `den-playwright playtest` mode.
+
 `playwright-broker` provides two local browser-testing modes:
 
 - `den-playwright run` owns a dev server for one conventional Playwright test run.
