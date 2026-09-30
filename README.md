@@ -53,6 +53,13 @@ den-tool den get_task --task-id 7011
 See [the MCP parity inventory](docs/den-tool-mcp-parity.md) for its generated
 catalog and transport contract.
 
+den-tool stays here because it is the client of these services' API. Other
+local-machine tools have moved to
+[crew-services](https://github.com/FuzzySlipper/crew-services): `den-serve` (dev
+and demo hosts plus the LAN status page), agent playtesting and the Codex
+playtester skill. The den-playwright broker was retired; see
+`crew-services/docs/local-services.md`.
+
 ## Deployment
 
 For a new, empty instance with PostgreSQL and all services on one machine, use

@@ -1,4 +1,4 @@
-SERVICES := shared delivery runtime observation gateway conversation timeline mcp visual-contract visual-inspect doc-publish artifacts migration integration librarian handoff board playwright-broker devserver-broker den-serve
+SERVICES := shared delivery runtime observation gateway conversation timeline mcp visual-contract visual-inspect doc-publish artifacts migration integration librarian handoff board
 GOCACHE ?= $(CURDIR)/.gocache
 GOLANGCI_LINT_CACHE ?= $(CURDIR)/.golangci-lint-cache
 
@@ -7,12 +7,7 @@ DEN_MCP_SMOKE_SSH_HOST ?= den-srv
 .PHONY: test build build-all lint mcp-smoke mcp-smoke-live mcp-smoke-live-den-srv
 
 test:
-	node --test scripts/check-product-playtest-adoption.test.mjs
-	node --test playwright-broker/driver/playtest-diagnostics.test.mjs
-	node --test playwright-broker/driver/playtest-decision-trace.test.mjs
 	@mkdir -p $(GOCACHE)
-	GOCACHE=$(GOCACHE) go build -o $(GOCACHE)/playtest-x11-input-test ./playwright-broker/cmd/playtest-x11-input
-	DEN_PLAYTEST_INPUT_HELPER=$(GOCACHE)/playtest-x11-input-test node --test playwright-broker/driver/playtest-virtual-input.test.mjs
 	GOCACHE=$(GOCACHE) go test ./...
 	@for service in $(SERVICES); do \
 		echo "testing $$service"; \

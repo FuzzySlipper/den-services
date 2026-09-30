@@ -7,8 +7,6 @@ use (
 	./board-relay
 	./conversation
 	./delivery
-	./den-serve
-	./devserver-broker
 	./doc-publish
 	./documents
 	./gateway
@@ -21,7 +19,6 @@ use (
 	./migration
 	./mcp
 	./observation
-	./playwright-broker
 	./projects
 	./review
 	./runtime

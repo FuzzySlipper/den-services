@@ -1,5 +1,0 @@
-{
-  "fixture": "permissive-playtest",
-  "secretForInspection": "visible-through-network-and-application-readback",
-  "revision": 1
-}
