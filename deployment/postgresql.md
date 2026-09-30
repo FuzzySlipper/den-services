@@ -1,5 +1,8 @@
 # den-services PostgreSQL deployment notes
 
+**Current host:** migrated to Proxmox CT106 (`192.168.1.5`) on 2026-09-10.
+See [current deployment](proxmox.md). The den-srv addresses below describe the original setup.
+
 For a clean, empty, single-machine installation, follow
 [`new-instance.md`](./new-instance.md). This file records the first `den-srv`
 deployment and remains useful as historical operational evidence; it is not a
