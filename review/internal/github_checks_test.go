@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -505,5 +506,60 @@ func TestGitHubClientCheckChangeFindsPassBeyondPositionalWindow(t *testing.T) {
 	}
 	if len(read) != 1 || read[0] != passing {
 		t.Fatalf("expected only the commit with a passing workflow run to be read, got %v", read)
+	}
+}
+
+func TestGitHubClientCheckChangePagesWorkflowRunsUntilGatedCommit(t *testing.T) {
+	passing := changeTestLaterSHA
+	var pages []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/repos/owner/repo/commits/"+changeTestOwnSHA+"/check-runs":
+			_, _ = w.Write([]byte(`{"check_runs":[]}`))
+		case strings.HasPrefix(r.URL.Path, "/repos/owner/repo/compare/"):
+			_, _ = w.Write([]byte(`{"status":"ahead","commits":[{"sha":"` + passing + `"},{"sha":"` + changeTestHeadSHA + `"}]}`))
+		case r.URL.Path == "/repos/owner/repo/actions/runs":
+			page := r.URL.Query().Get("page")
+			pages = append(pages, page)
+			var runs []string
+			switch page {
+			case "1":
+				// A full page of newer runs on other commits pushes the
+				// passing run onto page 2.
+				for i := 0; i < workflowRunPageSize; i++ {
+					runs = append(runs, `{"id":`+strconv.Itoa(1000+i)+`,"head_sha":"`+strings.Repeat("e", 40)+`","status":"completed","conclusion":"success"}`)
+				}
+			case "2":
+				runs = append(runs, `{"id":20,"head_sha":"`+passing+`","status":"completed","conclusion":"success"}`)
+				for i := 0; i < workflowRunPageSize-1; i++ {
+					runs = append(runs, `{"id":`+strconv.Itoa(10+i)+`,"head_sha":"`+changeTestOwnSHA+`","status":"completed","conclusion":"success"}`)
+				}
+			default:
+				t.Errorf("read page %s after reaching the gated commit", page)
+			}
+			_, _ = w.Write([]byte(`{"workflow_runs":[` + strings.Join(runs, ",") + `]}`))
+		case r.URL.Path == "/repos/owner/repo/commits/"+passing+"/check-runs":
+			_, _ = w.Write([]byte(`{"check_runs":[{"id":5,"name":"pair","status":"completed","conclusion":"success"}]}`))
+		case r.URL.Path == "/repos/owner/repo/commits/"+changeTestHeadSHA+"/check-runs":
+			_, _ = w.Write([]byte(`{"check_runs":[]}`))
+		default:
+			t.Errorf("unexpected request %s", r.URL.String())
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	result, err := NewGitHubClient(server.URL, "", time.Second).CheckChange(context.Background(), GitHubChangeQuery{
+		Repository: "owner/repo", CommitSHA: changeTestOwnSHA, Ref: "main",
+		RequiredChecks: []string{"pair"}, LaterCommitLimit: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != GitHubCheckGateStatusPassed || result.CheckRuns[0].HeadSHA != passing {
+		t.Fatalf("result = %+v", result)
+	}
+	if strings.Join(pages, ",") != "1,2" {
+		t.Fatalf("pages read = %v", pages)
 	}
 }

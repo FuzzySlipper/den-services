@@ -54,7 +54,10 @@ reads later commits of `ref` that contain it and accepts a passing run there.
 It reads the later commits that have a passing or still-running Actions
 workflow run, nearest first, plus the ref head, at most
 `github.later_commit_limit` of them; without Actions access it reads the
-nearest commits plus the head.
+nearest commits plus the head. Workflow runs are paged newest first until the
+gated commit's own runs are reached (at most five pages of 100). These bounds
+keep GitHub API use per poll small; the ref head is always read, so a check
+that eventually passes on the head always satisfies the gate.
 Several tasks can therefore land as separate commits in one push and share the
 head's slow or serialized checks.
 

@@ -15,6 +15,11 @@ import (
 	"time"
 )
 
+const (
+	workflowRunPageSize = 100
+	maxWorkflowRunPages = 5
+)
+
 type GitHubClient struct {
 	baseURL string
 	token   string
@@ -63,7 +68,7 @@ func (c *GitHubClient) CheckChange(ctx context.Context, query GitHubChangeQuery)
 	if err != nil {
 		return GitHubCheckResult{}, err
 	}
-	branchRuns, actionsReadable, err := c.branchWorkflowRuns(ctx, query.Repository, ref)
+	branchRuns, actionsReadable, err := c.branchWorkflowRuns(ctx, query.Repository, ref, query.CommitSHA)
 	if err != nil {
 		return GitHubCheckResult{}, err
 	}
@@ -91,19 +96,40 @@ func (c *GitHubClient) CheckChange(ctx context.Context, query GitHubChangeQuery)
 	return result, nil
 }
 
-// branchWorkflowRuns reads the most recent Actions workflow runs on ref in
-// one request. readable is false when the token cannot read Actions.
-func (c *GitHubClient) branchWorkflowRuns(ctx context.Context, repository string, ref string) ([]githubWorkflowRunResponse, bool, error) {
-	query := url.Values{"branch": []string{ref}, "per_page": []string{"100"}}
-	var runs githubWorkflowRunsResponse
-	if err := c.getJSON(ctx, "/repos/"+repository+"/actions/runs?"+query.Encode(), &runs); err != nil {
-		var githubErr *GitHubHTTPError
-		if errors.As(err, &githubErr) && ignorableCompareError(githubErr) {
-			return nil, false, nil
+// branchWorkflowRuns reads Actions workflow runs on ref, newest first, until
+// it reaches runs for the gated commit itself: every run for a later commit
+// was created after those, so older pages cannot hold a later commit's run.
+// Paging stops after maxWorkflowRunPages. readable is false when the token
+// cannot read Actions.
+func (c *GitHubClient) branchWorkflowRuns(ctx context.Context, repository string, ref string, commitSHA string) ([]githubWorkflowRunResponse, bool, error) {
+	commitSHA = strings.ToLower(commitSHA)
+	var all []githubWorkflowRunResponse
+	for page := 1; page <= maxWorkflowRunPages; page++ {
+		query := url.Values{"branch": []string{ref}, "per_page": []string{strconv.Itoa(workflowRunPageSize)}, "page": []string{strconv.Itoa(page)}}
+		var runs githubWorkflowRunsResponse
+		if err := c.getJSON(ctx, "/repos/"+repository+"/actions/runs?"+query.Encode(), &runs); err != nil {
+			var githubErr *GitHubHTTPError
+			if errors.As(err, &githubErr) && ignorableCompareError(githubErr) {
+				return nil, false, nil
+			}
+			return nil, false, err
 		}
-		return nil, false, err
+		all = append(all, runs.WorkflowRuns...)
+		if len(runs.WorkflowRuns) < workflowRunPageSize {
+			break
+		}
+		reachedGatedCommit := false
+		for _, run := range runs.WorkflowRuns {
+			if strings.ToLower(run.HeadSHA) == commitSHA {
+				reachedGatedCommit = true
+				break
+			}
+		}
+		if reachedGatedCommit {
+			break
+		}
 	}
-	return runs.WorkflowRuns, true, nil
+	return all, true, nil
 }
 
 // workflowRunsActive reports whether a workflow run for the gated commit or
