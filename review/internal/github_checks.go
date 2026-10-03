@@ -55,25 +55,69 @@ func (c *GitHubClient) CheckChange(ctx context.Context, query GitHubChangeQuery)
 		return GitHubCheckResult{}, err
 	}
 	needed := checksNeedingLaterCommits(own, query.RequiredChecks)
-	if len(needed) == 0 || strings.TrimSpace(query.Ref) == "" || query.LaterCommitLimit <= 0 {
-		return evaluateGitHubChangeRuns(own, nil, query.RequiredChecks), nil
-	}
-	laterSHAs, err := c.laterCommitsOnRef(ctx, query.Repository, query.CommitSHA, query.Ref, query.LaterCommitLimit)
-	if err != nil {
-		return GitHubCheckResult{}, err
-	}
-	later := make([]commitCheckRuns, 0, len(laterSHAs))
-	for _, sha := range laterSHAs {
-		runs, err := c.commitCheckRuns(ctx, query.Repository, sha)
+	ref := strings.TrimSpace(query.Ref)
+	var later []commitCheckRuns
+	if len(needed) > 0 && ref != "" && query.LaterCommitLimit > 0 {
+		laterSHAs, err := c.laterCommitsOnRef(ctx, query.Repository, query.CommitSHA, ref, query.LaterCommitLimit)
 		if err != nil {
 			return GitHubCheckResult{}, err
 		}
-		later = append(later, commitCheckRuns{SHA: sha, Runs: runs})
-		if laterCommitsSatisfy(later, needed) {
-			break
+		later = make([]commitCheckRuns, 0, len(laterSHAs))
+		for _, sha := range laterSHAs {
+			runs, err := c.commitCheckRuns(ctx, query.Repository, sha)
+			if err != nil {
+				return GitHubCheckResult{}, err
+			}
+			later = append(later, commitCheckRuns{SHA: sha, Runs: runs})
+			if laterCommitsSatisfy(later, needed) {
+				break
+			}
 		}
 	}
-	return evaluateGitHubChangeRuns(own, later, query.RequiredChecks), nil
+	result := evaluateGitHubChangeRuns(own, later, query.RequiredChecks)
+	if result.Status == GitHubCheckGateStatusPending && len(result.MissingRequiredChecks) > 0 && result.AllObservedChecksTerminal && ref != "" {
+		// A workflow run waiting in a concurrency group has no check runs yet,
+		// so a missing name is not proof of a misnamed check while any run
+		// for this change is still queued or running.
+		shas := []string{query.CommitSHA}
+		for _, commit := range later {
+			shas = append(shas, commit.SHA)
+		}
+		active, err := c.workflowRunsActive(ctx, query.Repository, ref, shas)
+		if err != nil {
+			return GitHubCheckResult{}, err
+		}
+		if active {
+			result.AllObservedChecksTerminal = false
+			result.Summary += ". Workflow runs for this change are still queued or running."
+		}
+	}
+	return result, nil
+}
+
+// workflowRunsActive reports whether any recent Actions workflow run on ref
+// for one of shas has not completed. It reads one page of the branch's runs;
+// a token without Actions access reports none.
+func (c *GitHubClient) workflowRunsActive(ctx context.Context, repository string, ref string, shas []string) (bool, error) {
+	query := url.Values{"branch": []string{ref}, "per_page": []string{"50"}}
+	var runs githubWorkflowRunsResponse
+	if err := c.getJSON(ctx, "/repos/"+repository+"/actions/runs?"+query.Encode(), &runs); err != nil {
+		var githubErr *GitHubHTTPError
+		if errors.As(err, &githubErr) && ignorableCompareError(githubErr) {
+			return false, nil
+		}
+		return false, err
+	}
+	wanted := make(map[string]struct{}, len(shas))
+	for _, sha := range shas {
+		wanted[strings.ToLower(sha)] = struct{}{}
+	}
+	for _, run := range runs.WorkflowRuns {
+		if _, ok := wanted[strings.ToLower(run.HeadSHA)]; ok && run.Status != "completed" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // commitCheckRuns lists check runs for one exact commit, falling back to
@@ -313,6 +357,7 @@ type githubWorkflowRunsResponse struct {
 type githubWorkflowRunResponse struct {
 	ID      int64  `json:"id"`
 	HeadSHA string `json:"head_sha"`
+	Status  string `json:"status"`
 }
 
 type githubWorkflowJobsResponse struct {

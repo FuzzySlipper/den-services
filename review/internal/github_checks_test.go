@@ -414,3 +414,42 @@ func TestNearestAndHeadCommitsKeepsRefHead(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+func TestGitHubClientCheckChangeKeepsMissingCheckPendingWhileWorkflowQueued(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		runStatus    string
+		wantTerminal bool
+	}{
+		{name: "queued in concurrency group", runStatus: "pending", wantTerminal: false},
+		{name: "all runs finished", runStatus: "completed", wantTerminal: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Path == "/repos/owner/repo/commits/"+changeTestOwnSHA+"/check-runs":
+					_, _ = w.Write([]byte(`{"check_runs":[{"id":1,"name":"verify","status":"completed","conclusion":"success"}]}`))
+				case strings.HasPrefix(r.URL.Path, "/repos/owner/repo/compare/"):
+					_, _ = w.Write([]byte(`{"status":"identical","commits":[]}`))
+				case r.URL.Path == "/repos/owner/repo/actions/runs" && r.URL.Query().Get("branch") == "main":
+					_, _ = w.Write([]byte(`{"workflow_runs":[{"id":9,"head_sha":"` + changeTestOwnSHA + `","status":"` + test.runStatus + `"}]}`))
+				default:
+					t.Errorf("unexpected request %s", r.URL.String())
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer server.Close()
+
+			result, err := NewGitHubClient(server.URL, "", time.Second).CheckChange(context.Background(), GitHubChangeQuery{
+				Repository: "owner/repo", CommitSHA: changeTestOwnSHA, Ref: "main",
+				RequiredChecks: []string{"verify", "pair"}, LaterCommitLimit: 5,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Status != GitHubCheckGateStatusPending || result.AllObservedChecksTerminal != test.wantTerminal {
+				t.Fatalf("status=%s allObservedTerminal=%v, want terminal=%v", result.Status, result.AllObservedChecksTerminal, test.wantTerminal)
+			}
+		})
+	}
+}
