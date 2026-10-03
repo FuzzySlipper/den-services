@@ -69,7 +69,7 @@ func TestDefaultMigrationsDiscover(t *testing.T) {
 		"den_observation": 2,
 		"den_projects":    3,
 		"den_runtime":     2,
-		"den_review":      7,
+		"den_review":      8,
 	}
 	for schema, want := range wantVersions {
 		if versionsBySchema[schema] != want {

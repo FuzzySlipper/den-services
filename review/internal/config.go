@@ -45,6 +45,7 @@ type GitHubConfig struct {
 	StatusURLBase     string
 	EventWaitMax      time.Duration
 	EventWaitPoll     time.Duration
+	LaterCommitLimit  int
 }
 
 type configFile struct {
@@ -80,6 +81,7 @@ type githubConfigFile struct {
 	StatusURLBase     string `yaml:"status_url_base"`
 	EventWaitMax      string `yaml:"event_wait_max"`
 	EventWaitPoll     string `yaml:"event_wait_poll_interval"`
+	LaterCommitLimit  *int   `yaml:"later_commit_limit"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -202,12 +204,16 @@ func (f githubConfigFile) toConfig(values sharedconfig.Values) (GitHubConfig, er
 	if batchSize == 0 {
 		batchSize = 10
 	}
+	laterCommitLimit := defaultGitHubLaterCommitLimit
+	if f.LaterCommitLimit != nil {
+		laterCommitLimit = *f.LaterCommitLimit
+	}
 	return GitHubConfig{
 		Enabled: f.Enabled, APIBaseURL: apiBaseURL,
 		Token: values.String(tokenEnv, ""), PollInterval: pollInterval, ScanInterval: scanInterval, MissingCheckGrace: missingCheckGrace, RequestTimeout: requestTimeout,
 		DefaultTimeout: defaultTimeout, MaxTimeout: maxTimeout, BatchSize: batchSize,
 		StatusURLBase: strings.TrimRight(strings.TrimSpace(f.StatusURLBase), "/"),
-		EventWaitMax:  eventWaitMax, EventWaitPoll: eventWaitPoll,
+		EventWaitMax:  eventWaitMax, EventWaitPoll: eventWaitPoll, LaterCommitLimit: laterCommitLimit,
 	}, nil
 }
 
@@ -235,6 +241,9 @@ func (c GitHubConfig) validate() error {
 	}
 	if c.MaxTimeout <= 0 || c.MaxTimeout < c.DefaultTimeout {
 		return errors.New("github.max_timeout must be at least github.default_timeout")
+	}
+	if c.LaterCommitLimit < 0 {
+		return errors.New("github.later_commit_limit must not be negative")
 	}
 	if c.BatchSize <= 0 {
 		return errors.New("github.batch_size must be positive")

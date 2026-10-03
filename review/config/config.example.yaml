@@ -24,3 +24,7 @@ github:
   status_url_base: "http://127.0.0.1:8096"
   event_wait_max: "55s"
   event_wait_poll_interval: "500ms"
+  # Later commits of a gate's ref (nearest first, plus the ref head) read when
+  # a required check is missing, cancelled, or failed on the gated commit. A
+  # passing run there satisfies the check. 0 disables later-commit satisfaction.
+  later_commit_limit: 5

@@ -581,6 +581,22 @@ func (s *Store) CompleteGitHubCheckGate(ctx context.Context, id int64, status st
 	return gate, true, nil
 }
 
+func (s *Store) ReopenGitHubCheckGate(ctx context.Context, req ReopenGitHubCheckGateRequest, now time.Time) (*GitHubCheckGate, bool, error) {
+	gate, err := scanGitHubCheckGate(s.pool.QueryRow(ctx, reopenGitHubCheckGateSQL, req.ID, req.Attempt,
+		jsonOrNil(req.RequiredChecks), req.Ref, req.TimeoutAt, req.PollIntervalSeconds, now))
+	if errors.Is(err, pgx.ErrNoRows) {
+		current, getErr := s.getGitHubCheckGateByID(ctx, req.ID)
+		if getErr != nil {
+			return nil, false, getErr
+		}
+		return current, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("reopening github check gate: %w", err)
+	}
+	return gate, true, nil
+}
+
 func (s *Store) DelayGitHubCheckGate(ctx context.Context, id int64, result GitHubCheckResult, nextPollAt time.Time, checkedAt time.Time) (*GitHubCheckGate, bool, error) {
 	gate, err := scanGitHubCheckGate(s.pool.QueryRow(ctx, delayGitHubCheckGateSQL, id, emptyToNil(result.Summary),
 		jsonArray(result.CheckRuns), emptyToNil(result.FailureSummary), emptyToNil(result.TerminalReason),
@@ -893,7 +909,8 @@ func scanGitHubCheckGate(row rowScanner) (*GitHubCheckGate, error) {
 		&gate.SessionKey, &gate.TimeoutAt, &gate.PollIntervalSeconds, &gate.NextPollAt, &gate.LastCheckedAt,
 		&gate.CompletedAt, &gate.StatusURL, &gate.Summary, &checkRuns, &gate.FailureSummary, &gate.TerminalReason,
 		&missingRequiredChecks, &observedCheckRuns, &gate.EvidenceMessageStatus,
-		&gate.EvidenceMessageID, &gate.EvidenceMessageError, &gate.EvidenceMessageAttemptedAt, &gate.CreatedAt, &gate.UpdatedAt)
+		&gate.EvidenceMessageID, &gate.EvidenceMessageError, &gate.EvidenceMessageAttemptedAt, &gate.CreatedAt, &gate.UpdatedAt,
+		&gate.Attempt)
 	if err != nil {
 		return nil, err
 	}
@@ -911,7 +928,7 @@ func scanGitHubCheckGateEvent(row rowScanner) (*GitHubCheckGateTerminalEvent, er
 		&event.Repository, &event.CommitSHA, &event.Ref, &event.Status, &event.TerminalReason,
 		&requiredChecks, &checkRuns, &observedCheckRuns, &missingRequiredChecks, &event.Summary, &event.FailureSummary,
 		&event.RequestedBy, &event.AgentProfile, &event.AgentInstanceID, &event.SessionKey,
-		&event.GateCreatedAt, &event.CompletedAt, &event.CreatedAt)
+		&event.GateCreatedAt, &event.CompletedAt, &event.CreatedAt, &event.Attempt)
 	if err != nil {
 		return nil, err
 	}
@@ -959,8 +976,8 @@ const (
 	findingColumns              = `f.id, f.project_id, f.finding_key, f.task_id, f.review_round_id, r.round_number, f.finding_number, f.created_by, f.category, f.summary, coalesce(f.notes, ''), coalesce(f.file_references, '[]'::jsonb), coalesce(f.test_commands, '[]'::jsonb), f.status, coalesce(f.status_updated_by, ''), coalesce(f.status_notes, ''), f.status_updated_at, coalesce(f.response_by, ''), coalesce(f.response_notes, ''), f.response_at, f.follow_up_task_id, coalesce(f.run_id, ''), coalesce(f.subagent_role, ''), f.created_at, f.updated_at`
 	packetColumns               = `id, project_id, task_id, review_round_id, packet_kind, sender, message_id, front_matter, typed_envelope, markdown_body, source_markdown, validation_status, coalesce(validation_errors, '[]'::jsonb), coalesce(idempotency_key, ''), created_at, accepted_at`
 	finalizationColumns         = `id, project_id, task_id, review_round_id, verdict, decided_by, coalesce(notes, ''), thread_id, coalesce(run_id, ''), coalesce(subagent_role, ''), target_task_status, packet_id, idempotency_key, coalesce(material_digest, ''), packet_idempotency_key, state, message_id, packet_posted_at, task_transitioned_at, completed_at, coalesce(last_error_step, ''), coalesce(last_error, ''), message_attempts, task_transition_attempts, created_at, updated_at`
-	githubCheckGateColumns      = `id, project_id, task_id, repository, commit_sha, ref, coalesce(required_checks, '[]'::jsonb), status, requested_by, coalesce(agent_profile, ''), coalesce(agent_instance_id, ''), coalesce(session_key, ''), timeout_at, poll_interval_seconds, next_poll_at, last_checked_at, completed_at, coalesce(status_url, ''), coalesce(summary, ''), coalesce(check_runs, '[]'::jsonb), coalesce(failure_summary, ''), coalesce(terminal_reason, ''), coalesce(missing_required_checks, '[]'::jsonb), coalesce(observed_check_runs, '[]'::jsonb), evidence_message_status, evidence_message_id, coalesce(evidence_message_error, ''), evidence_message_attempted_at, created_at, updated_at`
-	githubCheckGateEventColumns = `id, schema, schema_version, gate_id, project_id, task_id, repository, commit_sha, ref, status, terminal_reason, required_checks, check_runs, observed_check_runs, missing_required_checks, coalesce(summary, ''), coalesce(failure_summary, ''), requested_by, coalesce(agent_profile, ''), coalesce(agent_instance_id, ''), coalesce(session_key, ''), gate_created_at, completed_at, created_at`
+	githubCheckGateColumns      = `id, project_id, task_id, repository, commit_sha, ref, coalesce(required_checks, '[]'::jsonb), status, requested_by, coalesce(agent_profile, ''), coalesce(agent_instance_id, ''), coalesce(session_key, ''), timeout_at, poll_interval_seconds, next_poll_at, last_checked_at, completed_at, coalesce(status_url, ''), coalesce(summary, ''), coalesce(check_runs, '[]'::jsonb), coalesce(failure_summary, ''), coalesce(terminal_reason, ''), coalesce(missing_required_checks, '[]'::jsonb), coalesce(observed_check_runs, '[]'::jsonb), evidence_message_status, evidence_message_id, coalesce(evidence_message_error, ''), evidence_message_attempted_at, created_at, updated_at, attempt`
+	githubCheckGateEventColumns = `id, schema, schema_version, gate_id, project_id, task_id, repository, commit_sha, ref, status, terminal_reason, required_checks, check_runs, observed_check_runs, missing_required_checks, coalesce(summary, ''), coalesce(failure_summary, ''), requested_by, coalesce(agent_profile, ''), coalesce(agent_instance_id, ''), coalesce(session_key, ''), gate_created_at, completed_at, created_at, attempt`
 )
 
 const (
@@ -1133,12 +1150,12 @@ with updated as (
 	insert into den_review.github_check_gate_terminal_events(
 		gate_id, project_id, task_id, repository, commit_sha, ref, status, terminal_reason,
 		required_checks, check_runs, observed_check_runs, missing_required_checks, summary, failure_summary,
-		requested_by, agent_profile, agent_instance_id, session_key, gate_created_at, completed_at, created_at)
+		requested_by, agent_profile, agent_instance_id, session_key, gate_created_at, completed_at, created_at, attempt)
 	select id, project_id, task_id, repository, commit_sha, ref, status, terminal_reason,
 		required_checks, coalesce(check_runs, '[]'::jsonb), observed_check_runs, missing_required_checks, summary, failure_summary,
-		requested_by, agent_profile, agent_instance_id, session_key, created_at, completed_at, $4
+		requested_by, agent_profile, agent_instance_id, session_key, created_at, completed_at, $4, attempt
 	from updated
-	on conflict(gate_id) do nothing
+	on conflict(gate_id, attempt) do nothing
 )
 select ` + githubCheckGateColumns + ` from updated`
 	upsertGitHubCheckGateSQL = `
@@ -1146,8 +1163,8 @@ insert into den_review.github_check_gates(project_id, task_id, repository, commi
 values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
 on conflict(project_id, task_id, commit_sha) do update
 set repository = excluded.repository,
-    ref = excluded.ref,
-    required_checks = excluded.required_checks,
+    ref = case when den_review.github_check_gates.status = 'pending' then excluded.ref else den_review.github_check_gates.ref end,
+    required_checks = case when den_review.github_check_gates.status = 'pending' then excluded.required_checks else den_review.github_check_gates.required_checks end,
     requested_by = excluded.requested_by,
     agent_profile = excluded.agent_profile,
     agent_instance_id = excluded.agent_instance_id,
@@ -1187,14 +1204,36 @@ returning *
 	insert into den_review.github_check_gate_terminal_events(
 		gate_id, project_id, task_id, repository, commit_sha, ref, status, terminal_reason,
 		required_checks, check_runs, observed_check_runs, missing_required_checks, summary, failure_summary,
-		requested_by, agent_profile, agent_instance_id, session_key, gate_created_at, completed_at, created_at)
+		requested_by, agent_profile, agent_instance_id, session_key, gate_created_at, completed_at, created_at, attempt)
 	select id, project_id, task_id, repository, commit_sha, ref, status, terminal_reason,
 		required_checks, coalesce(check_runs, '[]'::jsonb), observed_check_runs, missing_required_checks, summary, failure_summary,
-		requested_by, agent_profile, agent_instance_id, session_key, created_at, completed_at, $9
+		requested_by, agent_profile, agent_instance_id, session_key, created_at, completed_at, $9, attempt
 	from updated where status in ('passed','failed','timed_out','superseded')
-	on conflict(gate_id) do nothing
+	on conflict(gate_id, attempt) do nothing
 )
 select ` + githubCheckGateColumns + ` from updated`
+	reopenGitHubCheckGateSQL = `
+update den_review.github_check_gates
+set status = 'pending',
+    attempt = attempt + 1,
+    required_checks = $3,
+    ref = $4,
+    timeout_at = $5,
+    poll_interval_seconds = $6,
+    next_poll_at = $7,
+    completed_at = null,
+    terminal_reason = null,
+    failure_summary = null,
+    summary = 'Re-evaluating after re-registration.',
+    evidence_message_status = 'not_required',
+    evidence_message_id = null,
+    evidence_message_error = null,
+    evidence_message_attempted_at = null,
+    updated_at = $7
+where id = $1
+  and attempt = $2
+  and status in ('failed','timed_out')
+returning ` + githubCheckGateColumns
 	delayGitHubCheckGateSQL = `
 update den_review.github_check_gates
 set summary = $2,

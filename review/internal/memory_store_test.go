@@ -564,8 +564,8 @@ func (s *memoryStore) RegisterGitHubCheckGate(_ context.Context, gate *GitHubChe
 	}
 	for _, existing := range s.githubCheckGates {
 		if existing.ProjectID == gate.ProjectID && existing.TaskID == gate.TaskID && existing.CommitSHA == gate.CommitSHA {
+			existing.Repository = gate.Repository
 			if existing.Status == GitHubCheckGateStatusPending {
-				existing.Repository = gate.Repository
 				existing.Ref = gate.Ref
 				existing.RequiredChecks = gate.RequiredChecks
 				existing.PollIntervalSeconds = gate.PollIntervalSeconds
@@ -583,6 +583,7 @@ func (s *memoryStore) RegisterGitHubCheckGate(_ context.Context, gate *GitHubChe
 	}
 	gate.ID = s.nextGitHubCheckGateID
 	s.nextGitHubCheckGateID++
+	gate.Attempt = 1
 	gate.EvidenceMessageStatus = GitHubCheckEvidenceStatusNotRequired
 	copied := *gate
 	s.githubCheckGates[copied.ID] = &copied
@@ -681,7 +682,7 @@ func (s *memoryStore) CompleteGitHubCheckGate(_ context.Context, id int64, statu
 
 func (s *memoryStore) recordGitHubCheckGateEvent(gate *GitHubCheckGate, createdAt time.Time) {
 	for _, event := range s.githubCheckGateEvents {
-		if event.GateID == gate.ID {
+		if event.GateID == gate.ID && event.Attempt == gate.Attempt {
 			return
 		}
 	}
@@ -691,7 +692,7 @@ func (s *memoryStore) recordGitHubCheckGateEvent(gate *GitHubCheckGate, createdA
 	}
 	event := &GitHubCheckGateTerminalEvent{
 		ID: s.nextGitHubCheckGateEventID, Schema: GitHubCheckGateTerminalEventSchema,
-		SchemaVersion: GitHubCheckGateTerminalEventSchemaVersion, GateID: gate.ID,
+		SchemaVersion: GitHubCheckGateTerminalEventSchemaVersion, GateID: gate.ID, Attempt: gate.Attempt,
 		ProjectID: gate.ProjectID, TaskID: gate.TaskID, Repository: gate.Repository, CommitSHA: gate.CommitSHA,
 		Ref: gate.Ref, Status: gate.Status, TerminalReason: gate.TerminalReason, RequiredChecks: gate.RequiredChecks,
 		CheckRuns: normalizedGitHubCheckRuns(gate.CheckRuns), ObservedCheckRuns: gate.ObservedCheckRuns, MissingRequiredChecks: gate.MissingRequiredChecks,
@@ -708,6 +709,35 @@ func normalizedGitHubCheckRuns(runs []GitHubCheckRun) []GitHubCheckRun {
 		return []GitHubCheckRun{}
 	}
 	return runs
+}
+
+func (s *memoryStore) ReopenGitHubCheckGate(_ context.Context, req ReopenGitHubCheckGateRequest, now time.Time) (*GitHubCheckGate, bool, error) {
+	gate, ok := s.githubCheckGates[req.ID]
+	if !ok {
+		return nil, false, notFound(fmt.Errorf("github check gate not found: %d", req.ID), "github_check_gate_not_found")
+	}
+	if gate.Attempt != req.Attempt || !reopenableGitHubCheckGateStatus(gate.Status) {
+		copied := *gate
+		return &copied, false, nil
+	}
+	gate.Status = GitHubCheckGateStatusPending
+	gate.Attempt++
+	gate.RequiredChecks = req.RequiredChecks
+	gate.Ref = req.Ref
+	gate.TimeoutAt = req.TimeoutAt
+	gate.PollIntervalSeconds = req.PollIntervalSeconds
+	gate.NextPollAt = now
+	gate.CompletedAt = nil
+	gate.TerminalReason = ""
+	gate.FailureSummary = ""
+	gate.Summary = "Re-evaluating after re-registration."
+	gate.EvidenceMessageStatus = GitHubCheckEvidenceStatusNotRequired
+	gate.EvidenceMessageID = nil
+	gate.EvidenceMessageError = ""
+	gate.EvidenceMessageAttemptedAt = nil
+	gate.UpdatedAt = now
+	copied := *gate
+	return &copied, true, nil
 }
 
 func (s *memoryStore) DelayGitHubCheckGate(_ context.Context, id int64, result GitHubCheckResult, nextPollAt time.Time, checkedAt time.Time) (*GitHubCheckGate, bool, error) {

@@ -113,3 +113,25 @@ func TestReviewFinalizationDigestMigrationDiscovered(t *testing.T) {
 	}
 	t.Fatal("den_review version 7 migration not discovered")
 }
+
+func TestReviewGitHubCheckGateAttemptsMigrationDiscovered(t *testing.T) {
+	migrations, err := Discover(DefaultFS())
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	for i := range migrations {
+		if migrations[i].Schema == "den_review" && migrations[i].Version == 8 {
+			for _, want := range []string{
+				"add column attempt integer not null default 1",
+				"drop constraint github_check_gate_terminal_events_gate_id_key",
+				"unique (gate_id, attempt)",
+			} {
+				if !strings.Contains(migrations[i].SQL, want) {
+					t.Fatalf("migration SQL missing %q:\n%s", want, migrations[i].SQL)
+				}
+			}
+			return
+		}
+	}
+	t.Fatal("den_review version 8 migration not discovered")
+}

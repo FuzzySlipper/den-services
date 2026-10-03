@@ -258,6 +258,7 @@ type FinalizationFindingStatus struct {
 
 type GitHubCheckGateResponse struct {
 	ID                         int64            `json:"id"`
+	Attempt                    int              `json:"attempt"`
 	ProjectID                  string           `json:"project_id"`
 	TaskID                     int64            `json:"task_id"`
 	Repository                 string           `json:"repository"`
@@ -375,7 +376,7 @@ func toFindingResponse(finding *ReviewFinding) ReviewFindingResponse {
 
 func toGitHubCheckGateResponse(gate *GitHubCheckGate) GitHubCheckGateResponse {
 	return GitHubCheckGateResponse{
-		ID: gate.ID, ProjectID: gate.ProjectID, TaskID: gate.TaskID, Repository: gate.Repository,
+		ID: gate.ID, Attempt: gate.Attempt, ProjectID: gate.ProjectID, TaskID: gate.TaskID, Repository: gate.Repository,
 		CommitSHA: gate.CommitSHA, Ref: gate.Ref, RequiredChecks: gate.RequiredChecks, Status: gate.Status,
 		RequestedBy: gate.RequestedBy, AgentProfile: gate.AgentProfile, AgentInstanceID: gate.AgentInstanceID,
 		SessionKey: gate.SessionKey, TimeoutAt: gate.TimeoutAt, PollIntervalSeconds: gate.PollIntervalSeconds,

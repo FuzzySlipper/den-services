@@ -23,6 +23,7 @@ const (
 	defaultGitHubEventWaitMax      = 55 * time.Second
 	defaultGitHubEventWaitPoll     = 500 * time.Millisecond
 	defaultGitHubToolWaitMax       = 50 * time.Second
+	defaultGitHubLaterCommitLimit  = 5
 	finalizeReviewMaxRequestBytes  = 16 * 1024
 )
 
@@ -45,6 +46,7 @@ type MessageClient interface {
 
 type GitHubCheckProvider interface {
 	CheckCommit(ctx context.Context, repository string, commitSHA string, requiredChecks []string) (GitHubCheckResult, error)
+	CheckChange(ctx context.Context, query GitHubChangeQuery) (GitHubCheckResult, error)
 }
 
 type ReviewStore interface {
@@ -74,6 +76,7 @@ type ReviewStore interface {
 	ListPendingGitHubCheckGates(ctx context.Context, now time.Time, limit int) ([]*GitHubCheckGate, error)
 	ListGitHubCheckGatesPendingEvidence(ctx context.Context, limit int) ([]*GitHubCheckGate, error)
 	CompleteGitHubCheckGate(ctx context.Context, id int64, status string, result GitHubCheckResult, checkedAt time.Time) (*GitHubCheckGate, bool, error)
+	ReopenGitHubCheckGate(ctx context.Context, req ReopenGitHubCheckGateRequest, now time.Time) (*GitHubCheckGate, bool, error)
 	DelayGitHubCheckGate(ctx context.Context, id int64, result GitHubCheckResult, nextPollAt time.Time, checkedAt time.Time) (*GitHubCheckGate, bool, error)
 	TimeoutGitHubCheckGate(ctx context.Context, id int64, checkedAt time.Time) (*GitHubCheckGate, bool, error)
 	MarkGitHubCheckGateEvidencePosted(ctx context.Context, id int64, messageID int64, at time.Time) (*GitHubCheckGate, error)
@@ -201,6 +204,10 @@ type GitHubCheckOptions struct {
 	StatusURLBase     string
 	EventWaitMax      time.Duration
 	EventWaitPoll     time.Duration
+	// LaterCommitLimit bounds how many later commits of a gate's ref are read
+	// when a check is missing, cancelled, or failed on the gated commit.
+	// Zero disables later-commit satisfaction.
+	LaterCommitLimit int
 }
 
 func DefaultGitHubCheckOptions() GitHubCheckOptions {
@@ -211,6 +218,7 @@ func DefaultGitHubCheckOptions() GitHubCheckOptions {
 		MissingCheckGrace: defaultGitHubMissingCheckGrace,
 		EventWaitMax:      defaultGitHubEventWaitMax,
 		EventWaitPoll:     defaultGitHubEventWaitPoll,
+		LaterCommitLimit:  defaultGitHubLaterCommitLimit,
 	}
 }
 
@@ -232,6 +240,9 @@ func (s *Service) ConfigureGitHubChecks(provider GitHubCheckProvider, options Gi
 	}
 	if options.EventWaitMax <= 0 {
 		options.EventWaitMax = DefaultGitHubCheckOptions().EventWaitMax
+	}
+	if options.LaterCommitLimit < 0 {
+		options.LaterCommitLimit = 0
 	}
 	if options.EventWaitPoll <= 0 {
 		options.EventWaitPoll = DefaultGitHubCheckOptions().EventWaitPoll
@@ -1159,10 +1170,57 @@ func (s *Service) RegisterGitHubCheckGate(ctx context.Context, projectID string,
 			return stored, err
 		}
 	}
-	if terminalGitHubCheckGateStatus(stored.Status) || s.githubChecks == nil {
+	if s.githubChecks == nil {
+		return stored, nil
+	}
+	if reopenableGitHubCheckGateStatus(stored.Status) {
+		return s.reevaluateGitHubCheckGate(ctx, stored, gate)
+	}
+	if terminalGitHubCheckGateStatus(stored.Status) {
 		return stored, nil
 	}
 	return s.evaluateGitHubCheckGate(ctx, stored, true)
+}
+
+// reevaluateGitHubCheckGate re-reads checks for a failed or timed-out gate when
+// it is registered again, so a GitHub re-run or a later containing commit can
+// recover it. The gate reopens as a new attempt only when the fresh result is
+// no longer a failure; otherwise the recorded terminal result stands.
+func (s *Service) reevaluateGitHubCheckGate(ctx context.Context, stored *GitHubCheckGate, requested *GitHubCheckGate) (*GitHubCheckGate, error) {
+	candidate := *stored
+	candidate.RequiredChecks = requested.RequiredChecks
+	candidate.Ref = requested.Ref
+	result, err := s.githubChecks.CheckChange(ctx, s.githubChangeQuery(&candidate))
+	if err != nil {
+		slog.Warn("github check gate re-evaluation failed", "gate_id", stored.ID, "commit_sha", stored.CommitSHA, "error", err)
+		return stored, nil
+	}
+	if result.Status == GitHubCheckGateStatusFailed {
+		return stored, nil
+	}
+	now := s.clock().UTC()
+	reopened, changed, err := s.store.ReopenGitHubCheckGate(ctx, ReopenGitHubCheckGateRequest{
+		ID: stored.ID, Attempt: stored.Attempt, RequiredChecks: requested.RequiredChecks, Ref: requested.Ref,
+		TimeoutAt: now.Add(requested.TimeoutAt.Sub(requested.CreatedAt)), PollIntervalSeconds: requested.PollIntervalSeconds,
+	}, now)
+	if err != nil {
+		return nil, err
+	}
+	if !changed {
+		return reopened, nil
+	}
+	return s.evaluateGitHubCheckGate(ctx, reopened, true)
+}
+
+func reopenableGitHubCheckGateStatus(status string) bool {
+	return status == GitHubCheckGateStatusFailed || status == GitHubCheckGateStatusTimedOut
+}
+
+func (s *Service) githubChangeQuery(gate *GitHubCheckGate) GitHubChangeQuery {
+	return GitHubChangeQuery{
+		Repository: gate.Repository, CommitSHA: gate.CommitSHA, Ref: gate.Ref,
+		RequiredChecks: gate.RequiredChecks, LaterCommitLimit: s.githubOptions.LaterCommitLimit,
+	}
 }
 
 func (s *Service) GetGitHubCheckGate(ctx context.Context, projectID string, taskID int64, commitSHA string) (*GitHubCheckGate, error) {
@@ -1277,7 +1335,7 @@ func (s *Service) evaluateGitHubCheckGate(ctx context.Context, gate *GitHubCheck
 		return updated, nil
 	}
 	requestStarted := time.Now()
-	result, err := s.githubChecks.CheckCommit(ctx, gate.Repository, gate.CommitSHA, gate.RequiredChecks)
+	result, err := s.githubChecks.CheckChange(ctx, s.githubChangeQuery(gate))
 	requestDuration := time.Since(requestStarted)
 	if err != nil {
 		var githubErr *GitHubHTTPError

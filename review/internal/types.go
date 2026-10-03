@@ -323,6 +323,7 @@ type AppendedMessage struct {
 
 type GitHubCheckGate struct {
 	ID                         int64
+	Attempt                    int
 	ProjectID                  string
 	TaskID                     int64
 	Repository                 string
@@ -355,7 +356,10 @@ type GitHubCheckGate struct {
 }
 
 type GitHubCheckRun struct {
-	Name        string     `json:"name"`
+	Name string `json:"name"`
+	// HeadSHA is the commit the run belongs to. A gate may be satisfied by a
+	// run on a later commit of its ref that contains the gated commit.
+	HeadSHA     string     `json:"head_sha,omitempty"`
 	Status      string     `json:"status"`
 	Conclusion  string     `json:"conclusion,omitempty"`
 	URL         string     `json:"url,omitempty"`
@@ -377,6 +381,27 @@ type GitHubCheckResult struct {
 	AllObservedChecksTerminal bool
 }
 
+// ReopenGitHubCheckGateRequest returns a failed or timed-out gate to pending as
+// a new attempt. Attempt is the attempt being replaced (compare-and-swap).
+type ReopenGitHubCheckGateRequest struct {
+	ID                  int64
+	Attempt             int
+	RequiredChecks      []string
+	Ref                 string
+	TimeoutAt           time.Time
+	PollIntervalSeconds int
+}
+
+// GitHubChangeQuery asks whether required checks passed on code containing
+// CommitSHA: the commit itself or, for checks it lacks, a later commit of Ref.
+type GitHubChangeQuery struct {
+	Repository       string
+	CommitSHA        string
+	Ref              string
+	RequiredChecks   []string
+	LaterCommitLimit int
+}
+
 type GitHubCheckDiscovery struct {
 	Repository                string
 	CommitSHA                 string
@@ -389,12 +414,13 @@ type GitHubCheckDiscovery struct {
 }
 
 // GitHubCheckGateTerminalEvent is the immutable machine wake fact emitted once
-// for each gate that leaves pending. Its ID is the durable consumption cursor.
+// each time a gate attempt leaves pending. Its ID is the durable consumption cursor.
 type GitHubCheckGateTerminalEvent struct {
 	ID                    int64            `json:"id"`
 	Schema                string           `json:"schema"`
 	SchemaVersion         int              `json:"schema_version"`
 	GateID                int64            `json:"gate_id"`
+	Attempt               int              `json:"attempt"`
 	ProjectID             string           `json:"project_id"`
 	TaskID                int64            `json:"task_id"`
 	Repository            string           `json:"repository"`

@@ -35,7 +35,7 @@ func TestFindingWriteQueriesSelectAliasedProjection(t *testing.T) {
 func TestTerminalGateWritesAtomicallyInsertIdempotentEvents(t *testing.T) {
 	for name, query := range map[string]string{"completion": completeGitHubCheckGateSQL, "supersession": supersedeGitHubCheckGatesSQL} {
 		t.Run(name, func(t *testing.T) {
-			if !strings.Contains(query, "insert into den_review.github_check_gate_terminal_events") || !strings.Contains(query, "on conflict(gate_id) do nothing") {
+			if !strings.Contains(query, "insert into den_review.github_check_gate_terminal_events") || !strings.Contains(query, "on conflict(gate_id, attempt) do nothing") {
 				t.Fatalf("query lacks atomic idempotent terminal event insert:\n%s", query)
 			}
 			if !strings.Contains(query, "coalesce(check_runs, '[]'::jsonb)") {

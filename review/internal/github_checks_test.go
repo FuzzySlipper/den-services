@@ -256,3 +256,161 @@ func TestEvaluateGitHubCheckRunsPreservesQueueAndRunTimestamps(t *testing.T) {
 		t.Fatalf("queue=%s run=%s", queueTime, runTime)
 	}
 }
+
+const (
+	changeTestOwnSHA   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	changeTestLaterSHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	changeTestHeadSHA  = "cccccccccccccccccccccccccccccccccccccccc"
+)
+
+func TestEvaluateGitHubChangeRunsTreatsCancelledRunAsMissing(t *testing.T) {
+	result := evaluateGitHubChangeRuns([]githubCheckRunResponse{
+		{ID: 10, Name: "verify", Status: "completed", Conclusion: "cancelled", HeadSHA: changeTestOwnSHA},
+	}, nil, []string{"verify"})
+
+	if result.Status != GitHubCheckGateStatusPending {
+		t.Fatalf("cancelled run should leave the gate pending: %+v", result)
+	}
+}
+
+func TestEvaluateGitHubChangeRunsAcceptsCheckFromLaterCommit(t *testing.T) {
+	result := evaluateGitHubChangeRuns([]githubCheckRunResponse{
+		{ID: 10, Name: "verify", Status: "completed", Conclusion: "success", HeadSHA: changeTestOwnSHA},
+	}, []commitCheckRuns{
+		{SHA: changeTestLaterSHA, Runs: []githubCheckRunResponse{{ID: 20, Name: "pair", Status: "completed", Conclusion: "cancelled", HeadSHA: changeTestLaterSHA}}},
+		{SHA: changeTestHeadSHA, Runs: []githubCheckRunResponse{{ID: 30, Name: "pair", Status: "completed", Conclusion: "success", HeadSHA: changeTestHeadSHA}}},
+	}, []string{"verify", "pair"})
+
+	if result.Status != GitHubCheckGateStatusPassed || !strings.Contains(result.Summary, "later commit") {
+		t.Fatalf("result = %+v", result)
+	}
+	satisfiedBy := map[string]string{}
+	for _, run := range result.CheckRuns {
+		satisfiedBy[run.Name] = run.HeadSHA
+	}
+	if satisfiedBy["verify"] != changeTestOwnSHA || satisfiedBy["pair"] != changeTestHeadSHA {
+		t.Fatalf("satisfying commits = %#v", satisfiedBy)
+	}
+}
+
+func TestEvaluateGitHubChangeRunsKeepsLaterFailurePending(t *testing.T) {
+	result := evaluateGitHubChangeRuns(nil, []commitCheckRuns{
+		{SHA: changeTestHeadSHA, Runs: []githubCheckRunResponse{{ID: 30, Name: "pair", Status: "completed", Conclusion: "failure", HeadSHA: changeTestHeadSHA}}},
+	}, []string{"pair"})
+
+	if result.Status != GitHubCheckGateStatusPending || len(result.MissingRequiredChecks) != 0 {
+		t.Fatalf("a failure on a later commit should not fail this commit's gate: %+v", result)
+	}
+}
+
+func TestEvaluateGitHubChangeRunsOwnFailureWaitsForRunningLaterCommit(t *testing.T) {
+	own := []githubCheckRunResponse{{ID: 10, Name: "verify", Status: "completed", Conclusion: "failure", HeadSHA: changeTestOwnSHA}}
+
+	failed := evaluateGitHubChangeRuns(own, []commitCheckRuns{
+		{SHA: changeTestHeadSHA, Runs: []githubCheckRunResponse{{ID: 30, Name: "pair", Status: "completed", Conclusion: "success", HeadSHA: changeTestHeadSHA}}},
+	}, []string{"verify"})
+	if failed.Status != GitHubCheckGateStatusFailed {
+		t.Fatalf("own failure without a later verify run should fail: %+v", failed)
+	}
+
+	running := evaluateGitHubChangeRuns(own, []commitCheckRuns{
+		{SHA: changeTestHeadSHA, Runs: []githubCheckRunResponse{{ID: 30, Name: "verify", Status: "in_progress", HeadSHA: changeTestHeadSHA}}},
+	}, []string{"verify"})
+	if running.Status != GitHubCheckGateStatusPending {
+		t.Fatalf("own failure with a later verify still running should wait: %+v", running)
+	}
+
+	passed := evaluateGitHubChangeRuns(own, []commitCheckRuns{
+		{SHA: changeTestHeadSHA, Runs: []githubCheckRunResponse{{ID: 30, Name: "verify", Status: "completed", Conclusion: "success", HeadSHA: changeTestHeadSHA}}},
+	}, []string{"verify"})
+	if passed.Status != GitHubCheckGateStatusPassed {
+		t.Fatalf("a later containing commit that passes should satisfy the gate: %+v", passed)
+	}
+}
+
+func TestGitHubClientCheckChangeReadsNearestLaterCommitsUntilSatisfied(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		switch r.URL.Path {
+		case "/repos/owner/repo/commits/" + changeTestOwnSHA + "/check-runs":
+			_, _ = w.Write([]byte(`{"check_runs":[{"id":1,"name":"verify","status":"completed","conclusion":"success"}]}`))
+		case "/repos/owner/repo/compare/" + changeTestOwnSHA + "...main":
+			_, _ = w.Write([]byte(`{"status":"ahead","commits":[{"sha":"` + changeTestLaterSHA + `"},{"sha":"` + changeTestHeadSHA + `"}]}`))
+		case "/repos/owner/repo/commits/" + changeTestLaterSHA + "/check-runs":
+			_, _ = w.Write([]byte(`{"check_runs":[{"id":2,"name":"pair","status":"completed","conclusion":"success"}]}`))
+		default:
+			t.Errorf("unexpected request %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	result, err := NewGitHubClient(server.URL, "", time.Second).CheckChange(context.Background(), GitHubChangeQuery{
+		Repository: "owner/repo", CommitSHA: changeTestOwnSHA, Ref: "main",
+		RequiredChecks: []string{"verify", "pair"}, LaterCommitLimit: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != GitHubCheckGateStatusPassed {
+		t.Fatalf("result = %+v", result)
+	}
+	if len(paths) != 3 {
+		t.Fatalf("expected own, compare, and nearest later commit only; got %v", paths)
+	}
+}
+
+func TestGitHubClientCheckChangeSkipsLaterCommitsWhenOwnChecksSuffice(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		_, _ = w.Write([]byte(`{"check_runs":[{"id":1,"name":"verify","status":"in_progress"}]}`))
+	}))
+	defer server.Close()
+
+	result, err := NewGitHubClient(server.URL, "", time.Second).CheckChange(context.Background(), GitHubChangeQuery{
+		Repository: "owner/repo", CommitSHA: changeTestOwnSHA, Ref: "main",
+		RequiredChecks: []string{"verify"}, LaterCommitLimit: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != GitHubCheckGateStatusPending || calls != 1 {
+		t.Fatalf("status=%s calls=%d", result.Status, calls)
+	}
+}
+
+func TestGitHubClientCheckChangeIgnoresUncomparableRef(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/compare/") {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"Not Found"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"check_runs":[{"id":1,"name":"verify","status":"completed","conclusion":"failure"}]}`))
+	}))
+	defer server.Close()
+
+	result, err := NewGitHubClient(server.URL, "", time.Second).CheckChange(context.Background(), GitHubChangeQuery{
+		Repository: "owner/repo", CommitSHA: changeTestOwnSHA, Ref: "gone",
+		RequiredChecks: []string{"verify"}, LaterCommitLimit: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != GitHubCheckGateStatusFailed {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestNearestAndHeadCommitsKeepsRefHead(t *testing.T) {
+	commits := []githubCompareCommit{{SHA: "1"}, {SHA: "2"}, {SHA: "3"}, {SHA: "4"}, {SHA: "5"}}
+	got := nearestAndHeadCommits(commits, 3)
+	if strings.Join(got, ",") != "1,2,5" {
+		t.Fatalf("got %v", got)
+	}
+	if got := nearestAndHeadCommits(commits[:2], 3); strings.Join(got, ",") != "1,2" {
+		t.Fatalf("got %v", got)
+	}
+}

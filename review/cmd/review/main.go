@@ -57,6 +57,7 @@ func main() {
 			StatusURLBase:     cfg.GitHub.StatusURLBase,
 			EventWaitMax:      cfg.GitHub.EventWaitMax,
 			EventWaitPoll:     cfg.GitHub.EventWaitPoll,
+			LaterCommitLimit:  cfg.GitHub.LaterCommitLimit,
 		})
 		go review.NewGitHubCheckWatcher(service, cfg.GitHub.ScanInterval, cfg.GitHub.BatchSize, slog.Default()).Run(ctx)
 	}

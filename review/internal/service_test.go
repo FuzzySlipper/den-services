@@ -2668,6 +2668,7 @@ func (f *barrierTasks) CreateFollowUpTask(
 }
 
 type fakeGitHubChecks struct {
+	lastChangeQuery    GitHubChangeQuery
 	result             GitHubCheckResult
 	err                error
 	resultsBySHA       map[string]GitHubCheckResult
@@ -2690,6 +2691,11 @@ func (f *fakeGitHubChecks) CheckCommit(_ context.Context, repository string, com
 		return result, nil
 	}
 	return f.result, f.err
+}
+
+func (f *fakeGitHubChecks) CheckChange(ctx context.Context, query GitHubChangeQuery) (GitHubCheckResult, error) {
+	f.lastChangeQuery = query
+	return f.CheckCommit(ctx, query.Repository, query.CommitSHA, query.RequiredChecks)
 }
 
 func (f *fakeMessages) AppendTaskMessage(_ context.Context, projectID string, req AppendMessageRequest) (AppendedMessage, error) {
@@ -2738,4 +2744,93 @@ Looks good.`
 
 func itoa(value int64) string {
 	return strconv.FormatInt(value, 10)
+}
+
+func TestRegisterGitHubCheckGateReopensFailedGateWhenRerunPasses(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	messages := &fakeMessages{}
+	github := &fakeGitHubChecks{result: GitHubCheckResult{
+		Status: GitHubCheckGateStatusFailed, Summary: "One or more required GitHub checks failed.",
+		FailureSummary: "Failed checks: go test (failure)", TerminalReason: GitHubCheckTerminalReasonChecksFailed,
+		CheckRuns: []GitHubCheckRun{{Name: "go test", Status: "completed", Conclusion: "failure"}},
+	}}
+	service := newTestService(store, messages, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+	}})
+	service.ConfigureGitHubChecks(github, GitHubCheckOptions{DefaultTimeout: time.Hour, MaxTimeout: 2 * time.Hour, PollInterval: time.Minute, LaterCommitLimit: 3})
+	req := RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Ref: "main",
+		RequiredChecks: []string{"go test"}, RequestedBy: "codex",
+	}
+
+	failed, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed.Status != GitHubCheckGateStatusFailed || failed.Attempt != 1 {
+		t.Fatalf("first attempt = %+v", failed)
+	}
+	if github.lastChangeQuery.Ref != "main" || github.lastChangeQuery.LaterCommitLimit != 3 {
+		t.Fatalf("change query = %+v", github.lastChangeQuery)
+	}
+
+	github.result = GitHubCheckResult{
+		Status: GitHubCheckGateStatusPassed, Summary: "All required GitHub checks passed.", TerminalReason: GitHubCheckTerminalReasonChecksPassed,
+		CheckRuns: []GitHubCheckRun{{Name: "go test", Status: "completed", Conclusion: "success"}},
+	}
+	passed, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if passed.Status != GitHubCheckGateStatusPassed || passed.Attempt != 2 || passed.ID != failed.ID {
+		t.Fatalf("re-registration did not reopen the gate: %+v", passed)
+	}
+	events, err := store.ListGitHubCheckGateEvents(ctx, ListGitHubCheckGateEventsQuery{ProjectID: "den-services", TaskID: 42, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 || events[0].Status != GitHubCheckGateStatusFailed || events[1].Status != GitHubCheckGateStatusPassed || events[1].Attempt != 2 {
+		t.Fatalf("terminal events = %+v", events)
+	}
+	if len(messages.appended) != 2 || messages.appended[1].Intent != "github_checks_passed" {
+		t.Fatalf("evidence messages = %+v", messages.appended)
+	}
+}
+
+func TestRegisterGitHubCheckGateKeepsStillFailingTerminalGate(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	github := &fakeGitHubChecks{result: GitHubCheckResult{
+		Status: GitHubCheckGateStatusFailed, FailureSummary: "Failed checks: go test (failure)", TerminalReason: GitHubCheckTerminalReasonChecksFailed,
+	}}
+	service := newTestService(store, &fakeMessages{}, &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+	}})
+	service.ConfigureGitHubChecks(github, GitHubCheckOptions{DefaultTimeout: time.Hour, MaxTimeout: 2 * time.Hour, PollInterval: time.Minute})
+	req := RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Ref: "main",
+		RequiredChecks: []string{"go test"}, RequestedBy: "codex",
+	}
+	if _, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, req); err != nil {
+		t.Fatal(err)
+	}
+	req.RequiredChecks = []string{"lint"}
+	again, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Status != GitHubCheckGateStatusFailed || again.Attempt != 1 {
+		t.Fatalf("still-failing gate changed: %+v", again)
+	}
+	if len(again.RequiredChecks) != 1 || again.RequiredChecks[0] != "go test" {
+		t.Fatalf("terminal gate required checks were overwritten: %#v", again.RequiredChecks)
+	}
+	events, err := store.ListGitHubCheckGateEvents(ctx, ListGitHubCheckGateEventsQuery{ProjectID: "den-services", TaskID: 42, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("still-failing re-registration emitted events: %+v", events)
+	}
 }
