@@ -50,8 +50,11 @@ Den does not run CI. GitHub Actions remains the CI runner. The Review service re
 A gate is for a task's commit on its `ref`, but its required checks may pass on
 code that contains that commit rather than on the commit itself. When a
 required check is missing, cancelled, or failed on the gated commit, Review
-reads later commits of `ref` that contain it (the nearest few plus the ref
-head, bounded by `github.later_commit_limit`) and accepts a passing run there.
+reads later commits of `ref` that contain it and accepts a passing run there.
+It reads the later commits that have a passing or still-running Actions
+workflow run, nearest first, plus the ref head, at most
+`github.later_commit_limit` of them; without Actions access it reads the
+nearest commits plus the head.
 Several tasks can therefore land as separate commits in one push and share the
 head's slow or serialized checks.
 

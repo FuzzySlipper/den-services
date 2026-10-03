@@ -56,68 +56,101 @@ func (c *GitHubClient) CheckChange(ctx context.Context, query GitHubChangeQuery)
 	}
 	needed := checksNeedingLaterCommits(own, query.RequiredChecks)
 	ref := strings.TrimSpace(query.Ref)
-	var later []commitCheckRuns
-	if len(needed) > 0 && ref != "" && query.LaterCommitLimit > 0 {
-		laterSHAs, err := c.laterCommitsOnRef(ctx, query.Repository, query.CommitSHA, ref, query.LaterCommitLimit)
+	if len(needed) == 0 || ref == "" || query.LaterCommitLimit <= 0 {
+		return evaluateGitHubChangeRuns(own, nil, query.RequiredChecks), nil
+	}
+	laterCommits, err := c.laterCommitsOnRef(ctx, query.Repository, query.CommitSHA, ref)
+	if err != nil {
+		return GitHubCheckResult{}, err
+	}
+	branchRuns, actionsReadable, err := c.branchWorkflowRuns(ctx, query.Repository, ref)
+	if err != nil {
+		return GitHubCheckResult{}, err
+	}
+	candidates := laterCandidateCommits(laterCommits, branchRuns, actionsReadable, query.LaterCommitLimit)
+	later := make([]commitCheckRuns, 0, len(candidates))
+	for _, sha := range candidates {
+		runs, err := c.commitCheckRuns(ctx, query.Repository, sha)
 		if err != nil {
 			return GitHubCheckResult{}, err
 		}
-		later = make([]commitCheckRuns, 0, len(laterSHAs))
-		for _, sha := range laterSHAs {
-			runs, err := c.commitCheckRuns(ctx, query.Repository, sha)
-			if err != nil {
-				return GitHubCheckResult{}, err
-			}
-			later = append(later, commitCheckRuns{SHA: sha, Runs: runs})
-			if laterCommitsSatisfy(later, needed) {
-				break
-			}
+		later = append(later, commitCheckRuns{SHA: sha, Runs: runs})
+		if laterCommitsSatisfy(later, needed) {
+			break
 		}
 	}
 	result := evaluateGitHubChangeRuns(own, later, query.RequiredChecks)
-	if result.Status == GitHubCheckGateStatusPending && len(result.MissingRequiredChecks) > 0 && result.AllObservedChecksTerminal && ref != "" {
+	if result.Status == GitHubCheckGateStatusPending && len(result.MissingRequiredChecks) > 0 && result.AllObservedChecksTerminal &&
+		workflowRunsActive(branchRuns, query.CommitSHA, laterCommits) {
 		// A workflow run waiting in a concurrency group has no check runs yet,
 		// so a missing name is not proof of a misnamed check while any run
 		// for this change is still queued or running.
-		shas := []string{query.CommitSHA}
-		for _, commit := range later {
-			shas = append(shas, commit.SHA)
-		}
-		active, err := c.workflowRunsActive(ctx, query.Repository, ref, shas)
-		if err != nil {
-			return GitHubCheckResult{}, err
-		}
-		if active {
-			result.AllObservedChecksTerminal = false
-			result.Summary += ". Workflow runs for this change are still queued or running."
-		}
+		result.AllObservedChecksTerminal = false
+		result.Summary += ". Workflow runs for this change are still queued or running."
 	}
 	return result, nil
 }
 
-// workflowRunsActive reports whether any recent Actions workflow run on ref
-// for one of shas has not completed. It reads one page of the branch's runs;
-// a token without Actions access reports none.
-func (c *GitHubClient) workflowRunsActive(ctx context.Context, repository string, ref string, shas []string) (bool, error) {
-	query := url.Values{"branch": []string{ref}, "per_page": []string{"50"}}
+// branchWorkflowRuns reads the most recent Actions workflow runs on ref in
+// one request. readable is false when the token cannot read Actions.
+func (c *GitHubClient) branchWorkflowRuns(ctx context.Context, repository string, ref string) ([]githubWorkflowRunResponse, bool, error) {
+	query := url.Values{"branch": []string{ref}, "per_page": []string{"100"}}
 	var runs githubWorkflowRunsResponse
 	if err := c.getJSON(ctx, "/repos/"+repository+"/actions/runs?"+query.Encode(), &runs); err != nil {
 		var githubErr *GitHubHTTPError
 		if errors.As(err, &githubErr) && ignorableCompareError(githubErr) {
-			return false, nil
+			return nil, false, nil
 		}
-		return false, err
+		return nil, false, err
 	}
-	wanted := make(map[string]struct{}, len(shas))
-	for _, sha := range shas {
-		wanted[strings.ToLower(sha)] = struct{}{}
+	return runs.WorkflowRuns, true, nil
+}
+
+// workflowRunsActive reports whether a workflow run for the gated commit or
+// any later containing commit has not completed.
+func workflowRunsActive(runs []githubWorkflowRunResponse, commitSHA string, later []string) bool {
+	wanted := make(map[string]struct{}, len(later)+1)
+	wanted[strings.ToLower(commitSHA)] = struct{}{}
+	for _, sha := range later {
+		wanted[sha] = struct{}{}
 	}
-	for _, run := range runs.WorkflowRuns {
+	for _, run := range runs {
 		if _, ok := wanted[strings.ToLower(run.HeadSHA)]; ok && run.Status != "completed" {
-			return true, nil
+			return true
 		}
 	}
-	return false, nil
+	return false
+}
+
+// laterCandidateCommits chooses which later containing commits to read check
+// runs for, nearest first, at most limit. With Actions readable it picks the
+// commits that have a workflow run that passed or is still running, so a
+// passing run is found however far along the ref it is, plus the ref head.
+// Otherwise it falls back to the nearest commits plus the head.
+func laterCandidateCommits(later []string, runs []githubWorkflowRunResponse, actionsReadable bool, limit int) []string {
+	if limit <= 0 || len(later) == 0 {
+		return nil
+	}
+	if !actionsReadable {
+		return nearestAndHeadCommits(later, limit)
+	}
+	useful := make(map[string]struct{}, len(runs))
+	for _, run := range runs {
+		if run.Status != "completed" || successfulGitHubConclusion(run.Conclusion) {
+			useful[strings.ToLower(run.HeadSHA)] = struct{}{}
+		}
+	}
+	head := later[len(later)-1]
+	candidates := make([]string, 0, limit)
+	for _, sha := range later[:len(later)-1] {
+		if len(candidates) == limit-1 {
+			break
+		}
+		if _, ok := useful[sha]; ok {
+			candidates = append(candidates, sha)
+		}
+	}
+	return append(candidates, head)
 }
 
 // commitCheckRuns lists check runs for one exact commit, falling back to
@@ -175,11 +208,11 @@ func (c *GitHubClient) commitCheckRunsFromActions(ctx context.Context, repositor
 }
 
 // laterCommitsOnRef returns commits of ref that contain commitSHA, nearest
-// first: up to limit-1 nearest commits plus the ref head. It returns none when
-// ref does not contain commitSHA, is identical to it, or cannot be compared.
-func (c *GitHubClient) laterCommitsOnRef(ctx context.Context, repository string, commitSHA string, ref string, limit int) ([]string, error) {
+// first and ending at the ref head. It returns none when ref does not contain
+// commitSHA, is identical to it, or cannot be compared.
+func (c *GitHubClient) laterCommitsOnRef(ctx context.Context, repository string, commitSHA string, ref string) ([]string, error) {
 	var payload githubCompareResponse
-	basehead := url.PathEscape(commitSHA) + "..." + strings.ReplaceAll(url.PathEscape(strings.TrimSpace(ref)), "%2F", "/")
+	basehead := url.PathEscape(commitSHA) + "..." + strings.ReplaceAll(url.PathEscape(ref), "%2F", "/")
 	if err := c.getJSON(ctx, "/repos/"+repository+"/compare/"+basehead+"?per_page=100", &payload); err != nil {
 		var githubErr *GitHubHTTPError
 		if errors.As(err, &githubErr) && ignorableCompareError(githubErr) {
@@ -187,10 +220,14 @@ func (c *GitHubClient) laterCommitsOnRef(ctx context.Context, repository string,
 		}
 		return nil, err
 	}
-	if payload.Status != "ahead" || len(payload.Commits) == 0 {
+	if payload.Status != "ahead" {
 		return nil, nil
 	}
-	return nearestAndHeadCommits(payload.Commits, limit), nil
+	shas := make([]string, 0, len(payload.Commits))
+	for _, commit := range payload.Commits {
+		shas = append(shas, strings.ToLower(commit.SHA))
+	}
+	return shas, nil
 }
 
 func ignorableCompareError(err *GitHubHTTPError) bool {
@@ -204,22 +241,15 @@ func ignorableCompareError(err *GitHubHTTPError) bool {
 	}
 }
 
-func nearestAndHeadCommits(commits []githubCompareCommit, limit int) []string {
+func nearestAndHeadCommits(commits []string, limit int) []string {
 	if limit <= 0 {
 		return nil
 	}
 	if len(commits) <= limit {
-		shas := make([]string, 0, len(commits))
-		for _, commit := range commits {
-			shas = append(shas, strings.ToLower(commit.SHA))
-		}
-		return shas
+		return append([]string(nil), commits...)
 	}
-	shas := make([]string, 0, limit)
-	for _, commit := range commits[:limit-1] {
-		shas = append(shas, strings.ToLower(commit.SHA))
-	}
-	return append(shas, strings.ToLower(commits[len(commits)-1].SHA))
+	shas := append([]string(nil), commits[:limit-1]...)
+	return append(shas, commits[len(commits)-1])
 }
 
 func (c *GitHubClient) getJSON(ctx context.Context, requestPath string, target any) error {
@@ -355,9 +385,10 @@ type githubWorkflowRunsResponse struct {
 }
 
 type githubWorkflowRunResponse struct {
-	ID      int64  `json:"id"`
-	HeadSHA string `json:"head_sha"`
-	Status  string `json:"status"`
+	ID         int64  `json:"id"`
+	HeadSHA    string `json:"head_sha"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
 }
 
 type githubWorkflowJobsResponse struct {

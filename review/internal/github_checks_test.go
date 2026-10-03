@@ -337,6 +337,8 @@ func TestGitHubClientCheckChangeReadsNearestLaterCommitsUntilSatisfied(t *testin
 			_, _ = w.Write([]byte(`{"check_runs":[{"id":1,"name":"verify","status":"completed","conclusion":"success"}]}`))
 		case "/repos/owner/repo/compare/" + changeTestOwnSHA + "...main":
 			_, _ = w.Write([]byte(`{"status":"ahead","commits":[{"sha":"` + changeTestLaterSHA + `"},{"sha":"` + changeTestHeadSHA + `"}]}`))
+		case "/repos/owner/repo/actions/runs":
+			_, _ = w.Write([]byte(`{"workflow_runs":[{"id":7,"head_sha":"` + changeTestLaterSHA + `","status":"completed","conclusion":"success"}]}`))
 		case "/repos/owner/repo/commits/" + changeTestLaterSHA + "/check-runs":
 			_, _ = w.Write([]byte(`{"check_runs":[{"id":2,"name":"pair","status":"completed","conclusion":"success"}]}`))
 		default:
@@ -356,8 +358,8 @@ func TestGitHubClientCheckChangeReadsNearestLaterCommitsUntilSatisfied(t *testin
 	if result.Status != GitHubCheckGateStatusPassed {
 		t.Fatalf("result = %+v", result)
 	}
-	if len(paths) != 3 {
-		t.Fatalf("expected own, compare, and nearest later commit only; got %v", paths)
+	if len(paths) != 4 {
+		t.Fatalf("expected own, compare, branch runs, and nearest later commit only; got %v", paths)
 	}
 }
 
@@ -405,7 +407,7 @@ func TestGitHubClientCheckChangeIgnoresUncomparableRef(t *testing.T) {
 }
 
 func TestNearestAndHeadCommitsKeepsRefHead(t *testing.T) {
-	commits := []githubCompareCommit{{SHA: "1"}, {SHA: "2"}, {SHA: "3"}, {SHA: "4"}, {SHA: "5"}}
+	commits := []string{"1", "2", "3", "4", "5"}
 	got := nearestAndHeadCommits(commits, 3)
 	if strings.Join(got, ",") != "1,2,5" {
 		t.Fatalf("got %v", got)
@@ -451,5 +453,57 @@ func TestGitHubClientCheckChangeKeepsMissingCheckPendingWhileWorkflowQueued(t *t
 				t.Fatalf("status=%s allObservedTerminal=%v, want terminal=%v", result.Status, result.AllObservedChecksTerminal, test.wantTerminal)
 			}
 		})
+	}
+}
+
+func TestGitHubClientCheckChangeFindsPassBeyondPositionalWindow(t *testing.T) {
+	later := make([]string, 0, 8)
+	for i := 0; i < 8; i++ {
+		later = append(later, strings.Repeat(string(rune('0'+i)), 40))
+	}
+	passing := later[5]
+	var read []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/repos/owner/repo/commits/"+changeTestOwnSHA+"/check-runs":
+			_, _ = w.Write([]byte(`{"check_runs":[]}`))
+		case strings.HasPrefix(r.URL.Path, "/repos/owner/repo/compare/"):
+			commits := make([]string, 0, len(later))
+			for _, sha := range later {
+				commits = append(commits, `{"sha":"`+sha+`"}`)
+			}
+			_, _ = w.Write([]byte(`{"status":"ahead","commits":[` + strings.Join(commits, ",") + `]}`))
+		case r.URL.Path == "/repos/owner/repo/actions/runs":
+			_, _ = w.Write([]byte(`{"workflow_runs":[
+				{"id":1,"head_sha":"` + later[1] + `","status":"completed","conclusion":"cancelled"},
+				{"id":2,"head_sha":"` + passing + `","status":"completed","conclusion":"success"}
+			]}`))
+		case strings.HasSuffix(r.URL.Path, "/check-runs"):
+			sha := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/repos/owner/repo/commits/"), "/check-runs")
+			read = append(read, sha)
+			if sha == passing {
+				_, _ = w.Write([]byte(`{"check_runs":[{"id":5,"name":"pair","status":"completed","conclusion":"success"}]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"check_runs":[]}`))
+		default:
+			t.Errorf("unexpected request %s", r.URL.String())
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	result, err := NewGitHubClient(server.URL, "", time.Second).CheckChange(context.Background(), GitHubChangeQuery{
+		Repository: "owner/repo", CommitSHA: changeTestOwnSHA, Ref: "main",
+		RequiredChecks: []string{"pair"}, LaterCommitLimit: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != GitHubCheckGateStatusPassed || len(result.CheckRuns) != 1 || result.CheckRuns[0].HeadSHA != passing {
+		t.Fatalf("result = %+v", result)
+	}
+	if len(read) != 1 || read[0] != passing {
+		t.Fatalf("expected only the commit with a passing workflow run to be read, got %v", read)
 	}
 }
