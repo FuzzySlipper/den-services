@@ -86,6 +86,11 @@ create table den_review.review_findings (
 
 ## Round creation and current-state review
 
+These are the direct Den operations underneath managed review. Ordinary agents
+submit with `submit_task_for_review` and let crew-review create the round and
+admit the reviewer; call `request_review` only as the explicit direct-review
+fallback or for operator recovery.
+
 `create_review_round` and `request_review` accept:
 
 - `requested_by`;

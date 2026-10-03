@@ -3763,7 +3763,7 @@
     },
     {
       "name": "submit_task_for_review",
-      "description": "Submit one exact-SHA task review through the configured managed review runtime. Den remains authoritative for the review round and current review context; supplied GitHub checks are gated before admission, while [] records a passed no_required_checks evidence state. This returns a durable submission/job receipt and never duplicates findings or finalization.",
+      "description": "Submit a task for review through crew-review, once per task after its commit is pushed. crew-review waits for the required GitHub checks and admits the reviewer itself; do not poll, watch the gate, or call request_review. A required check may pass on a later commit of ref that contains commit_sha, so several tasks can land in one push. [] records a passed no_required_checks state. Call again with the same arguments after re-running a failed check, or after fixing changes_requested findings (a new commit_sha or the same one starts a new round). Returns a durable submission receipt; Den stays authoritative for the round and never duplicates findings or finalization.",
       "backend": "crew-review",
       "operation": "submit_task_for_review",
       "workflow_tier": "green_path",

@@ -2,7 +2,7 @@
 
 Review publishes an immutable, versioned terminal event for each exact-commit GitHub check gate. The event is the machine wake authority for orchestrators. Task-thread messages remain a human-readable projection and may be delivered later or retried independently.
 
-Review never schedules, suspends, or resumes an agent. A runtime such as Rusty Crew consumes these facts and owns those decisions.
+Review never schedules, suspends, or resumes an agent. A consumer such as crew-review, which admits the reviewer for a managed submission, consumes these facts and owns those decisions.
 
 ## Read and bounded wait
 
