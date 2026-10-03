@@ -1,43 +1,17 @@
 # GitHub Check Gates Agent Usage
 
 Use Den document `den-services/review-pointer-first-contract` for end-to-end
-review routing. A Rusty Crew managed submission owns its exact-SHA gate and
-watcher; do not separately register `watch_github_checks` for the same
-task/SHA. The operations below are the deliberate direct/unmanaged Den path and
-the typed operator readback/recovery surface.
+review routing. Ordinary agents in every harness (Codex, DSH, Claude Code)
+call `submit_task_for_review` once per task; the crew-review service registers
+and watches that task's gate and admits the reviewer when it passes. Do not
+separately call `watch_github_checks` for a submitted task. The operations
+below are the deliberate direct/unmanaged Den path and the typed operator
+readback/recovery surface.
 
-## Managed-runtime emergency bypass
+crew-review has no gate bypass. If GitHub Actions cannot make progress (an
+outage or exhausted quota), tell the owner instead of removing required checks.
 
-Rusty Crew may apply its own default-off, operator-controlled emergency bypass
-to managed review submissions when GitHub Actions cannot make progress because
-of an outage or account quota exhaustion. Agents continue to call the normal
-managed submission operation with the repository's exact required check names;
-they do not remove checks, change repository workflows, or select the bypass.
-
-The bypass is global only within one Crew deployment. Production and debug
-have separate runtime configuration and must each be enabled deliberately
-through the authenticated, revision-guarded review-operator surface. Readback
-identifies the deployment role, enabled state, operator reason, and config
-revision. The default remains disabled.
-
-When enabled, Crew records a typed `gate_bypassed` transition after the Den
-review handoff. New submissions do not wait for GitHub, and existing managed
-`gate_pending` submissions can advance during reconciliation. The durable
-submission keeps its requested checks and any registered gate ID, reports
-compatibility `gate_status=passed`, and distinguishes the synthetic result with
-`terminal_reason=operator_bypass_github_gate` plus the operator reason, config
-revision, deployment role, and bypass timestamp. Already-terminal
-`gate_failed` submissions are not reinterpreted. Before bypassing a submission
-that Crew still projects as `gate_pending`, reconciliation reads the
-authoritative Den gate once; only an authoritative `pending` result is
-bypassed. Authoritative `passed`, `failed`, `timed_out`, and `superseded`
-results retain their real terminal outcome.
-
-This policy belongs to Rusty Crew's managed workflow. It does not change the
-Review service's direct `watch_github_checks` or `await_github_checks` behavior;
-direct/unmanaged Den gates remain fail-closed.
-
-Task #4245 adds a Review-owned GitHub check gate for the low-ceremony agent flow:
+The Review-owned gate serves the low-ceremony agent flow:
 
 ```text
 commit -> push -> register gate -> resume only on failure or completion evidence
@@ -116,7 +90,7 @@ Copy the intended exact names into `watch_github_checks` after discovery:
 }
 ```
 
-`watch_github_checks` is intentionally non-blocking. It registers the durable exact-SHA gate and returns the deferral handle/current state. `await_github_checks` remains available for compatibility through the migration window, but is deprecated because it historically returned immediately despite its name.
+`watch_github_checks` is intentionally non-blocking. It registers the durable gate for the commit and returns the deferral handle/current state. The older `await_github_checks` alias is deprecated; use `watch_github_checks`.
 
 Repository check profiles are intentionally not part of this contract.
 Discovery keeps configuration explicit and auditably exact without introducing
