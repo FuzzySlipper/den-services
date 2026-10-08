@@ -1155,12 +1155,9 @@ func (s *Service) RegisterGitHubCheckGate(ctx context.Context, projectID string,
 	if err != nil {
 		return nil, err
 	}
-	if task.Status != TaskStatusReview {
-		task, err = s.tasks.SetTaskStatus(ctx, task.ProjectID, taskID, req.RequestedBy, TaskStatusReview)
-		if err != nil {
-			return nil, err
-		}
-	}
+	// CI evidence does not own task lifecycle. In particular, retrying a gate
+	// after a lost response must not undo review finalization or human acceptance.
+	// RequestReview owns the explicit transition into review.
 	stored, superseded, err := s.store.RegisterGitHubCheckGate(ctx, gate, s.clock().UTC())
 	if err != nil {
 		return nil, err

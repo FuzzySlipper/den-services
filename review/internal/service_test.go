@@ -1630,7 +1630,7 @@ func TestRegisterGitHubCheckGateRecordsPassEvidence(t *testing.T) {
 	}
 }
 
-func TestRegisterGitHubCheckGatePromotesTaskToReviewRegardlessOfCurrentStatus(t *testing.T) {
+func TestRegisterGitHubCheckGatePreservesTaskStatus(t *testing.T) {
 	statuses := []string{"planned", "in_progress", "review", "blocked", "done", "cancelled"}
 	for _, status := range statuses {
 		t.Run(status, func(t *testing.T) {
@@ -1646,17 +1646,43 @@ func TestRegisterGitHubCheckGatePromotesTaskToReviewRegardlessOfCurrentStatus(t 
 			}); err != nil {
 				t.Fatalf("RegisterGitHubCheckGate() error = %v", err)
 			}
-			if got := tasks.tasks[42].Status; got != TaskStatusReview {
-				t.Fatalf("task status = %q, want %q", got, TaskStatusReview)
+			if got := tasks.tasks[42].Status; got != status {
+				t.Fatalf("task status = %q, want %q", got, status)
 			}
-			if status == TaskStatusReview {
-				if len(tasks.statusUpdates) != 0 {
-					t.Fatalf("status updates = %+v, want no redundant review transition", tasks.statusUpdates)
-				}
-			} else if len(tasks.statusUpdates) != 1 || tasks.statusUpdates[0].Agent != "codex" {
-				t.Fatalf("status updates = %+v, want one codex-authored review transition", tasks.statusUpdates)
+			if len(tasks.statusUpdates) != 0 {
+				t.Fatalf("gate changed task lifecycle: %+v", tasks.statusUpdates)
 			}
 		})
+	}
+}
+
+func TestGitHubGateRetryCannotUndoCompletion(t *testing.T) {
+	ctx := context.Background()
+	tasks := &fakeTasks{tasks: map[int64]TaskContext{
+		42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
+	}}
+	service := newTestService(newMemoryStore(), &fakeMessages{}, tasks)
+	req := RegisterGitHubCheckGateRequest{
+		Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Ref: "main",
+		RequiredChecks: []string{"go test"}, RequestedBy: "@reviewer",
+	}
+	first, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The caller lost the registration response; finalization or human
+	// acceptance completes the task before the durable caller retries.
+	task := tasks.tasks[42]
+	task.Status = TaskStatusDone
+	tasks.tasks[42] = task
+	for range 2 {
+		replayed, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, req)
+		if err != nil || replayed.ID != first.ID {
+			t.Fatalf("gate retry = %+v, %v", replayed, err)
+		}
+		if tasks.tasks[42].Status != TaskStatusDone || len(tasks.statusUpdates) != 0 {
+			t.Fatalf("retry undid completion: %+v, updates %+v", tasks.tasks[42], tasks.statusUpdates)
+		}
 	}
 }
 
