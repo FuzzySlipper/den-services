@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"bytes"
-	"den-services/shared/api"
 	"errors"
 	"io"
 	"log/slog"
@@ -10,6 +9,8 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+
+	"den-services/shared/api"
 )
 
 type ProxyHandler struct {
