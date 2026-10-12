@@ -2,8 +2,6 @@ package server
 
 import (
 	"bytes"
-	"den-services/mcp/internal/config"
-	"den-services/shared/health"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"den-services/mcp/internal/config"
+	"den-services/shared/health"
 )
 
 func TestNewHTTPServerRegistersHealthAndVersion(t *testing.T) {
