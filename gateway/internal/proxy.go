@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"den-services/shared/api"
 	"errors"
 	"io"
 	"log/slog"
@@ -9,8 +10,6 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
-
-	"den-services/shared/api"
 )
 
 type ProxyHandler struct {
@@ -68,7 +67,8 @@ func rewriteProxyRequest(request *httputil.ProxyRequest, target *url.URL, auth U
 	request.Out.URL.Scheme = target.Scheme
 	request.Out.URL.Host = target.Host
 	request.Out.URL.Path = joinPaths(target.Path, pathRewrite.Apply(request.In.URL.Path))
-	request.Out.URL.RawPath = ""
+	// Rewrite both forms so encoded slashes remain part of a slug upstream.
+	request.Out.URL.RawPath = joinPaths(target.EscapedPath(), pathRewrite.Apply(request.In.URL.EscapedPath()))
 	request.Out.URL.RawQuery = request.In.URL.RawQuery
 	request.Out.Host = target.Host
 	auth.Apply(request.Out.Header)

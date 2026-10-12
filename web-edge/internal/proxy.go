@@ -22,7 +22,8 @@ func newGatewayProxy(cfg GatewayConfig, logger *slog.Logger) http.Handler {
 		Rewrite: func(request *httputil.ProxyRequest) {
 			request.SetURL(cfg.BaseURL)
 			request.Out.URL.Path = strings.TrimPrefix(request.In.URL.Path, "/api")
-			request.Out.URL.RawPath = ""
+			// Keep encoded slashes inside document slugs as one route segment.
+			request.Out.URL.RawPath = strings.TrimPrefix(request.In.URL.EscapedPath(), "/api")
 			request.SetXForwarded()
 			request.Out.Header.Del("Authorization")
 			request.Out.Header.Set("Authorization", "Bearer "+cfg.BearerToken)
