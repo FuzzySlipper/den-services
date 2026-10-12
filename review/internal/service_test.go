@@ -1616,6 +1616,7 @@ func TestRegisterGitHubCheckGateRecordsPassEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RegisterGitHubCheckGate() error = %v", err)
 	}
+	gate = pollGitHubGate(t, service, gate)
 	if gate.Status != GitHubCheckGateStatusPassed || gate.CompletedAt == nil {
 		t.Fatalf("gate not passed: %+v", gate)
 	}
@@ -1705,6 +1706,7 @@ func TestTerminalGitHubCheckGateEventIsIdempotentAndResumable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RegisterGitHubCheckGate() error = %v", err)
 	}
+	gate = pollGitHubGate(t, service, gate)
 	if _, changed, err := store.CompleteGitHubCheckGate(ctx, gate.ID, GitHubCheckGateStatusPassed, GitHubCheckResult{}, fixedReviewTestTime()); err != nil || changed {
 		t.Fatalf("duplicate completion changed=%v err=%v", changed, err)
 	}
@@ -1800,6 +1802,12 @@ func TestRegisterGitHubCheckGateSupersedesOlderPendingSHA(t *testing.T) {
 	if old.Status != GitHubCheckGateStatusSuperseded {
 		t.Fatalf("older gate was not superseded: %+v", old)
 	}
+	if len(messages.appended) != 0 {
+		t.Fatal("registration posted evidence synchronously")
+	}
+	if err := service.RetryGitHubCheckGateEvidence(ctx, 10); err != nil {
+		t.Fatal(err)
+	}
 	if len(messages.appended) != 1 || messages.appended[0].Intent != "github_checks_superseded" {
 		t.Fatalf("superseded message not appended: %+v", messages.appended)
 	}
@@ -1853,6 +1861,9 @@ func TestRegisterGitHubCheckGateSupersedesNoCommit422WithNormalizedTerminalRuns(
 	}
 	if page.Events[0].CheckRuns == nil || len(page.Events[0].CheckRuns) != 0 {
 		t.Fatalf("supersession terminal event check runs = %#v, want non-nil empty array", page.Events[0].CheckRuns)
+	}
+	if err := service.PollGitHubCheckGates(ctx, 10); err != nil {
+		t.Fatal(err)
 	}
 	foundSupersessionEvidence := false
 	for _, message := range messages.appended {
@@ -1936,6 +1947,7 @@ func TestRegisterGitHubCheckGateRecordsFailureEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RegisterGitHubCheckGate() error = %v", err)
 	}
+	gate = pollGitHubGate(t, service, gate)
 	if gate.Status != GitHubCheckGateStatusFailed || gate.EvidenceMessageStatus != GitHubCheckEvidenceStatusPosted {
 		t.Fatalf("gate failure evidence not recorded: %+v", gate)
 	}
@@ -2268,9 +2280,13 @@ func TestGitHubCheckGateEvidenceAppendFailureIsDurableAndRetried(t *testing.T) {
 		Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Ref: "main",
 		RequiredChecks: []string{"go test"}, RequestedBy: "codex",
 	})
-	if err == nil {
-		t.Fatal("expected message append failure")
+	if err != nil {
+		t.Fatalf("registration must not depend on evidence delivery: %v", err)
 	}
+	if err := service.PollGitHubCheckGates(ctx, 10); err == nil {
+		t.Fatal("expected message append failure during polling")
+	}
+	gate = store.githubCheckGates[gate.ID]
 	if gate == nil || gate.Status != GitHubCheckGateStatusPassed {
 		t.Fatalf("terminal gate should still be durable, got %+v", gate)
 	}
@@ -2794,6 +2810,7 @@ func TestRegisterGitHubCheckGateReopensFailedGateWhenRerunPasses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	failed = pollGitHubGate(t, service, failed)
 	if failed.Status != GitHubCheckGateStatusFailed || failed.Attempt != 1 {
 		t.Fatalf("first attempt = %+v", failed)
 	}
@@ -2809,6 +2826,10 @@ func TestRegisterGitHubCheckGateReopensFailedGateWhenRerunPasses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if passed.Status != GitHubCheckGateStatusPending || passed.Attempt != 2 {
+		t.Fatalf("retry receipt = %+v", passed)
+	}
+	passed = pollGitHubGate(t, service, passed)
 	if passed.Status != GitHubCheckGateStatusPassed || passed.Attempt != 2 || passed.ID != failed.ID {
 		t.Fatalf("re-registration did not reopen the gate: %+v", passed)
 	}
@@ -2824,39 +2845,119 @@ func TestRegisterGitHubCheckGateReopensFailedGateWhenRerunPasses(t *testing.T) {
 	}
 }
 
-func TestRegisterGitHubCheckGateKeepsStillFailingTerminalGate(t *testing.T) {
+func TestRegisterGitHubCheckGateRetryIsEvaluatedInBackground(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()
 	github := &fakeGitHubChecks{result: GitHubCheckResult{
 		Status: GitHubCheckGateStatusFailed, FailureSummary: "Failed checks: go test (failure)", TerminalReason: GitHubCheckTerminalReasonChecksFailed,
 	}}
 	service := newTestService(store, &fakeMessages{}, &fakeTasks{tasks: map[int64]TaskContext{
-		42: {ID: 42, ProjectID: "den-services", Title: "Review service", Status: TaskStatusInProgress, Priority: 1},
+		42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview},
 	}})
-	service.ConfigureGitHubChecks(github, GitHubCheckOptions{DefaultTimeout: time.Hour, MaxTimeout: 2 * time.Hour, PollInterval: time.Minute})
+	service.ConfigureGitHubChecks(github, DefaultGitHubCheckOptions())
 	req := RegisterGitHubCheckGateRequest{
 		Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Ref: "main",
 		RequiredChecks: []string{"go test"}, RequestedBy: "codex",
 	}
-	if _, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, req); err != nil {
+	gate, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, req)
+	if err != nil {
 		t.Fatal(err)
 	}
-	req.RequiredChecks = []string{"lint"}
+	gate = pollGitHubGate(t, service, gate)
+	if gate.Status != GitHubCheckGateStatusFailed {
+		t.Fatalf("gate = %+v", gate)
+	}
 	again, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again.Status != GitHubCheckGateStatusFailed || again.Attempt != 1 {
-		t.Fatalf("still-failing gate changed: %+v", again)
+	if again.Status != GitHubCheckGateStatusPending || again.Attempt != 2 || github.calls != 1 {
+		t.Fatalf("retry must return pending without GitHub: %+v, calls=%d", again, github.calls)
 	}
-	if len(again.RequiredChecks) != 1 || again.RequiredChecks[0] != "go test" {
-		t.Fatalf("terminal gate required checks were overwritten: %#v", again.RequiredChecks)
+	replay, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, req)
+	if err != nil || replay.Attempt != again.Attempt || !replay.TimeoutAt.Equal(again.TimeoutAt) || github.calls != 1 {
+		t.Fatalf("pending replay = %+v, %v, calls=%d", replay, err, github.calls)
+	}
+	again = pollGitHubGate(t, service, again)
+	if again.Status != GitHubCheckGateStatusFailed || again.Attempt != 2 {
+		t.Fatalf("background retry = %+v", again)
 	}
 	events, err := store.ListGitHubCheckGateEvents(ctx, ListGitHubCheckGateEventsQuery{ProjectID: "den-services", TaskID: 42, Limit: 10})
+	if err != nil || len(events) != 2 || events[1].Attempt != 2 {
+		t.Fatalf("events = %+v, %v", events, err)
+	}
+}
+
+func pollGitHubGate(t *testing.T, service *Service, gate *GitHubCheckGate) *GitHubCheckGate {
+	t.Helper()
+	if err := service.PollGitHubCheckGates(t.Context(), 10); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := service.GetGitHubCheckGate(t.Context(), gate.ProjectID, gate.TaskID, gate.CommitSHA)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 1 {
-		t.Fatalf("still-failing re-registration emitted events: %+v", events)
+	return updated
+}
+
+func TestGitHubGateRegistrationReturnsBeforePollingAndSurvivesCallerCancellation(t *testing.T) {
+	for _, status := range []string{"", GitHubCheckGateStatusPending, GitHubCheckGateStatusFailed, GitHubCheckGateStatusTimedOut, GitHubCheckGateStatusPassed, GitHubCheckGateStatusSuperseded} {
+		t.Run(status, func(t *testing.T) {
+			store := newMemoryStore()
+			tasks := &fakeTasks{tasks: map[int64]TaskContext{42: {ID: 42, ProjectID: "den-services", Status: TaskStatusReview}}}
+			messages := &fakeMessages{}
+			github := &fakeGitHubChecks{err: errors.New("GitHub unavailable during registration")}
+			service := newTestService(store, messages, tasks)
+			service.ConfigureGitHubChecks(github, DefaultGitHubCheckOptions())
+			req := RegisterGitHubCheckGateRequest{
+				Repository: "owner/repo", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Ref: "main",
+				RequiredChecks: []string{"go test"}, RequestedBy: "codex",
+			}
+			if status != "" {
+				gate, err := service.githubGateFromRequest("den-services", 42, req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				gate.Status = status
+				if _, _, err := store.RegisterGitHubCheckGate(t.Context(), gate, fixedReviewTestTime()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			gate, err := service.RegisterGitHubCheckGate(ctx, "den-services", 42, req)
+			cancel()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if github.calls != 0 || len(messages.appended) != 0 {
+				t.Fatalf("registration performed external I/O: github=%d messages=%d", github.calls, len(messages.appended))
+			}
+			wantStatus := GitHubCheckGateStatusPending
+			if status == GitHubCheckGateStatusPassed || status == GitHubCheckGateStatusSuperseded {
+				wantStatus = status
+			}
+			if gate.ID <= 0 || gate.Status != wantStatus {
+				t.Fatalf("receipt = %+v", gate)
+			}
+			wantAttempt := 1
+			if reopenableGitHubCheckGateStatus(status) {
+				wantAttempt = 2
+			}
+			if gate.Attempt != wantAttempt {
+				t.Fatalf("attempt=%d, want %d", gate.Attempt, wantAttempt)
+			}
+			// A fresh service recovers the durable gate without the request context.
+			restarted := newTestService(store, messages, tasks)
+			recoveredGitHub := &fakeGitHubChecks{result: GitHubCheckResult{Status: GitHubCheckGateStatusPassed, TerminalReason: GitHubCheckTerminalReasonChecksPassed}}
+			restarted.ConfigureGitHubChecks(recoveredGitHub, DefaultGitHubCheckOptions())
+			result := pollGitHubGate(t, restarted, gate)
+			if wantStatus == GitHubCheckGateStatusPending {
+				if result.Status != GitHubCheckGateStatusPassed || recoveredGitHub.calls != 1 || len(messages.appended) != 1 {
+					t.Fatalf("background recovery = %+v, calls=%d messages=%d", result, recoveredGitHub.calls, len(messages.appended))
+				}
+			} else if result.Status != status || recoveredGitHub.calls != 0 || len(messages.appended) != 0 {
+				t.Fatalf("terminal replay changed: %+v, calls=%d", result, recoveredGitHub.calls)
+			}
+		})
 	}
 }

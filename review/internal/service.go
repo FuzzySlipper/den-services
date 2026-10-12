@@ -1158,55 +1158,32 @@ func (s *Service) RegisterGitHubCheckGate(ctx context.Context, projectID string,
 	// CI evidence does not own task lifecycle. In particular, retrying a gate
 	// after a lost response must not undo review finalization or human acceptance.
 	// RequestReview owns the explicit transition into review.
-	stored, superseded, err := s.store.RegisterGitHubCheckGate(ctx, gate, s.clock().UTC())
+	stored, _, err := s.store.RegisterGitHubCheckGate(ctx, gate, s.clock().UTC())
 	if err != nil {
 		return nil, err
 	}
-	for _, gate := range superseded {
-		if err := s.deliverGitHubCheckGateEvidence(ctx, gate); err != nil {
-			return stored, err
-		}
-	}
-	if s.githubChecks == nil {
-		return stored, nil
-	}
+	// Return the durable receipt before any GitHub requests or evidence delivery.
+	// The service-owned poller resumes pending gates and evidence after restarts;
+	// neither depends on the caller keeping this request alive.
 	if reopenableGitHubCheckGateStatus(stored.Status) {
-		return s.reevaluateGitHubCheckGate(ctx, stored, gate)
+		return s.reopenGitHubCheckGate(ctx, stored, gate)
 	}
-	if terminalGitHubCheckGateStatus(stored.Status) {
-		return stored, nil
-	}
-	return s.evaluateGitHubCheckGate(ctx, stored, true)
+	return stored, nil
 }
 
-// reevaluateGitHubCheckGate re-reads checks for a failed or timed-out gate when
-// it is registered again, so a GitHub re-run or a later containing commit can
-// recover it. The gate reopens as a new attempt only when the fresh result is
-// no longer a failure; otherwise the recorded terminal result stands.
-func (s *Service) reevaluateGitHubCheckGate(ctx context.Context, stored *GitHubCheckGate, requested *GitHubCheckGate) (*GitHubCheckGate, error) {
-	candidate := *stored
-	candidate.RequiredChecks = requested.RequiredChecks
-	candidate.Ref = requested.Ref
-	result, err := s.githubChecks.CheckChange(ctx, s.githubChangeQuery(&candidate))
-	if err != nil {
-		slog.Warn("github check gate re-evaluation failed", "gate_id", stored.ID, "commit_sha", stored.CommitSHA, "error", err)
-		return stored, nil
-	}
-	if result.Status == GitHubCheckGateStatusFailed {
-		return stored, nil
-	}
+// Explicitly re-registering a failed or timed-out gate starts a pending attempt.
+// The background poller determines its result; repeated pending registrations
+// preserve the same attempt and deadline.
+func (s *Service) reopenGitHubCheckGate(ctx context.Context, stored *GitHubCheckGate, requested *GitHubCheckGate) (*GitHubCheckGate, error) {
 	now := s.clock().UTC()
-	reopened, changed, err := s.store.ReopenGitHubCheckGate(ctx, ReopenGitHubCheckGateRequest{
+	reopened, _, err := s.store.ReopenGitHubCheckGate(ctx, ReopenGitHubCheckGateRequest{
 		ID: stored.ID, Attempt: stored.Attempt, RequiredChecks: requested.RequiredChecks, Ref: requested.Ref,
 		TimeoutAt: now.Add(requested.TimeoutAt.Sub(requested.CreatedAt)), PollIntervalSeconds: requested.PollIntervalSeconds,
 	}, now)
 	if err != nil {
 		return nil, err
 	}
-	if !changed {
-		return reopened, nil
-	}
-	return s.evaluateGitHubCheckGate(ctx, reopened, true)
+	return reopened, nil
 }
 
 func reopenableGitHubCheckGateStatus(status string) bool {
@@ -1296,7 +1273,7 @@ func (s *Service) PollGitHubCheckGates(ctx context.Context, limit int) error {
 		}
 		for _, gate := range gates {
 			processed++
-			if _, err := s.evaluateGitHubCheckGate(ctx, gate, false); err != nil {
+			if _, err := s.evaluateGitHubCheckGate(ctx, gate); err != nil {
 				pollErrors = append(pollErrors, err)
 				slog.Warn("github check gate evaluation failed", "gate_id", gate.ID, "commit_sha", gate.CommitSHA, "error", err)
 			}
@@ -1313,22 +1290,14 @@ func (s *Service) PollGitHubCheckGates(ctx context.Context, limit int) error {
 	return errors.Join(pollErrors...)
 }
 
-func (s *Service) evaluateGitHubCheckGate(ctx context.Context, gate *GitHubCheckGate, deliverEvidence bool) (*GitHubCheckGate, error) {
+func (s *Service) evaluateGitHubCheckGate(ctx context.Context, gate *GitHubCheckGate) (*GitHubCheckGate, error) {
 	now := s.clock().UTC()
 	if !now.Before(gate.TimeoutAt) {
-		updated, changed, err := s.store.TimeoutGitHubCheckGate(ctx, gate.ID, now)
+		updated, _, err := s.store.TimeoutGitHubCheckGate(ctx, gate.ID, now)
 		if err != nil {
 			return nil, err
 		}
-		if changed && deliverEvidence {
-			if err := s.deliverGitHubCheckGateEvidence(ctx, updated); err != nil {
-				return updated, err
-			}
-			updated, err = s.store.GetGitHubCheckGate(ctx, updated.ProjectID, updated.TaskID, updated.CommitSHA)
-			if err != nil {
-				return nil, err
-			}
-		}
+
 		return updated, nil
 	}
 	requestStarted := time.Now()
@@ -1364,19 +1333,11 @@ func (s *Service) evaluateGitHubCheckGate(ctx context.Context, gate *GitHubCheck
 		updated, _, err := s.store.CompleteGitHubCheckGate(ctx, gate.ID, GitHubCheckGateStatusPending, pending, now)
 		return updated, err
 	}
-	updated, changed, err := s.store.CompleteGitHubCheckGate(ctx, gate.ID, result.Status, result, now)
+	updated, _, err := s.store.CompleteGitHubCheckGate(ctx, gate.ID, result.Status, result, now)
 	if err != nil {
 		return nil, err
 	}
-	if changed && deliverEvidence {
-		if err := s.deliverGitHubCheckGateEvidence(ctx, updated); err != nil {
-			return updated, err
-		}
-		updated, err = s.store.GetGitHubCheckGate(ctx, updated.ProjectID, updated.TaskID, updated.CommitSHA)
-		if err != nil {
-			return nil, err
-		}
-	}
+
 	return updated, nil
 }
 

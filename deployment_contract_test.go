@@ -233,3 +233,68 @@ func assertVersionCommand(t *testing.T, service deployableService) {
 		t.Fatalf("--version output %q must include default dev build metadata", text)
 	}
 }
+
+func TestMCPUpgradeRestoresDiscoveryRouteWithoutReplacingExistingRoutes(t *testing.T) {
+	script, err := os.ReadFile("scripts/den-services-deploy.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Exercise the actual installer functions without building or restarting services.
+	text := string(script)
+	start := strings.Index(text, "route_operation_exists() {")
+	end := strings.Index(text, "\ncd \"${repo_root}\"")
+	if start < 0 || end <= start {
+		t.Fatal("deployment function boundaries missing")
+	}
+	functions := text[start:end]
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "config", "routes.yaml")
+	existing := "routes:\n- operation: custom_operator_route\n  backend: custom_backend\n  method: GET\n  path: /custom\n  timeout: 17s\n"
+	if err := os.WriteFile(path, []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("bash", "-euc", `
+service_root="$1"
+backup_config_file() { :; }
+run_systemctl() { "$@"; }
+`+functions+"\ninstall_mcp_routes\ninstall_mcp_routes\n", "test", root)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("route upgrade: %v\n%s", err, output)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var routes struct {
+		Routes []struct {
+			Operation string `yaml:"operation"`
+			Backend   string `yaml:"backend"`
+			Path      string `yaml:"path"`
+			Timeout   string `yaml:"timeout"`
+		} `yaml:"routes"`
+	}
+	if err := yaml.Unmarshal(data, &routes); err != nil {
+		t.Fatal(err)
+	}
+	discoveryCount, customCount := 0, 0
+	for _, route := range routes.Routes {
+		switch route.Operation {
+		case "discover_github_checks":
+			discoveryCount++
+			if route.Backend != "review" || route.Path != "/v1/review/github-checks/discover" || route.Timeout != "30s" {
+				t.Fatalf("discovery route = %+v", route)
+			}
+		case "custom_operator_route":
+			customCount++
+			if route.Backend != "custom_backend" || route.Path != "/custom" || route.Timeout != "17s" {
+				t.Fatalf("existing route changed: %+v", route)
+			}
+		}
+	}
+	if discoveryCount != 1 || customCount != 1 {
+		t.Fatalf("discovery=%d existing=%d", discoveryCount, customCount)
+	}
+}

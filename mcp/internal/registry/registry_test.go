@@ -19,8 +19,8 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 39 {
-		t.Fatalf("tool count = %d, want 39", len(names))
+	if len(names) != 38 {
+		t.Fatalf("tool count = %d, want 38", len(names))
 	}
 	for _, name := range []string{
 		"comment_on_document",
@@ -29,7 +29,6 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		"create_task",
 		"den_knowledge_get",
 		"den_knowledge_guide",
-		"discover_github_checks",
 		"finalize_review",
 		"get_agent_guidance",
 		"get_board_comment",
@@ -72,6 +71,7 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		catalogNames = append(catalogNames, tool.Name)
 	}
 	longTailNames := []string{
+		"discover_github_checks",
 		"add_agent_guidance_entry",
 		"add_dependency",
 		"archive_document_preflight",
@@ -383,8 +383,8 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if err != nil {
 		t.Fatalf("ToolsForProfile(managed-runtime) error = %v", err)
 	}
-	if len(direct) != 39 {
-		t.Fatalf("direct tool count = %d, want 39", len(direct))
+	if len(direct) != 38 {
+		t.Fatalf("direct tool count = %d, want 38", len(direct))
 	}
 	if len(managed) >= len(direct) {
 		t.Fatalf("managed tool count = %d, want fewer than direct %d", len(managed), len(direct))

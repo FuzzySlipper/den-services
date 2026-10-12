@@ -161,6 +161,8 @@ routes:
     response_adapter: "mcp_tool_result_json"
   - operation: "discover_github_checks"
     backend: "review"
+    # Optional CLI diagnostic performs GitHub I/O; registration does not.
+    timeout: "30s"
     method: "POST"
     path: "/v1/review/github-checks/discover"
     request_adapter: "mcp_review_rest"

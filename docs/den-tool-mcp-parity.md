@@ -49,6 +49,14 @@ CLI does not write schemas or domain storage directly. This route remains usable
 when an operation is later excluded by a discovery profile because profile
 projection does not change backend call authority.
 
+For managed reviews, call `submit_task_for_review` once after pushing (native
+MCP or `den-tool den submit_task_for_review`) and keep its receipt. The service
+owns CI waiting, retries, and reviewer admission; callers do not separately
+register or wait on GitHub gates. `den-tool den discover_github_checks` is an
+optional read-only diagnostic for unknown exact check names. It remains in the
+CLI catalog and callable by exact name, outside ordinary MCP discovery.
+Incremental MCP deployments install its route while preserving other routes.
+
 The `den-tool board ...` shorthand follows the same rule automatically. In the
 absence of an explicit `DEN_BOARD_URL`, it translates Board flags to typed MCP
 operations and uses `DEN_MCP_URL`/`DEN_MCP_TOKEN`. `DEN_BOARD_URL` is reserved

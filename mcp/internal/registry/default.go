@@ -724,6 +724,7 @@ var hiddenCompatibilityToolPolicies = map[string]hiddenToolPolicy{
 // longTailToolNames remains callable by exact MCP name and through den-tool,
 // but does not occupy ordinary model-facing tools/list discovery.
 var longTailToolNames = map[string]struct{}{
+	"discover_github_checks":             {},
 	"add_agent_guidance_entry":           {},
 	"add_dependency":                     {},
 	"archive_document_preflight":         {},

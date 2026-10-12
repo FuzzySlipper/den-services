@@ -2,6 +2,8 @@ package server
 
 import (
 	"bytes"
+	"den-services/mcp/internal/config"
+	"den-services/shared/health"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,10 +12,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"den-services/shared/health"
-
-	"den-services/mcp/internal/config"
 )
 
 func TestNewHTTPServerRegistersHealthAndVersion(t *testing.T) {
@@ -77,8 +75,8 @@ func TestMCPToolsListIsStatic(t *testing.T) {
 	decodeResponse(t, response, &body)
 	result := body["result"].(map[string]any)
 	tools := result["tools"].([]any)
-	if len(tools) != 39 {
-		t.Fatalf("tool count = %d, want 39", len(tools))
+	if len(tools) != 38 {
+		t.Fatalf("tool count = %d, want 38", len(tools))
 	}
 	first := tools[0].(map[string]any)
 	if first["name"] != "search_documents" {
@@ -88,7 +86,7 @@ func TestMCPToolsListIsStatic(t *testing.T) {
 	if catalog["toolProfile"] != "direct" {
 		t.Fatalf("catalog profile = %v, want direct", catalog["toolProfile"])
 	}
-	if catalog["visibleToolCount"] != float64(39) || catalog["hiddenToolCount"] != float64(55) {
+	if catalog["visibleToolCount"] != float64(38) || catalog["hiddenToolCount"] != float64(56) {
 		t.Fatalf("catalog counts = %#v", catalog)
 	}
 }

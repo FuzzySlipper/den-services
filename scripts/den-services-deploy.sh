@@ -545,6 +545,9 @@ install_mcp_routes() {
     "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates" \
     "mcp_review_rest" \
     "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "discover_github_checks" "review" "POST" \
+    "/v1/review/github-checks/discover" "mcp_review_rest" "mcp_tool_result_json" "30s"
+  set_mcp_route_timeout "${routes_target}" "discover_github_checks" "30s"
   append_mcp_route_if_missing "${routes_target}" "watch_github_checks" "review" "POST" \
     "/v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates" "mcp_review_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "submit_task_for_review" "crew-review" "POST" \

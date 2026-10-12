@@ -147,3 +147,9 @@ When implementing under Den workflow:
 - Move implementation tasks to review rather than silently treating local code as done.
 - Submit ordinary agent reviews with `submit_task_for_review`; `request_review`
   is direct recovery only and does not enqueue managed routing.
+- Submit once after pushing, through native MCP or `den-tool den
+  submit_task_for_review`. Keep the receipt and continue other work: crew-review
+  owns CI waiting, transient retries, and reviewer dispatch. Do not separately
+  register or wait on a GitHub gate. If exact check names are unknown,
+  `den-tool den discover_github_checks` is an optional read-only diagnostic;
+  it is not a submission prerequisite or part of the normal MCP tool list.
