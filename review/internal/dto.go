@@ -3,13 +3,24 @@ package review
 import "time"
 
 type CreateReviewRoundRequest struct {
-	RequestedBy string   `json:"requested_by"`
-	Branch      string   `json:"branch,omitempty"`
-	BaseBranch  string   `json:"base_branch,omitempty"`
-	TestsRun    []string `json:"tests_run,omitempty"`
-	Notes       string   `json:"notes,omitempty"`
-	ThreadID    *int64   `json:"thread_id,omitempty"`
-	RunID       string   `json:"run_id,omitempty"`
+	RequestedBy     string               `json:"requested_by"`
+	Branch          string               `json:"branch,omitempty"`
+	BaseBranch      string               `json:"base_branch,omitempty"`
+	TestsRun        []string             `json:"tests_run,omitempty"`
+	Notes           string               `json:"notes,omitempty"`
+	ThreadID        *int64               `json:"thread_id,omitempty"`
+	RunID           string               `json:"run_id,omitempty"`
+	Source          *ReviewSourceRequest `json:"source,omitempty"`
+	SupersedesRound *int64               `json:"supersedes_round,omitempty"`
+	SupersedeReason string               `json:"supersede_reason,omitempty"`
+}
+
+// ReviewSourceRequest is immutable source evidence from a managed submission,
+// validated before recording a round. Manual review requests may omit it.
+type ReviewSourceRequest struct {
+	Repository string `json:"repository"`
+	CommitSHA  string `json:"commit_sha"`
+	BaseCommit string `json:"base_commit"`
 }
 
 type CreateCampaignReviewRequest struct {

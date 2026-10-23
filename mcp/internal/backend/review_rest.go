@@ -15,85 +15,99 @@ import (
 )
 
 type reviewToolArguments struct {
-	ProjectID               string          `json:"project_id"`
-	TaskID                  int64           `json:"task_id"`
-	ReviewRoundID           int64           `json:"review_round_id"`
-	ReviewFindingID         int64           `json:"review_finding_id"`
-	RequestedBy             string          `json:"requested_by"`
-	Branch                  string          `json:"branch"`
-	BaseBranch              string          `json:"base_branch"`
-	TestsRun                json.RawMessage `json:"tests_run"`
-	Notes                   string          `json:"notes"`
-	ThreadID                *int64          `json:"thread_id"`
-	RunID                   string          `json:"run_id"`
-	SubagentRole            string          `json:"subagent_role"`
-	PriorFindingResolutions json.RawMessage `json:"prior_finding_resolutions"`
-	NewFindings             json.RawMessage `json:"new_findings"`
-	Sender                  string          `json:"sender"`
-	CreatedBy               string          `json:"created_by"`
-	Category                string          `json:"category"`
-	Summary                 string          `json:"summary"`
-	FileReferences          json.RawMessage `json:"file_references"`
-	TestCommands            json.RawMessage `json:"test_commands"`
-	Verdict                 string          `json:"verdict"`
-	DecidedBy               string          `json:"decided_by"`
-	RespondedBy             string          `json:"responded_by"`
-	ResponseNotes           string          `json:"response_notes"`
-	Status                  string          `json:"status"`
-	StatusNotes             string          `json:"status_notes"`
-	UpdatedBy               string          `json:"updated_by"`
-	FollowUpTaskID          *int64          `json:"follow_up_task_id"`
-	FindingIDs              json.RawMessage `json:"finding_ids"`
-	SplitBy                 string          `json:"split_by"`
-	FollowUpTitle           string          `json:"follow_up_title"`
-	FollowUpParentTaskID    *int64          `json:"follow_up_parent_task_id"`
-	FollowUpPriority        *int            `json:"follow_up_priority"`
-	FollowUpAssignedTo      string          `json:"follow_up_assigned_to"`
-	FollowUpTags            json.RawMessage `json:"follow_up_tags"`
-	OverrideBlocking        bool            `json:"override_blocking"`
-	IdempotencyKey          string          `json:"idempotency_key"`
-	Resolved                *bool           `json:"resolved"`
-	Repository              string          `json:"repository"`
-	CommitSHA               string          `json:"commit_sha"`
-	Ref                     string          `json:"ref"`
-	RequiredChecks          json.RawMessage `json:"required_checks"`
-	BaseCommit              string          `json:"base_commit"`
-	ReviewSummaryMD         string          `json:"review_summary_md"`
-	Reviewer                string          `json:"reviewer"`
-	CampaignChildren        json.RawMessage `json:"children"`
-	CampaignRepositories    json.RawMessage `json:"repositories"`
-	TimeoutSeconds          *int            `json:"timeout_seconds"`
-	PollIntervalSeconds     *int            `json:"poll_interval_seconds"`
-	AgentProfile            string          `json:"agent_profile"`
-	AgentInstanceID         string          `json:"agent_instance_id"`
-	SessionKey              string          `json:"session_key"`
-	AfterID                 int64           `json:"after_id"`
-	WaitMS                  *int            `json:"wait_ms"`
-	Verbose                 *bool           `json:"verbose"`
-	Limit                   *int            `json:"limit"`
-	Offset                  *int            `json:"offset"`
+	ProjectID               string            `json:"project_id"`
+	TaskID                  int64             `json:"task_id"`
+	ReviewRoundID           int64             `json:"review_round_id"`
+	ReviewFindingID         int64             `json:"review_finding_id"`
+	RequestedBy             string            `json:"requested_by"`
+	Branch                  string            `json:"branch"`
+	BaseBranch              string            `json:"base_branch"`
+	TestsRun                json.RawMessage   `json:"tests_run"`
+	Notes                   string            `json:"notes"`
+	ThreadID                *int64            `json:"thread_id"`
+	RunID                   string            `json:"run_id"`
+	SubagentRole            string            `json:"subagent_role"`
+	PriorFindingResolutions json.RawMessage   `json:"prior_finding_resolutions"`
+	NewFindings             json.RawMessage   `json:"new_findings"`
+	Sender                  string            `json:"sender"`
+	CreatedBy               string            `json:"created_by"`
+	Category                string            `json:"category"`
+	Summary                 string            `json:"summary"`
+	FileReferences          json.RawMessage   `json:"file_references"`
+	TestCommands            json.RawMessage   `json:"test_commands"`
+	Verdict                 string            `json:"verdict"`
+	DecidedBy               string            `json:"decided_by"`
+	RespondedBy             string            `json:"responded_by"`
+	ResponseNotes           string            `json:"response_notes"`
+	Status                  string            `json:"status"`
+	StatusNotes             string            `json:"status_notes"`
+	UpdatedBy               string            `json:"updated_by"`
+	FollowUpTaskID          *int64            `json:"follow_up_task_id"`
+	FindingIDs              json.RawMessage   `json:"finding_ids"`
+	SplitBy                 string            `json:"split_by"`
+	FollowUpTitle           string            `json:"follow_up_title"`
+	FollowUpParentTaskID    *int64            `json:"follow_up_parent_task_id"`
+	FollowUpPriority        *int              `json:"follow_up_priority"`
+	FollowUpAssignedTo      string            `json:"follow_up_assigned_to"`
+	FollowUpTags            json.RawMessage   `json:"follow_up_tags"`
+	OverrideBlocking        bool              `json:"override_blocking"`
+	IdempotencyKey          string            `json:"idempotency_key"`
+	Resolved                *bool             `json:"resolved"`
+	Repository              string            `json:"repository"`
+	CommitSHA               string            `json:"commit_sha"`
+	Ref                     string            `json:"ref"`
+	RequiredChecks          json.RawMessage   `json:"required_checks"`
+	BaseCommit              string            `json:"base_commit"`
+	Source                  *reviewSourceBody `json:"source"`
+	SupersedesRound         *int64            `json:"supersedes_round"`
+	SupersedeReason         string            `json:"supersede_reason"`
+	ReviewSummaryMD         string            `json:"review_summary_md"`
+	Reviewer                string            `json:"reviewer"`
+	CampaignChildren        json.RawMessage   `json:"children"`
+	CampaignRepositories    json.RawMessage   `json:"repositories"`
+	TimeoutSeconds          *int              `json:"timeout_seconds"`
+	PollIntervalSeconds     *int              `json:"poll_interval_seconds"`
+	AgentProfile            string            `json:"agent_profile"`
+	AgentInstanceID         string            `json:"agent_instance_id"`
+	SessionKey              string            `json:"session_key"`
+	AfterID                 int64             `json:"after_id"`
+	WaitMS                  *int              `json:"wait_ms"`
+	Verbose                 *bool             `json:"verbose"`
+	Limit                   *int              `json:"limit"`
+	Offset                  *int              `json:"offset"`
 }
 
 type reviewRoundBody struct {
-	RequestedBy string   `json:"requested_by"`
-	Branch      string   `json:"branch,omitempty"`
-	BaseBranch  string   `json:"base_branch,omitempty"`
-	TestsRun    []string `json:"tests_run,omitempty"`
-	Notes       string   `json:"notes,omitempty"`
-	ThreadID    *int64   `json:"thread_id,omitempty"`
-	RunID       string   `json:"run_id,omitempty"`
+	RequestedBy     string            `json:"requested_by"`
+	Branch          string            `json:"branch,omitempty"`
+	BaseBranch      string            `json:"base_branch,omitempty"`
+	TestsRun        []string          `json:"tests_run,omitempty"`
+	Notes           string            `json:"notes,omitempty"`
+	ThreadID        *int64            `json:"thread_id,omitempty"`
+	RunID           string            `json:"run_id,omitempty"`
+	Source          *reviewSourceBody `json:"source,omitempty"`
+	SupersedesRound *int64            `json:"supersedes_round,omitempty"`
+	SupersedeReason string            `json:"supersede_reason,omitempty"`
+}
+
+type reviewSourceBody struct {
+	Repository string `json:"repository"`
+	CommitSHA  string `json:"commit_sha"`
+	BaseCommit string `json:"base_commit"`
 }
 
 type submitReviewBody struct {
-	ProjectID      string   `json:"project_id"`
-	TaskID         int64    `json:"task_id"`
-	Repository     string   `json:"repository"`
-	CommitSHA      string   `json:"commit_sha"`
-	Ref            string   `json:"ref"`
-	RequiredChecks []string `json:"required_checks"`
-	BaseCommit     string   `json:"base_commit,omitempty"`
-	ReviewSummary  string   `json:"review_summary_md"`
-	Reviewer       string   `json:"reviewer,omitempty"`
+	ProjectID       string   `json:"project_id"`
+	TaskID          int64    `json:"task_id"`
+	Repository      string   `json:"repository"`
+	CommitSHA       string   `json:"commit_sha"`
+	Ref             string   `json:"ref"`
+	RequiredChecks  []string `json:"required_checks"`
+	BaseCommit      string   `json:"base_commit,omitempty"`
+	ReviewSummary   string   `json:"review_summary_md"`
+	Reviewer        string   `json:"reviewer,omitempty"`
+	SupersedesRound *int64   `json:"supersedes_round,omitempty"`
+	SupersedeReason string   `json:"supersede_reason,omitempty"`
 }
 
 type campaignReviewBody struct {
@@ -281,6 +295,7 @@ func reviewRESTRequestBody(operation string, arguments reviewToolArguments) ([]b
 			ProjectID: arguments.ProjectID, TaskID: arguments.TaskID, Repository: strings.TrimSpace(arguments.Repository),
 			CommitSHA: strings.TrimSpace(arguments.CommitSHA), Ref: strings.TrimSpace(arguments.Ref), RequiredChecks: requiredChecks,
 			BaseCommit: strings.TrimSpace(arguments.BaseCommit), ReviewSummary: strings.TrimSpace(arguments.ReviewSummaryMD), Reviewer: strings.TrimSpace(arguments.Reviewer),
+			SupersedesRound: arguments.SupersedesRound, SupersedeReason: strings.TrimSpace(arguments.SupersedeReason),
 		})
 	case "create_review_round", "request_review":
 		testsRun, err := parseStringList(arguments.TestsRun)
@@ -291,6 +306,7 @@ func reviewRESTRequestBody(operation string, arguments reviewToolArguments) ([]b
 			RequestedBy: strings.TrimSpace(arguments.RequestedBy), Branch: strings.TrimSpace(arguments.Branch),
 			BaseBranch: strings.TrimSpace(arguments.BaseBranch), TestsRun: testsRun, Notes: strings.TrimSpace(arguments.Notes),
 			ThreadID: arguments.ThreadID, RunID: strings.TrimSpace(arguments.RunID),
+			Source: arguments.Source, SupersedesRound: arguments.SupersedesRound, SupersedeReason: strings.TrimSpace(arguments.SupersedeReason),
 		})
 	case "request_campaign_review":
 		testsRun, err := parseStringList(arguments.TestsRun)

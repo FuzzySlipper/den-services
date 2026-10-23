@@ -72,6 +72,40 @@ func (s *memoryStore) ListRounds(_ context.Context, projectID string, taskID int
 	return rounds, nil
 }
 
+func (s *memoryStore) CreateRoundSuperseding(ctx context.Context, round *ReviewRound, supersedes int64, reason string) (*ReviewRound, error) {
+	old := s.rounds[supersedes]
+	if old == nil || old.ProjectID != round.ProjectID || old.TaskID != round.TaskID {
+		return nil, supersessionError("supersedes_round must exist on the same task")
+	}
+	if old.Verdict == VerdictSuperseded {
+		for _, current := range s.rounds {
+			if sameReviewRequest(current, round) && old.VerdictNotes == supersessionNotes(current.ID, reason) {
+				return current, nil
+			}
+		}
+	}
+	if old.Verdict != "" {
+		return nil, supersessionError("supersedes_round already has a verdict")
+	}
+	for _, finding := range s.findings {
+		if finding.ReviewRoundID == supersedes {
+			return nil, supersessionError("supersedes_round already has findings")
+		}
+	}
+	for _, finalization := range s.finalizations {
+		if finalization.ReviewRoundID == supersedes {
+			return nil, supersessionError("supersedes_round already has finalization")
+		}
+	}
+	created, err := s.CreateRound(ctx, round)
+	if err != nil {
+		return nil, err
+	}
+	old.Verdict, old.VerdictBy, old.VerdictNotes = VerdictSuperseded, round.RequestedBy, supersessionNotes(created.ID, reason)
+	old.VerdictAt, old.UpdatedAt = &round.RequestedAt, round.RequestedAt
+	return created, nil
+}
+
 func (s *memoryStore) ListPipelineReviewStates(_ context.Context, projectID string, taskIDs []int64) (map[int64]ReviewPipelineState, error) {
 	wanted := make(map[int64]struct{}, len(taskIDs))
 	for _, taskID := range taskIDs {
@@ -143,6 +177,9 @@ func (s *memoryStore) SetVerdict(_ context.Context, id int64, verdict string, de
 }
 
 func (s *memoryStore) CreateFinding(_ context.Context, finding *ReviewFinding) (*ReviewFinding, error) {
+	if round := s.rounds[finding.ReviewRoundID]; round != nil && round.Verdict == VerdictSuperseded {
+		return nil, conflict(ErrStaleReviewRound, "stale_review_round")
+	}
 	nextNumber := 1
 	for _, existing := range s.findings {
 		if existing.ProjectID == finding.ProjectID && existing.TaskID == finding.TaskID && existing.FindingNumber >= nextNumber {

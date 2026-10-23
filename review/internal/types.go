@@ -13,6 +13,7 @@ const (
 	VerdictLooksGood           = "looks_good"
 	VerdictFollowUpNeeded      = "follow_up_needed"
 	VerdictBlockedByDependency = "blocked_by_dependency"
+	VerdictSuperseded          = "superseded"
 
 	CategoryBlockingBug       = "blocking_bug"
 	CategoryAcceptanceGap     = "acceptance_gap"

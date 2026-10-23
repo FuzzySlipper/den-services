@@ -11,6 +11,46 @@ readback/recovery surface.
 crew-review has no gate bypass. If GitHub Actions cannot make progress (an
 outage or exhausted quota), tell the owner instead of removing required checks.
 
+## Automatic review source recording
+
+After pushing task commits with `(#10318)` in their subjects, submit the task
+without copying either SHA:
+
+```json
+{
+  "project_id": "den-services",
+  "task_id": 10318,
+  "repository": "FuzzySlipper/den-services",
+  "ref": "main",
+  "required_checks": [],
+  "review_summary_md": "Implemented automatic review source recording; focused tests passed."
+}
+```
+
+crew-review fetches the repository matching `repository` in the review host's
+configured workspace roots, resolves the latest matching task commit reachable
+from the pushed `ref`, and derives the base from the parent of the earliest
+matching task commit. It preserves the checkout's HEAD, local branches, and
+working files. The receipt, Den request notes, gate, and reviewer source all use
+the same exact resolved `commit_sha` and `base_commit`. Later unrelated commits
+on `ref` do not change that task's review target. The full range can include
+intervening commits from other tasks; it is a Git range, not a filtered patch.
+
+Explicit `commit_sha` and `base_commit` remain optional overrides. Den compares
+the range on GitHub before creating a round or gate, returning `unknown_commit`
+or `base_not_ancestor` for invalid source. Missing task markers return
+`task_commits_not_found`; ambiguous merge paths return `ambiguous_task_commits`
+instead of recording a guessed range. Infrastructure failures remain retryable.
+
+To replace an unreviewed mistaken round, include `supersedes_round` and,
+optionally, `supersede_reason`. Den atomically closes the old round as
+`superseded` and records its replacement; the correction reason appears in the
+replacement's task-thread request and the old round's verdict notes. Retries
+reuse that replacement. A round from another task, or one with findings,
+finalization, or a verdict, returns `round_not_supersedable` to preserve the
+existing review evidence. No manual "ignore the previous round" message is
+needed. This does not change how later containing commits satisfy CI checks.
+
 The Review-owned gate serves the low-ceremony agent flow:
 
 ```text

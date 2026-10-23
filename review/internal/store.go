@@ -35,8 +35,73 @@ func (s *Store) CreateRound(ctx context.Context, round *ReviewRound) (*ReviewRou
 	if _, err := tx.Exec(ctx, lockReviewTaskSQL, round.ProjectID, round.TaskID); err != nil {
 		return nil, fmt.Errorf("locking review task for round creation: %w", err)
 	}
+	created, err := createRoundTx(ctx, tx, round)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing review round: %w", err)
+	}
+	return created, nil
+}
+
+// CreateRoundSuperseding serializes with finding creation and finalization on
+// the task lock. Closing the old round and creating its replacement are atomic;
+// the service posts the replacement request (and reason) after commit.
+func (s *Store) CreateRoundSuperseding(ctx context.Context, round *ReviewRound, supersedes int64, reason string) (*ReviewRound, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("beginning review supersession: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, lockReviewTaskSQL, round.ProjectID, round.TaskID); err != nil {
+		return nil, fmt.Errorf("locking task for review supersession: %w", err)
+	}
+	old, err := scanRound(tx.QueryRow(ctx, getRoundForUpdateSQL, supersedes))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, supersessionError("supersedes_round does not exist")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("loading superseded review round: %w", err)
+	}
+	if old.ProjectID != round.ProjectID || old.TaskID != round.TaskID {
+		return nil, supersessionError("supersedes_round must belong to the same task")
+	}
+	if old.Verdict == VerdictSuperseded {
+		current, err := scanRound(tx.QueryRow(ctx, currentRoundForUpdateSQL, round.ProjectID, round.TaskID))
+		if err != nil {
+			return nil, err
+		}
+		if sameReviewRequest(current, round) && old.VerdictNotes == supersessionNotes(current.ID, reason) {
+			return current, nil
+		}
+	}
+	if old.Verdict != "" {
+		return nil, supersessionError("supersedes_round already has a verdict")
+	}
+	var reviewed bool
+	if err := tx.QueryRow(ctx, `select exists(select 1 from den_review.review_findings where review_round_id = $1) or exists(select 1 from den_review.review_finalizations where review_round_id = $1)`, supersedes).Scan(&reviewed); err != nil {
+		return nil, fmt.Errorf("checking superseded round review evidence: %w", err)
+	}
+	if reviewed {
+		return nil, supersessionError("supersedes_round already has review findings or finalization")
+	}
+	created, err := createRoundTx(ctx, tx, round)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, setVerdictSQL, old.ID, VerdictSuperseded, round.RequestedBy, supersessionNotes(created.ID, reason), round.RequestedAt, round.RequestedAt); err != nil {
+		return nil, fmt.Errorf("closing superseded review round: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing review supersession: %w", err)
+	}
+	return created, nil
+}
+
+func createRoundTx(ctx context.Context, tx pgx.Tx, round *ReviewRound) (*ReviewRound, error) {
 	var roundNumber int
-	err = tx.QueryRow(ctx, latestRoundSQL, round.ProjectID, round.TaskID).Scan(&roundNumber)
+	err := tx.QueryRow(ctx, latestRoundSQL, round.ProjectID, round.TaskID).Scan(&roundNumber)
 	if errors.Is(err, pgx.ErrNoRows) {
 		roundNumber = 1
 	} else if err != nil {
@@ -51,9 +116,6 @@ func (s *Store) CreateRound(ctx context.Context, round *ReviewRound) (*ReviewRou
 		round.RequestedAt, round.CreatedAt, round.UpdatedAt))
 	if err != nil {
 		return nil, fmt.Errorf("creating review round: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("committing review round: %w", err)
 	}
 	return created, nil
 }
@@ -117,6 +179,9 @@ func (s *Store) GetRound(ctx context.Context, id int64) (*ReviewRound, error) {
 func (s *Store) SetVerdict(ctx context.Context, id int64, verdict string, decidedBy string, notes string, decidedAt time.Time) (*ReviewRound, error) {
 	round, err := scanRound(s.pool.QueryRow(ctx, setVerdictSQL, id, verdict, decidedBy, emptyToNil(notes), decidedAt, decidedAt))
 	if errors.Is(err, pgx.ErrNoRows) {
+		if existing, lookupErr := s.GetRound(ctx, id); lookupErr == nil && existing.Verdict == VerdictSuperseded {
+			return nil, conflict(ErrStaleReviewRound, "stale_review_round")
+		}
 		return nil, notFound(fmt.Errorf("%w: %d", ErrMissingRound, id), "round_not_found")
 	}
 	if err != nil {
@@ -133,6 +198,13 @@ func (s *Store) CreateFinding(ctx context.Context, finding *ReviewFinding) (*Rev
 	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := tx.Exec(ctx, lockReviewTaskSQL, finding.ProjectID, finding.TaskID); err != nil {
 		return nil, fmt.Errorf("locking review task for finding creation: %w", err)
+	}
+	var verdict string
+	if err := tx.QueryRow(ctx, `select coalesce(verdict, '') from den_review.review_rounds where id = $1`, finding.ReviewRoundID).Scan(&verdict); err != nil {
+		return nil, fmt.Errorf("checking round before finding creation: %w", err)
+	}
+	if verdict == VerdictSuperseded {
+		return nil, conflict(ErrStaleReviewRound, "stale_review_round")
 	}
 	var findingNumber int
 	if err := tx.QueryRow(ctx, nextFindingNumberSQL, finding.ProjectID, finding.TaskID).Scan(&findingNumber); err != nil {
@@ -989,7 +1061,7 @@ const (
 	getRoundForUpdateSQL        = `select ` + roundColumns + ` from den_review.review_rounds where id = $1 for update`
 	currentRoundForUpdateSQL    = `select ` + roundColumns + ` from den_review.review_rounds where project_id = $1 and task_id = $2 order by round_number desc, id desc limit 1 for update`
 	lockReviewTaskSQL           = `select pg_advisory_xact_lock(hashtextextended($1 || ':' || ($2::bigint)::text, 0))`
-	setVerdictSQL               = `update den_review.review_rounds set verdict = $2, verdict_by = $3, verdict_notes = $4, verdict_at = $5, updated_at = $6 where id = $1 returning ` + roundColumns
+	setVerdictSQL               = `update den_review.review_rounds set verdict = $2, verdict_by = $3, verdict_notes = $4, verdict_at = $5, updated_at = $6 where id = $1 and coalesce(verdict, '') <> 'superseded' returning ` + roundColumns
 	nextFindingNumberSQL        = `select coalesce(max(finding_number), 0) + 1 from den_review.review_findings where project_id = $1 and task_id = $2`
 	createFindingSQL            = `
 with inserted as (

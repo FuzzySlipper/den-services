@@ -57,6 +57,16 @@ optional read-only diagnostic for unknown exact check names. It remains in the
 CLI catalog and callable by exact name, outside ordinary MCP discovery.
 Incremental MCP deployments install its route while preserving other routes.
 
+`commit_sha` and `base_commit` are optional on `submit_task_for_review`.
+The service derives both from pushed commit subjects containing `(#<task_id>)`
+and returns the exact range in its receipt. Explicit overrides are checked
+against GitHub before a round or gate exists (`unknown_commit`,
+`base_not_ancestor`). `supersedes_round` and optional `supersede_reason` replace
+an unreviewed mistaken round with a recorded reason; reviewed rounds return
+`round_not_supersedable`. See `docs/github-check-gates-agent-usage.md` for the
+range and retry behavior. The generated MCP and CLI schemas describe the same
+fields and refusals.
+
 The `den-tool board ...` shorthand follows the same rule automatically. In the
 absence of an explicit `DEN_BOARD_URL`, it translates Board flags to typed MCP
 operations and uses `DEN_MCP_URL`/`DEN_MCP_TOKEN`. `DEN_BOARD_URL` is reserved

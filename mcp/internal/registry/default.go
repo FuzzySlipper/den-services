@@ -374,6 +374,16 @@ func modernizeInputSchema(name string, schema Schema) Schema {
 				changed = true
 			}
 		}
+		if name == "request_review" {
+			properties["source"] = ObjectSchema(map[string]Schema{
+				"repository":  StringSchema("GitHub repository owner/name for managed source validation."),
+				"commit_sha":  StringSchema("Exact full SHA already resolved by the managed submitter."),
+				"base_commit": StringSchema("Exact full diff base SHA already resolved by the managed submitter."),
+			}, "repository", "commit_sha", "base_commit")
+			properties["supersedes_round"] = NullableIntegerSchema("Optional unreviewed round on the same task to close atomically with this replacement.")
+			properties["supersede_reason"] = NullableStringSchema("Optional correction reason recorded in the replacement request and the closed round.")
+			changed = true
+		}
 	case "post_worker_completion_packet":
 		for _, field := range []string{"base_commit", "head_commit", "audited_head_commit"} {
 			if _, exists := properties[field]; exists {
@@ -616,7 +626,7 @@ func reviewFinalizationTools() []ToolDefinition {
 func reviewSubmissionTools() []ToolDefinition {
 	return []ToolDefinition{{
 		Name:         "submit_task_for_review",
-		Description:  "Submit a task for review through crew-review, once per task after its commit is pushed. crew-review waits for the required GitHub checks and admits the reviewer itself; do not poll, watch the gate, or call request_review. A required check may pass on a later commit of ref that contains commit_sha, so several tasks can land in one push. [] records a passed no_required_checks state. Call again with the same arguments after re-running a failed check, or after fixing changes_requested findings (a new commit_sha or the same one starts a new round). Returns a durable submission receipt; Den stays authoritative for the round and never duplicates findings or finalization.",
+		Description:  "Submit a task for review after pushing. Omit commit_sha and base_commit to resolve the latest task commit on ref and the parent of its earliest task commit (subjects containing (#task_id)); the receipt records both exact SHAs. Explicit SHAs override derivation. GitHub rejects unknown_commit or base_not_ancestor before any round or gate. supersedes_round replaces an unreviewed round on the same task with a recorded reason; reviewed rounds return round_not_supersedable. crew-review owns required-check waiting and reviewer admission; do not poll, watch gates, or call request_review. A later containing commit of ref may satisfy required checks. [] records no_required_checks. Retry the same arguments after re-running a failed check or fixing changes_requested findings.",
 		Backend:      "crew-review",
 		Operation:    "submit_task_for_review",
 		WorkflowTier: WorkflowTierGreenPath,
@@ -624,16 +634,18 @@ func reviewSubmissionTools() []ToolDefinition {
 			"project_id": StringSchema("Exact Den project ID owning the task."),
 			"task_id":    IntegerSchema("Canonical Den task ID to submit for review."),
 			"repository": StringSchema("GitHub repository as owner/name."),
-			"commit_sha": StringSchema("Full 40-character commit SHA to review. The managed path never substitutes a branch head."),
+			"commit_sha": NullableStringSchema("Optional full 40-character review commit override. Omit to resolve the latest commit on the pushed ref whose subject contains (#task_id). The receipt pins the resolved SHA."),
 			"ref":        StringSchema("Branch or ref associated with the submitted commit."),
 			"required_checks": mustSchema(map[string]any{
 				"type": "array", "items": map[string]any{"type": "string", "minLength": 1},
 				"description": "Exact GitHub check-run names required before reviewer admission. Supply [] when no GitHub gate is required.",
 			}),
-			"base_commit":       NullableStringSchema("Optional full 40-character diff base commit."),
+			"base_commit":       NullableStringSchema("Optional full 40-character diff base override, checked for existence and ancestry. Omit to derive the parent of the earliest task commit in the submitted history; no match returns task_commits_not_found without creating a round or gate."),
+			"supersedes_round":  NullableIntegerSchema("Optional unreviewed earlier round on this task to close when recording the replacement. Rounds with findings or a verdict cannot be superseded."),
+			"supersede_reason":  NullableStringSchema("Optional reason for replacing supersedes_round; defaults to a corrected review submission and is recorded on the task thread."),
 			"review_summary_md": StringSchema("Markdown summary supplied to the Den review request."),
 			"reviewer":          NullableStringSchema("Optional reviewer identity; defaults to the configured review identity."),
-		}, "project_id", "task_id", "repository", "commit_sha", "ref", "required_checks", "review_summary_md"),
+		}, "project_id", "task_id", "repository", "ref", "required_checks", "review_summary_md"),
 	}}
 }
 

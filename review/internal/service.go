@@ -49,9 +49,14 @@ type GitHubCheckProvider interface {
 	CheckChange(ctx context.Context, query GitHubChangeQuery) (GitHubCheckResult, error)
 }
 
+type ReviewSourceValidator interface {
+	ValidateReviewSource(context.Context, ReviewSourceRequest) error
+}
+
 type ReviewStore interface {
 	Ping(ctx context.Context) error
 	CreateRound(ctx context.Context, round *ReviewRound) (*ReviewRound, error)
+	CreateRoundSuperseding(ctx context.Context, round *ReviewRound, supersedes int64, reason string) (*ReviewRound, error)
 	ListRounds(ctx context.Context, projectID string, taskID int64) ([]*ReviewRound, error)
 	GetRound(ctx context.Context, id int64) (*ReviewRound, error)
 	SetVerdict(ctx context.Context, id int64, verdict string, decidedBy string, notes string, decidedAt time.Time) (*ReviewRound, error)
@@ -334,11 +339,31 @@ func (s *Service) RequestReview(ctx context.Context, projectID string, taskID in
 	if err := s.projects.AssertWritable(ctx, task.ProjectID); err != nil {
 		return nil, err
 	}
+	if req.Source != nil {
+		if err := s.validateReviewSource(ctx, *req.Source); err != nil {
+			return nil, err
+		}
+	}
+	if req.SupersedesRound != nil {
+		if *req.SupersedesRound <= 0 {
+			return nil, validationError(errors.New("supersedes_round must be positive"), "invalid_supersedes_round", "supersedes_round", "review_request")
+		}
+		req.SupersedeReason = strings.TrimSpace(req.SupersedeReason)
+		if req.SupersedeReason == "" {
+			req.SupersedeReason = "Replaced by a corrected review submission."
+		}
+		req.Notes = strings.TrimSpace(req.Notes) + fmt.Sprintf("\n\nSupersedes review round %d: %s", *req.SupersedesRound, req.SupersedeReason)
+	}
 	requestedRound, err := roundFromRequest(task.ProjectID, taskID, req, s.clock().UTC())
 	if err != nil {
 		return nil, err
 	}
-	round, err := s.reusableOrNewReviewRound(ctx, requestedRound)
+	var round *ReviewRound
+	if req.SupersedesRound != nil {
+		round, err = s.store.CreateRoundSuperseding(ctx, requestedRound, *req.SupersedesRound, req.SupersedeReason)
+	} else {
+		round, err = s.reusableOrNewReviewRound(ctx, requestedRound)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -723,6 +748,9 @@ func (s *Service) SetVerdict(ctx context.Context, roundID int64, req SetReviewVe
 	round, err := s.store.GetRound(ctx, roundID)
 	if err != nil {
 		return nil, err
+	}
+	if round.Verdict == VerdictSuperseded {
+		return nil, conflict(ErrStaleReviewRound, "stale_review_round")
 	}
 	if _, err := s.validateTask(ctx, round.ProjectID, round.TaskID, TaskStatusReview); err != nil {
 		return nil, err

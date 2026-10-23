@@ -1160,7 +1160,7 @@ func TestClientCallsCrewReviewRESTSubmitTaskForReview(t *testing.T) {
 		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
 	}, ToolCall{
 		ToolName: "submit_task_for_review", Operation: "submit_task_for_review", RequestID: json.RawMessage(`1`),
-		Arguments: json.RawMessage(`{"project_id":"dsh-crew","task_id":7416,"repository":"owner/repo","commit_sha":"0123456789abcdef0123456789abcdef01234567","ref":"main","required_checks":["go test ./...","lint"],"base_commit":"fedcba9876543210fedcba9876543210fedcba98","review_summary_md":"Please review the implementation.","reviewer":"@reviewer"}`),
+		Arguments: json.RawMessage(`{"project_id":"dsh-crew","task_id":7416,"repository":"owner/repo","commit_sha":"0123456789abcdef0123456789abcdef01234567","ref":"main","required_checks":["go test ./...","lint"],"base_commit":"fedcba9876543210fedcba9876543210fedcba98","review_summary_md":"Please review the implementation.","reviewer":"@reviewer","supersedes_round":71,"supersede_reason":"Corrected range"}`),
 	})
 	if err != nil {
 		t.Fatalf("Call() error = %v", err)
@@ -1172,6 +1172,9 @@ func TestClientCallsCrewReviewRESTSubmitTaskForReview(t *testing.T) {
 		sawBody.Repository != "owner/repo" || sawBody.CommitSHA == "" || sawBody.Ref != "main" ||
 		len(sawBody.RequiredChecks) != 2 || sawBody.BaseCommit == "" || sawBody.ReviewSummary != "Please review the implementation." || sawBody.Reviewer != "@reviewer" {
 		t.Fatalf("path=%q body=%#v", sawPath, sawBody)
+	}
+	if sawBody.SupersedesRound == nil || *sawBody.SupersedesRound != 71 || sawBody.SupersedeReason != "Corrected range" {
+		t.Fatalf("supersession fields lost in transport: %#v", sawBody)
 	}
 }
 
@@ -1192,13 +1195,16 @@ func TestClientCallsCrewReviewRESTSubmitTaskForReviewWithoutRequiredChecks(t *te
 		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
 	}, ToolCall{
 		ToolName: "submit_task_for_review", Operation: "submit_task_for_review", RequestID: json.RawMessage(`1`),
-		Arguments: json.RawMessage(`{"project_id":"dsh-crew","task_id":7416,"repository":"owner/repo","commit_sha":"0123456789abcdef0123456789abcdef01234567","ref":"main","required_checks":[],"review_summary_md":"Please review the implementation."}`),
+		Arguments: json.RawMessage(`{"project_id":"dsh-crew","task_id":7416,"repository":"owner/repo","ref":"main","required_checks":[],"review_summary_md":"Please review the implementation."}`),
 	})
 	if err != nil || failure != nil {
 		t.Fatalf("Call() err=%v failure=%#v", err, failure)
 	}
 	if sawBody.RequiredChecks == nil || len(sawBody.RequiredChecks) != 0 {
 		t.Fatalf("required_checks = %#v, want explicit empty array", sawBody.RequiredChecks)
+	}
+	if sawBody.CommitSHA != "" || sawBody.BaseCommit != "" {
+		t.Fatalf("automatic source request gained a SHA: %#v", sawBody)
 	}
 }
 
