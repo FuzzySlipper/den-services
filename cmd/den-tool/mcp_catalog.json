@@ -1447,7 +1447,7 @@
             "type": "string"
           },
           "last_reviewed_at": {
-            "description": "RFC 3339 timestamp or YYYY-MM-DD date. Omit to keep the current value; a reviewed entry without one is stamped now.",
+            "description": "RFC 3339 timestamp or YYYY-MM-DD date of the last verification. Omit to keep the current value; a reviewed entry that has none is stamped with the current time. Pass a new date when you re-verify the entry.",
             "type": [
               "string",
               "null"

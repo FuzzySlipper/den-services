@@ -51,7 +51,7 @@ func (s *Service) StoreEntry(ctx context.Context, req StoreEntryRequest) (*Entry
 		SourceRefs:      req.SourceRefs == nil,
 		AccuracyNotes:   req.AccuracyNotes == nil,
 		ReplacementSlug: req.ReplacementSlug == nil,
-		LastReviewedAt:  lastReviewedAt == nil,
+		LastReviewedAt:  req.LastReviewedAt == nil,
 		ReviewDueAt:     req.ReviewDueAt == nil,
 	}
 	entry, err := NewEntry(NewEntryParams{

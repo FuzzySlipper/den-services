@@ -255,8 +255,47 @@ func TestServiceStoreKeepsOmittedMetadataAndClearsExplicitEmpty(t *testing.T) {
 	if len(cleared.SourceRefs()) != 0 || len(cleared.Aliases()) != 0 || cleared.AccuracyNotes() != "" || cleared.ReplacementSlug() != "" {
 		t.Fatalf("explicit empty values did not clear metadata: %#v", cleared)
 	}
-	if cleared.ReviewDueAt() == nil || !cleared.LastReviewedAt().Equal(fixedClock()()) {
+	if cleared.ReviewDueAt() == nil || cleared.LastReviewedAt() == nil || !cleared.LastReviewedAt().Equal(fixedClock()()) {
 		t.Fatalf("review dates after clear = due %v reviewed %v", cleared.ReviewDueAt(), cleared.LastReviewedAt())
+	}
+}
+
+func TestServiceStoreKeepsEarlierReviewTimeOnReviewedUpdate(t *testing.T) {
+	ctx := context.Background()
+	service := NewService(newMemoryStore(), fixedClock())
+	reviewed := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	if _, err := service.StoreEntry(ctx, StoreEntryRequest{
+		Slug: "reviewed-entry", Title: "Reviewed Entry", BodyMarkdown: "first body", Kind: KindReference,
+		Status: StatusReviewed, CurationState: CurationAgentCurated, LastReviewedAt: &reviewed,
+	}); err != nil {
+		t.Fatalf("StoreEntry(create) error = %v", err)
+	}
+	updated, err := service.StoreEntry(ctx, StoreEntryRequest{
+		Slug: "reviewed-entry", Title: "Reviewed Entry", BodyMarkdown: "edited body", Kind: KindReference,
+		Status: StatusReviewed, CurationState: CurationAgentCurated,
+	})
+	if err != nil {
+		t.Fatalf("StoreEntry(edit) error = %v", err)
+	}
+	if updated.LastReviewedAt() == nil || !updated.LastReviewedAt().Equal(reviewed) {
+		t.Fatalf("last_reviewed_at = %v, want kept %v", updated.LastReviewedAt(), reviewed)
+	}
+
+	if _, err := service.StoreEntry(ctx, StoreEntryRequest{
+		Slug: "draft-entry", Title: "Draft Entry", BodyMarkdown: "draft body", Kind: KindReference,
+		Status: StatusDraft, CurationState: CurationUnreviewedImport,
+	}); err != nil {
+		t.Fatalf("StoreEntry(draft) error = %v", err)
+	}
+	promoted, err := service.StoreEntry(ctx, StoreEntryRequest{
+		Slug: "draft-entry", Title: "Draft Entry", BodyMarkdown: "draft body", Kind: KindReference,
+		Status: StatusReviewed, CurationState: CurationAgentCurated,
+	})
+	if err != nil {
+		t.Fatalf("StoreEntry(promote) error = %v", err)
+	}
+	if promoted.LastReviewedAt() == nil || !promoted.LastReviewedAt().Equal(fixedClock()()) {
+		t.Fatalf("promoted last_reviewed_at = %v, want %v", promoted.LastReviewedAt(), fixedClock()())
 	}
 }
 

@@ -519,7 +519,7 @@ func knowledgeStoreMetadataProperties() map[string]any {
 		},
 		"accuracy_notes":   NullableStringSchema("What was verified and against which state. Omit to keep; pass an empty string to clear."),
 		"replacement_slug": NullableStringSchema("Slug of the entry that supersedes this one. Omit to keep; pass an empty string to clear."),
-		"last_reviewed_at": NullableStringSchema("RFC 3339 timestamp or YYYY-MM-DD date. Omit to keep the current value; a reviewed entry without one is stamped now."),
+		"last_reviewed_at": NullableStringSchema("RFC 3339 timestamp or YYYY-MM-DD date of the last verification. Omit to keep the current value; a reviewed entry that has none is stamped with the current time. Pass a new date when you re-verify the entry."),
 		"review_due_at":    NullableStringSchema("RFC 3339 timestamp or YYYY-MM-DD date when the entry should next be re-verified. Omit to keep the current value."),
 	}
 }

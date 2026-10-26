@@ -229,7 +229,9 @@ func NewEntry(params NewEntryParams) (*Entry, error) {
 }
 
 // PreservedFields names the optional metadata that an upsert copies from the
-// current entry because the caller did not supply it.
+// current entry because the caller did not supply it. A preserved
+// LastReviewedAt is copied only when the current entry has one, so a newly
+// reviewed entry keeps the review time the service stamped.
 type PreservedFields struct {
 	Aliases         bool
 	SourceRefs      bool
@@ -254,7 +256,7 @@ func (e *Entry) withPreserved(current *Entry, keep PreservedFields) *Entry {
 	if keep.ReplacementSlug {
 		merged.replacementSlug = current.ReplacementSlug()
 	}
-	if keep.LastReviewedAt {
+	if keep.LastReviewedAt && current.LastReviewedAt() != nil {
 		merged.lastReviewedAt = current.LastReviewedAt()
 	}
 	if keep.ReviewDueAt {
