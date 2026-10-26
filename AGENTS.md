@@ -11,7 +11,7 @@ Before making design or implementation changes, read the project-specific guidan
 - Den document `den-services/go-codestyle` — Go style and review rules.
 - Den document `den-services/service-registry` — current service registry.
 
-If Den MCP tools are available, use `mcp_den_get_document(project_id="den-services", slug="...")` to read those documents. If they are not available, ask the planner/user for current copies before changing architecture.
+Read those documents with the Den MCP `get_document` tool (`project_id="den-services"`) or `den-tool den get_document`. If neither is available, ask the user for current copies before changing architecture.
 
 ## Operating stance
 
@@ -29,3 +29,7 @@ No substantial service code should be considered ready without:
 - integration or haunt-regression tests when lane/cutover behavior is involved;
 - `gofumpt`/`go test ./...` evidence once Go modules exist;
 - Den task or document evidence for architectural decisions.
+
+## Deploying
+
+A `looks_good` review of a den-services task deploys the reviewed commit by itself: crew-review runs `scripts/deploy.sh`, which redeploys only the services that changed and posts the result on the task thread. Run `scripts/deploy.sh` yourself only to retry a failed deploy (`--dry-run` shows what would change). See `deployment/proxmox.md`.
