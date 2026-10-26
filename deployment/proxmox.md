@@ -17,6 +17,18 @@ Services on den-k8 remain there. Crew review uses its existing reverse SSH
 forward to port 8413 on the new host; it is not a service moved into the LXC.
 Den-srv's Go services and PostgreSQL cluster are stopped with autostart disabled.
 
+## Deploying
+
+Deploy from den-agents with `scripts/deploy.sh` (default: `origin/main`, or
+`--commit SHA`). It pushes the commit into `/data/services/den-services` over
+`~/server-access/den-services`, rebuilds and applies migrations, and redeploys
+only the services whose `/version` commit is behind and whose code changed,
+each through `scripts/den-services-deploy.sh` (build, test, restart, health,
+rollback). `--dry-run` lists what would change; `--all` redeploys every
+registered service. The host checkout cannot fetch from GitHub, so do not run
+`git pull` there. crew-review runs this script after a `looks_good` verdict on a
+den-services task, so a reviewed change normally deploys itself.
+
 Verification included all service health/version checks, matching database
 counts, MCP reads, an artifact upload/read/delete, browser task navigation,
 and isolated PostgreSQL recovery from the first full LXC backup.
