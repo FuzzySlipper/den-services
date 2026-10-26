@@ -69,21 +69,24 @@ echo "deploy_head=${head}"
 # Migrations run first so new service code finds its schema. The runner is
 # rebuilt every time because the migration files are embedded in it.
 migrate_bin="${repo}/bin/den-services-migrate"
+# Called as "if ! run_migrations", where errexit is off, so every step checks
+# its own status.
 run_migrations() {
-  install -d -o "${owner}" -m 0755 "${repo}/bin"
-  go build -trimpath -o "${migrate_bin}.new" ./migration/cmd/migrate
-  chown "${owner}" "${migrate_bin}.new"
-  mv "${migrate_bin}.new" "${migrate_bin}"
+  install -d -o "${owner}" -m 0755 "${repo}/bin" || return 1
+  go build -trimpath -o "${migrate_bin}.new" ./migration/cmd/migrate || return 1
+  chown "${owner}" "${migrate_bin}.new" || return 1
+  mv "${migrate_bin}.new" "${migrate_bin}" || return 1
   (
     set -a
     # shellcheck disable=SC1091
-    . /etc/den-services/postgresql.env
+    . /etc/den-services/postgresql.env || exit 1
     set +a
-    status="$("${migrate_bin}" status)"
+    status="$("${migrate_bin}" status)" || exit 1
+    grep -q 'pending=' <<<"${status}" || { echo "unexpected migration status: ${status}" >&2; exit 1; }
     if grep -q 'pending=[1-9]' <<<"${status}"; then
       grep 'pending=[1-9]' <<<"${status}"
-      "${migrate_bin}" up
-      status="$("${migrate_bin}" status)"
+      "${migrate_bin}" up || exit 1
+      status="$("${migrate_bin}" status)" || exit 1
       if grep -q 'pending=[1-9]' <<<"${status}"; then
         echo "${status}" >&2
         exit 1
@@ -92,12 +95,12 @@ run_migrations() {
     else
       echo "migrations: none pending"
     fi
-  )
+  ) || return 1
 }
 if [[ "${dry_run}" == "true" ]]; then
   echo "would rebuild the migration runner and apply pending migrations"
-else
-  run_migrations || die "migrations failed; no service was deployed"
+elif ! run_migrations; then
+  die "migrations failed; no service was deployed"
 fi
 
 # One "name module version_url unit" line per registered service.

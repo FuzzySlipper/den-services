@@ -4,10 +4,11 @@
 #   scripts/deploy.sh [--commit SHA] [--repo PATH] [--all] [--dry-run]
 #
 # Pushes the commit (default: origin/main) over SSH into the host checkout,
-# then runs that commit's scripts/deploy-host.sh there: fast-forward, rebuild
-# and apply migrations, and redeploy only the services whose code changed
-# since the commit they are running. Afterwards den-tool on this machine is
-# rebuilt when its catalog changed.
+# then runs that commit's scripts/deploy-host.sh there, detached from the SSH
+# session: fast-forward, rebuild and apply migrations, and redeploy only the
+# services whose code changed since the commit they are running. Afterwards
+# den-tool on this machine is rebuilt when its catalog changed since the commit
+# it was last built from.
 #
 # Deploy only reviewed commits: crew-review runs this after looks_good.
 #
@@ -52,23 +53,35 @@ GIT_SSH_COMMAND="${ssh_transport[*]}" git -C "${repo}" push --quiet \
   --receive-pack="sudo -u \$(stat -c %U ${host_repo}) git-receive-pack" \
   "${ssh_host}:${host_repo}" "+${commit}:refs/deploy/target"
 
-host_script="/tmp/den-services-deploy-host.$$.sh"
+# The host step runs detached from this SSH session, so a dropped connection
+# or a stopped caller cannot interrupt a deploy midway; this side waits for it.
+run_id="den-services-deploy.$$.$(date +%s)"
+host_script="/tmp/${run_id}.sh"
 git -C "${repo}" show "${commit}:scripts/deploy-host.sh" | remote "cat > ${host_script}"
-set +e
-output="$(remote "bash ${host_script} ${commit} --repo ${host_repo} ${host_args[*]:-} </dev/null; status=\$?; rm -f ${host_script}; exit \$status" 2>&1)"
-status=$?
-set -e
+remote "setsid bash -c 'bash ${host_script} ${commit} --repo ${host_repo} ${host_args[*]:-} >/tmp/${run_id}.log 2>&1; echo \$? >/tmp/${run_id}.status' </dev/null >/dev/null 2>&1 &"
+until remote "test -f /tmp/${run_id}.status"; do sleep 5; done
+output="$(remote "cat /tmp/${run_id}.log")"
+status="$(remote "cat /tmp/${run_id}.status; rm -f ${host_script} /tmp/${run_id}.status")"
 printf '%s\n' "${output}"
-[[ ${status} -eq 0 ]] || { echo "deploy: host step failed (exit ${status})" >&2; exit "${status}"; }
+[[ "${status}" == "0" ]] || { echo "deploy: host step failed (exit ${status}); log /tmp/${run_id}.log on the host" >&2; exit 1; }
+remote "rm -f /tmp/${run_id}.log"
+[[ " ${host_args[*]:-} " == *" --dry-run "* ]] && exit 0
 
-# den-tool embeds the MCP catalog; rebuild it here when that changed.
-previous_head="$(sed -n 's/^previous_head=//p' <<<"${output}")"
-if [[ " ${host_args[*]:-} " != *" --dry-run "* && -n "${previous_head}" ]] &&
-  [[ -n "$(git -C "${repo}" diff --name-only "${previous_head}" "${commit}" -- cmd/den-tool mcp/internal/registry mcp/routes.example.yaml)" ]]; then
+# den-tool embeds the MCP catalog. Rebuild it when the catalog changed since
+# the commit it was last built from (recorded beside it), or when that is
+# unknown, so a failed run followed by a retry still updates it.
+den_tool="${HOME}/.local/bin/den-tool"
+built_from_file="${den_tool}.built-from"
+built_from="$(cat "${built_from_file}" 2>/dev/null || true)"
+catalog_paths=(cmd/den-tool mcp/internal/registry mcp/routes.example.yaml)
+if [[ -z "${built_from}" ]] || ! git -C "${repo}" cat-file -e "${built_from}^{commit}" 2>/dev/null ||
+  [[ -n "$(git -C "${repo}" diff --name-only "${built_from}" "${commit}" -- "${catalog_paths[@]}")" ]]; then
   install -d "${HOME}/.local/bin"
   tmp="$(mktemp "${HOME}/.local/bin/.den-tool.XXXXXX")"
-  remote "cd ${host_repo} && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=${host_repo} go build -o /tmp/den-tool.$$ ./cmd/den-tool && cat /tmp/den-tool.$$ && rm -f /tmp/den-tool.$$" >"${tmp}"
+  remote "cd ${host_repo} && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=${host_repo} go build -o /tmp/${run_id}.den-tool ./cmd/den-tool && cat /tmp/${run_id}.den-tool; status=\$?; rm -f /tmp/${run_id}.den-tool; exit \$status" >"${tmp}"
   chmod 0755 "${tmp}"
-  "${tmp}" --version >/dev/null && mv "${tmp}" "${HOME}/.local/bin/den-tool"
-  echo "den-tool rebuilt for the new MCP catalog"
+  "${tmp}" --version >/dev/null
+  mv "${tmp}" "${den_tool}"
+  printf '%s\n' "${commit}" >"${built_from_file}"
+  echo "den-tool rebuilt from ${commit:0:12}"
 fi
