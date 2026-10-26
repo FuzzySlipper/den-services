@@ -211,3 +211,68 @@ func fixedClock() func() time.Time {
 		return time.Date(2026, 6, 29, 12, 0, 0, 0, time.UTC)
 	}
 }
+
+func TestServiceStoreKeepsOmittedMetadataAndClearsExplicitEmpty(t *testing.T) {
+	ctx := context.Background()
+	service := NewService(newMemoryStore(), fixedClock())
+	reviewDue := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+	refs := []SourceRef{{SourceKind: "document", SourceID: "_global/den-operating-contract"}}
+	aliases := []string{"topology"}
+	notes := "Checked against the live hosts."
+	replacement := "den-service-topology"
+	if _, err := service.StoreEntry(ctx, StoreEntryRequest{
+		Slug: "metadata-entry", Title: "Metadata Entry", BodyMarkdown: "first body", Kind: KindReference,
+		Status: StatusReviewed, CurationState: CurationAgentCurated, Tags: []string{"meta"},
+		Aliases: &aliases, SourceRefs: &refs, AccuracyNotes: &notes, ReplacementSlug: &replacement, ReviewDueAt: &reviewDue,
+	}); err != nil {
+		t.Fatalf("StoreEntry(create) error = %v", err)
+	}
+
+	kept, err := service.StoreEntry(ctx, StoreEntryRequest{
+		Slug: "metadata-entry", Title: "Metadata Entry", BodyMarkdown: "second body", Kind: KindReference,
+		Status: StatusNeedsReview, CurationState: CurationNeedsRecheck, Tags: []string{"meta"},
+	})
+	if err != nil {
+		t.Fatalf("StoreEntry(body only) error = %v", err)
+	}
+	if kept.BodyMarkdown() != "second body" || len(kept.SourceRefs()) != 1 || kept.SourceRefs()[0].SourceID != "_global/den-operating-contract" ||
+		len(kept.Aliases()) != 1 || kept.AccuracyNotes() != notes || kept.ReplacementSlug() != replacement ||
+		kept.ReviewDueAt() == nil || !kept.ReviewDueAt().Equal(reviewDue) || kept.LastReviewedAt() == nil {
+		t.Fatalf("omitted metadata was not kept: %#v", kept)
+	}
+
+	empty := ""
+	noRefs := []SourceRef{}
+	noAliases := []string{}
+	cleared, err := service.StoreEntry(ctx, StoreEntryRequest{
+		Slug: "metadata-entry", Title: "Metadata Entry", BodyMarkdown: "third body", Kind: KindReference,
+		Status: StatusReviewed, CurationState: CurationAgentCurated, Tags: []string{"meta"},
+		Aliases: &noAliases, SourceRefs: &noRefs, AccuracyNotes: &empty, ReplacementSlug: &empty,
+	})
+	if err != nil {
+		t.Fatalf("StoreEntry(clear) error = %v", err)
+	}
+	if len(cleared.SourceRefs()) != 0 || len(cleared.Aliases()) != 0 || cleared.AccuracyNotes() != "" || cleared.ReplacementSlug() != "" {
+		t.Fatalf("explicit empty values did not clear metadata: %#v", cleared)
+	}
+	if cleared.ReviewDueAt() == nil || !cleared.LastReviewedAt().Equal(fixedClock()()) {
+		t.Fatalf("review dates after clear = due %v reviewed %v", cleared.ReviewDueAt(), cleared.LastReviewedAt())
+	}
+}
+
+func TestStoreEntryRequestDistinguishesOmittedFromEmptyMetadata(t *testing.T) {
+	var omitted StoreEntryRequest
+	if err := json.Unmarshal([]byte(`{"slug":"s","title":"t","body_markdown":"b"}`), &omitted); err != nil {
+		t.Fatalf("decode omitted: %v", err)
+	}
+	if omitted.SourceRefs != nil || omitted.Aliases != nil || omitted.AccuracyNotes != nil || omitted.ReplacementSlug != nil || omitted.ReviewDueAt != nil {
+		t.Fatalf("omitted metadata decoded as present: %#v", omitted)
+	}
+	var empty StoreEntryRequest
+	if err := json.Unmarshal([]byte(`{"slug":"s","title":"t","body_markdown":"b","source_refs":[],"aliases":[],"accuracy_notes":"","replacement_slug":""}`), &empty); err != nil {
+		t.Fatalf("decode empty: %v", err)
+	}
+	if empty.SourceRefs == nil || empty.Aliases == nil || empty.AccuracyNotes == nil || empty.ReplacementSlug == nil {
+		t.Fatalf("explicit empty metadata decoded as omitted: %#v", empty)
+	}
+}

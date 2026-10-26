@@ -1,5 +1,5 @@
 {
-  "revision": "mcp-catalog-v5",
+  "revision": "mcp-catalog-v6",
   "tools": [
     {
       "name": "add_agent_guidance_entry",
@@ -1378,13 +1378,30 @@
     },
     {
       "name": "den_knowledge_store",
-      "description": "Create or update a knowledge entry. Only planner and runner profiles can upsert knowledge. Global scope — no project_id required. Use curation_state='agent_curated' with status='reviewed' for verified content, or 'unreviewed_import' with status='draft' for imported candidates awaiting review. Tags are managed as a separate table — pass the full tag set on each upsert (replace semantics). Revisions are automatically created on updates.",
+      "description": "Create or update a knowledge entry. Only planner and runner profiles can upsert knowledge. Global scope — no project_id required. Use curation_state='agent_curated' with status='reviewed' for verified content, or 'unreviewed_import' with status='draft' for imported candidates awaiting review. Tags and audience are replaced on every call; pass the full sets. Aliases, source_refs, accuracy_notes, replacement_slug, last_reviewed_at and review_due_at keep their current values when omitted; pass an empty list or string to clear one. Revisions are automatically created on updates.",
       "backend": "knowledge",
       "operation": "den_knowledge_store",
       "workflow_tier": "operator",
       "risk": "write",
       "input_schema": {
         "properties": {
+          "accuracy_notes": {
+            "description": "What was verified and against which state. Omit to keep; pass an empty string to clear.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "aliases": {
+            "description": "Alternative names for the entry. Omit to keep the current aliases; pass [] to clear them.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "audience": {
             "default": null,
             "description": "JSON array of audience labels.",
@@ -1429,9 +1446,70 @@
             "description": "Kind: concept, reference, glossary, convention, service_map, tool_notes, gotcha, architecture_note, migration_note.",
             "type": "string"
           },
+          "last_reviewed_at": {
+            "description": "RFC 3339 timestamp or YYYY-MM-DD date. Omit to keep the current value; a reviewed entry without one is stamped now.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replacement_slug": {
+            "description": "Slug of the entry that supersedes this one. Omit to keep; pass an empty string to clear.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "review_due_at": {
+            "description": "RFC 3339 timestamp or YYYY-MM-DD date when the entry should next be re-verified. Omit to keep the current value.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "slug": {
             "description": "Unique slug, e.g. 'den-service-topology'.",
             "type": "string"
+          },
+          "source_refs": {
+            "description": "Where the entry's claims come from (document, task, repo path, URL). Omit to keep the current refs; pass [] to clear them.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "message_id": {
+                  "type": "integer"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "project_id": {
+                  "type": "string"
+                },
+                "source_id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "source_kind": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "task_id": {
+                  "type": "integer"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source_kind",
+                "source_id"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "status": {
             "default": "draft",

@@ -44,7 +44,7 @@ func (s *Store) DeleteEntry(ctx context.Context, slug string) error {
 	return nil
 }
 
-func (s *Store) UpsertEntry(ctx context.Context, entry *Entry, changeNote string) (*Entry, error) {
+func (s *Store) UpsertEntry(ctx context.Context, entry *Entry, keep PreservedFields, changeNote string) (*Entry, error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("beginning knowledge upsert: %w", err)
@@ -63,6 +63,7 @@ func (s *Store) UpsertEntry(ctx context.Context, entry *Entry, changeNote string
 		if err := insertRevision(ctx, tx, existing, entry.UpdatedBy(), changeNote); err != nil {
 			return nil, err
 		}
+		entry = entry.withPreserved(existing, keep)
 	case errors.Is(err, pgx.ErrNoRows):
 	default:
 		return nil, fmt.Errorf("loading existing knowledge entry: %w", err)

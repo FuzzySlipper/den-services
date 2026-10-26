@@ -362,6 +362,11 @@ func modernizeInputSchema(name string, schema Schema) Schema {
 			"description": "Include archived Knowledge entries.",
 		}
 		changed = true
+	case "den_knowledge_store":
+		for field, schema := range knowledgeStoreMetadataProperties() {
+			properties[field] = schema
+		}
+		changed = true
 	case "create_review_round", "request_review":
 		for _, field := range []string{
 			"base_commit", "head_commit", "last_reviewed_head_commit", "commits_since_last_review",
@@ -478,10 +483,44 @@ func modernizeDescription(name, description string) string {
 		return "Mark explicit user notification IDs as read for an agent identity. For scoped operations, use mark_project_notifications_read or mark_task_notifications_read."
 	case "get_document_discussion":
 		return "Read discussion threads and comments for a document without creating state. Use ensure_document_discussion only when a default thread must exist."
+	case "den_knowledge_store":
+		return "Create or update a knowledge entry. Only planner and runner profiles can upsert knowledge. Global scope — no project_id required. Use curation_state='agent_curated' with status='reviewed' for verified content, or 'unreviewed_import' with status='draft' for imported candidates awaiting review. Tags and audience are replaced on every call; pass the full sets. Aliases, source_refs, accuracy_notes, replacement_slug, last_reviewed_at and review_due_at keep their current values when omitted; pass an empty list or string to clear one. Revisions are automatically created on updates."
 	case "store_document":
 		return "Create or update a document. The full markdown content is persisted; the MCP result returns bounded metadata, byte count, SHA-256, and a preview so large writes are not mistaken for clipped storage."
 	default:
 		return description
+	}
+}
+
+func knowledgeStoreMetadataProperties() map[string]any {
+	return map[string]any{
+		"aliases": map[string]any{
+			"type":        []string{"array", "null"},
+			"items":       map[string]any{"type": "string"},
+			"description": "Alternative names for the entry. Omit to keep the current aliases; pass [] to clear them.",
+		},
+		"source_refs": map[string]any{
+			"type": []string{"array", "null"},
+			"items": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"properties": map[string]any{
+					"source_kind": map[string]any{"type": "string", "minLength": 1},
+					"source_id":   map[string]any{"type": "string", "minLength": 1},
+					"project_id":  map[string]any{"type": "string"},
+					"task_id":     map[string]any{"type": "integer"},
+					"message_id":  map[string]any{"type": "integer"},
+					"url":         map[string]any{"type": "string"},
+					"note":        map[string]any{"type": "string"},
+				},
+				"required": []string{"source_kind", "source_id"},
+			},
+			"description": "Where the entry's claims come from (document, task, repo path, URL). Omit to keep the current refs; pass [] to clear them.",
+		},
+		"accuracy_notes":   NullableStringSchema("What was verified and against which state. Omit to keep; pass an empty string to clear."),
+		"replacement_slug": NullableStringSchema("Slug of the entry that supersedes this one. Omit to keep; pass an empty string to clear."),
+		"last_reviewed_at": NullableStringSchema("RFC 3339 timestamp or YYYY-MM-DD date. Omit to keep the current value; a reviewed entry without one is stamped now."),
+		"review_due_at":    NullableStringSchema("RFC 3339 timestamp or YYYY-MM-DD date when the entry should next be re-verified. Omit to keep the current value."),
 	}
 }
 

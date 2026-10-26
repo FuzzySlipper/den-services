@@ -7,24 +7,27 @@ type DeleteEntryResponse struct {
 	Slug    string `json:"slug"`
 }
 
+// StoreEntryRequest creates or replaces an entry. The optional metadata
+// (aliases, source refs, accuracy notes, replacement, review dates) keeps its
+// current value when omitted; an explicit empty list or string clears it.
 type StoreEntryRequest struct {
-	Slug            string      `json:"slug"`
-	Title           string      `json:"title"`
-	BodyMarkdown    string      `json:"body_markdown"`
-	Kind            string      `json:"kind,omitempty"`
-	Status          string      `json:"status,omitempty"`
-	CurationState   string      `json:"curation_state,omitempty"`
-	Summary         string      `json:"summary,omitempty"`
-	Tags            []string    `json:"tags,omitempty"`
-	Audience        []string    `json:"audience,omitempty"`
-	Aliases         []string    `json:"aliases,omitempty"`
-	SourceRefs      []SourceRef `json:"source_refs,omitempty"`
-	AccuracyNotes   string      `json:"accuracy_notes,omitempty"`
-	ReplacementSlug string      `json:"replacement_slug,omitempty"`
-	LastReviewedAt  *time.Time  `json:"last_reviewed_at,omitempty"`
-	ReviewDueAt     *time.Time  `json:"review_due_at,omitempty"`
-	ChangedBy       string      `json:"changed_by,omitempty"`
-	ChangeNote      string      `json:"change_note,omitempty"`
+	Slug            string       `json:"slug"`
+	Title           string       `json:"title"`
+	BodyMarkdown    string       `json:"body_markdown"`
+	Kind            string       `json:"kind,omitempty"`
+	Status          string       `json:"status,omitempty"`
+	CurationState   string       `json:"curation_state,omitempty"`
+	Summary         string       `json:"summary,omitempty"`
+	Tags            []string     `json:"tags,omitempty"`
+	Audience        []string     `json:"audience,omitempty"`
+	Aliases         *[]string    `json:"aliases,omitempty"`
+	SourceRefs      *[]SourceRef `json:"source_refs,omitempty"`
+	AccuracyNotes   *string      `json:"accuracy_notes,omitempty"`
+	ReplacementSlug *string      `json:"replacement_slug,omitempty"`
+	LastReviewedAt  *time.Time   `json:"last_reviewed_at,omitempty"`
+	ReviewDueAt     *time.Time   `json:"review_due_at,omitempty"`
+	ChangedBy       string       `json:"changed_by,omitempty"`
+	ChangeNote      string       `json:"change_note,omitempty"`
 }
 
 type EntryLinkRequest struct {

@@ -2,7 +2,7 @@
 
 ## Status
 
-As of MCP catalog revision `mcp-catalog-v5`, `den-tool` maps every supported,
+As of MCP catalog revision `mcp-catalog-v6`, `den-tool` maps every supported,
 non-retired MCP operation, including long-tail operations omitted from ordinary
 MCP discovery. The checked-in machine-readable inventory is
 `cmd/den-tool/mcp_catalog.json`; it contains 94 operations and their exact input

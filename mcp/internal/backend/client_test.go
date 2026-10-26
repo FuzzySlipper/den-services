@@ -1500,6 +1500,84 @@ func TestClientCallsKnowledgeRESTStoreEntry(t *testing.T) {
 	}
 }
 
+func TestClientKnowledgeStoreSendsMetadataOnlyWhenSupplied(t *testing.T) {
+	var bodies []map[string]json.RawMessage
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		bodies = append(bodies, body)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":12,"slug":"mcp-routing","title":"MCP Routing","body_markdown":"body","kind":"reference","status":"reviewed","curation_state":"agent_curated"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	route := knowledgeRouteForTest("den_knowledge_store", http.MethodPost, "/v1/knowledge/entries")
+	call := func(arguments string) (*Failure, error) {
+		_, failure, err := client.Call(context.Background(), testBackend("knowledge", server.URL), route, ToolCall{
+			ToolName: "den_knowledge_store", Operation: "den_knowledge_store", RequestID: json.RawMessage(`1`), Arguments: json.RawMessage(arguments),
+		})
+		return failure, err
+	}
+	if failure, err := call(`{"slug":"mcp-routing","title":"MCP Routing","body_markdown":"body","status":"reviewed",` +
+		`"source_refs":"[{\"source_kind\":\"document\",\"source_id\":\"_global/den-operating-contract\"}]",` +
+		`"aliases":[],"accuracy_notes":" checked ","replacement_slug":"","review_due_at":"2026-11-24","last_reviewed_at":"2026-10-25T12:00:00Z"}`); err != nil || failure != nil {
+		t.Fatalf("Call(metadata) err=%v failure=%#v", err, failure)
+	}
+	if failure, err := call(`{"slug":"mcp-routing","title":"MCP Routing","body_markdown":"body","status":"reviewed","aliases":null}`); err != nil || failure != nil {
+		t.Fatalf("Call(body only) err=%v failure=%#v", err, failure)
+	}
+	if len(bodies) != 2 {
+		t.Fatalf("backend saw %d requests, want 2", len(bodies))
+	}
+	supplied := bodies[0]
+	for field, want := range map[string]string{
+		"source_refs":      `[{"source_kind":"document","source_id":"_global/den-operating-contract"}]`,
+		"aliases":          `[]`,
+		"accuracy_notes":   `"checked"`,
+		"replacement_slug": `""`,
+		"review_due_at":    `"2026-11-24T00:00:00Z"`,
+		"last_reviewed_at": `"2026-10-25T12:00:00Z"`,
+	} {
+		if got := string(supplied[field]); got != want {
+			t.Fatalf("%s = %s, want %s", field, got, want)
+		}
+	}
+	for _, field := range []string{"source_refs", "aliases", "accuracy_notes", "replacement_slug", "review_due_at", "last_reviewed_at"} {
+		if value, ok := bodies[1][field]; ok {
+			t.Fatalf("omitted %s was sent as %s", field, value)
+		}
+	}
+}
+
+func TestClientKnowledgeStoreRejectsInvalidMetadataBeforeBackend(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	route := knowledgeRouteForTest("den_knowledge_store", http.MethodPost, "/v1/knowledge/entries")
+	for _, arguments := range []string{
+		`{"slug":"s","title":"t","body_markdown":"b","review_due_at":"next month"}`,
+		`{"slug":"s","title":"t","body_markdown":"b","source_refs":[{"source_kind":"document"}]}`,
+	} {
+		_, failure, err := client.Call(context.Background(), testBackend("knowledge", server.URL), route, ToolCall{
+			ToolName: "den_knowledge_store", Operation: "den_knowledge_store", RequestID: json.RawMessage(`1`), Arguments: json.RawMessage(arguments),
+		})
+		if err == nil && failure == nil {
+			t.Fatalf("Call(%s) accepted invalid metadata", arguments)
+		}
+	}
+	if requests != 0 {
+		t.Fatalf("backend saw %d requests, want 0", requests)
+	}
+}
+
 func TestClientCallsKnowledgeRESTSearchAndGuide(t *testing.T) {
 	var sawSearchBody knowledgeSearchBody
 	var sawGuideBody knowledgeGuideBody

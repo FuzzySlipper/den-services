@@ -228,6 +228,41 @@ func NewEntry(params NewEntryParams) (*Entry, error) {
 	}, nil
 }
 
+// PreservedFields names the optional metadata that an upsert copies from the
+// current entry because the caller did not supply it.
+type PreservedFields struct {
+	Aliases         bool
+	SourceRefs      bool
+	AccuracyNotes   bool
+	ReplacementSlug bool
+	LastReviewedAt  bool
+	ReviewDueAt     bool
+}
+
+// withPreserved returns a copy of e that takes each preserved field from current.
+func (e *Entry) withPreserved(current *Entry, keep PreservedFields) *Entry {
+	merged := *e
+	if keep.Aliases {
+		merged.aliases = current.Aliases()
+	}
+	if keep.SourceRefs {
+		merged.sourceRefs = current.SourceRefs()
+	}
+	if keep.AccuracyNotes {
+		merged.accuracyNotes = current.AccuracyNotes()
+	}
+	if keep.ReplacementSlug {
+		merged.replacementSlug = current.ReplacementSlug()
+	}
+	if keep.LastReviewedAt {
+		merged.lastReviewedAt = current.LastReviewedAt()
+	}
+	if keep.ReviewDueAt {
+		merged.reviewDueAt = current.ReviewDueAt()
+	}
+	return &merged
+}
+
 func (e *Entry) ID() int64                  { return e.id }
 func (e *Entry) Slug() string               { return e.slug }
 func (e *Entry) Title() string              { return e.title }

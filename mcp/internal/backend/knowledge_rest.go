@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"den-services/mcp/internal/config"
 )
@@ -24,6 +25,12 @@ type knowledgeToolArguments struct {
 	Summary           string          `json:"summary"`
 	Tags              json.RawMessage `json:"tags"`
 	Audience          json.RawMessage `json:"audience"`
+	Aliases           json.RawMessage `json:"aliases"`
+	SourceRefs        json.RawMessage `json:"source_refs"`
+	AccuracyNotes     *string         `json:"accuracy_notes"`
+	ReplacementSlug   *string         `json:"replacement_slug"`
+	LastReviewedAt    *string         `json:"last_reviewed_at"`
+	ReviewDueAt       *string         `json:"review_due_at"`
 	Query             string          `json:"query"`
 	Question          string          `json:"question"`
 	RequiredTags      json.RawMessage `json:"required_tags"`
@@ -46,18 +53,36 @@ type knowledgeToolArguments struct {
 	MapEntries        json.RawMessage `json:"entries"`
 }
 
+// knowledgeStoreBody leaves optional metadata out when the caller omitted it,
+// so the knowledge service keeps the entry's current value.
 type knowledgeStoreBody struct {
-	Slug          string   `json:"slug"`
-	Title         string   `json:"title"`
-	BodyMarkdown  string   `json:"body_markdown"`
-	Kind          string   `json:"kind,omitempty"`
-	Status        string   `json:"status,omitempty"`
-	CurationState string   `json:"curation_state,omitempty"`
-	Summary       string   `json:"summary,omitempty"`
-	Tags          []string `json:"tags,omitempty"`
-	Audience      []string `json:"audience,omitempty"`
-	ChangedBy     string   `json:"changed_by,omitempty"`
-	ChangeNote    string   `json:"change_note,omitempty"`
+	Slug            string                `json:"slug"`
+	Title           string                `json:"title"`
+	BodyMarkdown    string                `json:"body_markdown"`
+	Kind            string                `json:"kind,omitempty"`
+	Status          string                `json:"status,omitempty"`
+	CurationState   string                `json:"curation_state,omitempty"`
+	Summary         string                `json:"summary,omitempty"`
+	Tags            []string              `json:"tags,omitempty"`
+	Audience        []string              `json:"audience,omitempty"`
+	Aliases         *[]string             `json:"aliases,omitempty"`
+	SourceRefs      *[]knowledgeSourceRef `json:"source_refs,omitempty"`
+	AccuracyNotes   *string               `json:"accuracy_notes,omitempty"`
+	ReplacementSlug *string               `json:"replacement_slug,omitempty"`
+	LastReviewedAt  *time.Time            `json:"last_reviewed_at,omitempty"`
+	ReviewDueAt     *time.Time            `json:"review_due_at,omitempty"`
+	ChangedBy       string                `json:"changed_by,omitempty"`
+	ChangeNote      string                `json:"change_note,omitempty"`
+}
+
+type knowledgeSourceRef struct {
+	SourceKind string `json:"source_kind"`
+	SourceID   string `json:"source_id"`
+	ProjectID  string `json:"project_id,omitempty"`
+	TaskID     *int64 `json:"task_id,omitempty"`
+	MessageID  *int64 `json:"message_id,omitempty"`
+	URL        string `json:"url,omitempty"`
+	Note       string `json:"note,omitempty"`
 }
 
 type knowledgeSearchBody struct {
@@ -197,12 +222,26 @@ func knowledgeRESTRequestBody(operation string, arguments knowledgeToolArguments
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(knowledgeStoreBody{
+		body := knowledgeStoreBody{
 			Slug: strings.TrimSpace(arguments.Slug), Title: strings.TrimSpace(arguments.Title), BodyMarkdown: arguments.BodyMarkdown,
 			Kind: strings.TrimSpace(arguments.Kind), Status: strings.TrimSpace(arguments.Status), CurationState: strings.TrimSpace(arguments.CurationState),
 			Summary: strings.TrimSpace(arguments.Summary), Tags: tags, Audience: audience,
+			AccuracyNotes: trimmedOptional(arguments.AccuracyNotes), ReplacementSlug: trimmedOptional(arguments.ReplacementSlug),
 			ChangedBy: strings.TrimSpace(arguments.ChangedBy), ChangeNote: strings.TrimSpace(arguments.ChangeNote),
-		})
+		}
+		if body.Aliases, err = optionalStringList(arguments.Aliases); err != nil {
+			return nil, err
+		}
+		if body.SourceRefs, err = optionalKnowledgeSourceRefs(arguments.SourceRefs); err != nil {
+			return nil, err
+		}
+		if body.LastReviewedAt, err = optionalKnowledgeTime("last_reviewed_at", arguments.LastReviewedAt); err != nil {
+			return nil, err
+		}
+		if body.ReviewDueAt, err = optionalKnowledgeTime("review_due_at", arguments.ReviewDueAt); err != nil {
+			return nil, err
+		}
+		return json.Marshal(body)
 	case "den_knowledge_search":
 		return json.Marshal(knowledgeSearchBody{
 			Query: strings.TrimSpace(arguments.Query), RequiredTags: requiredTags, AnyTags: anyTags, Kind: strings.TrimSpace(arguments.Kind),
@@ -314,6 +353,73 @@ func normalizedKnowledgeSlugs(values []string) ([]string, error) {
 		result = append(result, value)
 	}
 	return result, nil
+}
+
+func trimmedOptional(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	return &trimmed
+}
+
+// optionalStringList distinguishes an omitted list (nil) from an explicit
+// empty one, which clears the stored value.
+func optionalStringList(raw json.RawMessage) (*[]string, error) {
+	if isOmittedJSON(raw) {
+		return nil, nil
+	}
+	values, err := parseStringList(raw)
+	if err != nil {
+		return nil, err
+	}
+	if values == nil {
+		values = []string{}
+	}
+	return &values, nil
+}
+
+func optionalKnowledgeSourceRefs(raw json.RawMessage) (*[]knowledgeSourceRef, error) {
+	if isOmittedJSON(raw) {
+		return nil, nil
+	}
+	var encoded string
+	if err := json.Unmarshal(raw, &encoded); err == nil {
+		raw = json.RawMessage(encoded)
+	}
+	refs := []knowledgeSourceRef{}
+	if err := json.Unmarshal(raw, &refs); err != nil {
+		return nil, fmt.Errorf("decoding knowledge source_refs: %w", err)
+	}
+	for index := range refs {
+		refs[index].SourceKind = strings.TrimSpace(refs[index].SourceKind)
+		refs[index].SourceID = strings.TrimSpace(refs[index].SourceID)
+		if refs[index].SourceKind == "" || refs[index].SourceID == "" {
+			return nil, fmt.Errorf("knowledge source_refs entries require source_kind and source_id")
+		}
+	}
+	return &refs, nil
+}
+
+// optionalKnowledgeTime accepts an RFC 3339 timestamp or a YYYY-MM-DD date,
+// which means midnight UTC.
+func optionalKnowledgeTime(field string, value *string) (*time.Time, error) {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return nil, nil
+	}
+	text := strings.TrimSpace(*value)
+	for _, layout := range []string{time.RFC3339Nano, time.DateOnly} {
+		if parsed, err := time.Parse(layout, text); err == nil {
+			parsed = parsed.UTC()
+			return &parsed, nil
+		}
+	}
+	return nil, fmt.Errorf("knowledge %s must be an RFC 3339 timestamp or YYYY-MM-DD date", field)
+}
+
+func isOmittedJSON(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null"))
 }
 
 func decodeKnowledgeLinks(raw json.RawMessage) ([]knowledgeLinkBody, error) {

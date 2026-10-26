@@ -51,7 +51,7 @@ func (s *memoryStore) DeleteEntry(_ context.Context, slug string) error {
 	return entryNotFound(slug)
 }
 
-func (s *memoryStore) UpsertEntry(_ context.Context, entry *Entry, changeNote string) (*Entry, error) {
+func (s *memoryStore) UpsertEntry(_ context.Context, entry *Entry, keep PreservedFields, changeNote string) (*Entry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, existing := range s.entries {
@@ -77,6 +77,7 @@ func (s *memoryStore) UpsertEntry(_ context.Context, entry *Entry, changeNote st
 			CreatedAt:      entry.UpdatedAt(),
 		})
 		s.nextRevID++
+		entry = entry.withPreserved(existing, keep)
 		updated, err := NewEntry(NewEntryParams{
 			ID:              existing.ID(),
 			Slug:            entry.Slug(),

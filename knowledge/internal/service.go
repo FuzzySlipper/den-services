@@ -9,7 +9,7 @@ import (
 
 type KnowledgeStore interface {
 	Ping(ctx context.Context) error
-	UpsertEntry(ctx context.Context, entry *Entry, changeNote string) (*Entry, error)
+	UpsertEntry(ctx context.Context, entry *Entry, keep PreservedFields, changeNote string) (*Entry, error)
 	DeleteEntry(ctx context.Context, slug string) error
 	GetEntry(ctx context.Context, slug string, includeArchived bool) (*Entry, error)
 	ListEntries(ctx context.Context, query ListQuery) ([]EntrySummary, error)
@@ -46,6 +46,14 @@ func (s *Service) StoreEntry(ctx context.Context, req StoreEntryRequest) (*Entry
 	if req.Status == StatusReviewed && lastReviewedAt == nil {
 		lastReviewedAt = &now
 	}
+	keep := PreservedFields{
+		Aliases:         req.Aliases == nil,
+		SourceRefs:      req.SourceRefs == nil,
+		AccuracyNotes:   req.AccuracyNotes == nil,
+		ReplacementSlug: req.ReplacementSlug == nil,
+		LastReviewedAt:  lastReviewedAt == nil,
+		ReviewDueAt:     req.ReviewDueAt == nil,
+	}
 	entry, err := NewEntry(NewEntryParams{
 		Slug:            req.Slug,
 		Title:           req.Title,
@@ -56,10 +64,10 @@ func (s *Service) StoreEntry(ctx context.Context, req StoreEntryRequest) (*Entry
 		CurationState:   req.CurationState,
 		Tags:            req.Tags,
 		Audience:        req.Audience,
-		Aliases:         req.Aliases,
-		SourceRefs:      req.SourceRefs,
-		AccuracyNotes:   req.AccuracyNotes,
-		ReplacementSlug: req.ReplacementSlug,
+		Aliases:         valueOrZero(req.Aliases),
+		SourceRefs:      valueOrZero(req.SourceRefs),
+		AccuracyNotes:   valueOrZero(req.AccuracyNotes),
+		ReplacementSlug: valueOrZero(req.ReplacementSlug),
 		LastReviewedAt:  lastReviewedAt,
 		ReviewDueAt:     req.ReviewDueAt,
 		CreatedBy:       req.ChangedBy,
@@ -70,7 +78,15 @@ func (s *Service) StoreEntry(ctx context.Context, req StoreEntryRequest) (*Entry
 	if err != nil {
 		return nil, validationFailed(err)
 	}
-	return s.store.UpsertEntry(ctx, entry, strings.TrimSpace(req.ChangeNote))
+	return s.store.UpsertEntry(ctx, entry, keep, strings.TrimSpace(req.ChangeNote))
+}
+
+func valueOrZero[T any](value *T) T {
+	if value == nil {
+		var zero T
+		return zero
+	}
+	return *value
 }
 
 func (s *Service) GetEntry(ctx context.Context, slug string, includeArchived bool) (*Entry, error) {
