@@ -1,6 +1,6 @@
 ---
 name: den-tool-cli
-description: Discover and invoke Den operations through the globally installed `den-tool` CLI. Use when an agent needs Den tasks, reviews, messages, documents, Knowledge, Board, handoffs, guidance, notifications, or long-tail MCP operations from a shell; when a Den operation is missing from ordinary MCP discovery; or when diagnosing whether Den tooling is installed and reachable. Prefer an already available native Den MCP tool for the same operation, and use this CLI as the discoverable shell and fallback surface.
+description: Discover and invoke Den operations through the globally installed `den-tool` CLI. Use when an agent needs Den tasks, reviews, messages, documents, Knowledge, Board, backup status (Ops), handoffs, guidance, notifications, or long-tail MCP operations from a shell; when a Den operation is missing from ordinary MCP discovery; or when diagnosing whether Den tooling is installed and reachable. Prefer an already available native Den MCP tool for the same operation, and use this CLI as the discoverable shell and fallback surface.
 ---
 
 # Den Tool CLI
@@ -65,6 +65,20 @@ Board also has a convenience surface:
 den-tool board search --project den-services --query threading
 den-tool board get-post --post-id 42 --json
 ```
+
+Backup and maintenance status lives in Ops (`docs/ops-api-contract.md`). It
+talks HTTP to `DEN_OPS_URL` (default web-edge `http://192.168.1.5:18080/api`):
+
+```sh
+den-tool ops status            # every job, worst first; --json is the API body
+den-tool ops job den-agents-git
+den-tool ops errors
+den-tool ops run --job JOB --engine borg -- COMMAND ARGS   # wrap and report a run
+den-tool ops replay            # deliver reports spooled during an Ops outage
+```
+
+Ops only records what machines report. Never start, rerun or "fix" a backup
+because a status says it is overdue or failed; tell the owner instead.
 
 ## Respect authority and risk
 

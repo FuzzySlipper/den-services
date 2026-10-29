@@ -276,3 +276,10 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8081"
     successor_upstream_url: "http://127.0.0.1:8081"
     successor_mode: "always"
+
+  - name: "ops-routes"
+    path_pattern: "/v1/ops"
+    methods: ["GET", "POST", "PUT"]
+    legacy_upstream_url: "http://127.0.0.1:8102"
+    successor_upstream_url: "http://127.0.0.1:8102"
+    successor_mode: "always"
