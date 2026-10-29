@@ -313,12 +313,18 @@ func writeOpsErrors(stdout io.Writer, body []byte) error {
 			JobID string `json:"job_id"`
 			opsRunView
 		} `json:"problem_runs"`
+		FailedVerifications []struct {
+			JobID          string `json:"job_id"`
+			VerificationID string `json:"verification_id"`
+			opsVerificationView
+		} `json:"failed_verifications"`
 	}
 	if err := json.Unmarshal(body, &view); err != nil {
 		return fmt.Errorf("decode ops errors: %w", err)
 	}
-	if len(view.Problems) == 0 {
+	if len(view.Problems) == 0 && len(view.ProblemRuns) == 0 && len(view.FailedVerifications) == 0 {
 		_, _ = fmt.Fprintln(stdout, "no job needs attention")
+		return nil
 	}
 	for _, problem := range view.Problems {
 		_, _ = fmt.Fprintf(stdout, "%s\t%s\t%s\n", problem.Status, problem.JobID, problem.Reason)
@@ -326,6 +332,9 @@ func writeOpsErrors(stdout io.Writer, body []byte) error {
 	now := time.Now()
 	for _, run := range view.ProblemRuns {
 		_, _ = fmt.Fprintf(stdout, "recent: %s %s\n", run.JobID, describeRun(&run.opsRunView, now))
+	}
+	for _, check := range view.FailedVerifications {
+		_, _ = fmt.Fprintf(stdout, "check: %s %s %s\n", check.JobID, check.VerificationID, describeVerification(&check.opsVerificationView))
 	}
 	return nil
 }

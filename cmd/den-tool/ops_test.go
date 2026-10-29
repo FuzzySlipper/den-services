@@ -213,6 +213,18 @@ func TestOpsRunReportsRealCommandThroughOutageAndReplay(t *testing.T) {
 		t.Fatalf("late heartbeat = %s", out)
 	}
 
+	// A clean backup followed by a failed restore test still needs attention.
+	restore := `{"kind":"restore_test","state":"failed","at":"2026-10-29T08:00:00Z","archive":"e2e-archive","scope":"fixture"}`
+	restoreFile := filepath.Join(t.TempDir(), "restore.json")
+	if err := os.WriteFile(restoreFile, []byte(restore), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cli(t, 0, "ops", "verification", "e2e-borg", "restore-1", restoreFile)
+	errorsOut := cli(t, 0, "ops", "errors")
+	if strings.Contains(errorsOut, "no job needs attention") || !strings.Contains(errorsOut, "restore-1") || !strings.Contains(errorsOut, "restore_test failed") {
+		t.Fatalf("errors view hid the failed restore test:\n%s", errorsOut)
+	}
+
 	// A hard failure keeps the earlier success as the restore point.
 	cli(t, 2, "ops", "run", "--job", "e2e-borg", "--run-id", "failed-3", "--engine", "borg", "--heartbeat", "0",
 		"--", "sh", "-c", "echo 'repository locked' >&2; exit 2")

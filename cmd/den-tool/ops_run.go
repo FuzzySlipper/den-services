@@ -22,6 +22,8 @@ import (
 // warning report; the full stream still reaches the caller unchanged.
 const stderrTailBytes = 8 << 10
 
+const processOutputGrace = 5 * time.Second
+
 type opsRunOptions struct {
 	jobID           string
 	runID           string
@@ -196,6 +198,10 @@ func runOpsRun(args []string, _ io.Writer, stderr io.Writer) int {
 // calls heartbeat periodically until it exits. The returned code is what a
 // shell would report (128+signal when the command was killed).
 func runForwardingSignals(command *exec.Cmd, interval time.Duration, heartbeat func(time.Time)) (int, error) {
+	ownProcessGroup(command)
+	// A process left behind by the command can hold its stderr pipe open;
+	// stop waiting for that output shortly after the command itself exits.
+	command.WaitDelay = processOutputGrace
 	if err := command.Start(); err != nil {
 		return 127, fmt.Errorf("start %s: %w", command.Path, err)
 	}
@@ -213,7 +219,7 @@ func runForwardingSignals(command *exec.Cmd, interval time.Duration, heartbeat f
 	for {
 		select {
 		case received := <-signals:
-			_ = command.Process.Signal(received)
+			signalProcessTree(command, received)
 		case at := <-ticks:
 			heartbeat(at.UTC())
 		case err := <-done:
@@ -226,8 +232,8 @@ func exitCodeOf(command *exec.Cmd, err error) int {
 	if err == nil {
 		return 0
 	}
-	if status, ok := command.ProcessState.Sys().(syscall.WaitStatus); ok && status.Signaled() {
-		return 128 + int(status.Signal())
+	if code, ok := signalExitCode(command); ok {
+		return code
 	}
 	if code := command.ProcessState.ExitCode(); code >= 0 {
 		return code
