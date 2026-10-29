@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -1157,7 +1158,7 @@ func TestClientCallsCrewReviewRESTSubmitTaskForReview(t *testing.T) {
 		ResponseAdapter: ResponseAdapterMCPToolResultJSON,
 	}, ToolCall{
 		ToolName: "submit_task_for_review", Operation: "submit_task_for_review", RequestID: json.RawMessage(`1`),
-		Arguments: json.RawMessage(`{"project_id":"dsh-crew","task_id":7416,"repository":"owner/repo","commit_sha":"0123456789abcdef0123456789abcdef01234567","ref":"main","required_checks":["go test ./...","lint"],"base_commit":"fedcba9876543210fedcba9876543210fedcba98","review_summary_md":"Please review the implementation.","reviewer":"@reviewer","supersedes_round":71,"supersede_reason":"Corrected range"}`),
+		Arguments: json.RawMessage(`{"project_id":"dsh-crew","task_id":7416,"repository":"owner/repo","commit_sha":"0123456789abcdef0123456789abcdef01234567","ref":"main","required_checks":["go test ./...","lint"],"base_commit":"fedcba9876543210fedcba9876543210fedcba98","review_summary_md":"Please review the implementation.","reviewer":"@reviewer","supersedes_round":71,"supersede_reason":"Corrected range","notify_address":"crew://session/abc-123"}`),
 	})
 	if err != nil {
 		t.Fatalf("Call() error = %v", err)
@@ -1173,13 +1174,24 @@ func TestClientCallsCrewReviewRESTSubmitTaskForReview(t *testing.T) {
 	if sawBody.SupersedesRound == nil || *sawBody.SupersedesRound != 71 || sawBody.SupersedeReason != "Corrected range" {
 		t.Fatalf("supersession fields lost in transport: %#v", sawBody)
 	}
+	if sawBody.NotifyAddress != "crew://session/abc-123" {
+		t.Fatalf("notify_address = %q, want forwarded unchanged", sawBody.NotifyAddress)
+	}
 }
 
 func TestClientCallsCrewReviewRESTSubmitTaskForReviewWithoutRequiredChecks(t *testing.T) {
 	var sawBody submitReviewBody
+	var sawRaw map[string]json.RawMessage
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
-			t.Fatalf("Decode() error = %v", err)
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("ReadAll() error = %v", err)
+		}
+		if err := json.Unmarshal(raw, &sawBody); err != nil {
+			t.Fatalf("Unmarshal() error = %v", err)
+		}
+		if err := json.Unmarshal(raw, &sawRaw); err != nil {
+			t.Fatalf("Unmarshal() raw error = %v", err)
 		}
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"schema":"crew_review.submission.v1","schema_version":1,"ok":true,"phase":"job_admitted","submission_id":"sub-no-gate","project_id":"dsh-crew","task_id":7416,"commit_sha":"0123456789abcdef0123456789abcdef01234567","gate_status":"passed","gate_terminal_reason":"no_required_checks"}`))
@@ -1202,6 +1214,9 @@ func TestClientCallsCrewReviewRESTSubmitTaskForReviewWithoutRequiredChecks(t *te
 	}
 	if sawBody.CommitSHA != "" || sawBody.BaseCommit != "" {
 		t.Fatalf("automatic source request gained a SHA: %#v", sawBody)
+	}
+	if _, ok := sawRaw["notify_address"]; ok {
+		t.Fatalf("absent notify_address was sent: %v", sawRaw["notify_address"])
 	}
 }
 

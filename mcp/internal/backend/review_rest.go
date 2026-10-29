@@ -63,6 +63,7 @@ type reviewToolArguments struct {
 	SupersedeReason         string            `json:"supersede_reason"`
 	ReviewSummaryMD         string            `json:"review_summary_md"`
 	Reviewer                string            `json:"reviewer"`
+	NotifyAddress           string            `json:"notify_address"`
 	CampaignChildren        json.RawMessage   `json:"children"`
 	CampaignRepositories    json.RawMessage   `json:"repositories"`
 	TimeoutSeconds          *int              `json:"timeout_seconds"`
@@ -108,6 +109,9 @@ type submitReviewBody struct {
 	Reviewer        string   `json:"reviewer,omitempty"`
 	SupersedesRound *int64   `json:"supersedes_round,omitempty"`
 	SupersedeReason string   `json:"supersede_reason,omitempty"`
+	// NotifyAddress is the submitter's crew messaging address. Den forwards it
+	// unchanged; crew-review owns its validation.
+	NotifyAddress string `json:"notify_address,omitempty"`
 }
 
 type campaignReviewBody struct {
@@ -293,6 +297,7 @@ func reviewRESTRequestBody(operation string, arguments reviewToolArguments) ([]b
 			CommitSHA: strings.TrimSpace(arguments.CommitSHA), Ref: strings.TrimSpace(arguments.Ref), RequiredChecks: requiredChecks,
 			BaseCommit: strings.TrimSpace(arguments.BaseCommit), ReviewSummary: strings.TrimSpace(arguments.ReviewSummaryMD), Reviewer: strings.TrimSpace(arguments.Reviewer),
 			SupersedesRound: arguments.SupersedesRound, SupersedeReason: strings.TrimSpace(arguments.SupersedeReason),
+			NotifyAddress: arguments.NotifyAddress,
 		})
 	case "create_review_round", "request_review":
 		testsRun, err := parseStringList(arguments.TestsRun)

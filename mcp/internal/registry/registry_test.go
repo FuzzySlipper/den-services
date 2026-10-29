@@ -304,10 +304,23 @@ func TestManagedSubmissionToolIsProviderNeutralAndKeepsPublicInput(t *testing.T)
 			t.Fatalf("submission schema missing required %s: %#v", field, schema)
 		}
 	}
-	for _, field := range []string{"commit_sha", "base_commit", "supersedes_round", "supersede_reason"} {
+	for _, field := range []string{"commit_sha", "base_commit", "supersedes_round", "supersede_reason", "notify_address"} {
 		if schema.Properties[field] == nil || slices.Contains(schema.Required, field) {
 			t.Fatalf("submission field %s must be optional", field)
 		}
+	}
+	var notify map[string]any
+	if err := json.Unmarshal(schema.Properties["notify_address"], &notify); err != nil {
+		t.Fatal(err)
+	}
+	if types, ok := notify["type"].([]any); !ok || !slices.Contains(types, any("string")) || !slices.Contains(types, any("null")) {
+		t.Fatalf("notify_address must be a nullable string: %#v", notify)
+	}
+	if description, _ := notify["description"].(string); !strings.Contains(description, "gate-failure notices") {
+		t.Fatalf("notify_address description = %q", description)
+	}
+	if !strings.Contains(tool.Description, "do not poll, watch gates") || !strings.Contains(tool.Description, "pushes gate failures to it") {
+		t.Fatalf("submission description must keep no-poll guidance and name notify_address pushes: %q", tool.Description)
 	}
 	if schema.Properties["reviewer"] == nil || slices.Contains(schema.Required, "reviewer") {
 		t.Fatalf("reviewer must remain optional: %#v", schema)

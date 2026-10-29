@@ -665,7 +665,7 @@ func reviewFinalizationTools() []ToolDefinition {
 func reviewSubmissionTools() []ToolDefinition {
 	return []ToolDefinition{{
 		Name:         "submit_task_for_review",
-		Description:  "Submit a task for review after pushing. Omit commit_sha and base_commit to resolve the latest task commit on ref and the parent of its earliest task commit (subjects containing (#task_id)); the receipt records both exact SHAs. Explicit SHAs override derivation. GitHub rejects unknown_commit or base_not_ancestor before any round or gate. supersedes_round replaces an unreviewed round on the same task with a recorded reason; reviewed rounds return round_not_supersedable. crew-review owns required-check waiting and reviewer admission; do not poll, watch gates, or call request_review. A later containing commit of ref may satisfy required checks. [] records no_required_checks. Retry the same arguments after re-running a failed check or fixing changes_requested findings.",
+		Description:  "Submit a task for review after pushing. Omit commit_sha and base_commit to resolve the latest task commit on ref and the parent of its earliest task commit (subjects containing (#task_id)); the receipt records both exact SHAs. Explicit SHAs override derivation. GitHub rejects unknown_commit or base_not_ancestor before any round or gate. supersedes_round replaces an unreviewed round on the same task with a recorded reason; reviewed rounds return round_not_supersedable. crew-review owns required-check waiting and reviewer admission; do not poll, watch gates, or call request_review. When notify_address is given, crew-review pushes gate failures to it. A later containing commit of ref may satisfy required checks. [] records no_required_checks. Retry the same arguments after re-running a failed check or fixing changes_requested findings.",
 		Backend:      "crew-review",
 		Operation:    "submit_task_for_review",
 		WorkflowTier: WorkflowTierGreenPath,
@@ -684,6 +684,7 @@ func reviewSubmissionTools() []ToolDefinition {
 			"supersede_reason":  NullableStringSchema("Optional reason for replacing supersedes_round; defaults to a corrected review submission and is recorded on the task thread."),
 			"review_summary_md": StringSchema("Markdown summary supplied to the Den review request."),
 			"reviewer":          NullableStringSchema("Optional reviewer identity; defaults to the configured review identity."),
+			"notify_address":    NullableStringSchema("Optional crew messaging address of the submitting session. crew-review sends gate-failure notices there. Session hooks normally fill it in; omit it if you have none."),
 		}, "project_id", "task_id", "repository", "ref", "required_checks", "review_summary_md"),
 	}}
 }
