@@ -167,7 +167,7 @@ version 1:
 | `warnings[]`, `source_notices[]` | Lists of text |
 | `archive` | `{id, name, duration, stats}` |
 | `stats` | `{original_size, compressed_size, deduplicated_size, nfiles}`. Falls back to `archive.stats` |
-| `duration_seconds` | Falls back to `archive.duration`, then `finished_at - started_at` |
+| `duration_seconds` | Falls back to the run's wall time (`finished_at - started_at`), then `archive.duration` |
 | `backup_complete` | See lifecycle rule 7 |
 | `log_path`, `manifest`, `local_run_directory`, `recovery_pointer` | Pointers to logs, inventory and recovery material |
 | `verification`, `restore_test` | Embedded checks, stored as verifications `RUN_ID:verification` and `RUN_ID:restore_test` |

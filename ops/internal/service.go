@@ -262,9 +262,6 @@ func runFromReport(jobID string, runID string, request RunReportRequest, raw []b
 		if stats == nil {
 			stats = request.Archive.Stats
 		}
-		if run.DurationSeconds == nil {
-			run.DurationSeconds = request.Archive.Duration
-		}
 	}
 	if stats != nil {
 		run.Stats = ArchiveStats{
@@ -272,9 +269,13 @@ func runFromReport(jobID string, runID string, request RunReportRequest, raw []b
 			DeduplicatedBytes: stats.DeduplicatedSize, FileCount: stats.NFiles,
 		}
 	}
+	// Whole-run wall time; Borg's archive.duration covers only the create step.
 	if run.DurationSeconds == nil && run.FinishedAt != nil {
 		seconds := run.FinishedAt.Sub(run.StartedAt).Seconds()
 		run.DurationSeconds = &seconds
+	}
+	if run.DurationSeconds == nil && request.Archive != nil {
+		run.DurationSeconds = request.Archive.Duration
 	}
 	switch {
 	case state == RunSuccess || state == RunWarning:

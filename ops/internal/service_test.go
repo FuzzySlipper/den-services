@@ -72,7 +72,8 @@ func TestRealBorgReportIsStoredWithArchiveEvidence(t *testing.T) {
 	if run.ArchiveID != "e7f64bce379d2b12d5227bffdc6ae7aa8d91ca4c82542f2ac9ea07901c3120f0" || run.ArchiveName != "den-agents-git-2026-10-29T04-24-43" {
 		t.Fatalf("archive = %s %s", run.ArchiveID, run.ArchiveName)
 	}
-	if run.Stats.DeduplicatedBytes == nil || *run.Stats.DeduplicatedBytes != 132660210 || run.DurationSeconds == nil {
+	// 04:20:37.98 to 04:27:42.37: the whole run, not Borg's 173 s create step.
+	if run.Stats.DeduplicatedBytes == nil || *run.Stats.DeduplicatedBytes != 132660210 || run.DurationSeconds == nil || int(*run.DurationSeconds) != 424 {
 		t.Fatalf("stats = %+v duration %v", run.Stats, run.DurationSeconds)
 	}
 	if run.ManifestPath == "" || run.RunDirectory == "" || len(run.Notices) != 2 {
