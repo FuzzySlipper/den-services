@@ -5,7 +5,8 @@ running their own jobs with systemd timers, Task Scheduler or Proxmox. Each job
 reports what happened, and Ops stores those reports and judges freshness. Ops
 never starts, retries or wakes anything, and a stored report is only ever read.
 
-- **Source:** `ops/` in den-services (Handler → Service → Store).
+- **Source:** `ops/` in den-services (Handler → Service → Store). Operating
+  runbook: [ops-operations.md](ops-operations.md).
 - **Storage:** the service's own SQLite file (`database_path`, deployed at
   `/data/services/ops/data/ops.sqlite3`). The owner chose SQLite deliberately
   (campaign 10442). That is an exception to the usual Postgres posture: Ops has
@@ -203,7 +204,7 @@ they are.
 
 ## Reporter guidance
 
-These rules apply to the reporters built in tasks 10444 and 10446:
+These rules apply to `den-tool ops run`, `den-tool ops collect` and any other reporter:
 
 - **Run IDs:** use the job's own stable `run_id` and send the same body again
   on retry. If Ops can't be reached, spool the report locally and replay it

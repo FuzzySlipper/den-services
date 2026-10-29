@@ -15,3 +15,13 @@ defaults:
   heartbeat_stale_after: "15m"
   # Runs and checks returned by list endpoints when no ?limit= is given.
   run_list_limit: 50
+# Daily consistent export of this ledger, restore-tested and recorded as the
+# job below. Leave out directory to disable. The directory is inside CT106,
+# so the 06:00 Proxmox backup of CT106 carries the exports to den-nas.
+backup:
+  directory: "/data/services/ops/backups/daily"
+  at: "05:30"
+  timezone: "America/Los_Angeles"
+  keep: 14
+  job_id: "ops-sqlite-export"
+  host_id: "den-services"
