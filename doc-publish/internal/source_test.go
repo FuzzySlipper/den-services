@@ -12,9 +12,6 @@ func TestHTTPDocumentFetcherUsesCoreDocumentRouteAndShape(t *testing.T) {
 	var gotPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		if got := r.Header.Get("Authorization"); got != "Bearer source-token" {
-			t.Fatalf("Authorization = %q, want bearer token", got)
-		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"title": "Core Title",
@@ -25,7 +22,7 @@ func TestHTTPDocumentFetcherUsesCoreDocumentRouteAndShape(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	fetcher := NewHTTPDocumentFetcher(server.URL, "source-token", time.Second)
+	fetcher := NewHTTPDocumentFetcher(server.URL, time.Second)
 	document, err := fetcher.Fetch(context.Background(), DocumentSource{
 		DocumentProjectID: "den-web",
 		DocumentSlug:      "core-doc",
@@ -48,9 +45,6 @@ func TestHTTPDocumentFetcherFallsBackToSuccessorDocumentRoute(t *testing.T) {
 	var gotPaths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPaths = append(gotPaths, r.URL.Path)
-		if got := r.Header.Get("Authorization"); got != "Bearer source-token" {
-			t.Fatalf("Authorization = %q, want bearer token", got)
-		}
 		if r.URL.Path != "/v1/projects/asha/documents/successor-doc" {
 			http.NotFound(w, r)
 			return
@@ -65,7 +59,7 @@ func TestHTTPDocumentFetcherFallsBackToSuccessorDocumentRoute(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	fetcher := NewHTTPDocumentFetcher(server.URL, "source-token", time.Second)
+	fetcher := NewHTTPDocumentFetcher(server.URL, time.Second)
 	document, err := fetcher.Fetch(context.Background(), DocumentSource{
 		DocumentProjectID: "asha",
 		DocumentSlug:      "successor-doc",
@@ -90,7 +84,7 @@ func TestHTTPDocumentFetcherUsesConfiguredVersionedBaseURL(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	fetcher := NewHTTPDocumentFetcher(server.URL+"/v1", "", time.Second)
+	fetcher := NewHTTPDocumentFetcher(server.URL+"/v1", time.Second)
 	if _, err := fetcher.Fetch(context.Background(), DocumentSource{
 		DocumentProjectID: "den-services",
 		DocumentSlug:      "configured-doc",
@@ -114,7 +108,7 @@ func TestHTTPDocumentFetcherAcceptsCoreTimestampWithoutTimezone(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	fetcher := NewHTTPDocumentFetcher(server.URL, "", time.Second)
+	fetcher := NewHTTPDocumentFetcher(server.URL, time.Second)
 	document, err := fetcher.Fetch(context.Background(), DocumentSource{
 		DocumentProjectID: "research",
 		DocumentSlug:      "core-doc",

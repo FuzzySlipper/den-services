@@ -34,15 +34,10 @@ func main() {
 	}
 	clients := librarian.NewHTTPSourceClients(librarian.SourceClientConfig{
 		ProjectsBaseURL:  cfg.ProjectsBaseURL,
-		ProjectsToken:    cfg.ProjectsToken,
 		TasksBaseURL:     cfg.TasksBaseURL,
-		TasksToken:       cfg.TasksToken,
 		MessagesBaseURL:  cfg.MessagesBaseURL,
-		MessagesToken:    cfg.MessagesToken,
 		DocumentsBaseURL: cfg.DocumentsBaseURL,
-		DocumentsToken:   cfg.DocumentsToken,
 		KnowledgeBaseURL: cfg.KnowledgeBaseURL,
-		KnowledgeToken:   cfg.KnowledgeToken,
 		RequestTimeout:   cfg.Upstreams.RequestTimeout,
 	})
 	service := librarian.NewService(clients, cfg.DefaultBudget)

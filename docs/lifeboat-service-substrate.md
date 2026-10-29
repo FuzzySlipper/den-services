@@ -23,16 +23,16 @@ pattern:
 - `/data/services/<service>` as the service root;
 - `/etc/den-services/<service>.env` for secrets and the config path;
 - typed YAML config loaded by the service;
-- shared `/health`, `/version`, service-token auth, and JSON error envelope
-  helpers from `shared/`;
+- shared `/health`, `/version`, and JSON error envelope helpers from `shared/`
+  (Den-internal services do not authenticate callers; do not add bearer-token
+  auth without an owner decision);
 - versioned SQL migrations in `migration/postgres/den_<domain>/`;
 - runtime services using only app-role database credentials, never migration
   credentials.
 
 Do not create a placeholder service only to prove health/version. The existing
 registered services already prove the substrate: gateway, runtime, delivery,
-observation, conversation, timeline, visual-contract, doc-publish,
-visual-inspect, artifacts, and mcp.
+observation, timeline, doc-publish, artifacts, and mcp.
 
 ## Service Module Shape
 
@@ -182,7 +182,6 @@ The environment file should contain only the config path and secrets:
 ```text
 <SERVICE>_CONFIG_PATH=/data/services/<service>/config/config.yaml
 DEN_<SERVICE>_DATABASE_URL=postgres://...
-DEN_<SERVICE>_SERVICE_TOKEN=...
 ```
 
 The config file references secret values with environment expansion:
@@ -204,7 +203,7 @@ credentials belong in `/etc/den-services/<service>.env`.
 
 ## HTTP And MCP-Compatible Errors
 
-Use `shared/api` for service-token authentication and response envelopes.
+Use `shared/api` for response envelopes.
 The standard error shape is:
 
 ```json

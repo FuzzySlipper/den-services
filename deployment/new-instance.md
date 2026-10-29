@@ -15,9 +15,9 @@ only LAN listener and does not require a browser access token.
 An all-in-one trusted agentbox may intentionally expose MCP on
 `0.0.0.0:5199` so local and LAN agent runtimes share one stable endpoint. In
 that profile, MCP is a second intentional front door alongside Den Web. Keep
-Gateway, PostgreSQL, and owner services on loopback. Do not use this
-unauthenticated profile outside a trusted agent network; use the hardened token
-profile when the network boundary is broader.
+Gateway, PostgreSQL, and owner services on loopback. Den-internal services do
+not authenticate callers, so do not use this profile outside a trusted home
+LAN.
 
 This is not a data migration guide. Do not run the legacy import or backfill
 tools named in [No data import](#no-data-import).
@@ -37,10 +37,9 @@ These limitations remain:
   legacy den-core backend on `127.0.0.1:5299`. Remove legacy-only routes or
   deliberately provide that backend. A fully successor-only MCP route table is
   a first-deployment follow-up.
-- Optional integrations need their own setup: Review's GitHub integration,
-  Doc Publish's writable Git checkout and push credentials, and Visual
-  Inspect's model endpoint. The proven local profile disables Review's GitHub
-  polling and omits those optional services.
+- Optional integrations need their own setup: Review's GitHub integration and
+  Doc Publish's writable Git checkout and push credentials. The proven local
+  profile disables Review's GitHub polling and omits Doc Publish.
 - Node 22.22.2 can build and run Den Web, but the checked-in Nx/Playwright
   configuration fails while loading its browser-test config with
   `TypeError: Cannot convert undefined or null to object`. Upgrade to a newer
@@ -79,19 +78,17 @@ Choose one posture before configuring PostgreSQL or service environment files:
 
 - **Local-trust profile (proven):** every backend listener, including MCP and
   Gateway, binds only to `127.0.0.1`; PostgreSQL trusts local Unix-socket and
-  IPv4 loopback connections; MCP permits unauthenticated local calls; and the
-  constant `local-den` is supplied only where current service code still
-  requires an internal bearer value. It is not a secret or a security
-  boundary. When Den Web is installed, only its `0.0.0.0:18080` listener is
-  opened to the trusted LAN, with no browser access token.
-- **Hardened profile:** PostgreSQL uses SCRAM passwords, protected services use
-  distinct bearer tokens, and any LAN front door is deliberately firewalled.
+  IPv4 loopback connections. When Den Web is installed, only its
+  `0.0.0.0:18080` listener is opened to the trusted LAN, with no browser access
+  token.
+- **Hardened profile:** PostgreSQL uses SCRAM passwords and any LAN front door
+  is deliberately firewalled.
 
-The local-trust profile gives local agents a token-free MCP endpoint while
-keeping every backend closed to network clients. Den Web is the deliberate UI
-exception. Some direct REST services still require the internal compatibility
-bearer because their current API middleware does not have a local-dev bypass;
-normal local agents should use MCP.
+In both profiles, Den-internal services (MCP, Gateway, and every owner service)
+do not authenticate callers; Den runs on a trusted home LAN and no
+`DEN_*_SERVICE_TOKEN` or Gateway token is configured. The local-trust profile
+keeps every backend closed to network clients. Den Web is the deliberate UI
+exception. Normal local agents should use MCP.
 
 ## Assumptions
 
@@ -684,7 +681,7 @@ Add an optional service to this array when its configuration is ready:
 ```sh
 cd /data/services/den-services
 DEN_DEPLOY_SERVICES=(
-  projects knowledge artifacts runtime conversation
+  projects knowledge artifacts runtime
   tasks documents delivery messages guidance observation timeline board
   review librarian mcp
 )
@@ -739,24 +736,18 @@ At minimum, make these same-machine changes:
 - MCP gets a route table and backend list that match the services actually
   installed. Any operation still assigned to `den-core` will fail unless a
   den-core backend is deliberately provided.
-- In the local-trust profile, MCP uses `listen_addr: "127.0.0.1:5199"` and
-  `security.allow_unauthenticated_local_dev: true`.
+- In the local-trust profile, MCP uses `listen_addr: "127.0.0.1:5199"`. MCP
+  does not authenticate callers.
 - In the trusted agentbox LAN profile, MCP instead uses
-  `listen_addr: "0.0.0.0:5199"`. The same unauthenticated setting then applies
-  to LAN callers as well as local callers; this is an explicit mutation-capable
-  trusted-network choice, not an authentication boundary.
+  `listen_addr: "0.0.0.0:5199"`. LAN callers are then served exactly like local
+  callers; this is an explicit mutation-capable trusted-network choice, not an
+  authentication boundary.
 - In the local-trust core deployment, set `review.github.enabled: false` and
-  omit Gateway, Doc Publish, Visual Inspect, and Visual Contract until those
-  capabilities are actually needed.
+  omit Gateway and Doc Publish until those capabilities are actually needed.
 - Board is a passive, database-backed threaded discussion service. Its
   migration creates the `den_board` schema and its runtime role is
   `den_board_app`; it does not import legacy conversations. Keep it enabled
   when this instance will serve Den Web Board or Board REST/MCP clients.
-- When Visual Contract is enabled, keep it bound to loopback but set
-  `artifacts.public_base_path: "/api/v1/visual-contracts"`. Emitted artifact
-  refs are browser-visible same-origin paths served through web-edge and
-  Gateway; never configure this field with the private `127.0.0.1:8086`
-  service-owner URL.
 
 For a Board-enabled instance, review the generated
 `/data/services/board/config/config.yaml` and make the adapter and bounds
@@ -780,8 +771,8 @@ http:
   max_request_body_bytes: 262144
 ```
 
-The adapter identity is server-owned: Board binds it only after accepting the
-internal service token. Den Web users may purge through the trusted local web
+The adapter identity is server-owned: Board binds it to every accepted
+request; callers cannot override it. Den Web users may purge through the trusted local web
 path, but any `actor_identity` member sent in a purge JSON body is a legacy
 compatibility field and is ignored for authorization/audit identity. Board
 listens on `127.0.0.1:8100` and is installed as `den-go@board.service`; keep
@@ -795,14 +786,11 @@ For the local-trust profile, use passwordless loopback database URLs:
 postgres://den_<domain>_app@127.0.0.1:5433/denservices?sslmode=disable
 ```
 
-Set `DEN_MCP_SERVICE_TOKEN` empty and set required service/backend token values
-to `local-den`. MCP accepts the user's local call without a token and attaches
-the compatibility value when it calls current protected REST backends. The env
-files contain no secrets in this profile and may use mode `0644`.
-
-For the hardened profile, generate one distinct bearer token per protected
-service and store the token in the service's env file plus the env files of
-authorized callers. Use `openssl rand -hex 32` for URL- and shell-safe values.
+The env files contain no secrets in this profile and may use mode `0644`.
+Den-internal services do not authenticate each other, so no service token
+variables are configured in either profile; genuine external credentials (for
+example a GitHub token or third-party API key) are the only secrets besides
+database passwords.
 
 Every hardened-profile database URL on this machine has this form:
 
@@ -831,11 +819,8 @@ done
 | runtime | `RUNTIME_CONFIG_PATH` | `den_runtime_app` | none |
 | delivery | `DELIVERY_CONFIG_PATH` | `den_delivery_app` | runtime |
 | observation | `OBSERVATION_CONFIG_PATH` | `den_observation_app` | cross-schema views |
-| conversation | `CONVERSATION_CONFIG_PATH` | `den_channels_app` | runtime only if wake-target lookup is enabled |
 | timeline | `TIMELINE_CONFIG_PATH` | `den_timeline_app` | cross-schema views |
-| visual-contract | `VISUAL_CONTRACT_CONFIG_PATH` | none | filesystem |
 | doc-publish | `DOC_PUBLISH_CONFIG_PATH` | none | documents and an external Git repository |
-| visual-inspect | `VISUAL_INSPECT_CONFIG_PATH` | none | artifacts and a model endpoint |
 | artifacts | `ARTIFACTS_CONFIG_PATH` | `den_artifacts_app` | writable blob storage |
 | projects | `PROJECTS_CONFIG_PATH` | `den_projects_app` | none |
 | tasks | `TASKS_CONFIG_PATH` | `den_tasks_app` | projects |
@@ -854,34 +839,18 @@ For example, `/etc/den-services/projects.env` should resemble:
 PROJECTS_CONFIG_PATH=/data/services/projects/config/config.yaml
 DEN_PROJECTS_BASE_URL=http://127.0.0.1:8091
 DEN_PROJECTS_DATABASE_URL=postgres://den_projects_app:<projects-password>@127.0.0.1:5433/denservices?sslmode=disable
-DEN_PROJECTS_SERVICE_TOKEN=<projects-token>
 ```
-
-The same service token must be used consistently by callers. For example,
-`DEN_PROJECTS_SERVICE_TOKEN` in the Tasks, Messages, Documents, Review,
-Guidance, Librarian, and MCP env files must match the Projects service token.
-When Guidance Knowledge bindings are enabled, its `DEN_KNOWLEDGE_SERVICE_TOKEN`
-must likewise match the Knowledge service token.
-The MCP env file similarly needs `DEN_MCP_SERVICE_TOKEN` plus the matching
-service token for every enabled backend in the hardened profile. Gateway needs
-separate caller tokens and the matching upstream service tokens for every
-enabled route.
 
 For Board, `/etc/den-services/board.env` should resemble:
 
 ```text
 BOARD_CONFIG_PATH=/data/services/board/config/config.yaml
 DEN_BOARD_DATABASE_URL=postgres://den_board_app:<board-password>@127.0.0.1:5433/denservices?sslmode=disable
-DEN_BOARD_SERVICE_TOKEN=<board-token>
 DEN_PROJECTS_BASE_URL=http://127.0.0.1:8091
-DEN_PROJECTS_SERVICE_TOKEN=<projects-token>
 ```
 
-Use the same `DEN_PROJECTS_SERVICE_TOKEN` as the Projects service and every
-other configured Projects caller. `DEN_BOARD_SERVICE_TOKEN` is the token used
-by Gateway, MCP, and other trusted adapters when they call Board; it is not a
-browser token. In the local-trust profile these service-token values may be
-`local-den`, while the database URL still uses the `den_board_app` role.
+In the local-trust profile the database URL omits the password but still uses
+the `den_board_app` role.
 
 Check that placeholders and old database endpoints are gone:
 
@@ -939,7 +908,7 @@ the guide with the diagnosis.
 1. Independent database/service foundations:
 
    ```sh
-   for service in projects knowledge artifacts runtime conversation; do
+   for service in projects knowledge artifacts runtime; do
      scripts/den-services-deploy.sh "$service" --no-pull
    done
    ```
@@ -983,7 +952,7 @@ the guide with the diagnosis.
 5. Optional services, only after their configuration is real:
 
    ```sh
-   for service in visual-contract visual-inspect doc-publish; do
+   for service in doc-publish; do
      scripts/den-services-deploy.sh "$service" --no-pull
    done
    ```
@@ -1027,15 +996,14 @@ service serves its assets and same-origin API on `0.0.0.0:18080`. Every
 `/api/v1/*` request goes through the successor-only Gateway on
 `127.0.0.1:8079`; browser code never selects or addresses an owner service.
 
-The browser does not send a Den access token. The edge replaces any inbound
-Authorization header with a dedicated Gateway web caller token, and Gateway
-replaces that with the owning service token.
+The browser does not send a Den access token, and neither the edge nor Gateway
+adds one: Den-internal services do not authenticate callers on the trusted
+home LAN.
 
 When Board is enabled, install the reviewed Gateway route for the Board REST
 surface before validating Den Web. The route must preserve Board as the only
-writer and target `http://127.0.0.1:8100` with `DEN_BOARD_SERVICE_TOKEN` (or its
-hardened equivalent). Board purge remains available to authenticated Den Web
-users through this trusted adapter route; the browser-supplied
+writer and target `http://127.0.0.1:8100`. Board purge remains available to
+Den Web users through this trusted adapter route; the browser-supplied
 `actor_identity` field is not an authority input.
 
 ### 7.1 Configure and deploy the loopback Gateway
@@ -1069,7 +1037,7 @@ install -m 0644 gateway/config/routes.example.yaml \
 The route table covers all browser owners and the narrower runtime/lane
 callers. The Gateway schema currently requires a legacy URL even for
 `successor_mode: "always"`; the deployable table points both URL fields at the
-same successor owner while ensuring the authenticated successor branch is used.
+same successor owner while ensuring the successor branch is used.
 
 Create `/etc/den-services/gateway.env` with these local-trust values:
 
@@ -1081,37 +1049,10 @@ sudoedit /etc/den-services/gateway.env
 
 ```text
 GATEWAY_CONFIG_PATH=/data/services/gateway/config/config.yaml
-DEN_GATEWAY_SERVICE_TOKEN=local-den
-DEN_GATEWAY_WEB_TOKEN=local-den-web
-DEN_GATEWAY_PROJECTS_UPSTREAM_TOKEN=local-den
-DEN_GATEWAY_TASKS_UPSTREAM_TOKEN=local-den
-DEN_GATEWAY_MESSAGES_UPSTREAM_TOKEN=local-den
-DEN_GATEWAY_DOCUMENTS_UPSTREAM_TOKEN=local-den
-DEN_GATEWAY_GUIDANCE_UPSTREAM_TOKEN=local-den
-DEN_GATEWAY_REVIEW_UPSTREAM_TOKEN=local-den
-DEN_GATEWAY_ARTIFACTS_UPSTREAM_TOKEN=local-den
-DEN_GATEWAY_VISUAL_CONTRACT_UPSTREAM_TOKEN=<matching-DEN_VISUAL_CONTRACT_SERVICE_TOKEN>
-DEN_GATEWAY_LIBRARIAN_UPSTREAM_TOKEN=local-den
-DEN_GATEWAY_DELIVERY_WRITE_TOKEN=local-den
-DEN_GATEWAY_DELIVERY_UPSTREAM_TOKEN=local-den
-DEN_GATEWAY_OBSERVATION_READ_TOKEN=local-den
-DEN_GATEWAY_OBSERVATION_UPSTREAM_TOKEN=local-den
-DEN_GATEWAY_CONVERSATION_READ_TOKEN=local-den
-DEN_GATEWAY_CONVERSATION_WRITE_TOKEN=local-den
-DEN_GATEWAY_CONVERSATION_UPSTREAM_TOKEN=local-den
-DEN_GATEWAY_TIMELINE_READ_TOKEN=local-den
-DEN_GATEWAY_TIMELINE_UPSTREAM_TOKEN=local-den
 ```
 
-The visual-contract route is deliberately path-translated by Gateway:
-browser `/api/v1/visual-contracts/*` becomes Gateway
-`/v1/visual-contracts/*`, then visual-contract `/visual-contracts/*`.
-The service emits artifact refs under the original browser prefix configured as
-`artifacts.public_base_path: "/api/v1/visual-contracts"`; Gateway must not
-rewrite response bodies.
-Use the exact same secret for `DEN_GATEWAY_VISUAL_CONTRACT_UPSTREAM_TOKEN`
-and the visual-contract service's `DEN_VISUAL_CONTRACT_SERVICE_TOKEN`.
-Neither value belongs in `den-web-config.json` or any browser request.
+Gateway does not authenticate callers or attach upstream credentials; it only
+routes.
 
 Install and test Gateway:
 
@@ -1120,9 +1061,7 @@ cd /data/services/den-services
 scripts/den-services-deploy.sh gateway --no-pull
 sudo systemctl enable den-go@gateway.service
 curl -fsS http://127.0.0.1:8079/health
-curl -fsS \
-  -H 'Authorization: Bearer local-den' \
-  'http://127.0.0.1:8079/v1/observation/lane?limit=1'
+curl -fsS 'http://127.0.0.1:8079/v1/observation/lane?limit=1'
 ```
 
 ### 7.2 Clone and prepare Den Web
@@ -1163,8 +1102,7 @@ contains no backend targets or tokens.
 
 ### 7.3 Deploy the Go web edge
 
-Create the edge env file from its checked-in example. Use the same dedicated
-caller token in both the edge and Gateway env files:
+Create the edge env file from its checked-in example:
 
 ```sh
 sudo install -m 0600 -o root -g root \
@@ -1174,7 +1112,6 @@ sudoedit /etc/den-services/web-edge.env
 
 ```text
 WEB_EDGE_CONFIG_PATH=/data/services/web-edge/config/config.yaml
-DEN_WEB_EDGE_GATEWAY_TOKEN=local-den-web
 ```
 
 Create the service root and deploy through the normal registry:
@@ -1374,8 +1311,8 @@ sudo ss -ltnp | grep ':5433'
 
 ### 8.3 MCP contract
 
-Initialize MCP without an `Authorization` header in the local-trust or trusted
-agentbox LAN profile:
+Initialize MCP without an `Authorization` header; MCP does not authenticate
+callers:
 
 ```sh
 curl -fsS -X POST http://127.0.0.1:5199/mcp \
@@ -1384,8 +1321,7 @@ curl -fsS -X POST http://127.0.0.1:5199/mcp \
   --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"deployment-smoke","version":"1.0"}}}'
 ```
 
-Then prove an unauthenticated local call crosses MCP's internal authenticated
-backend boundary:
+Then prove a local call reaches an MCP backend:
 
 ```sh
 curl -fsS -X POST http://127.0.0.1:5199/mcp \
@@ -1397,8 +1333,7 @@ curl -fsS -X POST http://127.0.0.1:5199/mcp \
 On a clean instance, the result should contain `"isError":false` and an empty
 project list. For the trusted agentbox LAN profile, repeat both calls through
 the machine's LAN address from a second host and confirm `tools/list` exposes
-the same registry as loopback. For the hardened profile, include the configured
-bearer token instead of performing token-free calls.
+the same registry as loopback.
 
 ### 8.4 Reboot persistence
 
@@ -1414,14 +1349,16 @@ For a new empty instance, run only the versioned migration runner. Do not run:
 
 - `migration/cmd/den-core-import-parity`;
 - `migration/cmd/lifeboat-backfill`;
-- `conversation/cmd/import-legacy`;
-- `scripts/conversation-pilot-canary-2917.sh` against a legacy source;
 - any ad hoc `pg_dump` restore from another Den instance.
 
 Schema migrations may create bookkeeping rows or schema placeholders. That is
 not a legacy data migration.
 
 ## First-deployment evidence
+
+These records are historical. They predate the removal of Den-internal service
+tokens and the retirement of the Conversation, Visual Contract, and Visual
+Inspect services; do not treat their service lists as current instructions.
 
 ### 2026-07-16 — Lore clean Fedora deployment
 

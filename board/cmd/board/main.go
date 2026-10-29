@@ -42,7 +42,7 @@ func main() {
 	defer pool.Close()
 	service := board.NewServiceWithLimits(
 		board.NewStore(pool),
-		board.NewProjectScopeClient(cfg.ProjectsBaseURL, cfg.ProjectsToken, cfg.ProjectsRequestTimeout),
+		board.NewProjectScopeClient(cfg.ProjectsBaseURL, cfg.ProjectsRequestTimeout),
 		time.Now,
 		cfg.Limits,
 	)

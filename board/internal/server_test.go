@@ -15,7 +15,6 @@ func TestHTTPServerRejectsRequestBodiesOverConfiguredLimit(t *testing.T) {
 	service := NewServiceWithLimits(NewMemoryStore(), NoopProjectValidator{}, fixedClock(), limits)
 	server := newTestHTTPServer(t, service, Config{
 		BindAddr:        "127.0.0.1:8100",
-		ServiceToken:    "board-token",
 		AdapterIdentity: "den-web-adapter",
 		Limits:          limits,
 		HTTP: HTTPConfig{
@@ -26,7 +25,6 @@ func TestHTTPServerRejectsRequestBodiesOverConfiguredLimit(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/v1/projects/project-a/board/posts", strings.NewReader(`{"title":"topic","body_markdown":"`+strings.Repeat("x", 200)+`","author_identity":"agent"}`))
-	request.Header.Set("Authorization", "Bearer board-token")
 	request.Header.Set("Content-Type", "application/json")
 	server.Handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusBadRequest {
@@ -34,12 +32,11 @@ func TestHTTPServerRejectsRequestBodiesOverConfiguredLimit(t *testing.T) {
 	}
 }
 
-func TestHTTPServerBindsAdapterIdentityAfterAuthentication(t *testing.T) {
+func TestHTTPServerBindsConfiguredAdapterIdentity(t *testing.T) {
 	store := &auditCaptureStore{MemoryStore: NewMemoryStore()}
 	service := NewService(store, NoopProjectValidator{}, fixedClock())
 	server := newTestHTTPServer(t, service, Config{
 		BindAddr:        "127.0.0.1:8100",
-		ServiceToken:    "board-token",
 		AdapterIdentity: "server-den-web",
 		Limits:          DefaultLimits(),
 		HTTP: HTTPConfig{
@@ -49,7 +46,6 @@ func TestHTTPServerBindsAdapterIdentityAfterAuthentication(t *testing.T) {
 	})
 
 	request := httptest.NewRequest(http.MethodPost, "/v1/projects/project-a/board/posts", strings.NewReader(`{"title":"topic","body_markdown":"body","author_identity":"agent"}`))
-	request.Header.Set("Authorization", "Bearer board-token")
 	request.Header.Set("Content-Type", "application/json")
 	createResponse := httptest.NewRecorder()
 	server.Handler.ServeHTTP(createResponse, request)
@@ -58,7 +54,6 @@ func TestHTTPServerBindsAdapterIdentityAfterAuthentication(t *testing.T) {
 	}
 
 	purgeRequest := httptest.NewRequest(http.MethodDelete, "/v1/board/posts/1", strings.NewReader(`{"reason":"misleading"}`))
-	purgeRequest.Header.Set("Authorization", "Bearer board-token")
 	purgeRequest.Header.Set("Content-Type", "application/json")
 	purgeResponse := httptest.NewRecorder()
 	server.Handler.ServeHTTP(purgeResponse, purgeRequest)

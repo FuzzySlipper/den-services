@@ -12,14 +12,12 @@ import (
 
 type HTTPDocumentFetcher struct {
 	baseURL string
-	token   string
 	client  *http.Client
 }
 
-func NewHTTPDocumentFetcher(baseURL string, token string, timeout time.Duration) *HTTPDocumentFetcher {
+func NewHTTPDocumentFetcher(baseURL string, timeout time.Duration) *HTTPDocumentFetcher {
 	return &HTTPDocumentFetcher{
 		baseURL: strings.TrimRight(baseURL, "/"),
-		token:   token,
 		client:  &http.Client{Timeout: timeout},
 	}
 }
@@ -50,9 +48,6 @@ func (f *HTTPDocumentFetcher) fetchEndpoint(ctx context.Context, endpoint string
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("building source document request: %w", err)
-	}
-	if f.token != "" {
-		req.Header.Set("Authorization", "Bearer "+f.token)
 	}
 	resp, err := f.client.Do(req)
 	if err != nil {

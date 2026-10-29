@@ -13,10 +13,8 @@ func TestLoadConfigReadsBoardBoundsAndAdapterIdentity(t *testing.T) {
 	contents := `
 bind_addr: "127.0.0.1:8100"
 database_url_env: "DEN_BOARD_DATABASE_URL"
-service_token_env: "DEN_BOARD_SERVICE_TOKEN"
 adapter_identity: "configured-den-web"
 projects_base_url_env: "DEN_PROJECTS_BASE_URL"
-projects_token_env: "DEN_PROJECTS_SERVICE_TOKEN"
 projects_request_timeout: "3s"
 limits:
   default_page_size: 10
@@ -37,10 +35,8 @@ http:
 		t.Fatal(err)
 	}
 	cfg, err := LoadConfigFromPathWithValues(path, sharedconfig.FromMap(map[string]string{
-		"DEN_BOARD_DATABASE_URL":     "postgres://board",
-		"DEN_BOARD_SERVICE_TOKEN":    "board-token",
-		"DEN_PROJECTS_BASE_URL":      "http://projects",
-		"DEN_PROJECTS_SERVICE_TOKEN": "projects-token",
+		"DEN_BOARD_DATABASE_URL": "postgres://board",
+		"DEN_PROJECTS_BASE_URL":  "http://projects",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -60,9 +56,7 @@ func TestConfigDefaultsNewBoundsForExistingYAML(t *testing.T) {
 	cfg, err := (configFile{
 		BindAddr:               "127.0.0.1:8100",
 		DatabaseURLEnv:         "DEN_BOARD_DATABASE_URL",
-		ServiceTokenEnv:        "DEN_BOARD_SERVICE_TOKEN",
 		ProjectsBaseURLEnv:     "DEN_PROJECTS_BASE_URL",
-		ProjectsTokenEnv:       "DEN_PROJECTS_SERVICE_TOKEN",
 		ProjectsRequestTimeout: "5s",
 		Limits: limitsFile{
 			DefaultPageSize: DefaultPageSize,
@@ -71,10 +65,8 @@ func TestConfigDefaultsNewBoundsForExistingYAML(t *testing.T) {
 		},
 		HTTP: httpConfigFile{ReadHeaderTimeout: "5s"},
 	}).toConfig(sharedconfig.FromMap(map[string]string{
-		"DEN_BOARD_DATABASE_URL":     "postgres://board",
-		"DEN_BOARD_SERVICE_TOKEN":    "board-token",
-		"DEN_PROJECTS_BASE_URL":      "http://projects",
-		"DEN_PROJECTS_SERVICE_TOKEN": "projects-token",
+		"DEN_BOARD_DATABASE_URL": "postgres://board",
+		"DEN_PROJECTS_BASE_URL":  "http://projects",
 	}))
 	if err != nil {
 		t.Fatal(err)

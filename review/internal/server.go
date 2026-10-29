@@ -3,7 +3,6 @@ package review
 import (
 	"net/http"
 
-	"den-services/shared/api"
 	"den-services/shared/health"
 )
 
@@ -21,19 +20,7 @@ func NewHTTPServer(cfg *Config, info health.BuildInfo, service ReviewUseCases) (
 	root := http.NewServeMux()
 	root.Handle("GET /health", healthHandler)
 	root.Handle("GET /version", versionHandler)
-	if cfg.AllowUnauthenticatedLocalDev {
-		root.Handle("/", apiMux)
-		return &http.Server{
-			Addr:              cfg.BindAddr,
-			Handler:           root,
-			ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout,
-		}, nil
-	}
-	auth, err := api.NewServiceTokenAuth(cfg.ServiceToken)
-	if err != nil {
-		return nil, err
-	}
-	root.Handle("/", auth.Middleware(apiMux))
+	root.Handle("/", apiMux)
 	return &http.Server{
 		Addr:              cfg.BindAddr,
 		Handler:           root,

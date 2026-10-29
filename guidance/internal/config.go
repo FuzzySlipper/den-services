@@ -16,13 +16,9 @@ const defaultMaxPacketBytes = 65536
 type Config struct {
 	BindAddr         string
 	DatabaseURL      string
-	ServiceToken     string
 	ProjectsBaseURL  string
-	ProjectsToken    string
 	DocumentsBaseURL string
-	DocumentsToken   string
 	KnowledgeBaseURL string
-	KnowledgeToken   string
 	MaxPacketBytes   int
 	HTTP             HTTPConfig
 }
@@ -34,13 +30,9 @@ type HTTPConfig struct {
 type configFile struct {
 	BindAddr            string         `yaml:"bind_addr"`
 	DatabaseURLEnv      string         `yaml:"database_url_env"`
-	ServiceTokenEnv     string         `yaml:"service_token_env"`
 	ProjectsBaseURLEnv  string         `yaml:"projects_base_url_env"`
-	ProjectsTokenEnv    string         `yaml:"projects_token_env"`
 	DocumentsBaseURLEnv string         `yaml:"documents_base_url_env"`
-	DocumentsTokenEnv   string         `yaml:"documents_token_env"`
 	KnowledgeBaseURLEnv string         `yaml:"knowledge_base_url_env"`
-	KnowledgeTokenEnv   string         `yaml:"knowledge_token_env"`
 	MaxPacketBytes      int            `yaml:"max_packet_bytes"`
 	HTTP                httpConfigFile `yaml:"http"`
 }
@@ -92,13 +84,9 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 	return &Config{
 		BindAddr:         f.BindAddr,
 		DatabaseURL:      values.String(f.DatabaseURLEnv, ""),
-		ServiceToken:     values.String(f.ServiceTokenEnv, ""),
 		ProjectsBaseURL:  values.String(f.ProjectsBaseURLEnv, ""),
-		ProjectsToken:    values.String(f.ProjectsTokenEnv, ""),
 		DocumentsBaseURL: values.String(f.DocumentsBaseURLEnv, ""),
-		DocumentsToken:   values.String(f.DocumentsTokenEnv, ""),
 		KnowledgeBaseURL: values.String(f.KnowledgeBaseURLEnv, ""),
-		KnowledgeToken:   values.String(f.KnowledgeTokenEnv, ""),
 		MaxPacketBytes:   maxPacketBytes,
 		HTTP:             HTTPConfig{ReadHeaderTimeout: readHeaderTimeout},
 	}, nil
@@ -110,9 +98,6 @@ func (c *Config) validate() error {
 	}
 	if c.DatabaseURL == "" {
 		return errors.New("database url is required")
-	}
-	if c.ServiceToken == "" {
-		return errors.New("service token is required")
 	}
 	if c.ProjectsBaseURL == "" {
 		return errors.New("projects base url is required")

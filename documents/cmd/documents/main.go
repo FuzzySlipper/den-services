@@ -42,8 +42,8 @@ func main() {
 	defer pool.Close()
 	service := documents.NewService(
 		documents.NewStore(pool),
-		documents.NewProjectScopeClient(cfg.ProjectsBaseURL, cfg.ProjectsToken),
-		documents.NewAgentGuidanceClient(cfg.AgentGuidanceBaseURL, cfg.AgentGuidanceToken),
+		documents.NewProjectScopeClient(cfg.ProjectsBaseURL),
+		documents.NewAgentGuidanceClient(cfg.AgentGuidanceBaseURL),
 		time.Now,
 	)
 	server, err := documents.NewHTTPServer(cfg, info, service)

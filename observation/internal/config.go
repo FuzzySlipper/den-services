@@ -14,7 +14,6 @@ import (
 type Config struct {
 	BindAddr     string
 	DatabaseURL  string
-	ServiceToken string
 	DefaultLimit int
 	MaxLimit     int
 	ChatSource   ChatSourceConfig
@@ -107,7 +106,6 @@ func LoadConfigFromPath(path string) (*Config, error) {
 	cfg := &Config{
 		BindAddr:     file.BindAddr,
 		DatabaseURL:  databaseURL,
-		ServiceToken: os.Getenv("DEN_OBSERVATION_SERVICE_TOKEN"),
 		DefaultLimit: file.Query.DefaultLimit,
 		MaxLimit:     file.Query.MaxLimit,
 		ChatSource:   chatSource,

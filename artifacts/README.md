@@ -17,7 +17,7 @@ Implemented now:
 
 - `GET /health`
 - `GET /version`
-- authenticated API mux
+- API mux (no inbound auth; trusted LAN)
 - multipart upload
 - metadata read
 - content read
@@ -47,7 +47,7 @@ GET /v1/artifacts/resolve?ref=den-artifact://...
   Resolve canonical or scoped refs to metadata.
 
 GET /v1/artifacts/{artifact_id}/content
-  Return bytes with content-type after auth checks.
+  Return bytes with content-type.
 
 DELETE /v1/artifacts/{artifact_id}
   Tombstone metadata. Content and metadata reads hide tombstoned artifacts.
@@ -98,10 +98,9 @@ Agent-friendly helper:
 
 ```bash
 export DEN_ARTIFACTS_BASE_URL=http://127.0.0.1:8090
-export DEN_ARTIFACTS_SERVICE_TOKEN=<service-token>
 
 go run ./artifacts/cmd/artifact-upload \
-  -file /tmp/den-visual-inspect/agora-overview.png \
+  -file /tmp/agora-overview.png \
   -project-id den-services \
   -task-id 3478 \
   -logical-name agora-overview.png \
@@ -114,7 +113,6 @@ Raw multipart equivalent:
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer $DEN_ARTIFACTS_SERVICE_TOKEN" \
   -F "file=@screenshot.png;type=image/png" \
   -F "project_id=den-services" \
   -F "task_id=3476" \
@@ -123,55 +121,10 @@ curl -sS \
   http://127.0.0.1:8090/v1/artifacts
 ```
 
-## Visual Inspect Flow
-
-1. Capture a screenshot to a local PNG/JPEG path.
-2. Upload it with `go run ./artifacts/cmd/artifact-upload ...`.
-3. Copy `artifact_ref` from the JSON output into `visual-inspect` as `screenshots[].ref`.
-4. Post only the visual-inspect result JSON plus artifact refs to Den review messages.
-
-Example request fragment:
-
-```json
-{
-  "screenshots": [
-    {
-      "id": "overview",
-      "ref": "den-artifact://art_01jexample",
-      "mime_type": "image/png",
-      "description": "Overview after selecting the terminal card"
-    }
-  ]
-}
-```
-
 Content read:
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer $DEN_ARTIFACTS_SERVICE_TOKEN" \
   http://127.0.0.1:8090/v1/artifacts/<artifact_id>/content \
   -o artifact.png
 ```
-
-## Visual Inspect Contract
-
-`visual-inspect` remains stateless. It should resolve `den-artifact://...` by calling this service, then enforce its own max-byte and max-pixel limits after fetch.
-
-Review messages should include refs and result JSON only:
-
-```json
-{
-  "artifact_refs": [
-    {
-      "screenshot_id": "overview",
-      "ref": "den-artifact://art_01j...",
-      "mime_type": "image/png",
-      "sensitive": false
-    }
-  ],
-  "result": {}
-}
-```
-
-Do not store raw PNG/JPEG bytes, data URLs, or base64 strings in Den task/message/review tables.

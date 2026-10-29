@@ -3,9 +3,7 @@
 
 bind_addr: "127.0.0.1:8092" # Loopback HTTP listen address.
 database_url_env: "DEN_TASKS_DATABASE_URL" # Env var containing the Postgres URL.
-service_token_env: "DEN_TASKS_SERVICE_TOKEN" # Env var containing the bearer token.
 projects_base_url_env: "DEN_PROJECTS_BASE_URL" # Required projects service base URL for assert-writable.
-projects_token_env: "DEN_PROJECTS_SERVICE_TOKEN" # Required projects service bearer token.
 
 stream:
   poll_interval: "2s" # How often task-change SSE polls for new rows.

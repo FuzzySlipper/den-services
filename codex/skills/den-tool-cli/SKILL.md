@@ -76,8 +76,8 @@ den-tool board get-post --post-id 42 --json
   broad datasets into context.
 - Preserve exact task, review-round, and revision semantics. A CLI call does
   not weaken the owning Den service's lifecycle rules.
-- Use the configured `DEN_MCP_URL` and `DEN_MCP_TOKEN` without printing tokens
-  or environment contents. Direct owning-service URLs are operator diagnostics,
+- Use the configured `DEN_MCP_URL` (no token is needed; Den MCP does not
+  authenticate callers) without printing environment contents. Direct owning-service URLs are operator diagnostics,
   not the normal agent path.
 - Preserve JSON output as evidence when diagnosing transport or backend errors;
   distinguish an outer CLI/HTTP failure from a Den tool result marked as an

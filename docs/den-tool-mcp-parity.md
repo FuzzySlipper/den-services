@@ -42,8 +42,8 @@ mixed with field flags. The CLI rejects unknown fields, missing required fields,
 and top-level type mismatches before making a request.
 
 The default transport is `http://192.168.1.5:5199/mcp`, overrideable with
-`DEN_MCP_URL`; optional bearer authentication uses `DEN_MCP_TOKEN`. MCP remains
-the stable authenticated LAN transport because owning service ports are
+`DEN_MCP_URL`; no token is needed because MCP does not authenticate callers.
+MCP remains the stable LAN transport because owning service ports are
 loopback-only. The facade routes each typed operation to its owning service; the
 CLI does not write schemas or domain storage directly. This route remains usable
 when an operation is later excluded by a discovery profile because profile
@@ -69,7 +69,7 @@ fields and refusals.
 
 The `den-tool board ...` shorthand follows the same rule automatically. In the
 absence of an explicit `DEN_BOARD_URL`, it translates Board flags to typed MCP
-operations and uses `DEN_MCP_URL`/`DEN_MCP_TOKEN`. `DEN_BOARD_URL` is reserved
+operations and uses `DEN_MCP_URL`. `DEN_BOARD_URL` is reserved
 for operator diagnostics on a host that can actually reach the loopback-only
 Board service. Board search uses the hidden exact-name operation
 `search_board_posts`; it is routed by MCP but remains absent from `tools/list`

@@ -353,7 +353,7 @@ type CreateCommentRequest struct {
 // PurgeRequest is intentionally typed even though its caller supplied values
 // are not retained. ActorIdentity is accepted for wire compatibility with
 // existing clients, but it is never authoritative. The authenticated adapter
-// identity is bound by NewHTTPServer after service-token authentication.
+// identity is bound by NewHTTPServer from the configured adapter identity.
 type PurgeRequest struct {
 	ActorIdentity string `json:"actor_identity"`
 	Reason        string `json:"reason"`

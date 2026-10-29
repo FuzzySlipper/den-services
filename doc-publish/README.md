@@ -7,15 +7,13 @@ filesystem/git mutation workflow and publication audit records.
 
 ## API
 
-All `/v1/blog/*` routes require the `DEN_DOC_PUBLISH_SERVICE_TOKEN` bearer token
-when called directly. Gateway should expose caller tokens and forward the
-service token upstream.
+The `/v1/blog/*` routes are served without inbound authentication; doc-publish
+runs on the trusted Den LAN.
 
 Preview a publication without writing the blog repo:
 
 ```bash
 curl -fsS \
-  -H "Authorization: Bearer ${DEN_DOC_PUBLISH_SERVICE_TOKEN}" \
   -H "Content-Type: application/json" \
   --data @/tmp/doc-publish-preview.json \
   http://127.0.0.1:8087/v1/blog/publications/preview
@@ -25,7 +23,6 @@ Publish after confirmation:
 
 ```bash
 curl -fsS \
-  -H "Authorization: Bearer ${DEN_DOC_PUBLISH_SERVICE_TOKEN}" \
   -H "Content-Type: application/json" \
   --data @/tmp/doc-publish-request.json \
   http://127.0.0.1:8087/v1/blog/publications
@@ -35,7 +32,6 @@ Read an audit record:
 
 ```bash
 curl -fsS \
-  -H "Authorization: Bearer ${DEN_DOC_PUBLISH_SERVICE_TOKEN}" \
   http://127.0.0.1:8087/v1/blog/publications/{publication_id}
 ```
 
@@ -68,10 +64,9 @@ surface before writing the blog repo.
 
 On den-srv, set `source.documents_base_url` in
 `/data/services/doc-publish/config/config.yaml` to the canonical documents
-service, normally `http://127.0.0.1:8094`, and set
-`DEN_DOC_PUBLISH_SOURCE_TOKEN` to a token accepted by that service. The fetcher
-also preserves the older Core route for legacy configs. Preview may still work
-with an inline `document` payload when this URL/token is wrong, but publish will
+service, normally `http://127.0.0.1:8094`. The fetcher also preserves the
+older Core route for legacy configs. Preview may still work with an inline
+`document` payload when this URL is wrong, but publish will
 fail while fetching the source document.
 
 ## Safety Model

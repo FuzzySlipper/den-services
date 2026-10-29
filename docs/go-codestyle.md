@@ -571,7 +571,7 @@ Hardcoded values are the most common accretion pattern in agent-written services
 | Feature flags | Whether identity translation is active, whether reaper is enabled | Safe rollout |
 | Limits and sizes | Max request body, replay page size, pool size | Resource tuning |
 | Environment identifiers | Service name, datacenter, cluster | Deployment identity |
-| Auth tokens and secrets | Service tokens, API keys | Never in source code |
+| External credentials and secrets | Database passwords, third-party API keys, GitHub tokens | Never in source code |
 
 ### What MAY be hardcoded (constants that define the system, not tune it)
 
@@ -706,7 +706,7 @@ The example file is the documentation. Every field has a comment explaining what
 Environment variables are used only for:
 
 1. **The config file path** (`DELIVERY_CONFIG_PATH`).
-2. **Secrets that must not be in config files** (database password, service tokens). The config file references the env var name, not the value:
+2. **Secrets that must not be in config files** (database password, external API credentials). The config file references the env var name, not the value:
 
 ```yaml
 database_url: "${DEN_DELIVERY_DATABASE_URL}"
@@ -715,6 +715,10 @@ database_url: "${DEN_DELIVERY_DATABASE_URL}"
 ### No scattered env var configs
 
 Do not create a configuration surface where individual settings are pulled from separate environment variables (`DEN_DELIVERY_HEARTBEAT_INTERVAL`, `DEN_DELIVERY_STALE_THRESHOLD`, `DEN_DELIVERY_DEAD_THRESHOLD`...). This is invisible, untyped, undocumented, and impossible to audit. The config file is the single source of truth; env vars are for secrets and the file path only.
+
+### No Den-internal caller authentication
+
+Den runs on a trusted home LAN. Den-internal services (owner services, Gateway, MCP, web-edge) do not authenticate callers and do not send bearer tokens to each other. Do not add bearer-token or other caller authentication between Den services without an explicit owner decision. Database roles/passwords and genuine external credentials are unaffected.
 
 ---
 

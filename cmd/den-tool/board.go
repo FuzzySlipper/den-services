@@ -56,9 +56,8 @@ type BoardPurgeOptions struct {
 }
 
 type BoardClient struct {
-	baseURL      string
-	serviceToken string
-	httpClient   *http.Client
+	baseURL    string
+	httpClient *http.Client
 }
 
 type BoardHTTPError struct {
@@ -77,7 +76,7 @@ func (e *BoardHTTPError) Error() string {
 	return fmt.Sprintf("board service returned HTTP %d: %s", e.StatusCode, message)
 }
 
-func NewBoardClient(baseURL, serviceToken string, httpClient *http.Client) (*BoardClient, error) {
+func NewBoardClient(baseURL string, httpClient *http.Client) (*BoardClient, error) {
 	normalizedBaseURL := strings.TrimSpace(baseURL)
 	parsed, err := url.Parse(normalizedBaseURL)
 	if err != nil {
@@ -96,9 +95,8 @@ func NewBoardClient(baseURL, serviceToken string, httpClient *http.Client) (*Boa
 		httpClient = http.DefaultClient
 	}
 	return &BoardClient{
-		baseURL:      strings.TrimRight(normalizedBaseURL, "/"),
-		serviceToken: serviceToken,
-		httpClient:   httpClient,
+		baseURL:    strings.TrimRight(normalizedBaseURL, "/"),
+		httpClient: httpClient,
 	}, nil
 }
 
@@ -107,7 +105,7 @@ func BoardClientFromEnv() (*BoardClient, error) {
 	if baseURL == "" {
 		baseURL = defaultBoardURL
 	}
-	return NewBoardClient(baseURL, os.Getenv("DEN_BOARD_SERVICE_TOKEN"), http.DefaultClient)
+	return NewBoardClient(baseURL, http.DefaultClient)
 }
 
 func (c *BoardClient) Search(ctx context.Context, options BoardSearchOptions) ([]byte, error) {
@@ -321,9 +319,6 @@ func (c *BoardClient) request(ctx context.Context, method, requestURL string, pa
 	request.Header.Set("Accept", "application/json")
 	if payload != nil {
 		request.Header.Set("Content-Type", "application/json")
-	}
-	if c.serviceToken != "" {
-		request.Header.Set("Authorization", "Bearer "+c.serviceToken)
 	}
 	response, err := c.httpClient.Do(request)
 	if err != nil {

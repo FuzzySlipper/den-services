@@ -430,9 +430,6 @@ func newTaskContextRequest(ctx context.Context, method string, backend config.Ba
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	if backend.ServiceToken != "" {
-		request.Header.Set("Authorization", "Bearer "+backend.ServiceToken)
-	}
 	return request, nil
 }
 

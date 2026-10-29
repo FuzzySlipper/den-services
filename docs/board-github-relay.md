@@ -17,7 +17,7 @@ Every run names its project explicitly:
 den-tool board github-sync --project rusty-engine --json
 ```
 
-The command uses den-tool's normal authenticated LAN MCP transport. MCP routes
+The command uses den-tool's normal LAN MCP transport. MCP routes
 the hidden relay operation to the loopback-only `board-relay` owner service.
 Agents do not need relay-specific URLs, tokens, SSH commands, or shell setup.
 
@@ -65,8 +65,7 @@ material that is genuinely suitable for that exposure.
 ## Configuration and deployment
 
 `board-relay/config/config.example.yaml` uses typed configuration; its GitHub
-token, Board token, database URL, and service token are environment-backed
-secrets. The relay owns `den_board_relay` only and uses the Board HTTP API for
+token and database URL are environment-backed secrets. The relay owns `den_board_relay` only and uses the Board HTTP API for
 all Board reads and writes. Its deployment entry is `board-relay` on loopback
-port 8101. MCP owns the authenticated LAN ingress; the relay port is never
+port 8101. MCP owns the LAN ingress; the relay port is never
 exposed directly.

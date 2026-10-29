@@ -31,10 +31,6 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if !match.CallerAuth.Authorizes(r) {
-		api.WriteServiceError(w, api.ErrUnauthorized)
-		return
-	}
 	request := r
 	if match.UsesSuccessor && match.IdentityTranslation.Enabled() {
 		translated, err := translatedRequest(r, match.IdentityTranslation)
@@ -50,7 +46,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(request *httputil.ProxyRequest) {
-			rewriteProxyRequest(request, match.Target, match.Auth, match.PathRewrite)
+			rewriteProxyRequest(request, match.Target, match.PathRewrite)
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			h.logger.Error("gateway proxy failed", "method", r.Method, "path", r.URL.Path, "error", err)
@@ -64,7 +60,7 @@ func preferSuccessor(r *http.Request) bool {
 	return strings.EqualFold(strings.TrimSpace(r.Header.Get(migratedFunctionsHeader)), "true")
 }
 
-func rewriteProxyRequest(request *httputil.ProxyRequest, target *url.URL, auth UpstreamAuth, pathRewrite PathRewrite) {
+func rewriteProxyRequest(request *httputil.ProxyRequest, target *url.URL, pathRewrite PathRewrite) {
 	request.Out.URL.Scheme = target.Scheme
 	request.Out.URL.Host = target.Host
 	request.Out.URL.Path = joinPaths(target.Path, pathRewrite.Apply(request.In.URL.Path))
@@ -72,7 +68,6 @@ func rewriteProxyRequest(request *httputil.ProxyRequest, target *url.URL, auth U
 	request.Out.URL.RawPath = joinPaths(target.EscapedPath(), pathRewrite.Apply(request.In.URL.EscapedPath()))
 	request.Out.URL.RawQuery = request.In.URL.RawQuery
 	request.Out.Host = target.Host
-	auth.Apply(request.Out.Header)
 }
 
 func translatedRequest(r *http.Request, translation IdentityTranslation) (*http.Request, error) {

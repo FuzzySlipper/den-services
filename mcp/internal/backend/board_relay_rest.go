@@ -85,8 +85,5 @@ func buildBoardRelayRESTRequest(ctx context.Context, backend config.BackendConfi
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	if backend.ServiceToken != "" {
-		request.Header.Set("Authorization", "Bearer "+backend.ServiceToken)
-	}
 	return request, nil
 }

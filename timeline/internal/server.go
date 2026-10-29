@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"time"
 
-	"den-services/shared/api"
 	"den-services/shared/health"
 	"den-services/shared/postgres"
 )
@@ -36,14 +35,10 @@ func NewHTTPServerWithStore(cfg *Config, buildInfo health.BuildInfo, store Timel
 	apiMux := http.NewServeMux()
 	handler.RegisterRoutes(apiMux)
 
-	auth, err := api.NewServiceTokenAuth(cfg.ServiceToken)
-	if err != nil {
-		return nil, err
-	}
 	root := http.NewServeMux()
 	root.Handle("GET /health", healthHandler)
 	root.Handle("GET /version", versionHandler)
-	root.Handle("/", auth.Middleware(apiMux))
+	root.Handle("/", apiMux)
 
 	return &http.Server{
 		Addr:              cfg.BindAddr,

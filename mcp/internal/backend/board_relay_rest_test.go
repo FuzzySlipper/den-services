@@ -9,8 +9,8 @@ import (
 	"den-services/mcp/internal/config"
 )
 
-func TestBuildBoardRelayRESTRequestRoutesSyncWithServiceAuth(t *testing.T) {
-	request, err := buildBoardRelayRESTRequest(context.Background(), config.BackendConfig{BaseURL: "http://example.test", ServiceToken: "relay-token"}, Route{
+func TestBuildBoardRelayRESTRequestRoutesSync(t *testing.T) {
+	request, err := buildBoardRelayRESTRequest(context.Background(), config.BackendConfig{BaseURL: "http://example.test"}, Route{
 		Operation: "sync_board_github", Method: http.MethodPost, Path: "/v1/projects/{project_id}/board/github-sync",
 	}, ToolCall{Arguments: []byte(`{"project_id":"rusty dagger"}`)})
 	if err != nil {
@@ -19,7 +19,7 @@ func TestBuildBoardRelayRESTRequestRoutesSyncWithServiceAuth(t *testing.T) {
 	if got := request.URL.String(); got != "http://example.test/v1/projects/rusty%20dagger/board/github-sync" {
 		t.Fatalf("url = %q", got)
 	}
-	if got := request.Header.Get("Authorization"); got != "Bearer relay-token" {
+	if got := request.Header.Get("Authorization"); got != "" {
 		t.Fatalf("authorization = %q", got)
 	}
 }

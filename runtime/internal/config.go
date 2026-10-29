@@ -12,11 +12,10 @@ import (
 )
 
 type Config struct {
-	BindAddr     string
-	DatabaseURL  string
-	ServiceToken string
-	Heartbeat    HeartbeatConfig
-	HTTP         HTTPConfig
+	BindAddr    string
+	DatabaseURL string
+	Heartbeat   HeartbeatConfig
+	HTTP        HTTPConfig
 }
 
 type HeartbeatConfig struct {
@@ -78,11 +77,10 @@ func LoadConfigFromPath(path string) (*Config, error) {
 		return nil, err
 	}
 	cfg := &Config{
-		BindAddr:     file.BindAddr,
-		DatabaseURL:  databaseURL,
-		ServiceToken: os.Getenv("DEN_RUNTIME_SERVICE_TOKEN"),
-		Heartbeat:    heartbeat,
-		HTTP:         httpConfig,
+		BindAddr:    file.BindAddr,
+		DatabaseURL: databaseURL,
+		Heartbeat:   heartbeat,
+		HTTP:        httpConfig,
 	}
 	if err := cfg.validate(); err != nil {
 		return nil, err

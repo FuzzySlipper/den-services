@@ -33,12 +33,11 @@ func (r NoopTaskReader) GetTaskContext(_ context.Context, projectID string, task
 
 type ProjectScopeClient struct {
 	baseURL string
-	token   string
 	client  *http.Client
 }
 
-func NewProjectScopeClient(baseURL string, token string) *ProjectScopeClient {
-	return &ProjectScopeClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), token: strings.TrimSpace(token), client: &http.Client{Timeout: 5 * time.Second}}
+func NewProjectScopeClient(baseURL string) *ProjectScopeClient {
+	return &ProjectScopeClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), client: &http.Client{Timeout: 5 * time.Second}}
 }
 
 func (c *ProjectScopeClient) AssertWritable(ctx context.Context, projectID string) error {
@@ -50,9 +49,6 @@ func (c *ProjectScopeClient) AssertWritable(ctx context.Context, projectID strin
 		return fmt.Errorf("building project assert-writable request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("asserting project scope writable: %w", err)
@@ -73,12 +69,11 @@ func (c *ProjectScopeClient) AssertWritable(ctx context.Context, projectID strin
 
 type TaskClient struct {
 	baseURL string
-	token   string
 	client  *http.Client
 }
 
-func NewTaskClient(baseURL string, token string) *TaskClient {
-	return &TaskClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), token: strings.TrimSpace(token), client: &http.Client{Timeout: 5 * time.Second}}
+func NewTaskClient(baseURL string) *TaskClient {
+	return &TaskClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), client: &http.Client{Timeout: 5 * time.Second}}
 }
 
 func (c *TaskClient) GetTaskContext(ctx context.Context, projectID string, taskID int64) (TaskContext, error) {
@@ -88,9 +83,6 @@ func (c *TaskClient) GetTaskContext(ctx context.Context, projectID string, taskI
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/v1/projects/%s/tasks/%d", c.baseURL, url.PathEscape(projectID), taskID), nil)
 	if err != nil {
 		return TaskContext{}, fmt.Errorf("building task context request: %w", err)
-	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {

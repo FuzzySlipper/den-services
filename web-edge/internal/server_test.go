@@ -68,7 +68,7 @@ func TestServerServesReleaseAndProxiesOnlyThroughGateway(t *testing.T) {
 		t.Fatalf("proxy status = %d", response.StatusCode)
 	}
 	_ = response.Body.Close()
-	if gatewayAuthorization != "Bearer edge-token" {
+	if gatewayAuthorization != "Bearer browser-supplied-token" {
 		t.Fatalf("Gateway Authorization = %q", gatewayAuthorization)
 	}
 	if gatewayPath != "/v1/projects?include_archived=true" {
@@ -275,8 +275,6 @@ func testConfig(root string, target *url.URL) *Config {
 		},
 		Gateway: GatewayConfig{
 			BaseURL:               target,
-			BearerTokenEnv:        "EDGE_TOKEN",
-			BearerToken:           "edge-token",
 			ResponseHeaderTimeout: time.Second,
 		},
 	}

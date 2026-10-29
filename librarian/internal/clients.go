@@ -15,15 +15,10 @@ import (
 
 type SourceClientConfig struct {
 	ProjectsBaseURL  string
-	ProjectsToken    string
 	TasksBaseURL     string
-	TasksToken       string
 	MessagesBaseURL  string
-	MessagesToken    string
 	DocumentsBaseURL string
-	DocumentsToken   string
 	KnowledgeBaseURL string
-	KnowledgeToken   string
 	RequestTimeout   time.Duration
 }
 
@@ -37,7 +32,6 @@ type HTTPSourceClients struct {
 
 type sourceClient struct {
 	baseURL string
-	token   string
 	client  *http.Client
 }
 
@@ -48,16 +42,16 @@ func NewHTTPSourceClients(cfg SourceClientConfig) *HTTPSourceClients {
 	}
 	client := &http.Client{Timeout: timeout}
 	return &HTTPSourceClients{
-		projects:  newSourceClient(cfg.ProjectsBaseURL, cfg.ProjectsToken, client),
-		tasks:     newSourceClient(cfg.TasksBaseURL, cfg.TasksToken, client),
-		messages:  newSourceClient(cfg.MessagesBaseURL, cfg.MessagesToken, client),
-		documents: newSourceClient(cfg.DocumentsBaseURL, cfg.DocumentsToken, client),
-		knowledge: newSourceClient(cfg.KnowledgeBaseURL, cfg.KnowledgeToken, client),
+		projects:  newSourceClient(cfg.ProjectsBaseURL, client),
+		tasks:     newSourceClient(cfg.TasksBaseURL, client),
+		messages:  newSourceClient(cfg.MessagesBaseURL, client),
+		documents: newSourceClient(cfg.DocumentsBaseURL, client),
+		knowledge: newSourceClient(cfg.KnowledgeBaseURL, client),
 	}
 }
 
-func newSourceClient(baseURL string, token string, client *http.Client) sourceClient {
-	return sourceClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), token: strings.TrimSpace(token), client: client}
+func newSourceClient(baseURL string, client *http.Client) sourceClient {
+	return sourceClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), client: client}
 }
 
 func (c *HTTPSourceClients) ValidateProject(ctx context.Context, projectID string) error {
@@ -180,9 +174,6 @@ func (c sourceClient) doJSON(request *http.Request, target any) error {
 		return errors.New("source base url is not configured")
 	}
 	request.Header.Set("Accept", "application/json")
-	if c.token != "" {
-		request.Header.Set("Authorization", "Bearer "+c.token)
-	}
 	resp, err := c.client.Do(request)
 	if err != nil {
 		return err

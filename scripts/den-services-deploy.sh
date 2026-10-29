@@ -191,15 +191,7 @@ backup_config_file() {
 }
 
 validate_deployment_prerequisites() {
-  local env_file="/etc/den-services/${service}.env"
-  if [[ "${service}" == "gateway" ]]; then
-    den_require_env_assignment "${env_file}" DEN_GATEWAY_KNOWLEDGE_UPSTREAM_TOKEN
-    den_require_env_assignment "${env_file}" DEN_GATEWAY_BOARD_UPSTREAM_TOKEN
-  fi
   if [[ "${service}" == "mcp" ]]; then
-    den_require_env_assignment "${env_file}" DEN_HANDOFF_SERVICE_TOKEN
-    den_require_env_assignment "${env_file}" DEN_BOARD_SERVICE_TOKEN
-    den_require_env_assignment "${env_file}" DEN_BOARD_RELAY_SERVICE_TOKEN
     den_mcp_backend_configured "${service_root}/config/config.yaml" handoff || {
       echo "missing required handoff backend in ${service_root}/config/config.yaml" >&2
       return 1
@@ -371,10 +363,6 @@ ensure_gateway_knowledge_route() {
     legacy_upstream_url: "http://127.0.0.1:8095"
     successor_upstream_url: "http://127.0.0.1:8095"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_KNOWLEDGE_UPSTREAM_TOKEN}"
 ROUTE
 
   if [[ -n "${staged_routes}" ]]; then
@@ -437,10 +425,6 @@ ensure_gateway_manual_review_route() {
     legacy_upstream_url: "http://127.0.0.1:8413"
     successor_upstream_url: "http://127.0.0.1:8413"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_REVIEW_UPSTREAM_TOKEN}"
 ROUTE
 
   if [[ -n "${staged_routes}" ]]; then
@@ -700,11 +684,6 @@ install -m 0755 "${stage_dir}/bin/${binary_name}" "${service_root}/bin/${binary_
 
 if [[ -f "${config_example}" && ! -f "${service_root}/config/config.yaml" ]]; then
   install -m 0644 "${config_example}" "${service_root}/config/config.yaml"
-fi
-if [[ "${service}" == "visual-inspect" ]]; then
-  install -d -m 0755 "${service_root}/prompts" "${service_root}/schemas"
-  install -m 0644 visual-inspect/prompts/*.md "${service_root}/prompts/"
-  install -m 0644 visual-inspect/schemas/*.json "${service_root}/schemas/"
 fi
 if [[ "${service}" == "gateway" && -f gateway/config/routes.example.yaml && ! -f "${service_root}/config/routes.yaml" ]]; then
   install -m 0644 gateway/config/routes.example.yaml "${service_root}/config/routes.yaml"

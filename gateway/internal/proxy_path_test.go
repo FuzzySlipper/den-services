@@ -46,9 +46,8 @@ func TestGatewayPreservesEncodedDocumentSlugs(t *testing.T) {
 						if err != nil {
 							t.Fatal(err)
 						}
-						server := newTestGatewayServerWithRoutes(t, table, "token")
+						server := newTestGatewayServerWithRoutes(t, table)
 						request := httptest.NewRequest(http.MethodGet, "/v1/projects/rusty-craftsurvive/documents/"+slug.encoded+suffix+"?anchor=water%2Flevel", nil)
-						request.Header.Set("Authorization", "Bearer token")
 						response := httptest.NewRecorder()
 						server.ServeHTTP(response, request)
 						if response.Code != http.StatusOK || response.Body.String() != slug.decoded {

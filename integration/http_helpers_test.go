@@ -5,13 +5,13 @@ import (
 	"testing"
 )
 
-func TestNewAuthenticatedRequest(t *testing.T) {
-	request, err := NewAuthenticatedRequest(http.MethodPost, "http://example.test", []byte(`{"ok":true}`), "secret")
+func TestNewJSONRequest(t *testing.T) {
+	request, err := NewJSONRequest(http.MethodPost, "http://example.test", []byte(`{"ok":true}`))
 	if err != nil {
-		t.Fatalf("NewAuthenticatedRequest() error = %v", err)
+		t.Fatalf("NewJSONRequest() error = %v", err)
 	}
-	if got := request.Header.Get("Authorization"); got != "Bearer secret" {
-		t.Fatalf("Authorization = %q, want Bearer secret", got)
+	if got := request.Header.Get("Authorization"); got != "" {
+		t.Fatalf("Authorization = %q, want none", got)
 	}
 	if got := request.Header.Get("Content-Type"); got != "application/json" {
 		t.Fatalf("Content-Type = %q, want application/json", got)

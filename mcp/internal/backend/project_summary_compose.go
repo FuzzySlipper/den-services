@@ -194,9 +194,6 @@ func (c *Client) projectSummaryGET(ctx context.Context, backend config.BackendCo
 		return nil, nil, fmt.Errorf("building project summary request: %w", err)
 	}
 	request.Header.Set("Accept", "application/json")
-	if backend.ServiceToken != "" {
-		request.Header.Set("Authorization", "Bearer "+backend.ServiceToken)
-	}
 	response, cancel, err := c.doRESTRequest(request, backend)
 	if err != nil {
 		return nil, backendFailure(backend.Name, call.Operation, call.ToolName, err, nil), nil

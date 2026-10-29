@@ -9,15 +9,12 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
-
-	sharedconfig "den-services/shared/config"
 )
 
 const defaultDetailReferenceTTL = 15 * time.Minute
 
 type Config struct {
 	Server   ServerConfig
-	Security SecurityConfig
 	Routes   RouteConfig
 	Details  DetailConfig
 	Backends []BackendConfig
@@ -30,12 +27,6 @@ type ServerConfig struct {
 	DefaultToolProfile string
 }
 
-type SecurityConfig struct {
-	ServiceTokenEnv              string
-	ServiceToken                 string
-	AllowUnauthenticatedLocalDev bool
-}
-
 type RouteConfig struct {
 	TablePath string
 }
@@ -45,17 +36,14 @@ type DetailConfig struct {
 }
 
 type BackendConfig struct {
-	Name            string
-	BaseURL         string
-	HealthPath      string
-	Timeout         time.Duration
-	ServiceTokenEnv string
-	ServiceToken    string
+	Name       string
+	BaseURL    string
+	HealthPath string
+	Timeout    time.Duration
 }
 
 type configFile struct {
 	Server   serverConfigFile    `yaml:"server"`
-	Security securityConfigFile  `yaml:"security"`
 	Routes   routeConfigFile     `yaml:"routes"`
 	Details  detailConfigFile    `yaml:"details"`
 	Backends []backendConfigFile `yaml:"backends"`
@@ -68,11 +56,6 @@ type serverConfigFile struct {
 	DefaultToolProfile string `yaml:"default_tool_profile"`
 }
 
-type securityConfigFile struct {
-	ServiceTokenEnv              string `yaml:"service_token_env"`
-	AllowUnauthenticatedLocalDev bool   `yaml:"allow_unauthenticated_local_dev"`
-}
-
 type routeConfigFile struct {
 	TablePath string `yaml:"table_path"`
 }
@@ -82,11 +65,10 @@ type detailConfigFile struct {
 }
 
 type backendConfigFile struct {
-	Name            string `yaml:"name"`
-	BaseURL         string `yaml:"base_url"`
-	HealthPath      string `yaml:"health_path"`
-	Timeout         string `yaml:"timeout"`
-	ServiceTokenEnv string `yaml:"service_token_env"`
+	Name       string `yaml:"name"`
+	BaseURL    string `yaml:"base_url"`
+	HealthPath string `yaml:"health_path"`
+	Timeout    string `yaml:"timeout"`
 }
 
 func Load() (*Config, error) {
@@ -94,14 +76,6 @@ func Load() (*Config, error) {
 }
 
 func LoadFromPath(path string) (*Config, error) {
-	values, err := sharedconfig.Load()
-	if err != nil {
-		return nil, err
-	}
-	return LoadFromPathWithValues(path, values)
-}
-
-func LoadFromPathWithValues(path string, values sharedconfig.Values) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading mcp config %s: %w", path, err)
@@ -110,7 +84,7 @@ func LoadFromPathWithValues(path string, values sharedconfig.Values) (*Config, e
 	if err := yaml.Unmarshal(data, &file); err != nil {
 		return nil, fmt.Errorf("parsing mcp config %s: %w", path, err)
 	}
-	cfg, err := file.toConfig(values)
+	cfg, err := file.toConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -120,12 +94,12 @@ func LoadFromPathWithValues(path string, values sharedconfig.Values) (*Config, e
 	return cfg, nil
 }
 
-func (c configFile) toConfig(values sharedconfig.Values) (*Config, error) {
+func (c configFile) toConfig() (*Config, error) {
 	serverConfig, err := c.Server.toConfig()
 	if err != nil {
 		return nil, err
 	}
-	backends, err := c.toBackendConfigs(values)
+	backends, err := c.toBackendConfigs()
 	if err != nil {
 		return nil, err
 	}
@@ -136,14 +110,8 @@ func (c configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 			return nil, err
 		}
 	}
-	serviceTokenEnv := strings.TrimSpace(c.Security.ServiceTokenEnv)
 	return &Config{
 		Server: serverConfig,
-		Security: SecurityConfig{
-			ServiceTokenEnv:              serviceTokenEnv,
-			ServiceToken:                 values.String(serviceTokenEnv, ""),
-			AllowUnauthenticatedLocalDev: c.Security.AllowUnauthenticatedLocalDev,
-		},
 		Routes: RouteConfig{
 			TablePath: strings.TrimSpace(c.Routes.TablePath),
 		},
@@ -152,10 +120,10 @@ func (c configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 	}, nil
 }
 
-func (c configFile) toBackendConfigs(values sharedconfig.Values) ([]BackendConfig, error) {
+func (c configFile) toBackendConfigs() ([]BackendConfig, error) {
 	backends := make([]BackendConfig, 0, len(c.Backends))
 	for index, backend := range c.Backends {
-		parsed, err := backend.toConfig(values)
+		parsed, err := backend.toConfig()
 		if err != nil {
 			return nil, fmt.Errorf("backends[%d]: %w", index, err)
 		}
@@ -177,19 +145,16 @@ func (c serverConfigFile) toConfig() (ServerConfig, error) {
 	}, nil
 }
 
-func (c backendConfigFile) toConfig(values sharedconfig.Values) (BackendConfig, error) {
+func (c backendConfigFile) toConfig() (BackendConfig, error) {
 	timeout, err := parseRequiredDuration("backend.timeout", c.Timeout)
 	if err != nil {
 		return BackendConfig{}, err
 	}
-	serviceTokenEnv := strings.TrimSpace(c.ServiceTokenEnv)
 	return BackendConfig{
-		Name:            strings.TrimSpace(c.Name),
-		BaseURL:         strings.TrimRight(strings.TrimSpace(c.BaseURL), "/"),
-		HealthPath:      cleanPath(c.HealthPath),
-		Timeout:         timeout,
-		ServiceTokenEnv: serviceTokenEnv,
-		ServiceToken:    values.String(serviceTokenEnv, ""),
+		Name:       strings.TrimSpace(c.Name),
+		BaseURL:    strings.TrimRight(strings.TrimSpace(c.BaseURL), "/"),
+		HealthPath: cleanPath(c.HealthPath),
+		Timeout:    timeout,
 	}, nil
 }
 
@@ -202,12 +167,6 @@ func (c *Config) validate() error {
 	}
 	if c.Server.ReadHeaderTimeout <= 0 {
 		return errors.New("server.read_header_timeout must be positive")
-	}
-	if c.Security.ServiceTokenEnv == "" {
-		return errors.New("security.service_token_env is required")
-	}
-	if !c.Security.AllowUnauthenticatedLocalDev && c.Security.ServiceToken == "" {
-		return fmt.Errorf("%s is required when unauthenticated local dev is disabled", c.Security.ServiceTokenEnv)
 	}
 	if c.Routes.TablePath == "" {
 		return errors.New("routes.table_path is required")

@@ -16,7 +16,7 @@ func TestBuildBoardRESTRequestWalksOnlyDirectChildren(t *testing.T) {
 	parentID := int64(23)
 	afterID := int64(29)
 	limit := 7
-	request, err := buildBoardRESTRequest(context.Background(), config.BackendConfig{BaseURL: "http://example.test", ServiceToken: "secret"}, Route{
+	request, err := buildBoardRESTRequest(context.Background(), config.BackendConfig{BaseURL: "http://example.test"}, Route{
 		Operation: "list_board_comments", Method: http.MethodGet, Path: "/v1/board/posts/{post_id}/comments",
 	}, ToolCall{Arguments: mustBoardArguments(t, boardToolArguments{PostID: 11, ParentCommentID: &parentID, AfterID: &afterID, Limit: &limit})})
 	if err != nil {
@@ -25,7 +25,7 @@ func TestBuildBoardRESTRequestWalksOnlyDirectChildren(t *testing.T) {
 	if got := request.URL.String(); got != "http://example.test/v1/board/posts/11/comments?after_id=29&limit=7&parent_comment_id=23" {
 		t.Fatalf("url = %q", got)
 	}
-	if got := request.Header.Get("Authorization"); got != "Bearer secret" {
+	if got := request.Header.Get("Authorization"); got != "" {
 		t.Fatalf("authorization = %q", got)
 	}
 }
@@ -50,7 +50,7 @@ func TestBuildBoardRESTRequestCreatesImmediateReply(t *testing.T) {
 func TestBuildBoardRESTRequestSearchesWithBoundedQuery(t *testing.T) {
 	afterID := int64(29)
 	limit := 7
-	request, err := buildBoardRESTRequest(context.Background(), config.BackendConfig{BaseURL: "http://example.test", ServiceToken: "secret"}, Route{
+	request, err := buildBoardRESTRequest(context.Background(), config.BackendConfig{BaseURL: "http://example.test"}, Route{
 		Operation: "search_board_posts", Method: http.MethodGet, Path: "/v1/projects/{project_id}/board/posts/search",
 	}, ToolCall{Arguments: mustBoardArguments(t, boardToolArguments{ProjectID: "den services", Query: "thread tree", AfterID: &afterID, Limit: &limit})})
 	if err != nil {
@@ -59,7 +59,7 @@ func TestBuildBoardRESTRequestSearchesWithBoundedQuery(t *testing.T) {
 	if got := request.URL.String(); got != "http://example.test/v1/projects/den%20services/board/posts/search?after_id=29&limit=7&q=thread+tree" {
 		t.Fatalf("url = %q", got)
 	}
-	if got := request.Header.Get("Authorization"); got != "Bearer secret" {
+	if got := request.Header.Get("Authorization"); got != "" {
 		t.Fatalf("authorization = %q", got)
 	}
 }

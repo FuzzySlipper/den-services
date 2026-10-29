@@ -13,18 +13,13 @@ import (
 )
 
 type Config struct {
-	BindAddr                     string
-	DatabaseURL                  string
-	ServiceToken                 string
-	AllowUnauthenticatedLocalDev bool
-	ProjectsBaseURL              string
-	ProjectsToken                string
-	TasksBaseURL                 string
-	TasksToken                   string
-	MessagesBaseURL              string
-	MessagesToken                string
-	HTTP                         HTTPConfig
-	GitHub                       GitHubConfig
+	BindAddr        string
+	DatabaseURL     string
+	ProjectsBaseURL string
+	TasksBaseURL    string
+	MessagesBaseURL string
+	HTTP            HTTPConfig
+	GitHub          GitHubConfig
 }
 
 type HTTPConfig struct {
@@ -49,18 +44,13 @@ type GitHubConfig struct {
 }
 
 type configFile struct {
-	BindAddr                     string           `yaml:"bind_addr"`
-	DatabaseURLEnv               string           `yaml:"database_url_env"`
-	ServiceTokenEnv              string           `yaml:"service_token_env"`
-	AllowUnauthenticatedLocalDev bool             `yaml:"allow_unauthenticated_local_dev"`
-	ProjectsBaseURLEnv           string           `yaml:"projects_base_url_env"`
-	ProjectsTokenEnv             string           `yaml:"projects_token_env"`
-	TasksBaseURLEnv              string           `yaml:"tasks_base_url_env"`
-	TasksTokenEnv                string           `yaml:"tasks_token_env"`
-	MessagesBaseURLEnv           string           `yaml:"messages_base_url_env"`
-	MessagesTokenEnv             string           `yaml:"messages_token_env"`
-	HTTP                         httpConfigFile   `yaml:"http"`
-	GitHub                       githubConfigFile `yaml:"github"`
+	BindAddr           string           `yaml:"bind_addr"`
+	DatabaseURLEnv     string           `yaml:"database_url_env"`
+	ProjectsBaseURLEnv string           `yaml:"projects_base_url_env"`
+	TasksBaseURLEnv    string           `yaml:"tasks_base_url_env"`
+	MessagesBaseURLEnv string           `yaml:"messages_base_url_env"`
+	HTTP               httpConfigFile   `yaml:"http"`
+	GitHub             githubConfigFile `yaml:"github"`
 }
 
 type httpConfigFile struct {
@@ -124,29 +114,23 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	serviceToken := values.String(f.ServiceTokenEnv, "")
 	return &Config{
-		BindAddr:                     f.BindAddr,
-		DatabaseURL:                  values.String(f.DatabaseURLEnv, ""),
-		ServiceToken:                 serviceToken,
-		AllowUnauthenticatedLocalDev: f.AllowUnauthenticatedLocalDev,
-		ProjectsBaseURL:              values.String(f.ProjectsBaseURLEnv, ""),
-		ProjectsToken:                values.String(f.ProjectsTokenEnv, serviceToken),
-		TasksBaseURL:                 values.String(f.TasksBaseURLEnv, ""),
-		TasksToken:                   values.String(f.TasksTokenEnv, serviceToken),
-		MessagesBaseURL:              values.String(f.MessagesBaseURLEnv, ""),
-		MessagesToken:                values.String(f.MessagesTokenEnv, serviceToken),
-		HTTP:                         HTTPConfig{ReadHeaderTimeout: readHeaderTimeout},
-		GitHub:                       github,
+		BindAddr:        f.BindAddr,
+		DatabaseURL:     values.String(f.DatabaseURLEnv, ""),
+		ProjectsBaseURL: values.String(f.ProjectsBaseURLEnv, ""),
+		TasksBaseURL:    values.String(f.TasksBaseURLEnv, ""),
+		MessagesBaseURL: values.String(f.MessagesBaseURLEnv, ""),
+		HTTP:            HTTPConfig{ReadHeaderTimeout: readHeaderTimeout},
+		GitHub:          github,
 	}, nil
 }
 
 func (c *Config) validate() error {
 	required := map[string]string{
-		"bind_addr": c.BindAddr, "database url": c.DatabaseURL, "service token": c.ServiceToken,
-		"projects base url": c.ProjectsBaseURL, "projects token": c.ProjectsToken,
-		"tasks base url": c.TasksBaseURL, "tasks token": c.TasksToken,
-		"messages base url": c.MessagesBaseURL, "messages token": c.MessagesToken,
+		"bind_addr": c.BindAddr, "database url": c.DatabaseURL,
+		"projects base url": c.ProjectsBaseURL,
+		"tasks base url":    c.TasksBaseURL,
+		"messages base url": c.MessagesBaseURL,
 	}
 	for name, value := range required {
 		if strings.TrimSpace(value) == "" {

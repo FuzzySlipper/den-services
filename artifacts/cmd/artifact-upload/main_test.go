@@ -17,12 +17,8 @@ import (
 
 func TestUploadPostsMultipartAndPrintsMetadataOnly(t *testing.T) {
 	imagePath := writePNG(t)
-	var sawAuth bool
 	var sawFields bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") == "Bearer secret-token" {
-			sawAuth = true
-		}
 		if err := r.ParseMultipartForm(1024 * 1024); err != nil {
 			t.Fatalf("ParseMultipartForm() error = %v", err)
 		}
@@ -46,7 +42,6 @@ func TestUploadPostsMultipartAndPrintsMetadataOnly(t *testing.T) {
 	err := upload(t.Context(), uploadConfig{
 		filePath:    imagePath,
 		baseURL:     server.URL,
-		token:       "secret-token",
 		projectID:   "den-services",
 		taskID:      3478,
 		logicalName: "overview.png",
@@ -55,9 +50,6 @@ func TestUploadPostsMultipartAndPrintsMetadataOnly(t *testing.T) {
 	}, &output)
 	if err != nil {
 		t.Fatalf("upload() error = %v", err)
-	}
-	if !sawAuth {
-		t.Fatal("Authorization header was not sent")
 	}
 	if !sawFields {
 		t.Fatal("expected multipart fields were not sent")
@@ -83,8 +75,6 @@ func TestParseFlagsUsesEnvAndDefaultsLogicalName(t *testing.T) {
 		switch key {
 		case baseURLEnv:
 			return "http://127.0.0.1:8090/"
-		case tokenEnv:
-			return "token"
 		default:
 			return ""
 		}

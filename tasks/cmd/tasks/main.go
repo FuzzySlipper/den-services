@@ -41,7 +41,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
-	service := tasks.NewService(tasks.NewStore(pool), tasks.NewProjectScopeClient(cfg.ProjectsBaseURL, cfg.ProjectsToken), time.Now)
+	service := tasks.NewService(tasks.NewStore(pool), tasks.NewProjectScopeClient(cfg.ProjectsBaseURL), time.Now)
 	server, err := tasks.NewHTTPServer(cfg, info, service)
 	if err != nil {
 		slog.Error("building server", "error", err)

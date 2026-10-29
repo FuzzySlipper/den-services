@@ -144,13 +144,9 @@ Observation itself remains loopback-bound on den-srv. Browser clients should not
 
 Gateway supports this posture with method-scoped routes:
 
-- Den Web read access: authenticated Gateway route to `GET /v1/observation/lane`, `GET /v1/observation/agents/{id}/overview`, and `GET /v1/observation/active-work`.
-- Trusted adapter writes: authenticated Gateway route to `POST /v1/observation/activity-events` and `POST /v1/observation/lifecycle-events`.
-- Read routes use `DEN_GATEWAY_OBSERVATION_READ_TOKEN`.
-- Write routes use `DEN_GATEWAY_OBSERVATION_WRITE_TOKEN`.
-- Gateway forwards to Observation with `DEN_GATEWAY_OBSERVATION_UPSTREAM_TOKEN`, replacing inbound browser/adapter tokens before proxying.
-
-Do not configure a single broad caller credential for all `/v1/observation` methods. A read token must not be able to POST activity events.
+- Den Web read access: Gateway route to `GET /v1/observation/lane`, `GET /v1/observation/agents/{id}/overview`, and `GET /v1/observation/active-work`.
+- Trusted adapter writes: Gateway route to `POST /v1/observation/activity-events` and `POST /v1/observation/lifecycle-events`.
+- Gateway and Observation do not authenticate callers; Den runs on a trusted home LAN. Route only the listed methods rather than a broad `/v1/observation` catch-all.
 
 ## Non-Actuation Rule
 

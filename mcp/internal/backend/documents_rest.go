@@ -197,9 +197,6 @@ func buildDocumentsRESTRequest(ctx context.Context, backend config.BackendConfig
 	if requestBody != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	if backend.ServiceToken != "" {
-		request.Header.Set("Authorization", "Bearer "+backend.ServiceToken)
-	}
 	return request, nil
 }
 

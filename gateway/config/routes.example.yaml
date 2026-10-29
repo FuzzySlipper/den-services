@@ -1,8 +1,7 @@
 # Deployable successor route table.
 #
-# Gateway is the only browser-facing API router. web-edge authenticates with
-# DEN_GATEWAY_WEB_TOKEN, and Gateway replaces that caller credential with the
-# owning service's token. Lane-specific callers keep their narrower tokens.
+# Gateway is the only browser-facing API router. Den runs on a trusted LAN, so
+# routes carry no caller or upstream credentials.
 
 routes:
   - name: "board-project-routes"
@@ -11,10 +10,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8100"
     successor_upstream_url: "http://127.0.0.1:8100"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_BOARD_UPSTREAM_TOKEN}"
 
   - name: "board-item-routes"
     path_pattern: "/v1/board"
@@ -22,10 +17,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8100"
     successor_upstream_url: "http://127.0.0.1:8100"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_BOARD_UPSTREAM_TOKEN}"
 
   - name: "review-project-task-routes"
     path_pattern: "/v1/projects/{project_id}/tasks/{task_id}/review"
@@ -33,10 +24,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8096"
     successor_upstream_url: "http://127.0.0.1:8096"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_REVIEW_UPSTREAM_TOKEN}"
 
   - name: "manual-review-project-task-routes"
     path_pattern: "/v1/projects/{project_id}/tasks/{task_id}/manual-review"
@@ -44,10 +31,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8413"
     successor_upstream_url: "http://127.0.0.1:8413"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_REVIEW_UPSTREAM_TOKEN}"
 
   - name: "review-project-routes"
     path_pattern: "/v1/projects/{project_id}/review"
@@ -55,10 +38,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8096"
     successor_upstream_url: "http://127.0.0.1:8096"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_REVIEW_UPSTREAM_TOKEN}"
 
   - name: "review-task-routes"
     path_pattern: "/v1/tasks/{task_id}/review"
@@ -66,10 +45,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8096"
     successor_upstream_url: "http://127.0.0.1:8096"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_REVIEW_UPSTREAM_TOKEN}"
 
   - name: "review-root-routes"
     path_pattern: "/v1/review"
@@ -77,10 +52,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8096"
     successor_upstream_url: "http://127.0.0.1:8096"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_REVIEW_UPSTREAM_TOKEN}"
 
   - name: "message-task-packets"
     path_pattern: "/v1/projects/{project_id}/tasks/{task_id}/packets"
@@ -88,10 +59,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8093"
     successor_upstream_url: "http://127.0.0.1:8093"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_MESSAGES_UPSTREAM_TOKEN}"
 
   - name: "message-task-completions"
     path_pattern: "/v1/projects/{project_id}/tasks/{task_id}/completions"
@@ -99,10 +66,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8093"
     successor_upstream_url: "http://127.0.0.1:8093"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_MESSAGES_UPSTREAM_TOKEN}"
 
   - name: "message-task-notifications"
     path_pattern: "/v1/projects/{project_id}/tasks/{task_id}/user-notifications"
@@ -110,10 +73,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8093"
     successor_upstream_url: "http://127.0.0.1:8093"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_MESSAGES_UPSTREAM_TOKEN}"
 
   - name: "guidance-project-routes"
     path_pattern: "/v1/projects/{project_id}/agent-guidance"
@@ -121,10 +80,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8097"
     successor_upstream_url: "http://127.0.0.1:8097"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_GUIDANCE_UPSTREAM_TOKEN}"
 
   - name: "documents-project-routes"
     path_pattern: "/v1/projects/{project_id}/documents"
@@ -132,10 +87,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8094"
     successor_upstream_url: "http://127.0.0.1:8094"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_DOCUMENTS_UPSTREAM_TOKEN}"
 
   - name: "knowledge-routes"
     path_pattern: "/v1/knowledge"
@@ -143,10 +94,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8095"
     successor_upstream_url: "http://127.0.0.1:8095"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_KNOWLEDGE_UPSTREAM_TOKEN}"
 
   - name: "handoff-routes"
     path_pattern: "/v1/handoffs"
@@ -154,10 +101,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8099"
     successor_upstream_url: "http://127.0.0.1:8099"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_HANDOFF_UPSTREAM_TOKEN}"
 
   - name: "librarian-project-routes"
     path_pattern: "/v1/projects/{project_id}/librarian"
@@ -165,10 +108,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8098"
     successor_upstream_url: "http://127.0.0.1:8098"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_LIBRARIAN_UPSTREAM_TOKEN}"
 
   - name: "messages-project-task-worker-prompt"
     path_pattern: "/v1/projects/{project_id}/packets"
@@ -176,10 +115,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8093"
     successor_upstream_url: "http://127.0.0.1:8093"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_MESSAGES_UPSTREAM_TOKEN}"
 
   - name: "messages-project-routes"
     path_pattern: "/v1/projects/{project_id}/messages"
@@ -187,10 +122,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8093"
     successor_upstream_url: "http://127.0.0.1:8093"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_MESSAGES_UPSTREAM_TOKEN}"
 
   - name: "messages-project-notifications"
     path_pattern: "/v1/projects/{project_id}/notifications"
@@ -198,10 +129,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8093"
     successor_upstream_url: "http://127.0.0.1:8093"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_MESSAGES_UPSTREAM_TOKEN}"
 
   - name: "messages-project-user-notifications"
     path_pattern: "/v1/projects/{project_id}/user-notifications"
@@ -209,10 +136,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8093"
     successor_upstream_url: "http://127.0.0.1:8093"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_MESSAGES_UPSTREAM_TOKEN}"
 
   - name: "tasks-project-routes"
     path_pattern: "/v1/projects/{project_id}/tasks"
@@ -220,10 +143,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8092"
     successor_upstream_url: "http://127.0.0.1:8092"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_TASKS_UPSTREAM_TOKEN}"
 
   - name: "tasks-root-routes"
     path_pattern: "/v1/tasks/{task_id}"
@@ -231,10 +150,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8092"
     successor_upstream_url: "http://127.0.0.1:8092"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_TASKS_UPSTREAM_TOKEN}"
 
   - name: "projects-routes"
     path_pattern: "/v1/projects"
@@ -242,10 +157,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8091"
     successor_upstream_url: "http://127.0.0.1:8091"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_PROJECTS_UPSTREAM_TOKEN}"
 
   - name: "spaces-routes"
     path_pattern: "/v1/spaces"
@@ -253,10 +164,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8091"
     successor_upstream_url: "http://127.0.0.1:8091"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_PROJECTS_UPSTREAM_TOKEN}"
 
   - name: "spaces-admin-routes"
     path_pattern: "/v1/admin/spaces"
@@ -264,10 +171,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8091"
     successor_upstream_url: "http://127.0.0.1:8091"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_PROJECTS_UPSTREAM_TOKEN}"
 
   - name: "scopes-routes"
     path_pattern: "/v1/scopes"
@@ -275,10 +178,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8091"
     successor_upstream_url: "http://127.0.0.1:8091"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_PROJECTS_UPSTREAM_TOKEN}"
 
   - name: "messages-root-routes"
     path_pattern: "/v1/messages"
@@ -286,10 +185,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8093"
     successor_upstream_url: "http://127.0.0.1:8093"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_MESSAGES_UPSTREAM_TOKEN}"
 
   - name: "threads-root-routes"
     path_pattern: "/v1/threads"
@@ -297,10 +192,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8093"
     successor_upstream_url: "http://127.0.0.1:8093"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_MESSAGES_UPSTREAM_TOKEN}"
 
   - name: "user-notifications-root-routes"
     path_pattern: "/v1/user-notifications"
@@ -308,10 +199,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8093"
     successor_upstream_url: "http://127.0.0.1:8093"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_MESSAGES_UPSTREAM_TOKEN}"
 
   - name: "documents-root-routes"
     path_pattern: "/v1/documents"
@@ -319,10 +206,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8094"
     successor_upstream_url: "http://127.0.0.1:8094"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_DOCUMENTS_UPSTREAM_TOKEN}"
 
   - name: "discussion-root-routes"
     path_pattern: "/v1/discussion-threads"
@@ -330,10 +213,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8094"
     successor_upstream_url: "http://127.0.0.1:8094"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_DOCUMENTS_UPSTREAM_TOKEN}"
 
   - name: "guidance-root-routes"
     path_pattern: "/v1/guidance"
@@ -341,10 +220,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8097"
     successor_upstream_url: "http://127.0.0.1:8097"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_GUIDANCE_UPSTREAM_TOKEN}"
 
   - name: "artifacts-routes"
     path_pattern: "/v1/artifacts"
@@ -352,24 +227,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8090"
     successor_upstream_url: "http://127.0.0.1:8090"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_ARTIFACTS_UPSTREAM_TOKEN}"
-
-  - name: "visual-contract-routes"
-    path_pattern: "/v1/visual-contracts"
-    methods: ["GET", "POST"]
-    legacy_upstream_url: "http://127.0.0.1:8086"
-    successor_upstream_url: "http://127.0.0.1:8086"
-    successor_mode: "always"
-    path_rewrite:
-      from_prefix: "/v1/visual-contracts"
-      to_prefix: "/visual-contracts"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_VISUAL_CONTRACT_UPSTREAM_TOKEN}"
 
   - name: "librarian-root-routes"
     path_pattern: "/v1/librarian"
@@ -377,10 +234,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8098"
     successor_upstream_url: "http://127.0.0.1:8098"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_LIBRARIAN_UPSTREAM_TOKEN}"
 
   - name: "delivery-routes"
     path_pattern: "/v1/delivery"
@@ -388,11 +241,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8083"
     successor_upstream_url: "http://127.0.0.1:8083"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_DELIVERY_WRITE_TOKEN}"
-      bearer_tokens: ["${DEN_GATEWAY_WEB_TOKEN}"]
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_DELIVERY_UPSTREAM_TOKEN}"
 
   - name: "observation-writes"
     path_pattern: "/v1/observation"
@@ -400,10 +248,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8082"
     successor_upstream_url: "http://127.0.0.1:8082"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_OBSERVATION_WRITE_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_OBSERVATION_UPSTREAM_TOKEN}"
 
   - name: "observation-reads"
     path_pattern: "/v1/observation"
@@ -411,35 +255,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8082"
     successor_upstream_url: "http://127.0.0.1:8082"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_OBSERVATION_READ_TOKEN}"
-      bearer_tokens: ["${DEN_GATEWAY_WEB_TOKEN}"]
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_OBSERVATION_UPSTREAM_TOKEN}"
-
-  - name: "conversation-writes"
-    path_pattern: "/v1/conversation"
-    methods: ["POST", "PUT"]
-    legacy_upstream_url: "http://127.0.0.1:8084"
-    successor_upstream_url: "http://127.0.0.1:8084"
-    successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_CONVERSATION_WRITE_TOKEN}"
-      bearer_tokens: ["${DEN_GATEWAY_WEB_TOKEN}"]
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_CONVERSATION_UPSTREAM_TOKEN}"
-
-  - name: "conversation-reads"
-    path_pattern: "/v1/conversation"
-    methods: ["GET"]
-    legacy_upstream_url: "http://127.0.0.1:8084"
-    successor_upstream_url: "http://127.0.0.1:8084"
-    successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_CONVERSATION_READ_TOKEN}"
-      bearer_tokens: ["${DEN_GATEWAY_WEB_TOKEN}"]
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_CONVERSATION_UPSTREAM_TOKEN}"
 
   - name: "timeline-reads"
     path_pattern: "/v1/timeline"
@@ -447,11 +262,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8085"
     successor_upstream_url: "http://127.0.0.1:8085"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_TIMELINE_READ_TOKEN}"
-      bearer_tokens: ["${DEN_GATEWAY_WEB_TOKEN}"]
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_TIMELINE_UPSTREAM_TOKEN}"
 
   - name: "doc-publish-routes"
     path_pattern: "/v1/blog/publications"
@@ -459,11 +269,6 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8087"
     successor_upstream_url: "http://127.0.0.1:8087"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_DOC_PUBLISH_CALLER_TOKEN}"
-      bearer_tokens: ["${DEN_GATEWAY_WEB_TOKEN}"]
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_DOC_PUBLISH_UPSTREAM_TOKEN}"
 
   - name: "runtime-routes"
     path_pattern: "/v1/runtime"
@@ -471,7 +276,3 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8081"
     successor_upstream_url: "http://127.0.0.1:8081"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_RUNTIME_CALLER_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_RUNTIME_UPSTREAM_TOKEN}"

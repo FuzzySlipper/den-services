@@ -1,37 +1,20 @@
 package delivery
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-func TestLoadConfigRequiresRuntimeServiceToken(t *testing.T) {
+func TestLoadConfigLoadsRuntimeServiceURL(t *testing.T) {
 	t.Setenv("DEN_DELIVERY_DATABASE_URL", "postgres://delivery.example/denservices")
-	t.Setenv("DEN_DELIVERY_SERVICE_TOKEN", "delivery-token")
-	t.Setenv("DEN_DELIVERY_RUNTIME_SERVICE_TOKEN", "")
-
-	_, err := LoadConfigFromPath(writeTestConfig(t))
-	if !errors.Is(err, ErrMissingRuntimeAuth) {
-		t.Fatalf("LoadConfigFromPath() error = %v, want %v", err, ErrMissingRuntimeAuth)
-	}
-}
-
-func TestLoadConfigLoadsRuntimeServiceToken(t *testing.T) {
-	t.Setenv("DEN_DELIVERY_DATABASE_URL", "postgres://delivery.example/denservices")
-	t.Setenv("DEN_DELIVERY_SERVICE_TOKEN", "delivery-token")
-	t.Setenv("DEN_DELIVERY_RUNTIME_SERVICE_TOKEN", "runtime-token")
 
 	cfg, err := LoadConfigFromPath(writeTestConfig(t))
 	if err != nil {
 		t.Fatalf("LoadConfigFromPath() error = %v", err)
 	}
-	if cfg.ServiceToken != "delivery-token" {
-		t.Fatalf("ServiceToken = %q, want delivery token", cfg.ServiceToken)
-	}
-	if cfg.RuntimeServiceToken != "runtime-token" {
-		t.Fatalf("RuntimeServiceToken = %q, want runtime token", cfg.RuntimeServiceToken)
+	if cfg.RuntimeServiceURL != "http://127.0.0.1:8081" {
+		t.Fatalf("RuntimeServiceURL = %q", cfg.RuntimeServiceURL)
 	}
 }
 

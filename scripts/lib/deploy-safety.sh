@@ -3,26 +3,6 @@
 # Shared, side-effect-light safety helpers for Den deployment scripts.
 # Callers keep ownership of sudo/systemd policy and service-specific rollout.
 
-den_env_has_assignment() {
-  local env_file="$1"
-  local variable="$2"
-  if [[ -r "${env_file}" ]]; then
-    grep -Eq "^[[:space:]]*${variable}=" "${env_file}"
-    return
-  fi
-  command -v sudo >/dev/null 2>&1 &&
-    sudo -n grep -Eq "^[[:space:]]*${variable}=" "${env_file}"
-}
-
-den_require_env_assignment() {
-  local env_file="$1"
-  local variable="$2"
-  den_env_has_assignment "${env_file}" "${variable}" || {
-    echo "missing required ${variable} in ${env_file}" >&2
-    return 1
-  }
-}
-
 den_mcp_backend_configured() {
   local config_file="$1"
   local backend="$2"

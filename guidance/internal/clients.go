@@ -13,12 +13,11 @@ import (
 
 type ProjectScopeClient struct {
 	baseURL string
-	token   string
 	client  *http.Client
 }
 
-func NewProjectScopeClient(baseURL string, token string) *ProjectScopeClient {
-	return &ProjectScopeClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), token: strings.TrimSpace(token), client: &http.Client{Timeout: 5 * time.Second}}
+func NewProjectScopeClient(baseURL string) *ProjectScopeClient {
+	return &ProjectScopeClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), client: &http.Client{Timeout: 5 * time.Second}}
 }
 
 func (c *ProjectScopeClient) AssertWritable(ctx context.Context, projectID string) error {
@@ -30,9 +29,6 @@ func (c *ProjectScopeClient) AssertWritable(ctx context.Context, projectID strin
 		return fmt.Errorf("building project assert-writable request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("asserting project scope writable: %w", err)
@@ -52,7 +48,6 @@ func (c *ProjectScopeClient) AssertWritable(ctx context.Context, projectID strin
 
 type DocumentsClient struct {
 	baseURL string
-	token   string
 	client  *http.Client
 }
 
@@ -68,8 +63,8 @@ type documentResponse struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
-func NewDocumentsClient(baseURL string, token string) *DocumentsClient {
-	return &DocumentsClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), token: strings.TrimSpace(token), client: &http.Client{Timeout: 5 * time.Second}}
+func NewDocumentsClient(baseURL string) *DocumentsClient {
+	return &DocumentsClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), client: &http.Client{Timeout: 5 * time.Second}}
 }
 
 func (c *DocumentsClient) GetDocument(ctx context.Context, projectID string, slug string) (*Document, error) {
@@ -80,9 +75,6 @@ func (c *DocumentsClient) GetDocument(ctx context.Context, projectID string, slu
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("building document request: %w", err)
-	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {

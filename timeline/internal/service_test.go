@@ -230,7 +230,6 @@ func testConfig() *Config {
 	return &Config{
 		BindAddr:     "127.0.0.1:0",
 		DatabaseURL:  "postgres://example",
-		ServiceToken: "test-token",
 		DefaultLimit: 2,
 		MaxLimit:     10,
 		Stream: StreamConfig{

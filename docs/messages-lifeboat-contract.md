@@ -31,9 +31,9 @@ threads. Rows in this service are display/instruction records. They can be
 replayed for humans and agents to read, but replaying them must not create,
 claim, wake, retry, complete, or cancel executable work.
 
-This service is not the same domain as `conversation/` channel chat. The
-existing `conversation` module owns channel messages, channel membership,
-reactions, and human channel cursors. The messages lifeboat owns Core-style
+This service is not the same domain as legacy den-channels channel chat
+(channel messages, channel membership, reactions, and human channel cursors),
+whose former `conversation` successor module has been retired. The messages lifeboat owns Core-style
 project/task message threads and user-notification feed items, including
 task-thread worker packets.
 

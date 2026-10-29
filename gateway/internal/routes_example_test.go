@@ -1,44 +1,8 @@
 package gateway
 
-import (
-	"net/http/httptest"
-	"testing"
-)
+import "testing"
 
 func TestDeployableRouteExampleCoversBrowserOwners(t *testing.T) {
-	tokenNames := []string{
-		"DEN_GATEWAY_WEB_TOKEN",
-		"DEN_GATEWAY_PROJECTS_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_TASKS_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_MESSAGES_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_DOCUMENTS_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_KNOWLEDGE_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_HANDOFF_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_BOARD_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_GUIDANCE_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_REVIEW_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_ARTIFACTS_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_VISUAL_CONTRACT_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_LIBRARIAN_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_DELIVERY_WRITE_TOKEN",
-		"DEN_GATEWAY_DELIVERY_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_OBSERVATION_WRITE_TOKEN",
-		"DEN_GATEWAY_OBSERVATION_READ_TOKEN",
-		"DEN_GATEWAY_OBSERVATION_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_CONVERSATION_WRITE_TOKEN",
-		"DEN_GATEWAY_CONVERSATION_READ_TOKEN",
-		"DEN_GATEWAY_CONVERSATION_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_TIMELINE_READ_TOKEN",
-		"DEN_GATEWAY_TIMELINE_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_DOC_PUBLISH_CALLER_TOKEN",
-		"DEN_GATEWAY_DOC_PUBLISH_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_RUNTIME_CALLER_TOKEN",
-		"DEN_GATEWAY_RUNTIME_UPSTREAM_TOKEN",
-	}
-	for _, name := range tokenNames {
-		t.Setenv(name, name+"-value")
-	}
-
 	table, err := LoadRouteTable("../config/routes.example.yaml")
 	if err != nil {
 		t.Fatalf("LoadRouteTable() error = %v", err)
@@ -60,13 +24,16 @@ func TestDeployableRouteExampleCoversBrowserOwners(t *testing.T) {
 		{"GET", "/v1/projects/den-web/tasks/42/manual-review", "127.0.0.1:8413"},
 		{"POST", "/v1/projects/den-web/tasks/42/manual-review", "127.0.0.1:8413"},
 		{"GET", "/v1/artifacts/12/content", "127.0.0.1:8090"},
-		{"POST", "/v1/visual-contracts/compare", "127.0.0.1:8086"},
 		{"POST", "/v1/projects/den-web/librarian/query", "127.0.0.1:8098"},
 		{"GET", "/v1/handoffs", "127.0.0.1:8099"},
 		{"GET", "/v1/projects/den-web/board/posts", "127.0.0.1:8100"},
 		{"DELETE", "/v1/board/comments/12", "127.0.0.1:8100"},
-		{"GET", "/v1/conversation/channels", "127.0.0.1:8084"},
 		{"GET", "/v1/timeline/projects/den-web/stream", "127.0.0.1:8085"},
+		{"POST", "/v1/delivery/intents", "127.0.0.1:8083"},
+		{"GET", "/v1/observation/lane", "127.0.0.1:8082"},
+		{"POST", "/v1/observation/activity-events", "127.0.0.1:8082"},
+		{"POST", "/v1/blog/publications", "127.0.0.1:8087"},
+		{"POST", "/v1/runtime/instances/agent-1/heartbeat", "127.0.0.1:8081"},
 	}
 	for _, testCase := range cases {
 		match, ok := table.Match(testCase.method, testCase.path, false)
@@ -76,16 +43,6 @@ func TestDeployableRouteExampleCoversBrowserOwners(t *testing.T) {
 		}
 		if match.Target.Host != testCase.host {
 			t.Errorf("Match(%s, %s) target = %s, want %s", testCase.method, testCase.path, match.Target.Host, testCase.host)
-		}
-		if testCase.path == "/v1/visual-contracts/compare" {
-			if got := match.PathRewrite.Apply(testCase.path); got != "/visual-contracts/compare" {
-				t.Errorf("visual-contract rewritten path = %s, want /visual-contracts/compare", got)
-			}
-		}
-		request := httptest.NewRequest(testCase.method, testCase.path, nil)
-		request.Header.Set("Authorization", "Bearer DEN_GATEWAY_WEB_TOKEN-value")
-		if !match.CallerAuth.Authorizes(request) {
-			t.Errorf("Match(%s, %s) does not authorize the web-edge token", testCase.method, testCase.path)
 		}
 	}
 }

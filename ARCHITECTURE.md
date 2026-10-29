@@ -17,7 +17,7 @@ Every record belongs to exactly one lane:
 
 | Lane | Replay rule | Owner |
 | --- | --- | --- |
-| Conversation | Old rows display forever | Conversation service |
+| Conversation | Old rows display forever | Legacy `den_channels` data (read-only display via Observation/Timeline) |
 | Observation | Old rows display but never cause action | Observation service |
 | Executable actuation | Old rows must not execute solely because they replay | Delivery service |
 
@@ -46,7 +46,7 @@ All successors use one Postgres cluster with role-isolated schemas.
 | `den_delivery` | `delivery/` | `den_delivery_app` |
 | `den_runtime` | `runtime/` | `den_runtime_app` |
 | `den_observation` | `observation/` | `den_observation_app` |
-| `den_channels` | conversation or slim legacy | `den_channels_app` |
+| `den_channels` | slim legacy (no successor module) | `den_channels_app` |
 
 Runtime services never run with migration credentials. Cross-schema writes are
 forbidden. Cross-schema reads use explicit named views and grants.
@@ -61,7 +61,6 @@ den-services/
   runtime/
   observation/
   gateway/
-  conversation/
   migration/
   integration/
   Makefile

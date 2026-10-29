@@ -26,15 +26,15 @@ func TestBoardSearchBuildsPathQueryAndBearerAuth(t *testing.T) {
 		if got := request.URL.Query().Get("limit"); got != "20" {
 			t.Errorf("limit = %q, want 20", got)
 		}
-		if got := request.Header.Get("Authorization"); got != "Bearer test-token" {
-			t.Errorf("authorization = %q, want bearer token", got)
+		if got := request.Header.Get("Authorization"); got != "" {
+			t.Errorf("authorization = %q, want none", got)
 		}
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write([]byte(`{"posts":[{"id":1}]}`))
 	}))
 	defer server.Close()
 
-	client, err := NewBoardClient(server.URL, "test-token", server.Client())
+	client, err := NewBoardClient(server.URL, server.Client())
 	if err != nil {
 		t.Fatalf("NewBoardClient() error = %v", err)
 	}
@@ -66,7 +66,7 @@ func TestBoardSearchOmitsOptionalQueryParameters(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewBoardClient(server.URL, "", server.Client())
+	client, err := NewBoardClient(server.URL, server.Client())
 	if err != nil {
 		t.Fatalf("NewBoardClient() error = %v", err)
 	}
@@ -100,7 +100,7 @@ func TestBoardClientCoversPostCommentTraversalAndPurgeRoutes(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewBoardClient(server.URL, "test-token", server.Client())
+	client, err := NewBoardClient(server.URL, server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -192,12 +192,8 @@ Bounded wait on an existing task/commit gate:
 GET /v1/projects/{project_id}/tasks/{task_id}/review/github-check-gates/{commit_sha}/wait?after_id=41&wait_ms=45000
 ```
 
-These endpoints require the Review service token.
-
-For the current high-trust local deployment, Review may be configured with
-`allow_unauthenticated_local_dev: true`. In that mode, direct local HTTP
-fallbacks do not need `Authorization`; the Review service still keeps its token
-configured for MCP/backend callers.
+These endpoints do not authenticate callers; Den-internal services run on a
+trusted home LAN and need no `Authorization` header.
 
 ## Evidence Behavior
 

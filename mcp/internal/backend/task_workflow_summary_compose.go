@@ -306,8 +306,5 @@ func newTaskWorkflowRequest(ctx context.Context, backend config.BackendConfig, p
 		return nil, fmt.Errorf("building task workflow request: %w", err)
 	}
 	request.Header.Set("Accept", "application/json")
-	if backend.ServiceToken != "" {
-		request.Header.Set("Authorization", "Bearer "+backend.ServiceToken)
-	}
 	return request, nil
 }

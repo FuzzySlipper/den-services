@@ -18,15 +18,11 @@ import (
 	"time"
 )
 
-const (
-	baseURLEnv = "DEN_ARTIFACTS_BASE_URL"
-	tokenEnv   = "DEN_ARTIFACTS_SERVICE_TOKEN"
-)
+const baseURLEnv = "DEN_ARTIFACTS_BASE_URL"
 
 type uploadConfig struct {
 	filePath      string
 	baseURL       string
-	token         string
 	projectID     string
 	taskID        int64
 	reviewRoundID int64
@@ -58,7 +54,6 @@ func parseFlags(args []string, getenv func(string) string) (uploadConfig, error)
 	flags := flag.NewFlagSet("artifact-upload", flag.ContinueOnError)
 	flags.StringVar(&cfg.filePath, "file", "", "local image file to upload")
 	flags.StringVar(&cfg.baseURL, "base-url", strings.TrimRight(getenv(baseURLEnv), "/"), "artifacts service base URL")
-	flags.StringVar(&cfg.token, "token", getenv(tokenEnv), "artifacts service bearer token")
 	flags.StringVar(&cfg.projectID, "project-id", "", "Den project id")
 	flags.Int64Var(&cfg.taskID, "task-id", 0, "Den task id")
 	flags.Int64Var(&cfg.reviewRoundID, "review-round-id", 0, "review round id")
@@ -88,9 +83,6 @@ func (c uploadConfig) validate() error {
 	if strings.TrimSpace(c.baseURL) == "" {
 		return fmt.Errorf("-base-url or %s is required", baseURLEnv)
 	}
-	if strings.TrimSpace(c.token) == "" {
-		return fmt.Errorf("-token or %s is required", tokenEnv)
-	}
 	if c.timeout <= 0 {
 		return errors.New("-timeout must be positive")
 	}
@@ -115,7 +107,6 @@ func upload(ctx context.Context, cfg uploadConfig, output io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("building upload request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+cfg.token)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

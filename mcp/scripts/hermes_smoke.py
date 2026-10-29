@@ -31,19 +31,18 @@ from typing import Any
 
 EXPECTED_TOOL_COUNT = 39
 MCP_PATH = "/mcp"
-DEN_CORE_TOKEN_ENV = "DEN_CORE_SERVICE_TOKEN"
 SMOKE_BACKENDS = (
-    ("den-core", DEN_CORE_TOKEN_ENV),
-    ("projects", "DEN_PROJECTS_SERVICE_TOKEN"),
-    ("tasks", "DEN_TASKS_SERVICE_TOKEN"),
-    ("messages", "DEN_MESSAGES_SERVICE_TOKEN"),
-    ("documents", "DEN_DOCUMENTS_SERVICE_TOKEN"),
-    ("review", "DEN_REVIEW_SERVICE_TOKEN"),
-    ("knowledge", "DEN_KNOWLEDGE_SERVICE_TOKEN"),
-    ("guidance", "DEN_GUIDANCE_SERVICE_TOKEN"),
-    ("librarian", "DEN_LIBRARIAN_SERVICE_TOKEN"),
-    ("handoff", "DEN_HANDOFF_SERVICE_TOKEN"),
-    ("board", "DEN_BOARD_SERVICE_TOKEN"),
+    "den-core",
+    "projects",
+    "tasks",
+    "messages",
+    "documents",
+    "review",
+    "knowledge",
+    "guidance",
+    "librarian",
+    "handoff",
+    "board",
 )
 
 
@@ -617,7 +616,7 @@ def run_live_write_restore(mcp_url: str, project_id: str, slug: str) -> None:
 
 
 def uniform_backend_urls(base_url: str) -> dict[str, str]:
-    return {name: base_url.rstrip("/") for name, _ in SMOKE_BACKENDS}
+    return {name: base_url.rstrip("/") for name in SMOKE_BACKENDS}
 
 
 def live_backend_urls(args: argparse.Namespace) -> dict[str, str]:
@@ -640,7 +639,7 @@ def live_backend_urls(args: argparse.Namespace) -> dict[str, str]:
     backend_urls = uniform_backend_urls(args.den_core_url)
     for backend, value in required.items():
         backend_urls[backend] = value.rstrip("/")
-    for backend, _ in SMOKE_BACKENDS:
+    for backend in SMOKE_BACKENDS:
         override = os.getenv(backend_url_env(backend), "")
         if override:
             backend_urls[backend] = override.rstrip("/")
@@ -664,10 +663,6 @@ def mcp_process(repo_root: Path, mcp_port: int, backend_urls: dict[str, str], st
             f'  mcp_endpoint_path: "{MCP_PATH}"',
             '  read_header_timeout: "5s"',
             "",
-            "security:",
-            '  service_token_env: "DEN_MCP_SERVICE_TOKEN"',
-            "  allow_unauthenticated_local_dev: true",
-            "",
             "routes:",
             f'  table_path: "{routes_path}"',
             "",
@@ -676,14 +671,13 @@ def mcp_process(repo_root: Path, mcp_port: int, backend_urls: dict[str, str], st
             "",
             "backends:",
         ]
-        for name, token_env in SMOKE_BACKENDS:
+        for name in SMOKE_BACKENDS:
             config_lines.extend(
                 [
                     f'  - name: "{name}"',
                     f'    base_url: "{backend_urls[name]}"',
                     '    health_path: "/health"',
                     '    timeout: "1s"',
-                    f'    service_token_env: "{token_env}"',
                 ]
             )
         config_path.write_text("\n".join(config_lines) + "\n", encoding="utf-8")

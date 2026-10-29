@@ -15,9 +15,6 @@ func TestProjectScopeClientAssertWritable(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s", r.Method)
 		}
-		if got := r.Header.Get("Authorization"); got != "Bearer projects-token" {
-			t.Fatalf("Authorization = %q", got)
-		}
 		switch r.URL.EscapedPath() {
 		case "/v1/scopes/rusty%2Froleplay/assert-writable":
 			w.WriteHeader(http.StatusNoContent)
@@ -33,7 +30,7 @@ func TestProjectScopeClientAssertWritable(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewProjectScopeClient(server.URL, "projects-token")
+	client := NewProjectScopeClient(server.URL)
 	if err := client.AssertWritable(context.Background(), "rusty/roleplay"); err != nil {
 		t.Fatalf("AssertWritable(success) error = %v", err)
 	}
@@ -49,7 +46,7 @@ func TestProjectScopeClientAssertWritable(t *testing.T) {
 }
 
 func TestProjectScopeClientFailsClosedWhenUnconfigured(t *testing.T) {
-	err := NewProjectScopeClient("", "projects-token").AssertWritable(context.Background(), "den-services")
+	err := NewProjectScopeClient("").AssertWritable(context.Background(), "den-services")
 	if !errors.Is(err, ErrProjectScopeClientUnconfigured) || serviceErrorStatus(err) != http.StatusInternalServerError {
 		t.Fatalf("AssertWritable(unconfigured) error = %v", err)
 	}

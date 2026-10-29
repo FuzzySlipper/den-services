@@ -13,7 +13,6 @@ BOARD_BACKEND = [
     '  base_url: "http://127.0.0.1:8100"\n',
     '  health_path: "/health"\n',
     '  timeout: "3s"\n',
-    '  service_token_env: "DEN_BOARD_SERVICE_TOKEN"\n',
 ]
 
 BOARD_RELAY_BACKEND = [
@@ -21,7 +20,6 @@ BOARD_RELAY_BACKEND = [
     '  base_url: "http://127.0.0.1:8101"\n',
     '  health_path: "/health"\n',
     '  timeout: "30s"\n',
-    '  service_token_env: "DEN_BOARD_RELAY_SERVICE_TOKEN"\n',
 ]
 
 CREW_REVIEW_BACKEND = [
@@ -38,10 +36,6 @@ BOARD_ROUTES = """
     legacy_upstream_url: "http://127.0.0.1:8100"
     successor_upstream_url: "http://127.0.0.1:8100"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_BOARD_UPSTREAM_TOKEN}"
 
   - name: "board-item-routes"
     path_pattern: "/v1/board"
@@ -49,10 +43,6 @@ BOARD_ROUTES = """
     legacy_upstream_url: "http://127.0.0.1:8100"
     successor_upstream_url: "http://127.0.0.1:8100"
     successor_mode: "always"
-    caller_auth:
-      bearer_token: "${DEN_GATEWAY_WEB_TOKEN}"
-    successor_auth:
-      bearer_token: "${DEN_GATEWAY_BOARD_UPSTREAM_TOKEN}"
 """.lstrip("\n")
 
 

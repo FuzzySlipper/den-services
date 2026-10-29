@@ -3,7 +3,6 @@ package server
 import (
 	"net/http"
 
-	"den-services/shared/api"
 	"den-services/shared/health"
 
 	"den-services/mcp/internal/backend"
@@ -28,11 +27,11 @@ func NewHTTPServer(cfg *config.Config, buildInfo health.BuildInfo, mcpHandler MC
 	root := http.NewServeMux()
 	root.Handle("GET /health", healthHandler)
 	root.Handle("GET /version", versionHandler)
-	protectedMCP, err := protectedMCPHandler(cfg, buildInfo, mcpHandler)
+	mcp, err := resolveMCPHandler(cfg, buildInfo, mcpHandler)
 	if err != nil {
 		return nil, err
 	}
-	root.Handle(cfg.Server.MCPEndpointPath, protectedMCP)
+	root.Handle(cfg.Server.MCPEndpointPath, mcp)
 
 	return &http.Server{
 		Addr:              cfg.Server.ListenAddr,
@@ -41,7 +40,7 @@ func NewHTTPServer(cfg *config.Config, buildInfo health.BuildInfo, mcpHandler MC
 	}, nil
 }
 
-func protectedMCPHandler(cfg *config.Config, buildInfo health.BuildInfo, handler MCPHandler) (http.Handler, error) {
+func resolveMCPHandler(cfg *config.Config, buildInfo health.BuildInfo, handler MCPHandler) (http.Handler, error) {
 	defaultProfile, err := registry.ParseToolProfile(cfg.Server.DefaultToolProfile)
 	if err != nil {
 		return nil, err
@@ -60,12 +59,5 @@ func protectedMCPHandler(cfg *config.Config, buildInfo health.BuildInfo, handler
 			DefaultToolProfile: defaultProfile,
 		})
 	}
-	if cfg.Security.AllowUnauthenticatedLocalDev {
-		return handler, nil
-	}
-	auth, err := api.NewServiceTokenAuth(cfg.Security.ServiceToken)
-	if err != nil {
-		return nil, err
-	}
-	return auth.Middleware(handler), nil
+	return handler, nil
 }

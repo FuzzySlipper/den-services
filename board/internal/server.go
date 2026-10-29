@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strings"
 
-	"den-services/shared/api"
 	"den-services/shared/health"
 )
 
@@ -34,14 +33,10 @@ func NewHTTPServer(cfg *Config, buildInfo health.BuildInfo, service BoardUseCase
 		ctx := WithAuthenticatedAdapterIdentity(r.Context(), adapterIdentity)
 		apiMux.ServeHTTP(w, r.WithContext(ctx))
 	})
-	auth, err := api.NewServiceTokenAuth(cfg.ServiceToken)
-	if err != nil {
-		return nil, err
-	}
 	root := http.NewServeMux()
 	root.Handle("GET /health", healthHandler)
 	root.Handle("GET /version", versionHandler)
-	root.Handle("/", auth.Middleware(boundedAPI))
+	root.Handle("/", boundedAPI)
 	return &http.Server{
 		Addr:              cfg.BindAddr,
 		Handler:           root,

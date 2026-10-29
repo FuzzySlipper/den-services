@@ -21,17 +21,11 @@ const (
 
 type Config struct {
 	BindAddr         string
-	ServiceToken     string
 	ProjectsBaseURL  string
-	ProjectsToken    string
 	TasksBaseURL     string
-	TasksToken       string
 	MessagesBaseURL  string
-	MessagesToken    string
 	DocumentsBaseURL string
-	DocumentsToken   string
 	KnowledgeBaseURL string
-	KnowledgeToken   string
 	DefaultBudget    SourceLimits
 	HTTP             HTTPConfig
 	Upstreams        UpstreamsConfig
@@ -47,17 +41,11 @@ type UpstreamsConfig struct {
 
 type configFile struct {
 	BindAddr            string              `yaml:"bind_addr"`
-	ServiceTokenEnv     string              `yaml:"service_token_env"`
 	ProjectsBaseURLEnv  string              `yaml:"projects_base_url_env"`
-	ProjectsTokenEnv    string              `yaml:"projects_token_env"`
 	TasksBaseURLEnv     string              `yaml:"tasks_base_url_env"`
-	TasksTokenEnv       string              `yaml:"tasks_token_env"`
 	MessagesBaseURLEnv  string              `yaml:"messages_base_url_env"`
-	MessagesTokenEnv    string              `yaml:"messages_token_env"`
 	DocumentsBaseURLEnv string              `yaml:"documents_base_url_env"`
-	DocumentsTokenEnv   string              `yaml:"documents_token_env"`
 	KnowledgeBaseURLEnv string              `yaml:"knowledge_base_url_env"`
-	KnowledgeTokenEnv   string              `yaml:"knowledge_token_env"`
 	DefaultBudget       sourceLimitsFile    `yaml:"default_budget"`
 	HTTP                httpConfigFile      `yaml:"http"`
 	Upstreams           upstreamsConfigFile `yaml:"upstreams"`
@@ -118,20 +106,13 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	serviceToken := values.String(f.ServiceTokenEnv, "")
 	return &Config{
 		BindAddr:         f.BindAddr,
-		ServiceToken:     serviceToken,
 		ProjectsBaseURL:  values.String(f.ProjectsBaseURLEnv, ""),
-		ProjectsToken:    values.String(f.ProjectsTokenEnv, serviceToken),
 		TasksBaseURL:     values.String(f.TasksBaseURLEnv, ""),
-		TasksToken:       values.String(f.TasksTokenEnv, serviceToken),
 		MessagesBaseURL:  values.String(f.MessagesBaseURLEnv, ""),
-		MessagesToken:    values.String(f.MessagesTokenEnv, serviceToken),
 		DocumentsBaseURL: values.String(f.DocumentsBaseURLEnv, ""),
-		DocumentsToken:   values.String(f.DocumentsTokenEnv, serviceToken),
 		KnowledgeBaseURL: values.String(f.KnowledgeBaseURLEnv, ""),
-		KnowledgeToken:   values.String(f.KnowledgeTokenEnv, serviceToken),
 		DefaultBudget: SourceLimits{
 			Tasks:     f.DefaultBudget.Tasks,
 			Messages:  f.DefaultBudget.Messages,
@@ -145,12 +126,12 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 
 func (c *Config) validate() error {
 	required := map[string]string{
-		"bind_addr": c.BindAddr, "service token": c.ServiceToken,
-		"projects base url": c.ProjectsBaseURL, "projects token": c.ProjectsToken,
-		"tasks base url": c.TasksBaseURL, "tasks token": c.TasksToken,
-		"messages base url": c.MessagesBaseURL, "messages token": c.MessagesToken,
-		"documents base url": c.DocumentsBaseURL, "documents token": c.DocumentsToken,
-		"knowledge base url": c.KnowledgeBaseURL, "knowledge token": c.KnowledgeToken,
+		"bind_addr":          c.BindAddr,
+		"projects base url":  c.ProjectsBaseURL,
+		"tasks base url":     c.TasksBaseURL,
+		"messages base url":  c.MessagesBaseURL,
+		"documents base url": c.DocumentsBaseURL,
+		"knowledge base url": c.KnowledgeBaseURL,
 	}
 	for name, value := range required {
 		if strings.TrimSpace(value) == "" {

@@ -15,7 +15,7 @@ import (
 func TestHTTPProjectsAndSpacesLifecycle(t *testing.T) {
 	server := testServer(t)
 
-	createProject := authedJSONRequest(http.MethodPost, "/v1/projects", `{
+	createProject := jsonRequest(http.MethodPost, "/v1/projects", `{
 		"id": "den-services",
 		"name": "Den Services",
 		"root_path": "/home/dev/den-services",
@@ -36,7 +36,7 @@ func TestHTTPProjectsAndSpacesLifecycle(t *testing.T) {
 		t.Fatalf("created repository_url = %q", created.RepositoryURL)
 	}
 
-	patchProject := authedJSONRequest(http.MethodPatch, "/v1/projects/den-services", `{
+	patchProject := jsonRequest(http.MethodPatch, "/v1/projects/den-services", `{
 		"root_path": "",
 		"repository_url": "",
 		"owner": "patch",
@@ -56,7 +56,7 @@ func TestHTTPProjectsAndSpacesLifecycle(t *testing.T) {
 		t.Fatalf("settings_json = %s", string(patched.SettingsJSON))
 	}
 
-	createSpace := authedJSONRequest(http.MethodPost, "/v1/spaces", `{
+	createSpace := jsonRequest(http.MethodPost, "/v1/spaces", `{
 		"id": "assistant-space",
 		"name": "Assistant Space",
 		"kind": "assistant",
@@ -81,7 +81,7 @@ func TestHTTPProjectsAndSpacesLifecycle(t *testing.T) {
 		t.Fatalf("assistant spaces = %+v", assistantSpaces)
 	}
 
-	archive := authedJSONRequest(http.MethodPost, "/v1/spaces/assistant-space/archive", `{}`)
+	archive := jsonRequest(http.MethodPost, "/v1/spaces/assistant-space/archive", `{}`)
 	archiveResponse := httptest.NewRecorder()
 	server.Handler.ServeHTTP(archiveResponse, archive)
 	if archiveResponse.Code != http.StatusOK {
@@ -92,27 +92,27 @@ func TestHTTPProjectsAndSpacesLifecycle(t *testing.T) {
 		t.Fatalf("archived-inclusive spaces = %+v", archivedSpaces)
 	}
 
-	assertArchived := authedJSONRequest(http.MethodPost, "/v1/scopes/assistant-space/assert-writable", `{}`)
+	assertArchived := jsonRequest(http.MethodPost, "/v1/scopes/assistant-space/assert-writable", `{}`)
 	assertArchivedResponse := httptest.NewRecorder()
 	server.Handler.ServeHTTP(assertArchivedResponse, assertArchived)
 	if assertArchivedResponse.Code != http.StatusConflict {
 		t.Fatalf("assert archived status = %d body = %s", assertArchivedResponse.Code, assertArchivedResponse.Body.String())
 	}
 
-	restore := authedJSONRequest(http.MethodPatch, "/v1/spaces/assistant-space/visibility", `{"visibility":"normal"}`)
+	restore := jsonRequest(http.MethodPatch, "/v1/spaces/assistant-space/visibility", `{"visibility":"normal"}`)
 	restoreResponse := httptest.NewRecorder()
 	server.Handler.ServeHTTP(restoreResponse, restore)
 	if restoreResponse.Code != http.StatusOK {
 		t.Fatalf("restore status = %d body = %s", restoreResponse.Code, restoreResponse.Body.String())
 	}
-	assertRestored := authedJSONRequest(http.MethodPost, "/v1/scopes/assistant-space/assert-writable", `{}`)
+	assertRestored := jsonRequest(http.MethodPost, "/v1/scopes/assistant-space/assert-writable", `{}`)
 	assertRestoredResponse := httptest.NewRecorder()
 	server.Handler.ServeHTTP(assertRestoredResponse, assertRestored)
 	if assertRestoredResponse.Code != http.StatusOK {
 		t.Fatalf("assert restored status = %d body = %s", assertRestoredResponse.Code, assertRestoredResponse.Body.String())
 	}
 
-	deleteSpace := authedJSONRequest(http.MethodPost, "/v1/admin/spaces/assistant-space/delete", `{}`)
+	deleteSpace := jsonRequest(http.MethodPost, "/v1/admin/spaces/assistant-space/delete", `{}`)
 	deleteSpaceResponse := httptest.NewRecorder()
 	server.Handler.ServeHTTP(deleteSpaceResponse, deleteSpace)
 	if deleteSpaceResponse.Code != http.StatusOK {
@@ -123,7 +123,7 @@ func TestHTTPProjectsAndSpacesLifecycle(t *testing.T) {
 	if !deleted.Deleted || deleted.Space.ID != "assistant-space" || deleted.DependencyCountsComplete {
 		t.Fatalf("delete response = %+v", deleted)
 	}
-	getDeleted := authedJSONRequest(http.MethodGet, "/v1/spaces/assistant-space", "")
+	getDeleted := jsonRequest(http.MethodGet, "/v1/spaces/assistant-space", "")
 	getDeletedResponse := httptest.NewRecorder()
 	server.Handler.ServeHTTP(getDeletedResponse, getDeleted)
 	if getDeletedResponse.Code != http.StatusNotFound {
@@ -133,7 +133,7 @@ func TestHTTPProjectsAndSpacesLifecycle(t *testing.T) {
 
 func TestHTTPAdminDeleteSpaceProtectsCoreScopesWithoutForce(t *testing.T) {
 	server := testServer(t)
-	createGlobal := authedJSONRequest(http.MethodPost, "/v1/spaces", `{
+	createGlobal := jsonRequest(http.MethodPost, "/v1/spaces", `{
 		"id": "_global",
 		"name": "Global",
 		"kind": "system"
@@ -144,14 +144,14 @@ func TestHTTPAdminDeleteSpaceProtectsCoreScopesWithoutForce(t *testing.T) {
 		t.Fatalf("create global status = %d body = %s", createGlobalResponse.Code, createGlobalResponse.Body.String())
 	}
 
-	deleteGlobal := authedJSONRequest(http.MethodPost, "/v1/admin/spaces/_global/delete", `{}`)
+	deleteGlobal := jsonRequest(http.MethodPost, "/v1/admin/spaces/_global/delete", `{}`)
 	deleteGlobalResponse := httptest.NewRecorder()
 	server.Handler.ServeHTTP(deleteGlobalResponse, deleteGlobal)
 	if deleteGlobalResponse.Code != http.StatusConflict {
 		t.Fatalf("delete protected status = %d body = %s", deleteGlobalResponse.Code, deleteGlobalResponse.Body.String())
 	}
 
-	forceDelete := authedJSONRequest(http.MethodPost, "/v1/admin/spaces/_global/delete", `{"force":true}`)
+	forceDelete := jsonRequest(http.MethodPost, "/v1/admin/spaces/_global/delete", `{"force":true}`)
 	forceDeleteResponse := httptest.NewRecorder()
 	server.Handler.ServeHTTP(forceDeleteResponse, forceDelete)
 	if forceDeleteResponse.Code != http.StatusOK {
@@ -161,7 +161,7 @@ func TestHTTPAdminDeleteSpaceProtectsCoreScopesWithoutForce(t *testing.T) {
 
 func TestHTTPRejectsInvalidVisibility(t *testing.T) {
 	server := testServer(t)
-	request := authedJSONRequest(http.MethodPost, "/v1/spaces", `{
+	request := jsonRequest(http.MethodPost, "/v1/spaces", `{
 		"id": "bad-space",
 		"name": "Bad Space",
 		"visibility": "gone"
@@ -175,7 +175,7 @@ func TestHTTPRejectsInvalidVisibility(t *testing.T) {
 
 func TestHTTPRejectsInvalidRepositoryURL(t *testing.T) {
 	server := testServer(t)
-	request := authedJSONRequest(http.MethodPost, "/v1/projects", `{
+	request := jsonRequest(http.MethodPost, "/v1/projects", `{
 		"id": "bad-project",
 		"name": "Bad Project",
 		"repository_url": "file:///tmp/project.git"
@@ -187,23 +187,12 @@ func TestHTTPRejectsInvalidRepositoryURL(t *testing.T) {
 	}
 }
 
-func TestHTTPRequiresAuth(t *testing.T) {
-	server := testServer(t)
-	request := httptest.NewRequest(http.MethodGet, "/v1/projects", nil)
-	response := httptest.NewRecorder()
-	server.Handler.ServeHTTP(response, request)
-	if response.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
-	}
-}
-
 func testServer(t *testing.T) *http.Server {
 	t.Helper()
 	cfg := &Config{
-		BindAddr:     "127.0.0.1:0",
-		DatabaseURL:  "postgres://unused",
-		ServiceToken: "test-token",
-		HTTP:         HTTPConfig{ReadHeaderTimeout: time.Second},
+		BindAddr:    "127.0.0.1:0",
+		DatabaseURL: "postgres://unused",
+		HTTP:        HTTPConfig{ReadHeaderTimeout: time.Second},
 	}
 	server, err := NewHTTPServer(cfg, testBuildInfo(t), NewService(newMemoryStore(), fixedClock))
 	if err != nil {
@@ -214,7 +203,7 @@ func testServer(t *testing.T) *http.Server {
 
 func listScopes(t *testing.T, handler http.Handler, path string) []ScopeResponse {
 	t.Helper()
-	request := authedJSONRequest(http.MethodGet, path, "")
+	request := jsonRequest(http.MethodGet, path, "")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
@@ -225,13 +214,12 @@ func listScopes(t *testing.T, handler http.Handler, path string) []ScopeResponse
 	return decoded
 }
 
-func authedJSONRequest(method string, path string, body string) *http.Request {
+func jsonRequest(method string, path string, body string) *http.Request {
 	var reader io.Reader
 	if body != "" {
 		reader = bytes.NewBufferString(body)
 	}
 	request := httptest.NewRequest(method, path, reader)
-	request.Header.Set("Authorization", "Bearer test-token")
 	if body != "" {
 		request.Header.Set("Content-Type", "application/json")
 	}

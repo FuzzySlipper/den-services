@@ -17,7 +17,6 @@ func TestReadHandlerResponseShapeAndLimitValidation(t *testing.T) {
 	server := testServer(t, store, now)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/timeline/channels/123/items?limit=1", nil)
-	req.Header.Set("Authorization", "Bearer test-token")
 	recorder := httptest.NewRecorder()
 	server.Handler.ServeHTTP(recorder, req)
 
@@ -36,7 +35,6 @@ func TestReadHandlerResponseShapeAndLimitValidation(t *testing.T) {
 	}
 
 	badReq := httptest.NewRequest(http.MethodGet, "/v1/timeline/channels/123/items?limit=99", nil)
-	badReq.Header.Set("Authorization", "Bearer test-token")
 	badRecorder := httptest.NewRecorder()
 	server.Handler.ServeHTTP(badRecorder, badReq)
 	if badRecorder.Code != http.StatusBadRequest {
@@ -50,7 +48,6 @@ func TestProjectReadHandlerPassesProjectScope(t *testing.T) {
 	server := testServer(t, store, now)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/timeline/projects/den-services/items", nil)
-	req.Header.Set("Authorization", "Bearer test-token")
 	recorder := httptest.NewRecorder()
 	server.Handler.ServeHTTP(recorder, req)
 
@@ -73,7 +70,6 @@ func TestSSEStreamSendsOpenItemAndHeartbeat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Header.Set("Authorization", "Bearer test-token")
 	response, err := testHTTPServer.Client().Do(req)
 	if err != nil {
 		t.Fatalf("Do() error = %v", err)

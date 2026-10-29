@@ -16,9 +16,6 @@ func NewHTTPServer(cfg *Config, routes *RouteTable, buildInfo health.BuildInfo, 
 	if err != nil {
 		return nil, err
 	}
-	routes.defaultAuth = CallerAuth{bearerToken: cfg.ServiceToken}
-	routes.hasDefaultAuth = true
-
 	mux := http.NewServeMux()
 	mux.Handle("GET /health", healthHandler)
 	mux.Handle("GET /version", versionHandler)

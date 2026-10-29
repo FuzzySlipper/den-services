@@ -2,8 +2,6 @@ package gateway
 
 import (
 	"testing"
-
-	sharedconfig "den-services/shared/config"
 )
 
 func TestRouteTableMatchesLongestPrefix(t *testing.T) {
@@ -31,7 +29,6 @@ func TestRouteTableUsesSuccessorOnlyWhenHeaderCanSelectConfiguredRoute(t *testin
 			PathPattern:          "/v1/delivery",
 			LegacyUpstreamURL:    "http://legacy",
 			SuccessorUpstreamURL: "http://successor",
-			SuccessorAuth:        testSuccessorAuth(),
 		},
 		{Name: "all", PathPattern: "/", LegacyUpstreamURL: "http://legacy"},
 	})
@@ -66,18 +63,6 @@ func TestRouteTableRejectsMissingLegacyUpstream(t *testing.T) {
 	_, err := NewRouteTable([]routeFile{{Name: "bad", PathPattern: "/"}})
 	if err == nil {
 		t.Fatal("NewRouteTable() error = nil, want error")
-	}
-}
-
-func TestRouteTableRejectsSuccessorWithoutAuth(t *testing.T) {
-	_, err := NewRouteTable([]routeFile{{
-		Name:                 "delivery",
-		PathPattern:          "/v1/delivery",
-		LegacyUpstreamURL:    "http://legacy",
-		SuccessorUpstreamURL: "http://successor",
-	}})
-	if err == nil {
-		t.Fatal("NewRouteTable() error = nil, want missing successor auth error")
 	}
 }
 
@@ -125,7 +110,6 @@ func TestRouteTableUsesAlwaysSuccessorWithoutMigrationHeader(t *testing.T) {
 			LegacyUpstreamURL:    "http://legacy",
 			SuccessorUpstreamURL: "http://observation",
 			SuccessorMode:        "always",
-			SuccessorAuth:        testSuccessorAuth(),
 		},
 	})
 	if err != nil {
@@ -153,8 +137,6 @@ func TestRouteTableProjectTaskTemplateDoesNotCatchOtherProjectReads(t *testing.T
 			LegacyUpstreamURL:    "http://legacy",
 			SuccessorUpstreamURL: "http://tasks",
 			SuccessorMode:        "always",
-			CallerAuth:           callerAuthFile{BearerToken: "tasks-read-token"},
-			SuccessorAuth:        testSuccessorAuth(),
 		},
 		{Name: "all", PathPattern: "/", LegacyUpstreamURL: "http://legacy"},
 	})
@@ -179,9 +161,6 @@ func TestRouteTableProjectTaskTemplateDoesNotCatchOtherProjectReads(t *testing.T
 		if match.Target.String() != "http://tasks" {
 			t.Fatalf("%s target = %s, want http://tasks", path, match.Target.String())
 		}
-		if match.CallerAuth.bearerToken != "tasks-read-token" {
-			t.Fatalf("%s caller token = %q, want tasks read token", path, match.CallerAuth.bearerToken)
-		}
 	}
 
 	legacyPaths := []string{
@@ -204,35 +183,17 @@ func TestRouteTableProjectTaskTemplateDoesNotCatchOtherProjectReads(t *testing.T
 	}
 }
 
-func TestRouteTableRejectsMissingCallerAuthExpansion(t *testing.T) {
-	_, err := NewRouteTableWithValues([]routeFile{{
-		Name:              "observation-read",
-		PathPattern:       "/v1/observation",
-		Methods:           []string{"GET"},
-		LegacyUpstreamURL: "http://legacy",
-		CallerAuth:        callerAuthFile{BearerToken: "${MISSING_OBSERVATION_READ_TOKEN}"},
-	}}, sharedconfig.FromMap(nil))
-	if err == nil {
-		t.Fatal("NewRouteTableWithValues() error = nil, want missing caller auth env error")
-	}
-}
-
-func TestRouteTableRuntimeRouteUsesAlwaysSuccessorAndDedicatedCallerAuth(t *testing.T) {
-	table, err := NewRouteTableWithValues([]routeFile{{
+func TestRouteTableRuntimeRouteUsesAlwaysSuccessor(t *testing.T) {
+	table, err := NewRouteTable([]routeFile{{
 		Name:                 "runtime-instances",
 		PathPattern:          "/v1/runtime/instances",
 		Methods:              []string{httpMethodGet, httpMethodPost},
 		LegacyUpstreamURL:    "http://legacy",
 		SuccessorUpstreamURL: "http://runtime",
 		SuccessorMode:        "always",
-		CallerAuth:           callerAuthFile{BearerToken: "${DEN_GATEWAY_RUNTIME_CALLER_TOKEN}"},
-		SuccessorAuth:        upstreamAuthFile{BearerToken: "${DEN_GATEWAY_RUNTIME_UPSTREAM_TOKEN}"},
-	}}, sharedconfig.FromMap(map[string]string{
-		"DEN_GATEWAY_RUNTIME_CALLER_TOKEN":   "runtime-caller-token",
-		"DEN_GATEWAY_RUNTIME_UPSTREAM_TOKEN": "runtime-upstream-token",
-	}))
+	}})
 	if err != nil {
-		t.Fatalf("NewRouteTableWithValues() error = %v", err)
+		t.Fatalf("NewRouteTable() error = %v", err)
 	}
 
 	match, ok := table.Match(httpMethodPost, "/v1/runtime/instances/agent-1/heartbeat", false)
@@ -242,60 +203,8 @@ func TestRouteTableRuntimeRouteUsesAlwaysSuccessorAndDedicatedCallerAuth(t *test
 	if !match.UsesSuccessor {
 		t.Fatal("runtime route UsesSuccessor = false, want true")
 	}
-	if match.CallerAuth.bearerToken != "runtime-caller-token" {
-		t.Fatalf("caller token = %q, want runtime caller token", match.CallerAuth.bearerToken)
-	}
-	if match.Auth.bearerToken != "runtime-upstream-token" {
-		t.Fatalf("upstream token = %q, want runtime upstream token", match.Auth.bearerToken)
-	}
-}
-
-func TestRouteTableUsesSuccessorCallerAuthOnlyForCanarySelection(t *testing.T) {
-	table, err := NewRouteTableWithValuesAndDefaultAuth([]routeFile{{
-		Name:                 "conversation-read-canary",
-		PathPattern:          "/v1/conversation",
-		Methods:              []string{httpMethodGet},
-		LegacyUpstreamURL:    "http://legacy",
-		SuccessorUpstreamURL: "http://conversation",
-		SuccessorAuth:        testSuccessorAuth(),
-		SuccessorCallerAuth:  callerAuthFile{BearerToken: "conversation-read-token"},
-	}}, sharedconfig.FromMap(nil), CallerAuth{bearerToken: "gateway-default-token"})
-	if err != nil {
-		t.Fatalf("NewRouteTableWithValuesAndDefaultAuth() error = %v", err)
-	}
-
-	match, ok := table.Match(httpMethodGet, "/v1/conversation/channels", false)
-	if !ok {
-		t.Fatal("legacy fallback did not match")
-	}
-	if match.UsesSuccessor {
-		t.Fatal("legacy fallback UsesSuccessor = true, want false")
-	}
-	if match.CallerAuth.bearerToken != "gateway-default-token" {
-		t.Fatalf("legacy caller token = %q, want gateway default", match.CallerAuth.bearerToken)
-	}
-
-	match, ok = table.Match(httpMethodGet, "/v1/conversation/channels", true)
-	if !ok {
-		t.Fatal("successor canary did not match")
-	}
-	if !match.UsesSuccessor {
-		t.Fatal("successor canary UsesSuccessor = false, want true")
-	}
-	if match.CallerAuth.bearerToken != "conversation-read-token" {
-		t.Fatalf("successor caller token = %q, want conversation read", match.CallerAuth.bearerToken)
-	}
-}
-
-func TestRouteTableRejectsSuccessorCallerAuthWithoutSuccessor(t *testing.T) {
-	_, err := NewRouteTable([]routeFile{{
-		Name:                "bad",
-		PathPattern:         "/v1/conversation",
-		LegacyUpstreamURL:   "http://legacy",
-		SuccessorCallerAuth: callerAuthFile{BearerToken: "conversation-read-token"},
-	}})
-	if err == nil {
-		t.Fatal("NewRouteTable() error = nil, want successor_caller_auth without successor error")
+	if match.Target.String() != "http://runtime" {
+		t.Fatalf("target = %s, want http://runtime", match.Target.String())
 	}
 }
 
@@ -321,30 +230,29 @@ func TestRouteTableRejectsOverlappingExactPathAndMethod(t *testing.T) {
 
 func TestRouteTableRewritesConfiguredNonTemplatedPrefix(t *testing.T) {
 	table, err := NewRouteTable([]routeFile{{
-		Name:                 "visual-contract",
-		PathPattern:          "/v1/visual-contracts",
+		Name:                 "widgets",
+		PathPattern:          "/v1/widgets",
 		Methods:              []string{httpMethodPost},
 		LegacyUpstreamURL:    "http://legacy",
-		SuccessorUpstreamURL: "http://visual-contract",
+		SuccessorUpstreamURL: "http://widgets",
 		SuccessorMode:        string(SuccessorModeAlways),
-		SuccessorAuth:        testSuccessorAuth(),
 		PathRewrite: pathRewriteFile{
-			FromPrefix: "/v1/visual-contracts",
-			ToPrefix:   "/visual-contracts",
+			FromPrefix: "/v1/widgets",
+			ToPrefix:   "/widgets",
 		},
 	}})
 	if err != nil {
 		t.Fatalf("NewRouteTable() error = %v", err)
 	}
 
-	match, ok := table.Match(httpMethodPost, "/v1/visual-contracts/compare", false)
+	match, ok := table.Match(httpMethodPost, "/v1/widgets/compare", false)
 	if !ok {
 		t.Fatal("Match() ok = false")
 	}
-	if got := match.PathRewrite.Apply("/v1/visual-contracts/compare"); got != "/visual-contracts/compare" {
-		t.Fatalf("rewritten path = %q, want /visual-contracts/compare", got)
+	if got := match.PathRewrite.Apply("/v1/widgets/compare"); got != "/widgets/compare" {
+		t.Fatalf("rewritten path = %q, want /widgets/compare", got)
 	}
-	if _, ok := table.Match(httpMethodPost, "/v1/visual-contracts-extra/compare", false); ok {
+	if _, ok := table.Match(httpMethodPost, "/v1/widgets-extra/compare", false); ok {
 		t.Fatal("near-prefix path unexpectedly matched")
 	}
 }
@@ -357,13 +265,13 @@ func TestRouteTableRejectsInvalidPathRewrite(t *testing.T) {
 	}{
 		{
 			name:    "missing destination",
-			pattern: "/v1/visual-contracts",
-			rewrite: pathRewriteFile{FromPrefix: "/v1/visual-contracts"},
+			pattern: "/v1/widgets",
+			rewrite: pathRewriteFile{FromPrefix: "/v1/widgets"},
 		},
 		{
 			name:    "prefix does not match route",
-			pattern: "/v1/visual-contracts",
-			rewrite: pathRewriteFile{FromPrefix: "/v1/contracts", ToPrefix: "/visual-contracts"},
+			pattern: "/v1/widgets",
+			rewrite: pathRewriteFile{FromPrefix: "/v1/contracts", ToPrefix: "/widgets"},
 		},
 		{
 			name:    "templated route",
@@ -389,16 +297,12 @@ func TestRouteTableRejectsInvalidPathRewrite(t *testing.T) {
 
 func TestRouteTableAllowsDisjointMethodsForSamePath(t *testing.T) {
 	_, err := NewRouteTable([]routeFile{
-		{Name: "conversation-read", PathPattern: "/v1/conversation", Methods: []string{httpMethodGet}, LegacyUpstreamURL: "http://legacy"},
-		{Name: "conversation-write", PathPattern: "/v1/conversation", Methods: []string{httpMethodPost}, LegacyUpstreamURL: "http://legacy"},
+		{Name: "observation-read", PathPattern: "/v1/observation", Methods: []string{httpMethodGet}, LegacyUpstreamURL: "http://legacy"},
+		{Name: "observation-write", PathPattern: "/v1/observation", Methods: []string{httpMethodPost}, LegacyUpstreamURL: "http://legacy"},
 	})
 	if err != nil {
 		t.Fatalf("NewRouteTable() error = %v, want nil", err)
 	}
-}
-
-func testSuccessorAuth() upstreamAuthFile {
-	return upstreamAuthFile{BearerToken: "successor-token"}
 }
 
 const (

@@ -16,9 +16,6 @@ func TestHTTPTaskClientSetTaskStatusUsesProjectTaskPatch(t *testing.T) {
 		if r.URL.Path != "/v1/projects/den-services/tasks/42" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
-		if r.Header.Get("Authorization") != "Bearer task-token" {
-			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
-		}
 		var body struct {
 			Agent  string `json:"agent"`
 			Status string `json:"status"`
@@ -33,7 +30,7 @@ func TestHTTPTaskClientSetTaskStatusUsesProjectTaskPatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewTaskClient(server.URL, "task-token")
+	client := NewTaskClient(server.URL)
 	task, err := client.SetTaskStatus(t.Context(), "den-services", 42, "codex", TaskStatusReview)
 	if err != nil {
 		t.Fatalf("SetTaskStatus() error = %v", err)
@@ -65,7 +62,7 @@ func TestHTTPTaskClientTransitionTaskToReviewUsesConditionalEndpoint(t *testing.
 	}))
 	defer server.Close()
 
-	result, err := NewTaskClient(server.URL, "").TransitionTaskToReview(t.Context(), "den-services", 42, "codex")
+	result, err := NewTaskClient(server.URL).TransitionTaskToReview(t.Context(), "den-services", 42, "codex")
 	if err != nil {
 		t.Fatalf("TransitionTaskToReview() error = %v", err)
 	}
@@ -80,7 +77,7 @@ func TestHTTPTaskClientTransitionTaskToReviewPreservesIneligibleConflict(t *test
 	}))
 	defer server.Close()
 
-	_, err := NewTaskClient(server.URL, "").TransitionTaskToReview(t.Context(), "den-services", 42, "codex")
+	_, err := NewTaskClient(server.URL).TransitionTaskToReview(t.Context(), "den-services", 42, "codex")
 	var serviceErr *ServiceError
 	if !errors.As(err, &serviceErr) || serviceErr.Code() != "review_transition_ineligible" ||
 		serviceErr.HTTPStatus() != http.StatusConflict {
@@ -97,7 +94,7 @@ func TestHTTPTaskClientDecodesCampaignMembershipFields(t *testing.T) {
 	}))
 	defer server.Close()
 
-	task, err := NewTaskClient(server.URL, "").GetTaskContext(t.Context(), "child-project", 7001)
+	task, err := NewTaskClient(server.URL).GetTaskContext(t.Context(), "child-project", 7001)
 	if err != nil {
 		t.Fatalf("GetTaskContext() error = %v", err)
 	}
@@ -120,7 +117,7 @@ func TestHTTPTaskClientListsBoundedReviewableTasks(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tasks, err := NewTaskClient(server.URL, "").ListReviewableTasks(t.Context(), "den-services", 51, 10)
+	tasks, err := NewTaskClient(server.URL).ListReviewableTasks(t.Context(), "den-services", 51, 10)
 	if err != nil {
 		t.Fatalf("ListReviewableTasks() error = %v", err)
 	}

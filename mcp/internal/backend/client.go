@@ -214,9 +214,6 @@ func (c *Client) doBackendRequest(ctx context.Context, backend config.BackendCon
 	if sessionID != "" {
 		request.Header.Set("Mcp-Session-Id", sessionID)
 	}
-	if backend.ServiceToken != "" {
-		request.Header.Set("Authorization", "Bearer "+backend.ServiceToken)
-	}
 	response, err := c.httpClient.Do(request)
 	if err != nil {
 		cancel()
@@ -236,9 +233,6 @@ func (c *Client) CheckReady(ctx context.Context, backend config.BackendConfig) *
 			Backend:   backend.Name,
 			Message:   err.Error(),
 		}
-	}
-	if backend.ServiceToken != "" {
-		request.Header.Set("Authorization", "Bearer "+backend.ServiceToken)
 	}
 	response, err := c.httpClient.Do(request)
 	if err != nil {
@@ -311,12 +305,6 @@ func statusFailure(backendName string, operation string, toolName string, status
 
 func statusFailureMessage(statusCode int, body []byte) string {
 	bodyText := string(body)
-	if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
-		if bodyText == "" {
-			return "Den backend rejected MCP service credentials; check backend service_token_env and token configuration."
-		}
-		return bodyText + " Check backend service_token_env and token configuration."
-	}
 	if bodyText != "" {
 		return bodyText
 	}

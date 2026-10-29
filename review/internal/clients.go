@@ -18,12 +18,11 @@ func (NoopProjectValidator) AssertWritable(context.Context, string) error { retu
 
 type ProjectScopeClient struct {
 	baseURL string
-	token   string
 	client  *http.Client
 }
 
-func NewProjectScopeClient(baseURL string, token string) *ProjectScopeClient {
-	return &ProjectScopeClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), token: strings.TrimSpace(token), client: &http.Client{Timeout: 5 * time.Second}}
+func NewProjectScopeClient(baseURL string) *ProjectScopeClient {
+	return &ProjectScopeClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), client: &http.Client{Timeout: 5 * time.Second}}
 }
 
 func (c *ProjectScopeClient) AssertWritable(ctx context.Context, projectID string) error {
@@ -35,9 +34,6 @@ func (c *ProjectScopeClient) AssertWritable(ctx context.Context, projectID strin
 		return fmt.Errorf("building project assert-writable request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("asserting project scope writable: %w", err)
@@ -57,12 +53,11 @@ func (c *ProjectScopeClient) AssertWritable(ctx context.Context, projectID strin
 
 type HTTPTaskClient struct {
 	baseURL string
-	token   string
 	client  *http.Client
 }
 
-func NewTaskClient(baseURL string, token string) *HTTPTaskClient {
-	return &HTTPTaskClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), token: strings.TrimSpace(token), client: &http.Client{Timeout: 5 * time.Second}}
+func NewTaskClient(baseURL string) *HTTPTaskClient {
+	return &HTTPTaskClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), client: &http.Client{Timeout: 5 * time.Second}}
 }
 
 func (c *HTTPTaskClient) GetTaskContext(ctx context.Context, projectID string, taskID int64) (TaskContext, error) {
@@ -72,9 +67,6 @@ func (c *HTTPTaskClient) GetTaskContext(ctx context.Context, projectID string, t
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/v1/projects/%s/tasks/%d", c.baseURL, url.PathEscape(projectID), taskID), nil)
 	if err != nil {
 		return TaskContext{}, fmt.Errorf("building task context request: %w", err)
-	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -104,9 +96,6 @@ func (c *HTTPTaskClient) GetTask(ctx context.Context, taskID int64) (TaskContext
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/v1/tasks/%d", c.baseURL, taskID), nil)
 	if err != nil {
 		return TaskContext{}, fmt.Errorf("building task lookup request: %w", err)
-	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -144,9 +133,6 @@ func (c *HTTPTaskClient) ListReviewableTasks(ctx context.Context, projectID stri
 	if err != nil {
 		return nil, fmt.Errorf("building reviewable task list request: %w", err)
 	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("listing reviewable tasks: %w", err)
@@ -179,9 +165,6 @@ func (c *HTTPTaskClient) SetTaskStatus(ctx context.Context, projectID string, ta
 		return TaskContext{}, fmt.Errorf("building task status update request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return TaskContext{}, fmt.Errorf("updating task status: %w", err)
@@ -225,9 +208,6 @@ func (c *HTTPTaskClient) TransitionTaskToReview(
 		return TaskReviewTransition{}, fmt.Errorf("building task review transition request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return TaskReviewTransition{}, fmt.Errorf("transitioning task to review: %w", err)
@@ -283,9 +263,6 @@ func (c *HTTPTaskClient) CreateFollowUpTask(ctx context.Context, projectID strin
 	if req.IdempotencyKey != "" {
 		httpReq.Header.Set("Idempotency-Key", req.IdempotencyKey)
 	}
-	if c.token != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.token)
-	}
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
 		return CreatedTask{}, fmt.Errorf("creating follow-up task: %w", err)
@@ -318,12 +295,11 @@ func decodeTaskContext(body io.Reader) (TaskContext, error) {
 
 type HTTPMessageClient struct {
 	baseURL string
-	token   string
 	client  *http.Client
 }
 
-func NewMessageClient(baseURL string, token string) *HTTPMessageClient {
-	return &HTTPMessageClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), token: strings.TrimSpace(token), client: &http.Client{Timeout: 5 * time.Second}}
+func NewMessageClient(baseURL string) *HTTPMessageClient {
+	return &HTTPMessageClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), client: &http.Client{Timeout: 5 * time.Second}}
 }
 
 func (c *HTTPMessageClient) AppendTaskMessage(ctx context.Context, projectID string, req AppendMessageRequest) (AppendedMessage, error) {
@@ -338,9 +314,6 @@ func (c *HTTPMessageClient) AppendTaskMessage(ctx context.Context, projectID str
 		return AppendedMessage{}, fmt.Errorf("building message append request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if c.token != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.token)
-	}
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
 		return AppendedMessage{}, fmt.Errorf("appending review packet message: %w", err)

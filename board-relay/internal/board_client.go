@@ -14,12 +14,11 @@ import (
 
 type HTTPBoardClient struct {
 	baseURL string
-	token   string
 	client  *http.Client
 }
 
-func NewHTTPBoardClient(baseURL string, token string, timeout time.Duration) *HTTPBoardClient {
-	return &HTTPBoardClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), token: strings.TrimSpace(token), client: &http.Client{Timeout: timeout}}
+func NewHTTPBoardClient(baseURL string, timeout time.Duration) *HTTPBoardClient {
+	return &HTTPBoardClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), client: &http.Client{Timeout: timeout}}
 }
 
 func (c *HTTPBoardClient) ListPosts(ctx context.Context, projectID string, afterID *int64, limit int) (BoardPage, error) {
@@ -107,9 +106,6 @@ func (c *HTTPBoardClient) requestJSON(ctx context.Context, method string, path s
 	req.Header.Set("Accept", "application/json")
 	if source != nil {
 		req.Header.Set("Content-Type", "application/json")
-	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	response, err := c.client.Do(req)
 	if err != nil {

@@ -14,7 +14,7 @@ import (
 func TestMCPClientCallsTypedOperationAndBoundsResponse(t *testing.T) {
 	var requestBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("Authorization") != "Bearer secret" {
+		if request.Header.Get("Authorization") != "" {
 			t.Errorf("authorization = %q", request.Header.Get("Authorization"))
 		}
 		requestBody, _ = io.ReadAll(request.Body)
@@ -22,7 +22,7 @@ func TestMCPClientCallsTypedOperationAndBoundsResponse(t *testing.T) {
 		_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","id":"den-tool","result":{"content":[{"type":"text","text":"ok"}],"isError":false,"structuredContent":{"id":7011}}}`)
 	}))
 	defer server.Close()
-	client, err := NewMCPClient(server.URL, "secret", server.Client())
+	client, err := NewMCPClient(server.URL, server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestMCPClientCallsTypedOperationAndBoundsResponse(t *testing.T) {
 		_, _ = io.WriteString(writer, strings.Repeat("x", maxMCPResponseBytes+1))
 	}))
 	defer largeServer.Close()
-	largeClient, _ := NewMCPClient(largeServer.URL, "", largeServer.Client())
+	largeClient, _ := NewMCPClient(largeServer.URL, largeServer.Client())
 	if _, _, err := largeClient.Call(context.Background(), "get_task", json.RawMessage(`{}`)); err == nil || !strings.Contains(err.Error(), "exceeded") {
 		t.Fatalf("oversized response error = %v", err)
 	}
@@ -106,7 +106,7 @@ func TestDenCLIInvokesLongTailReadWriteAndDestructiveOperations(t *testing.T) {
 func TestBoardCLIDefaultsToMCPWithoutBoardInfrastructureConfiguration(t *testing.T) {
 	var calls []map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("Authorization") != "Bearer agent-token" {
+		if request.Header.Get("Authorization") != "" {
 			t.Errorf("authorization = %q", request.Header.Get("Authorization"))
 		}
 		var rpc map[string]any
@@ -125,7 +125,6 @@ func TestBoardCLIDefaultsToMCPWithoutBoardInfrastructureConfiguration(t *testing
 	defer server.Close()
 	t.Setenv("DEN_BOARD_URL", "")
 	t.Setenv("DEN_MCP_URL", server.URL)
-	t.Setenv("DEN_MCP_TOKEN", "agent-token")
 
 	for _, test := range []struct {
 		args []string

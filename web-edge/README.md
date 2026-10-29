@@ -3,9 +3,8 @@
 `web-edge` is Den's stateless browser edge. It serves the active `den-web`
 asset release and forwards same-origin `/api/v1/*` requests to Gateway.
 
-It intentionally does not know service-owner URLs or domain credentials.
-Gateway owns route selection and replaces the edge's dedicated caller token
-with the destination service token.
+It intentionally does not know service-owner URLs. Gateway owns route
+selection; requests are forwarded unchanged apart from the `/api` prefix.
 
 Production inputs:
 

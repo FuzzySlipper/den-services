@@ -15,11 +15,8 @@ import (
 type Config struct {
 	BindAddr             string
 	DatabaseURL          string
-	ServiceToken         string
 	ProjectsBaseURL      string
-	ProjectsToken        string
 	AgentGuidanceBaseURL string
-	AgentGuidanceToken   string
 	HTTP                 HTTPConfig
 }
 
@@ -30,11 +27,8 @@ type HTTPConfig struct {
 type configFile struct {
 	BindAddr                string         `yaml:"bind_addr"`
 	DatabaseURLEnv          string         `yaml:"database_url_env"`
-	ServiceTokenEnv         string         `yaml:"service_token_env"`
 	ProjectsBaseURLEnv      string         `yaml:"projects_base_url_env"`
-	ProjectsTokenEnv        string         `yaml:"projects_token_env"`
 	AgentGuidanceBaseURLEnv string         `yaml:"agent_guidance_base_url_env"`
-	AgentGuidanceTokenEnv   string         `yaml:"agent_guidance_token_env"`
 	HTTP                    httpConfigFile `yaml:"http"`
 }
 
@@ -78,15 +72,11 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	serviceToken := values.String(f.ServiceTokenEnv, "")
 	return &Config{
 		BindAddr:             f.BindAddr,
 		DatabaseURL:          values.String(f.DatabaseURLEnv, ""),
-		ServiceToken:         serviceToken,
 		ProjectsBaseURL:      values.String(f.ProjectsBaseURLEnv, ""),
-		ProjectsToken:        values.String(f.ProjectsTokenEnv, serviceToken),
 		AgentGuidanceBaseURL: values.String(f.AgentGuidanceBaseURLEnv, ""),
-		AgentGuidanceToken:   values.String(f.AgentGuidanceTokenEnv, serviceToken),
 		HTTP:                 HTTPConfig{ReadHeaderTimeout: readHeaderTimeout},
 	}, nil
 }
@@ -98,14 +88,8 @@ func (c *Config) validate() error {
 	if strings.TrimSpace(c.DatabaseURL) == "" {
 		return errors.New("database url is required")
 	}
-	if strings.TrimSpace(c.ServiceToken) == "" {
-		return errors.New("service token is required")
-	}
 	if strings.TrimSpace(c.ProjectsBaseURL) == "" {
 		return errors.New("projects base url is required")
-	}
-	if strings.TrimSpace(c.ProjectsToken) == "" {
-		return errors.New("projects token is required")
 	}
 	if c.HTTP.ReadHeaderTimeout <= 0 {
 		return errors.New("http.read_header_timeout must be positive")

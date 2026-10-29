@@ -13,13 +13,12 @@ import (
 )
 
 type Config struct {
-	BindAddr     string
-	DatabaseURL  string
-	ServiceToken string
-	Storage      StorageConfig
-	Limits       LimitConfig
-	Retention    RetentionConfig
-	HTTP         HTTPConfig
+	BindAddr    string
+	DatabaseURL string
+	Storage     StorageConfig
+	Limits      LimitConfig
+	Retention   RetentionConfig
+	HTTP        HTTPConfig
 }
 
 type StorageConfig struct {
@@ -43,13 +42,12 @@ type HTTPConfig struct {
 }
 
 type configFile struct {
-	BindAddr        string              `yaml:"bind_addr"`
-	DatabaseURLEnv  string              `yaml:"database_url_env"`
-	ServiceTokenEnv string              `yaml:"service_token_env"`
-	Storage         storageConfigFile   `yaml:"storage"`
-	Limits          limitConfigFile     `yaml:"limits"`
-	Retention       retentionConfigFile `yaml:"retention"`
-	HTTP            httpConfigFile      `yaml:"http"`
+	BindAddr       string              `yaml:"bind_addr"`
+	DatabaseURLEnv string              `yaml:"database_url_env"`
+	Storage        storageConfigFile   `yaml:"storage"`
+	Limits         limitConfigFile     `yaml:"limits"`
+	Retention      retentionConfigFile `yaml:"retention"`
+	HTTP           httpConfigFile      `yaml:"http"`
 }
 
 type storageConfigFile struct {
@@ -117,9 +115,8 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 		return nil, err
 	}
 	return &Config{
-		BindAddr:     f.BindAddr,
-		DatabaseURL:  values.String(f.DatabaseURLEnv, ""),
-		ServiceToken: values.String(f.ServiceTokenEnv, ""),
+		BindAddr:    f.BindAddr,
+		DatabaseURL: values.String(f.DatabaseURLEnv, ""),
 		Storage: StorageConfig{
 			Backend:   f.Storage.Backend,
 			RootPath:  filepath.Clean(f.Storage.RootPath),
@@ -143,9 +140,6 @@ func (c *Config) validate() error {
 	}
 	if c.DatabaseURL == "" {
 		return errors.New("database url is required")
-	}
-	if c.ServiceToken == "" {
-		return errors.New("service token is required")
 	}
 	if c.Storage.Backend != "filesystem" {
 		return errors.New("storage.backend must be filesystem")

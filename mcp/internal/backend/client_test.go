@@ -68,7 +68,7 @@ func TestClientClassifiesDNSFailureAsRetryableUnavailable(t *testing.T) {
 	}
 }
 
-func TestClientAuthFailureWithoutBodyHasConfigHint(t *testing.T) {
+func TestClientAuthStatusWithoutBodyUsesStatusText(t *testing.T) {
 	failure := statusFailure("den-core", "get_task", "get_task", http.StatusUnauthorized, nil)
 	if failure.Retryable {
 		t.Fatal("Retryable = true, want false")
@@ -76,8 +76,8 @@ func TestClientAuthFailureWithoutBodyHasConfigHint(t *testing.T) {
 	if failure.Error != "den_backend_auth_failed" {
 		t.Fatalf("Error = %q, want den_backend_auth_failed", failure.Error)
 	}
-	if failure.Message == http.StatusText(http.StatusUnauthorized) {
-		t.Fatalf("Message = %q, want config hint", failure.Message)
+	if failure.Message != http.StatusText(http.StatusUnauthorized) {
+		t.Fatalf("Message = %q, want status text", failure.Message)
 	}
 }
 
@@ -275,7 +275,6 @@ func TestClientCallsProjectsRESTCreateProject(t *testing.T) {
 
 	client := NewClient(server.Client())
 	backendConfig := testBackend("projects", server.URL)
-	backendConfig.ServiceToken = "projects-token"
 	result, failure, err := client.Call(context.Background(), backendConfig, projectsRoute("create_project", http.MethodPost, "/v1/projects"), ToolCall{
 		ToolName:  "create_project",
 		Operation: "create_project",
@@ -288,8 +287,8 @@ func TestClientCallsProjectsRESTCreateProject(t *testing.T) {
 	if failure != nil {
 		t.Fatalf("Call() failure = %#v", failure)
 	}
-	if sawToken != "Bearer projects-token" {
-		t.Fatalf("Authorization = %q, want Bearer projects-token", sawToken)
+	if sawToken != "" {
+		t.Fatalf("Authorization = %q, want none", sawToken)
 	}
 	if sawMethod != http.MethodPost || sawPath != "/v1/projects" {
 		t.Fatalf("request = %s %s, want POST /v1/projects", sawMethod, sawPath)
@@ -641,7 +640,6 @@ func TestClientCallsMessagesRESTSendMessage(t *testing.T) {
 
 	client := NewClient(server.Client())
 	backendConfig := testBackend("messages", server.URL)
-	backendConfig.ServiceToken = "messages-token"
 	result, failure, err := client.Call(context.Background(), backendConfig, messagesRouteForTest("send_message", http.MethodPost, "/v1/projects/{project_id}/messages"), ToolCall{
 		ToolName:  "send_message",
 		Operation: "send_message",
@@ -654,8 +652,8 @@ func TestClientCallsMessagesRESTSendMessage(t *testing.T) {
 	if failure != nil {
 		t.Fatalf("Call() failure = %#v", failure)
 	}
-	if sawToken != "Bearer messages-token" {
-		t.Fatalf("Authorization = %q, want Bearer messages-token", sawToken)
+	if sawToken != "" {
+		t.Fatalf("Authorization = %q, want none", sawToken)
 	}
 	if sawPath != "/v1/projects/project%2Fa/messages" {
 		t.Fatalf("path = %q, want escaped project id", sawPath)
@@ -1140,7 +1138,7 @@ func TestClientCallsCrewReviewRESTSubmitTaskForReview(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s, want POST", r.Method)
 		}
-		if got := r.Header.Get("Authorization"); got != "Bearer crew-review-token" {
+		if got := r.Header.Get("Authorization"); got != "" {
 			t.Fatalf("authorization = %q", got)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
@@ -1153,7 +1151,6 @@ func TestClientCallsCrewReviewRESTSubmitTaskForReview(t *testing.T) {
 
 	client := NewClient(server.Client())
 	backendConfig := testBackend("crew-review", server.URL)
-	backendConfig.ServiceToken = "crew-review-token"
 	_, failure, err := client.Call(context.Background(), backendConfig, Route{
 		Operation: "submit_task_for_review", Backend: "crew-review", Method: http.MethodPost,
 		Path: "/v1/review-submissions", RequestAdapter: RequestAdapterMCPReviewREST,
@@ -1854,7 +1851,7 @@ func TestHandoffRESTAdapterSetsExactMarkdown(t *testing.T) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/handoffs" {
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
 		}
-		if r.Header.Get("Authorization") != "Bearer handoff-token" {
+		if r.Header.Get("Authorization") != "" {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
 		if err := json.NewDecoder(r.Body).Decode(&sawBody); err != nil {
@@ -1864,7 +1861,7 @@ func TestHandoffRESTAdapterSetsExactMarkdown(t *testing.T) {
 	}))
 	defer server.Close()
 	client := NewClient(server.Client())
-	result, failure, err := client.Call(context.Background(), config.BackendConfig{Name: "handoff", BaseURL: server.URL, ServiceToken: "handoff-token", Timeout: time.Second}, handoffRouteForTest("set_handoff", http.MethodPost), ToolCall{
+	result, failure, err := client.Call(context.Background(), config.BackendConfig{Name: "handoff", BaseURL: server.URL, Timeout: time.Second}, handoffRouteForTest("set_handoff", http.MethodPost), ToolCall{
 		ToolName: "set_handoff", Operation: "set_handoff",
 		Arguments: json.RawMessage(`{"label":" task/6651 ","body_markdown":"---\ndatetime: unchanged\n---\nbody"}`),
 	})

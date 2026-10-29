@@ -234,15 +234,9 @@ while IFS= read -r unit; do
   active_services+=("${service}")
 done <<<"${active_units}"
 
-gateway_env=/etc/den-services/gateway.env
-mcp_env=/etc/den-services/mcp.env
 mcp_config=/data/services/mcp/config/config.yaml
-grep -Eq '^DEN_GATEWAY_KNOWLEDGE_UPSTREAM_TOKEN=' "${gateway_env}" ||
-  fail "${gateway_env} lacks DEN_GATEWAY_KNOWLEDGE_UPSTREAM_TOKEN; complete the Knowledge route enrollment first"
 systemctl is-active --quiet den-go@handoff.service ||
   fail "den-go@handoff.service is not active; enroll the registered Handoff successor before updating MCP"
-grep -Eq '^DEN_HANDOFF_SERVICE_TOKEN=' "${mcp_env}" ||
-  fail "${mcp_env} lacks DEN_HANDOFF_SERVICE_TOKEN"
 awk '
   /^[[:space:]]*-[[:space:]]+name:[[:space:]]*/ {
     value=$0
@@ -286,11 +280,11 @@ else
   # active on this host are restarted; optional/omitted registry entries stay
   # untouched.
   deployment_order=(
-    projects knowledge artifacts runtime conversation
+    projects knowledge artifacts runtime
     tasks documents delivery
     messages guidance observation timeline
     review librarian handoff
-    visual-contract visual-inspect doc-publish
+    doc-publish
     gateway web-edge mcp
   )
   is_active_service() {

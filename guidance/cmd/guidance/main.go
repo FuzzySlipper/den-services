@@ -45,8 +45,8 @@ func main() {
 	service := guidance.NewServiceWithKnowledge(
 		guidance.NewStore(pool),
 		guidance.NewStore(pool),
-		guidance.NewProjectScopeClient(cfg.ProjectsBaseURL, cfg.ProjectsToken),
-		guidance.NewDocumentsClient(cfg.DocumentsBaseURL, cfg.DocumentsToken),
+		guidance.NewProjectScopeClient(cfg.ProjectsBaseURL),
+		guidance.NewDocumentsClient(cfg.DocumentsBaseURL),
 		knowledgeReader(cfg),
 		time.Now,
 		cfg.MaxPacketBytes,
@@ -67,7 +67,7 @@ func knowledgeReader(cfg *guidance.Config) guidance.KnowledgeReader {
 	if cfg.KnowledgeBaseURL == "" {
 		return nil
 	}
-	return guidance.NewKnowledgeClient(cfg.KnowledgeBaseURL, cfg.KnowledgeToken)
+	return guidance.NewKnowledgeClient(cfg.KnowledgeBaseURL)
 }
 
 func buildInfo() (health.BuildInfo, error) {

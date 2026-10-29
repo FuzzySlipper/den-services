@@ -26,12 +26,11 @@ func (r StaticGuidanceReader) DocumentReferences(context.Context, string, string
 
 type ProjectScopeClient struct {
 	baseURL string
-	token   string
 	client  *http.Client
 }
 
-func NewProjectScopeClient(baseURL string, token string) *ProjectScopeClient {
-	return &ProjectScopeClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), token: strings.TrimSpace(token), client: &http.Client{Timeout: 5 * time.Second}}
+func NewProjectScopeClient(baseURL string) *ProjectScopeClient {
+	return &ProjectScopeClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), client: &http.Client{Timeout: 5 * time.Second}}
 }
 
 func (c *ProjectScopeClient) AssertWritable(ctx context.Context, projectID string) error {
@@ -43,9 +42,6 @@ func (c *ProjectScopeClient) AssertWritable(ctx context.Context, projectID strin
 		return fmt.Errorf("building project assert-writable request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("asserting project scope writable: %w", err)
@@ -66,12 +62,11 @@ func (c *ProjectScopeClient) AssertWritable(ctx context.Context, projectID strin
 
 type AgentGuidanceClient struct {
 	baseURL string
-	token   string
 	client  *http.Client
 }
 
-func NewAgentGuidanceClient(baseURL string, token string) *AgentGuidanceClient {
-	return &AgentGuidanceClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), token: strings.TrimSpace(token), client: &http.Client{Timeout: 5 * time.Second}}
+func NewAgentGuidanceClient(baseURL string) *AgentGuidanceClient {
+	return &AgentGuidanceClient{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), client: &http.Client{Timeout: 5 * time.Second}}
 }
 
 func (c *AgentGuidanceClient) DocumentReferences(ctx context.Context, projectID string, slug string) ([]DocumentReference, bool, error) {
@@ -82,9 +77,6 @@ func (c *AgentGuidanceClient) DocumentReferences(ctx context.Context, projectID 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, false, fmt.Errorf("building guidance reference request: %w", err)
-	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {

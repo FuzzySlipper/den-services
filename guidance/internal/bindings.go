@@ -369,7 +369,7 @@ func (s *Service) assertScopeWritable(ctx context.Context, kind, ref string) err
 		return s.projects.AssertWritable(ctx, ref)
 	}
 	return nil
-} // task/profile/capability stay at the trusted service-token boundary.
+} // task/profile/capability scopes are not checked against projects.
 
 func legacyScopeKind(projectID string) string {
 	if projectID == GlobalProjectID {

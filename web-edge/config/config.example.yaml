@@ -11,5 +11,4 @@ static:
 
 gateway:
   base_url: "http://127.0.0.1:8079"
-  bearer_token_env: "DEN_WEB_EDGE_GATEWAY_TOKEN"
   response_header_timeout: "30s"

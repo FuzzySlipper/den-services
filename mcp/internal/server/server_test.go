@@ -16,7 +16,7 @@ import (
 )
 
 func TestNewHTTPServerRegistersHealthAndVersion(t *testing.T) {
-	server := newTestServer(t, true, nil)
+	server := newTestServer(t, nil)
 
 	for _, path := range []string{"/health", "/version"} {
 		request := httptest.NewRequest(http.MethodGet, path, nil)
@@ -30,7 +30,7 @@ func TestNewHTTPServerRegistersHealthAndVersion(t *testing.T) {
 }
 
 func TestMCPInitializeIsWired(t *testing.T) {
-	server := newTestServer(t, true, nil)
+	server := newTestServer(t, nil)
 
 	response := postJSON(t, server, map[string]any{
 		"jsonrpc": "2.0",
@@ -39,7 +39,7 @@ func TestMCPInitializeIsWired(t *testing.T) {
 		"params": map[string]any{
 			"protocolVersion": "2025-11-25",
 		},
-	}, "")
+	})
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("POST /mcp initialize status = %d, want %d", response.Code, http.StatusOK)
@@ -61,13 +61,13 @@ func TestMCPInitializeIsWired(t *testing.T) {
 }
 
 func TestMCPToolsListIsStatic(t *testing.T) {
-	server := newTestServer(t, true, nil)
+	server := newTestServer(t, nil)
 
 	response := postJSON(t, server, map[string]any{
 		"jsonrpc": "2.0",
 		"id":      "tools",
 		"method":  "tools/list",
-	}, "")
+	})
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("POST /mcp tools/list status = %d, want %d", response.Code, http.StatusOK)
@@ -93,7 +93,7 @@ func TestMCPToolsListIsStatic(t *testing.T) {
 }
 
 func TestMCPToolsListManagedRuntimeProfileFiltersPrimitives(t *testing.T) {
-	server := newTestServer(t, true, nil)
+	server := newTestServer(t, nil)
 	body, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      "managed",
@@ -145,7 +145,7 @@ func TestMCPToolsListManagedRuntimeProfileFiltersPrimitives(t *testing.T) {
 }
 
 func TestMCPManagedRuntimeHeaderScopesInitializeAndToolsList(t *testing.T) {
-	server := newTestServer(t, true, nil)
+	server := newTestServer(t, nil)
 	for _, method := range []string{"initialize", "tools/list"} {
 		body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": method, "method": method})
 		if err != nil {
@@ -166,7 +166,7 @@ func TestMCPManagedRuntimeHeaderScopesInitializeAndToolsList(t *testing.T) {
 }
 
 func TestMCPRejectsUnknownToolProfile(t *testing.T) {
-	server := newTestServer(t, true, nil)
+	server := newTestServer(t, nil)
 	request := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)))
 	request.Header.Set("X-Den-MCP-Tool-Profile", "not-a-profile")
 	response := httptest.NewRecorder()
@@ -182,7 +182,7 @@ func TestMCPRejectsUnknownToolProfile(t *testing.T) {
 }
 
 func TestMCPBatchRequests(t *testing.T) {
-	server := newTestServer(t, true, nil)
+	server := newTestServer(t, nil)
 	requestBody := []map[string]any{
 		{
 			"jsonrpc": "2.0",
@@ -216,8 +216,8 @@ func TestMCPBatchRequests(t *testing.T) {
 	}
 }
 
-func TestMCPHandlerRequiresAuthWhenConfigured(t *testing.T) {
-	server := newTestServer(t, false, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+func TestMCPHandlerAcceptsRequestsWithoutCredentials(t *testing.T) {
+	server := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	}))
 
@@ -225,22 +225,13 @@ func TestMCPHandlerRequiresAuthWhenConfigured(t *testing.T) {
 	response := httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, request)
 
-	if response.Code != http.StatusUnauthorized {
-		t.Fatalf("POST /mcp without token status = %d, want %d", response.Code, http.StatusUnauthorized)
-	}
-
-	request = httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
-	request.Header.Set("Authorization", "Bearer test-token")
-	response = httptest.NewRecorder()
-	server.Handler.ServeHTTP(response, request)
-
 	if response.Code != http.StatusAccepted {
-		t.Fatalf("POST /mcp with token status = %d, want %d", response.Code, http.StatusAccepted)
+		t.Fatalf("POST /mcp status = %d, want %d", response.Code, http.StatusAccepted)
 	}
 }
 
 func TestMCPRejectsNonPost(t *testing.T) {
-	server := newTestServer(t, true, nil)
+	server := newTestServer(t, nil)
 
 	request := httptest.NewRequest(http.MethodGet, "/mcp", nil)
 	response := httptest.NewRecorder()
@@ -252,7 +243,7 @@ func TestMCPRejectsNonPost(t *testing.T) {
 }
 
 func TestToolsCallReturnsBackendFailureResult(t *testing.T) {
-	server := newTestServer(t, true, nil)
+	server := newTestServer(t, nil)
 
 	response := postJSON(t, server, map[string]any{
 		"jsonrpc": "2.0",
@@ -262,7 +253,7 @@ func TestToolsCallReturnsBackendFailureResult(t *testing.T) {
 			"name":      "get_task",
 			"arguments": map[string]any{"task_id": 1},
 		},
-	}, "")
+	})
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("POST /mcp tools/call status = %d, want %d", response.Code, http.StatusOK)
@@ -289,7 +280,7 @@ func TestToolsCallReturnsBackendFailureResult(t *testing.T) {
 }
 
 func TestToolsCallResolvesLongTailToolHiddenFromDiscovery(t *testing.T) {
-	server := newTestServer(t, true, nil)
+	server := newTestServer(t, nil)
 	cases := []struct {
 		name      string
 		arguments map[string]any
@@ -310,7 +301,7 @@ func TestToolsCallResolvesLongTailToolHiddenFromDiscovery(t *testing.T) {
 				"id":      3,
 				"method":  "tools/call",
 				"params":  map[string]any{"name": testCase.name, "arguments": testCase.arguments},
-			}, "")
+			})
 			if response.Code != http.StatusOK {
 				t.Fatalf("POST /mcp tools/call status = %d, want %d", response.Code, http.StatusOK)
 			}
@@ -329,7 +320,7 @@ func TestToolsCallResolvesLongTailToolHiddenFromDiscovery(t *testing.T) {
 }
 
 func TestToolsCallReturnsRetiredToolTombstone(t *testing.T) {
-	server := newTestServer(t, true, nil)
+	server := newTestServer(t, nil)
 
 	response := postJSON(t, server, map[string]any{
 		"jsonrpc": "2.0",
@@ -339,7 +330,7 @@ func TestToolsCallReturnsRetiredToolTombstone(t *testing.T) {
 			"name":      "lease_worker",
 			"arguments": map[string]any{"project_id": "den-services"},
 		},
-	}, "")
+	})
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("POST /mcp tools/call status = %d, want %d", response.Code, http.StatusOK)
@@ -365,7 +356,7 @@ func TestToolsCallReturnsRetiredToolTombstone(t *testing.T) {
 	}
 }
 
-func newTestServer(t *testing.T, allowUnauthenticatedLocalDev bool, handler MCPHandler) *http.Server {
+func newTestServer(t *testing.T, handler MCPHandler) *http.Server {
 	t.Helper()
 	info, err := health.NewBuildInfo("mcp", "dev", "test", time.Unix(0, 0))
 	if err != nil {
@@ -393,10 +384,6 @@ func newTestServer(t *testing.T, allowUnauthenticatedLocalDev bool, handler MCPH
 				HealthPath: "/health",
 				Timeout:    20 * time.Millisecond,
 			},
-		},
-		Security: config.SecurityConfig{
-			ServiceToken:                 "test-token",
-			AllowUnauthenticatedLocalDev: allowUnauthenticatedLocalDev,
 		},
 	}, info, handler)
 	if err != nil {
@@ -458,16 +445,13 @@ func testRouteTable(t *testing.T) string {
 	return path
 }
 
-func postJSON(t *testing.T, server *http.Server, payload map[string]any, token string) *httptest.ResponseRecorder {
+func postJSON(t *testing.T, server *http.Server, payload map[string]any) *httptest.ResponseRecorder {
 	t.Helper()
 	body, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
 	request := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
-	if token != "" {
-		request.Header.Set("Authorization", "Bearer "+token)
-	}
 	response := httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, request)
 	return response

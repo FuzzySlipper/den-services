@@ -20,7 +20,6 @@ const (
 
 type MCPClient struct {
 	endpoint string
-	token    string
 	client   *http.Client
 }
 
@@ -45,10 +44,10 @@ func MCPClientFromEnv() (*MCPClient, error) {
 	if endpoint == "" {
 		endpoint = defaultMCPURL
 	}
-	return NewMCPClient(endpoint, os.Getenv("DEN_MCP_TOKEN"), &http.Client{Timeout: 65 * time.Second})
+	return NewMCPClient(endpoint, &http.Client{Timeout: 65 * time.Second})
 }
 
-func NewMCPClient(endpoint, token string, client *http.Client) (*MCPClient, error) {
+func NewMCPClient(endpoint string, client *http.Client) (*MCPClient, error) {
 	parsed, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return nil, fmt.Errorf("den MCP URL must be an absolute http or https URL")
@@ -59,7 +58,7 @@ func NewMCPClient(endpoint, token string, client *http.Client) (*MCPClient, erro
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return &MCPClient{endpoint: parsed.String(), token: token, client: client}, nil
+	return &MCPClient{endpoint: parsed.String(), client: client}, nil
 }
 
 func (c *MCPClient) Call(ctx context.Context, operation string, arguments json.RawMessage) (json.RawMessage, bool, error) {
@@ -76,9 +75,6 @@ func (c *MCPClient) Call(ctx context.Context, operation string, arguments json.R
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
-	if c.token != "" {
-		request.Header.Set("Authorization", "Bearer "+c.token)
-	}
 	response, err := c.client.Do(request)
 	if err != nil {
 		return nil, false, fmt.Errorf("call Den MCP: %w", err)

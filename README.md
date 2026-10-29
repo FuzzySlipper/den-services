@@ -25,7 +25,6 @@ The repository is a Go workspace with one module per service authority:
 - `runtime/`: runtime instance liveness and subscriptions
 - `delivery/`: executable delivery intent lifecycle
 - `observation/`: non-waking projections and composed read models
-- `conversation/`: conversation authority
 - `migration/`: offline migration runner and SQL files
 - `integration/`: cross-module tests
 

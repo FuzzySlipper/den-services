@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	sharedconfig "den-services/shared/config"
-
 	"gopkg.in/yaml.v3"
 )
 
@@ -35,8 +33,6 @@ type StaticConfig struct {
 
 type GatewayConfig struct {
 	BaseURL               *url.URL
-	BearerTokenEnv        string
-	BearerToken           string
 	ResponseHeaderTimeout time.Duration
 }
 
@@ -61,7 +57,6 @@ type staticConfigFile struct {
 
 type gatewayConfigFile struct {
 	BaseURL               string `yaml:"base_url"`
-	BearerTokenEnv        string `yaml:"bearer_token_env"`
 	ResponseHeaderTimeout string `yaml:"response_header_timeout"`
 }
 
@@ -70,14 +65,10 @@ func Load() (*Config, error) {
 	if path == "" {
 		path = "/etc/den-services/web-edge.yaml"
 	}
-	values, err := sharedconfig.Load()
-	if err != nil {
-		return nil, err
-	}
-	return LoadFromPathWithValues(path, values)
+	return LoadFromPath(path)
 }
 
-func LoadFromPathWithValues(path string, values sharedconfig.Values) (*Config, error) {
+func LoadFromPath(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading web-edge config %s: %w", path, err)
@@ -86,7 +77,7 @@ func LoadFromPathWithValues(path string, values sharedconfig.Values) (*Config, e
 	if err := yaml.Unmarshal(data, &file); err != nil {
 		return nil, fmt.Errorf("parsing web-edge config %s: %w", path, err)
 	}
-	cfg, err := file.toConfig(values)
+	cfg, err := file.toConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +87,7 @@ func LoadFromPathWithValues(path string, values sharedconfig.Values) (*Config, e
 	return cfg, nil
 }
 
-func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
+func (f configFile) toConfig() (*Config, error) {
 	readHeaderTimeout, err := parseDuration("server.read_header_timeout", f.Server.ReadHeaderTimeout)
 	if err != nil {
 		return nil, err
@@ -117,11 +108,6 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing gateway.base_url: %w", err)
 	}
-	tokenEnv := strings.TrimSpace(f.Gateway.BearerTokenEnv)
-	token, err := values.RequiredString(tokenEnv)
-	if err != nil {
-		return nil, fmt.Errorf("loading gateway bearer token from %s: %w", tokenEnv, err)
-	}
 	root := filepath.Clean(strings.TrimSpace(f.Static.Root))
 	return &Config{
 		Server: ServerConfig{
@@ -137,8 +123,6 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 		},
 		Gateway: GatewayConfig{
 			BaseURL:               baseURL,
-			BearerTokenEnv:        tokenEnv,
-			BearerToken:           token,
 			ResponseHeaderTimeout: responseHeaderTimeout,
 		},
 	}, nil
@@ -163,9 +147,6 @@ func (c *Config) validate() error {
 	if c.Gateway.BaseURL.Host == "" || c.Gateway.BaseURL.Path != "" ||
 		c.Gateway.BaseURL.RawQuery != "" || c.Gateway.BaseURL.Fragment != "" {
 		return errors.New("gateway.base_url must contain only a scheme and host")
-	}
-	if c.Gateway.BearerTokenEnv == "" || strings.TrimSpace(c.Gateway.BearerToken) == "" {
-		return errors.New("gateway bearer token is required")
 	}
 	if c.Gateway.ResponseHeaderTimeout <= 0 {
 		return errors.New("gateway.response_header_timeout must be positive")

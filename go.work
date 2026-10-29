@@ -5,7 +5,6 @@ use (
 	./artifacts
 	./board
 	./board-relay
-	./conversation
 	./delivery
 	./doc-publish
 	./documents
@@ -25,7 +24,5 @@ use (
 	./shared
 	./tasks
 	./timeline
-	./visual-contract
-	./visual-inspect
 	./web-edge
 )

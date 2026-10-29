@@ -53,10 +53,6 @@ func TestDeploymentSafetyRegression(t *testing.T) {
 	}
 	text := string(deployScript)
 	for _, required := range []string{
-		"DEN_GATEWAY_KNOWLEDGE_UPSTREAM_TOKEN",
-		"DEN_GATEWAY_BOARD_UPSTREAM_TOKEN",
-		"DEN_HANDOFF_SERVICE_TOKEN",
-		"DEN_BOARD_SERVICE_TOKEN",
 		"den-go@handoff.service must be active",
 		"den-go@board.service must be active",
 		"ensure_gateway_board_routes",
@@ -69,21 +65,12 @@ func TestDeploymentSafetyRegression(t *testing.T) {
 			t.Fatalf("deploy script missing safety contract %q", required)
 		}
 	}
-	safetyHelper, err := os.ReadFile("scripts/lib/deploy-safety.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(safetyHelper), `sudo -n grep -Eq`) {
-		t.Fatal("env preflight must support root-readable secret files without printing values")
-	}
-
 	fleetScript, err := os.ReadFile("scripts/update-den-fleet.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
 	fleetText := string(fleetScript)
 	for _, required := range []string{
-		"DEN_GATEWAY_KNOWLEDGE_UPSTREAM_TOKEN",
 		"den-go@handoff.service is not active",
 		"mcp_config",
 		"review librarian handoff",

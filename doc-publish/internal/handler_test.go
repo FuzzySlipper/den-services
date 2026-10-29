@@ -5,26 +5,19 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	"den-services/shared/health"
 )
 
-func TestServerRoutesRequireAuthAndExposeHealth(t *testing.T) {
+func TestServerExposesHealth(t *testing.T) {
 	server := newTestServer(t)
 
 	healthRecorder := httptest.NewRecorder()
 	server.Handler.ServeHTTP(healthRecorder, httptest.NewRequest(http.MethodGet, "/health", nil))
 	if healthRecorder.Code != http.StatusOK {
 		t.Fatalf("GET /health status = %d, want 200", healthRecorder.Code)
-	}
-
-	unauthorized := httptest.NewRecorder()
-	server.Handler.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodPost, "/v1/blog/publications/preview", strings.NewReader("{}")))
-	if unauthorized.Code != http.StatusUnauthorized {
-		t.Fatalf("unauthorized status = %d, want 401", unauthorized.Code)
 	}
 }
 
@@ -40,14 +33,14 @@ func TestPreviewPublishAndGetRoutes(t *testing.T) {
 		t.Fatalf("Marshal() error = %v", err)
 	}
 	preview := httptest.NewRecorder()
-	server.Handler.ServeHTTP(preview, authedRequest(http.MethodPost, "/v1/blog/publications/preview", body))
+	server.Handler.ServeHTTP(preview, jsonRequest(http.MethodPost, "/v1/blog/publications/preview", body))
 	if preview.Code != http.StatusOK {
 		t.Fatalf("preview status = %d, want 200; body=%s", preview.Code, preview.Body.String())
 	}
 	assertContains(t, preview.Body.String(), `"status":"previewed"`)
 
 	publish := httptest.NewRecorder()
-	server.Handler.ServeHTTP(publish, authedRequest(http.MethodPost, "/v1/blog/publications", body))
+	server.Handler.ServeHTTP(publish, jsonRequest(http.MethodPost, "/v1/blog/publications", body))
 	if publish.Code != http.StatusCreated {
 		t.Fatalf("publish status = %d, want 201; body=%s", publish.Code, publish.Body.String())
 	}
@@ -56,7 +49,7 @@ func TestPreviewPublishAndGetRoutes(t *testing.T) {
 		t.Fatalf("Unmarshal(publish response) error = %v", err)
 	}
 	get := httptest.NewRecorder()
-	server.Handler.ServeHTTP(get, authedRequest(http.MethodGet, "/v1/blog/publications/"+response.PublicationID, nil))
+	server.Handler.ServeHTTP(get, jsonRequest(http.MethodGet, "/v1/blog/publications/"+response.PublicationID, nil))
 	if get.Code != http.StatusOK {
 		t.Fatalf("get status = %d, want 200; body=%s", get.Code, get.Body.String())
 	}
@@ -76,13 +69,12 @@ func newTestServer(t *testing.T) *http.Server {
 	}))
 	t.Cleanup(sourceServer.Close)
 	cfg := &Config{
-		BindAddr:     "127.0.0.1:0",
-		ServiceToken: "test-token",
-		Blog:         testBlogConfig(repo, remote, false),
-		Records:      RecordsConfig{Path: t.TempDir()},
-		Source:       SourceConfig{DocumentsBaseURL: sourceServer.URL, RequestTimeout: time.Second},
-		Git:          GitConfig{CommandTimeout: 5 * time.Second},
-		HTTP:         HTTPConfig{ReadHeaderTimeout: time.Second},
+		BindAddr: "127.0.0.1:0",
+		Blog:     testBlogConfig(repo, remote, false),
+		Records:  RecordsConfig{Path: t.TempDir()},
+		Source:   SourceConfig{DocumentsBaseURL: sourceServer.URL, RequestTimeout: time.Second},
+		Git:      GitConfig{CommandTimeout: 5 * time.Second},
+		HTTP:     HTTPConfig{ReadHeaderTimeout: time.Second},
 	}
 	info, err := health.NewBuildInfo("doc-publish", "dev", "unknown", time.Unix(0, 0).UTC())
 	if err != nil {
@@ -99,14 +91,14 @@ func TestMissingPublicationRouteReturns404(t *testing.T) {
 	server := newTestServer(t)
 
 	recorder := httptest.NewRecorder()
-	server.Handler.ServeHTTP(recorder, authedRequest(http.MethodGet, "/v1/blog/publications/missing", nil))
+	server.Handler.ServeHTTP(recorder, jsonRequest(http.MethodGet, "/v1/blog/publications/missing", nil))
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("missing publication status = %d, want 404; body=%s", recorder.Code, recorder.Body.String())
 	}
 	assertContains(t, recorder.Body.String(), `"code":"not_found"`)
 }
 
-func authedRequest(method string, target string, body []byte) *http.Request {
+func jsonRequest(method string, target string, body []byte) *http.Request {
 	var reader *bytes.Reader
 	if body == nil {
 		reader = bytes.NewReader(nil)
@@ -114,7 +106,6 @@ func authedRequest(method string, target string, body []byte) *http.Request {
 		reader = bytes.NewReader(body)
 	}
 	request := httptest.NewRequest(method, target, reader)
-	request.Header.Set("Authorization", "Bearer test-token")
 	request.Header.Set("Content-Type", "application/json")
 	return request
 }

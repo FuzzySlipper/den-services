@@ -8,17 +8,13 @@ import (
 	"sort"
 	"strings"
 
-	sharedconfig "den-services/shared/config"
-
 	"gopkg.in/yaml.v3"
 )
 
 const migratedFunctionsHeader = "X-Den-Migrated-Functions"
 
 type RouteTable struct {
-	routes         []Route
-	defaultAuth    CallerAuth
-	hasDefaultAuth bool
+	routes []Route
 }
 
 type Route struct {
@@ -28,18 +24,12 @@ type Route struct {
 	legacyURL           *url.URL
 	successorURL        *url.URL
 	successorMode       SuccessorMode
-	successorAuth       UpstreamAuth
-	callerAuth          CallerAuth
-	legacyCallerAuth    CallerAuth
-	successorCallerAuth CallerAuth
 	identityTranslation IdentityTranslation
 	pathRewrite         PathRewrite
 }
 
 type RouteMatch struct {
 	Target              *url.URL
-	Auth                UpstreamAuth
-	CallerAuth          CallerAuth
 	IdentityTranslation IdentityTranslation
 	PathRewrite         PathRewrite
 	UsesSuccessor       bool
@@ -48,10 +38,6 @@ type RouteMatch struct {
 type PathRewrite struct {
 	fromPrefix string
 	toPrefix   string
-}
-
-type UpstreamAuth struct {
-	bearerToken string
 }
 
 type SuccessorMode string
@@ -72,10 +58,6 @@ type routeFile struct {
 	LegacyUpstreamURL    string                  `yaml:"legacy_upstream_url"`
 	SuccessorUpstreamURL string                  `yaml:"successor_upstream_url"`
 	SuccessorMode        string                  `yaml:"successor_mode"`
-	SuccessorAuth        upstreamAuthFile        `yaml:"successor_auth"`
-	CallerAuth           callerAuthFile          `yaml:"caller_auth"`
-	LegacyCallerAuth     callerAuthFile          `yaml:"legacy_caller_auth"`
-	SuccessorCallerAuth  callerAuthFile          `yaml:"successor_caller_auth"`
 	IdentityTranslation  identityTranslationFile `yaml:"identity_translation"`
 	PathRewrite          pathRewriteFile         `yaml:"path_rewrite"`
 }
@@ -85,15 +67,7 @@ type pathRewriteFile struct {
 	ToPrefix   string `yaml:"to_prefix"`
 }
 
-type upstreamAuthFile struct {
-	BearerToken string `yaml:"bearer_token"`
-}
-
 func LoadRouteTable(path string) (*RouteTable, error) {
-	values, err := sharedconfig.Load()
-	if err != nil {
-		return nil, err
-	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading gateway routes %s: %w", path, err)
@@ -102,24 +76,16 @@ func LoadRouteTable(path string) (*RouteTable, error) {
 	if err := yaml.Unmarshal(data, &file); err != nil {
 		return nil, fmt.Errorf("parsing gateway routes %s: %w", path, err)
 	}
-	return NewRouteTableWithValues(file.Routes, values)
+	return NewRouteTable(file.Routes)
 }
 
 func NewRouteTable(files []routeFile) (*RouteTable, error) {
-	return NewRouteTableWithValues(files, sharedconfig.FromMap(nil))
-}
-
-func NewRouteTableWithValues(files []routeFile, values sharedconfig.Values) (*RouteTable, error) {
-	return NewRouteTableWithValuesAndDefaultAuth(files, values, CallerAuth{})
-}
-
-func NewRouteTableWithValuesAndDefaultAuth(files []routeFile, values sharedconfig.Values, defaultAuth CallerAuth) (*RouteTable, error) {
 	if len(files) == 0 {
 		return nil, errors.New("at least one route is required")
 	}
 	routes := make([]Route, 0, len(files))
 	for _, file := range files {
-		route, err := newRoute(file, values)
+		route, err := newRoute(file)
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +100,7 @@ func NewRouteTableWithValuesAndDefaultAuth(files []routeFile, values sharedconfi
 		}
 		return len(routes[i].methods) > len(routes[j].methods)
 	})
-	return &RouteTable{routes: routes, defaultAuth: defaultAuth, hasDefaultAuth: defaultAuth.Enabled()}, nil
+	return &RouteTable{routes: routes}, nil
 }
 
 func validateUniqueRouteCoverage(routes []Route) error {
@@ -165,7 +131,7 @@ func methodsOverlap(left map[string]struct{}, right map[string]struct{}) bool {
 	return false
 }
 
-func newRoute(file routeFile, values sharedconfig.Values) (Route, error) {
+func newRoute(file routeFile) (Route, error) {
 	if strings.TrimSpace(file.Name) == "" {
 		return Route{}, errors.New("route name is required")
 	}
@@ -192,31 +158,6 @@ func newRoute(file routeFile, values sharedconfig.Values) (Route, error) {
 	if err != nil {
 		return Route{}, err
 	}
-	successorAuth, err := newUpstreamAuth(file.SuccessorAuth, values)
-	if err != nil {
-		return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
-	}
-	if successorURL != nil && !successorAuth.Enabled() {
-		return Route{}, fmt.Errorf("route %s successor_auth.bearer_token is required when successor_upstream_url is set", file.Name)
-	}
-	if successorURL == nil && successorAuth.Enabled() {
-		return Route{}, fmt.Errorf("route %s successor_auth requires successor_upstream_url", file.Name)
-	}
-	callerAuth, err := newCallerAuth(file.CallerAuth, values)
-	if err != nil {
-		return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
-	}
-	legacyCallerAuth, err := newCallerAuth(file.LegacyCallerAuth, values)
-	if err != nil {
-		return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
-	}
-	successorCallerAuth, err := newCallerAuth(file.SuccessorCallerAuth, values)
-	if err != nil {
-		return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
-	}
-	if successorCallerAuth.Enabled() && successorURL == nil {
-		return Route{}, fmt.Errorf("route %s successor_caller_auth requires successor_upstream_url", file.Name)
-	}
 	translation, err := newIdentityTranslation(file.IdentityTranslation)
 	if err != nil {
 		return Route{}, fmt.Errorf("route %s: %w", file.Name, err)
@@ -235,10 +176,6 @@ func newRoute(file routeFile, values sharedconfig.Values) (Route, error) {
 		legacyURL:           legacyURL,
 		successorURL:        successorURL,
 		successorMode:       successorMode,
-		successorAuth:       successorAuth,
-		callerAuth:          callerAuth,
-		legacyCallerAuth:    legacyCallerAuth,
-		successorCallerAuth: successorCallerAuth,
 		identityTranslation: translation,
 		pathRewrite:         pathRewrite,
 	}, nil
@@ -276,37 +213,6 @@ func (r PathRewrite) Apply(path string) string {
 	}
 	suffix := strings.TrimPrefix(path, r.fromPrefix)
 	return joinPaths(r.toPrefix, suffix)
-}
-
-func newUpstreamAuth(file upstreamAuthFile, values sharedconfig.Values) (UpstreamAuth, error) {
-	rawToken := strings.TrimSpace(file.BearerToken)
-	if rawToken == "" {
-		return UpstreamAuth{}, nil
-	}
-	token, err := values.Expand(rawToken)
-	if err != nil {
-		return UpstreamAuth{}, fmt.Errorf("expanding successor_auth.bearer_token: %w", err)
-	}
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return UpstreamAuth{}, errors.New("successor_auth.bearer_token must not be empty")
-	}
-	return UpstreamAuth{bearerToken: token}, nil
-}
-
-func (a UpstreamAuth) Enabled() bool {
-	return a.bearerToken != ""
-}
-
-func (a UpstreamAuth) Apply(headers httpHeader) {
-	if !a.Enabled() {
-		return
-	}
-	headers.Set("Authorization", "Bearer "+a.bearerToken)
-}
-
-type httpHeader interface {
-	Set(key string, value string)
 }
 
 func parseUpstreamURL(name string, raw string) (*url.URL, error) {
@@ -370,8 +276,6 @@ func (t *RouteTable) Match(method string, path string, preferSuccessor bool) (Ro
 		if route.usesSuccessor(preferSuccessor) {
 			return RouteMatch{
 				Target:              cloneURL(route.successorURL),
-				Auth:                route.successorAuth,
-				CallerAuth:          t.authForRoute(route, true),
 				IdentityTranslation: route.identityTranslation,
 				PathRewrite:         route.pathRewrite,
 				UsesSuccessor:       true,
@@ -379,27 +283,10 @@ func (t *RouteTable) Match(method string, path string, preferSuccessor bool) (Ro
 		}
 		return RouteMatch{
 			Target:      cloneURL(route.legacyURL),
-			CallerAuth:  t.authForRoute(route, false),
 			PathRewrite: route.pathRewrite,
 		}, true
 	}
 	return RouteMatch{}, false
-}
-
-func (t *RouteTable) authForRoute(route Route, usesSuccessor bool) CallerAuth {
-	if usesSuccessor && route.successorCallerAuth.Enabled() {
-		return route.successorCallerAuth
-	}
-	if !usesSuccessor && route.legacyCallerAuth.Enabled() {
-		return route.legacyCallerAuth
-	}
-	if route.callerAuth.Enabled() {
-		return route.callerAuth
-	}
-	if t.hasDefaultAuth {
-		return t.defaultAuth
-	}
-	return CallerAuth{}
 }
 
 func (r Route) matches(method string, path string) bool {

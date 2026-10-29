@@ -8,13 +8,6 @@ source "${repo_root}/scripts/lib/deploy-safety.sh"
 test_root="$(mktemp -d)"
 trap 'rm -rf "${test_root}"' EXIT
 
-printf 'EXISTING=value\n' > "${test_root}/service.env"
-den_env_has_assignment "${test_root}/service.env" EXISTING
-if den_require_env_assignment "${test_root}/service.env" MISSING 2>/dev/null; then
-  echo "missing environment prerequisite was accepted" >&2
-  exit 1
-fi
-
 cat > "${test_root}/config.yaml" <<'YAML'
 backends:
   - name: "knowledge"

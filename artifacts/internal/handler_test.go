@@ -30,14 +30,14 @@ func TestHTTPUploadMetadataContentAndDelete(t *testing.T) {
 		t.Fatalf("ArtifactRef = %s", createResponse.ArtifactRef)
 	}
 
-	metadataRequest := authedRequest(http.MethodGet, "/v1/artifacts/"+createResponse.ArtifactID+"/metadata", nil)
+	metadataRequest := newAPIRequest(http.MethodGet, "/v1/artifacts/"+createResponse.ArtifactID+"/metadata", nil)
 	metadataResponse := httptest.NewRecorder()
 	server.Handler.ServeHTTP(metadataResponse, metadataRequest)
 	if metadataResponse.Code != http.StatusOK {
 		t.Fatalf("metadata status = %d, body = %s", metadataResponse.Code, metadataResponse.Body.String())
 	}
 
-	contentRequest := authedRequest(http.MethodGet, "/v1/artifacts/"+createResponse.ArtifactID+"/content", nil)
+	contentRequest := newAPIRequest(http.MethodGet, "/v1/artifacts/"+createResponse.ArtifactID+"/content", nil)
 	contentResponse := httptest.NewRecorder()
 	server.Handler.ServeHTTP(contentResponse, contentRequest)
 	if contentResponse.Code != http.StatusOK {
@@ -50,7 +50,7 @@ func TestHTTPUploadMetadataContentAndDelete(t *testing.T) {
 		t.Fatal("content body did not match upload")
 	}
 
-	deleteRequest := authedRequest(http.MethodDelete, "/v1/artifacts/"+createResponse.ArtifactID, nil)
+	deleteRequest := newAPIRequest(http.MethodDelete, "/v1/artifacts/"+createResponse.ArtifactID, nil)
 	deleteResponse := httptest.NewRecorder()
 	server.Handler.ServeHTTP(deleteResponse, deleteRequest)
 	if deleteResponse.Code != http.StatusOK {
@@ -83,7 +83,7 @@ func uploadTinyPNG(t *testing.T, handler http.Handler) CreateArtifactResponse {
 		t.Fatalf("closing multipart writer: %v", err)
 	}
 
-	request := authedRequest(http.MethodPost, "/v1/artifacts", body)
+	request := newAPIRequest(http.MethodPost, "/v1/artifacts", body)
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -104,8 +104,6 @@ func mustWriteField(t *testing.T, writer *multipart.Writer, key string, value st
 	}
 }
 
-func authedRequest(method string, path string, body io.Reader) *http.Request {
-	request := httptest.NewRequest(method, path, body)
-	request.Header.Set("Authorization", "Bearer test-token")
-	return request
+func newAPIRequest(method string, path string, body io.Reader) *http.Request {
+	return httptest.NewRequest(method, path, body)
 }

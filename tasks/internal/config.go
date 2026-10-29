@@ -15,9 +15,7 @@ import (
 type Config struct {
 	BindAddr        string
 	DatabaseURL     string
-	ServiceToken    string
 	ProjectsBaseURL string
-	ProjectsToken   string
 	Stream          StreamConfig
 	HTTP            HTTPConfig
 }
@@ -36,9 +34,7 @@ type HTTPConfig struct {
 type configFile struct {
 	BindAddr           string         `yaml:"bind_addr"`
 	DatabaseURLEnv     string         `yaml:"database_url_env"`
-	ServiceTokenEnv    string         `yaml:"service_token_env"`
 	ProjectsBaseURLEnv string         `yaml:"projects_base_url_env"`
-	ProjectsTokenEnv   string         `yaml:"projects_token_env"`
 	Stream             streamFile     `yaml:"stream"`
 	HTTP               httpConfigFile `yaml:"http"`
 }
@@ -97,9 +93,7 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 	return &Config{
 		BindAddr:        f.BindAddr,
 		DatabaseURL:     values.String(f.DatabaseURLEnv, ""),
-		ServiceToken:    values.String(f.ServiceTokenEnv, ""),
 		ProjectsBaseURL: values.String(f.ProjectsBaseURLEnv, ""),
-		ProjectsToken:   values.String(f.ProjectsTokenEnv, values.String(f.ServiceTokenEnv, "")),
 		Stream:          streamConfig,
 		HTTP:            HTTPConfig{ReadHeaderTimeout: readHeaderTimeout},
 	}, nil
@@ -112,14 +106,8 @@ func (c *Config) validate() error {
 	if strings.TrimSpace(c.DatabaseURL) == "" {
 		return errors.New("database url is required")
 	}
-	if strings.TrimSpace(c.ServiceToken) == "" {
-		return errors.New("service token is required")
-	}
 	if strings.TrimSpace(c.ProjectsBaseURL) == "" {
 		return errors.New("projects base url is required")
-	}
-	if strings.TrimSpace(c.ProjectsToken) == "" {
-		return errors.New("projects token is required")
 	}
 	if c.Stream.PollInterval <= 0 || c.Stream.HeartbeatInterval <= 0 {
 		return errors.New("stream intervals must be positive")

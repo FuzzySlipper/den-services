@@ -13,10 +13,9 @@ import (
 )
 
 type Config struct {
-	BindAddr     string
-	DatabaseURL  string
-	ServiceToken string
-	HTTP         HTTPConfig
+	BindAddr    string
+	DatabaseURL string
+	HTTP        HTTPConfig
 }
 
 type HTTPConfig struct {
@@ -24,10 +23,9 @@ type HTTPConfig struct {
 }
 
 type configFile struct {
-	BindAddr        string         `yaml:"bind_addr"`
-	DatabaseURLEnv  string         `yaml:"database_url_env"`
-	ServiceTokenEnv string         `yaml:"service_token_env"`
-	HTTP            httpConfigFile `yaml:"http"`
+	BindAddr       string         `yaml:"bind_addr"`
+	DatabaseURLEnv string         `yaml:"database_url_env"`
+	HTTP           httpConfigFile `yaml:"http"`
 }
 
 type httpConfigFile struct {
@@ -71,10 +69,9 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 		return nil, err
 	}
 	return &Config{
-		BindAddr:     f.BindAddr,
-		DatabaseURL:  values.String(f.DatabaseURLEnv, ""),
-		ServiceToken: values.String(f.ServiceTokenEnv, ""),
-		HTTP:         HTTPConfig{ReadHeaderTimeout: readHeaderTimeout},
+		BindAddr:    f.BindAddr,
+		DatabaseURL: values.String(f.DatabaseURLEnv, ""),
+		HTTP:        HTTPConfig{ReadHeaderTimeout: readHeaderTimeout},
 	}, nil
 }
 
@@ -84,9 +81,6 @@ func (c *Config) validate() error {
 	}
 	if strings.TrimSpace(c.DatabaseURL) == "" {
 		return errors.New("database url is required")
-	}
-	if strings.TrimSpace(c.ServiceToken) == "" {
-		return errors.New("service token is required")
 	}
 	if c.HTTP.ReadHeaderTimeout <= 0 {
 		return errors.New("http.read_header_timeout must be positive")

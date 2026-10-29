@@ -12,26 +12,18 @@ import (
 func TestLoadConfigFromPathWithValues(t *testing.T) {
 	path := writeConfig(t, `bind_addr: "127.0.0.1:8097"
 database_url_env: "DEN_GUIDANCE_DATABASE_URL"
-service_token_env: "DEN_GUIDANCE_SERVICE_TOKEN"
 projects_base_url_env: "DEN_PROJECTS_BASE_URL"
-projects_token_env: "DEN_PROJECTS_SERVICE_TOKEN"
 documents_base_url_env: "DEN_DOCUMENTS_BASE_URL"
-documents_token_env: "DEN_DOCUMENTS_SERVICE_TOKEN"
 knowledge_base_url_env: "DEN_KNOWLEDGE_BASE_URL"
-knowledge_token_env: "DEN_KNOWLEDGE_SERVICE_TOKEN"
 max_packet_bytes: 1234
 http:
   read_header_timeout: "5s"
 `)
 	values := sharedconfig.FromMap(map[string]string{
-		"DEN_GUIDANCE_DATABASE_URL":   "postgres://guidance",
-		"DEN_GUIDANCE_SERVICE_TOKEN":  "guidance-token",
-		"DEN_PROJECTS_BASE_URL":       "http://127.0.0.1:8091",
-		"DEN_PROJECTS_SERVICE_TOKEN":  "projects-token",
-		"DEN_DOCUMENTS_BASE_URL":      "http://127.0.0.1:8094",
-		"DEN_DOCUMENTS_SERVICE_TOKEN": "documents-token",
-		"DEN_KNOWLEDGE_BASE_URL":      "http://127.0.0.1:8095",
-		"DEN_KNOWLEDGE_SERVICE_TOKEN": "knowledge-token",
+		"DEN_GUIDANCE_DATABASE_URL": "postgres://guidance",
+		"DEN_PROJECTS_BASE_URL":     "http://127.0.0.1:8091",
+		"DEN_DOCUMENTS_BASE_URL":    "http://127.0.0.1:8094",
+		"DEN_KNOWLEDGE_BASE_URL":    "http://127.0.0.1:8095",
 	})
 
 	cfg, err := LoadConfigFromPathWithValues(path, values)
@@ -47,24 +39,19 @@ http:
 	if cfg.HTTP.ReadHeaderTimeout != 5*time.Second {
 		t.Fatalf("ReadHeaderTimeout = %s", cfg.HTTP.ReadHeaderTimeout)
 	}
-	if cfg.ProjectsToken != "projects-token" || cfg.DocumentsToken != "documents-token" || cfg.KnowledgeToken != "knowledge-token" {
-		t.Fatalf("tokens not expanded: %#v", cfg)
-	}
 }
 
 func TestLoadConfigFromPathWithValuesRequiresDocumentsURL(t *testing.T) {
 	path := writeConfig(t, `bind_addr: "127.0.0.1:8097"
 database_url_env: "DEN_GUIDANCE_DATABASE_URL"
-service_token_env: "DEN_GUIDANCE_SERVICE_TOKEN"
 projects_base_url_env: "DEN_PROJECTS_BASE_URL"
 documents_base_url_env: "DEN_DOCUMENTS_BASE_URL"
 http:
   read_header_timeout: "5s"
 `)
 	_, err := LoadConfigFromPathWithValues(path, sharedconfig.FromMap(map[string]string{
-		"DEN_GUIDANCE_DATABASE_URL":  "postgres://guidance",
-		"DEN_GUIDANCE_SERVICE_TOKEN": "guidance-token",
-		"DEN_PROJECTS_BASE_URL":      "http://127.0.0.1:8091",
+		"DEN_GUIDANCE_DATABASE_URL": "postgres://guidance",
+		"DEN_PROJECTS_BASE_URL":     "http://127.0.0.1:8091",
 	}))
 	if err == nil {
 		t.Fatal("LoadConfigFromPathWithValues() error = nil")

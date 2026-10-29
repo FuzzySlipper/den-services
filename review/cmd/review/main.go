@@ -42,9 +42,9 @@ func main() {
 	defer pool.Close()
 	service := review.NewService(
 		review.NewStore(pool),
-		review.NewProjectScopeClient(cfg.ProjectsBaseURL, cfg.ProjectsToken),
-		review.NewTaskClient(cfg.TasksBaseURL, cfg.TasksToken),
-		review.NewMessageClient(cfg.MessagesBaseURL, cfg.MessagesToken),
+		review.NewProjectScopeClient(cfg.ProjectsBaseURL),
+		review.NewTaskClient(cfg.TasksBaseURL),
+		review.NewMessageClient(cfg.MessagesBaseURL),
 		time.Now,
 	)
 	if cfg.GitHub.Enabled {

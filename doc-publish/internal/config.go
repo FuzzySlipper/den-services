@@ -12,14 +12,12 @@ import (
 )
 
 type Config struct {
-	BindAddr     string
-	ServiceToken string
-	SourceToken  string
-	Blog         BlogConfig
-	Records      RecordsConfig
-	Source       SourceConfig
-	Git          GitConfig
-	HTTP         HTTPConfig
+	BindAddr string
+	Blog     BlogConfig
+	Records  RecordsConfig
+	Source   SourceConfig
+	Git      GitConfig
+	HTTP     HTTPConfig
 }
 
 type BlogConfig struct {
@@ -128,9 +126,7 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 		return nil, err
 	}
 	return &Config{
-		BindAddr:     f.BindAddr,
-		ServiceToken: values.String("DEN_DOC_PUBLISH_SERVICE_TOKEN", ""),
-		SourceToken:  values.String("DEN_DOC_PUBLISH_SOURCE_TOKEN", ""),
+		BindAddr: f.BindAddr,
 		Blog: BlogConfig{
 			RepoPath:          f.Blog.RepoPath,
 			ExpectedRemoteURL: f.Blog.ExpectedRemoteURL,
@@ -154,9 +150,6 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 func (c *Config) validate() error {
 	if c.BindAddr == "" {
 		return errors.New("bind_addr is required")
-	}
-	if c.ServiceToken == "" {
-		return errors.New("service token is required")
 	}
 	if c.Blog.RepoPath == "" || c.Blog.ExpectedRemoteURL == "" || c.Blog.Branch == "" || c.Blog.PostDir == "" || c.Blog.PublicBaseURL == "" {
 		return errors.New("blog repo_path, expected_remote_url, branch, post_dir, and public_base_url are required")

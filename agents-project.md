@@ -33,7 +33,7 @@ Treat those Den docs as authoritative over stale local notes. This file is a rep
    - Do not bulk-import haunted tables and call the migration complete.
 
 4. **Gateway stays boring**
-   - The gateway routes and authenticates.
+   - The gateway routes only; Den-internal services do not authenticate callers (trusted LAN).
    - It owns no domain schema and performs no lifecycle transitions.
    - Runtime routing config should be reviewed config/artifacts, not an ad hoc mutable planning doc.
 

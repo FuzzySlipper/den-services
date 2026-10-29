@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -26,7 +25,7 @@ func TestLocatorRejectsMissingBackend(t *testing.T) {
 	}
 }
 
-func TestLocatorInjectsTokenAndProxiesJSONRPCResult(t *testing.T) {
+func TestLocatorProxiesJSONRPCResultWithoutCredentials(t *testing.T) {
 	var sawToken string
 	var sawTool string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +50,6 @@ func TestLocatorInjectsTokenAndProxiesJSONRPCResult(t *testing.T) {
 		t.Fatalf("NewRouteTable() error = %v", err)
 	}
 	backendConfig := testBackend("den-core", server.URL)
-	backendConfig.ServiceToken = "secret"
 	locator, err := NewLocator([]config.BackendConfig{backendConfig}, table, server.Client())
 	if err != nil {
 		t.Fatalf("NewLocator() error = %v", err)
@@ -69,8 +67,8 @@ func TestLocatorInjectsTokenAndProxiesJSONRPCResult(t *testing.T) {
 	if failure != nil {
 		t.Fatalf("Call() failure = %#v", failure)
 	}
-	if sawToken != "Bearer secret" {
-		t.Fatalf("Authorization = %q, want Bearer secret", sawToken)
+	if sawToken != "" {
+		t.Fatalf("Authorization = %q, want none", sawToken)
 	}
 	if sawTool != "get_task" {
 		t.Fatalf("tool = %q, want get_task", sawTool)
@@ -189,11 +187,11 @@ func TestLocatorClassifiesValidationAndDomainStatusAsNonRetryable(t *testing.T) 
 	}
 }
 
-func TestLocatorClassifiesAuthStatusAsNonRetryableConfigFailure(t *testing.T) {
+func TestLocatorClassifiesAuthStatusAsNonRetryableFailure(t *testing.T) {
 	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		statusCode := statusCode
 		t.Run(http.StatusText(statusCode), func(t *testing.T) {
-			locator, closeServer := locatorWithStatusBackend(t, statusCode, "bad token")
+			locator, closeServer := locatorWithStatusBackend(t, statusCode, "denied")
 			defer closeServer()
 
 			_, failure, err := locator.Call(context.Background(), ToolCall{
@@ -213,8 +211,8 @@ func TestLocatorClassifiesAuthStatusAsNonRetryableConfigFailure(t *testing.T) {
 			if failure.Error != "den_backend_auth_failed" {
 				t.Fatalf("Error = %q, want den_backend_auth_failed", failure.Error)
 			}
-			if !strings.Contains(failure.Message, "service_token_env") {
-				t.Fatalf("Message missing config hint: %q", failure.Message)
+			if failure.Message != "denied" {
+				t.Fatalf("Message = %q, want backend body", failure.Message)
 			}
 			if failure.CircuitState != "" {
 				t.Fatalf("CircuitState = %q, want empty", failure.CircuitState)

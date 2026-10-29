@@ -6,15 +6,12 @@ import (
 	"os"
 	"time"
 
-	sharedconfig "den-services/shared/config"
-
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
 	BindAddr          string
 	RoutingConfigPath string
-	ServiceToken      string
 	HTTP              HTTPConfig
 }
 
@@ -37,10 +34,6 @@ func LoadConfig() (*Config, error) {
 }
 
 func LoadConfigFromPath(path string) (*Config, error) {
-	values, err := sharedconfig.Load()
-	if err != nil {
-		return nil, err
-	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading gateway config %s: %w", path, err)
@@ -56,7 +49,6 @@ func LoadConfigFromPath(path string) (*Config, error) {
 	cfg := &Config{
 		BindAddr:          file.BindAddr,
 		RoutingConfigPath: file.RoutingConfigPath,
-		ServiceToken:      values.String("DEN_GATEWAY_SERVICE_TOKEN", ""),
 		HTTP:              httpConfig,
 	}
 	if err := cfg.validate(); err != nil {
@@ -71,9 +63,6 @@ func (c *Config) validate() error {
 	}
 	if c.RoutingConfigPath == "" {
 		return errors.New("routing_config_path is required")
-	}
-	if c.ServiceToken == "" {
-		return errors.New("DEN_GATEWAY_SERVICE_TOKEN is required")
 	}
 	if c.HTTP.ReadHeaderTimeout <= 0 {
 		return errors.New("http read header timeout must be positive")

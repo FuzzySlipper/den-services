@@ -18,7 +18,7 @@ import (
 func TestHTTPTasksLifecycle(t *testing.T) {
 	server := testServer(t)
 
-	createDependency := authedJSONRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{
+	createDependency := jsonRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{
 		"title": "Dependency",
 		"priority": 2
 	}`)
@@ -30,7 +30,7 @@ func TestHTTPTasksLifecycle(t *testing.T) {
 	var dependency TaskResponse
 	decodeJSON(t, dependencyResponse.Body, &dependency)
 
-	createTask := authedJSONRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{
+	createTask := jsonRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{
 		"title": "Main task",
 		"priority": 1,
 		"tags": ["infra", "tasks"],
@@ -45,7 +45,7 @@ func TestHTTPTasksLifecycle(t *testing.T) {
 	decodeJSON(t, taskResponse.Body, &task)
 
 	listResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(listResponse, authedJSONRequest(http.MethodGet, "/v1/projects/den-services/tasks?tags=infra,tasks", ""))
+	server.Handler.ServeHTTP(listResponse, jsonRequest(http.MethodGet, "/v1/projects/den-services/tasks?tags=infra,tasks", ""))
 	if listResponse.Code != http.StatusOK {
 		t.Fatalf("list status = %d body = %s", listResponse.Code, listResponse.Body.String())
 	}
@@ -56,7 +56,7 @@ func TestHTTPTasksLifecycle(t *testing.T) {
 	}
 
 	nextResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(nextResponse, authedJSONRequest(http.MethodGet, "/v1/projects/den-services/tasks/next", ""))
+	server.Handler.ServeHTTP(nextResponse, jsonRequest(http.MethodGet, "/v1/projects/den-services/tasks/next", ""))
 	if nextResponse.Code != http.StatusOK {
 		t.Fatalf("next status = %d body = %s", nextResponse.Code, nextResponse.Body.String())
 	}
@@ -67,7 +67,7 @@ func TestHTTPTasksLifecycle(t *testing.T) {
 	}
 
 	nextForAssignedResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(nextForAssignedResponse, authedJSONRequest(http.MethodGet, "/v1/projects/den-services/tasks/next?assigned_to=codex", ""))
+	server.Handler.ServeHTTP(nextForAssignedResponse, jsonRequest(http.MethodGet, "/v1/projects/den-services/tasks/next?assigned_to=codex", ""))
 	if nextForAssignedResponse.Code != http.StatusOK {
 		t.Fatalf("next assigned status = %d body = %s", nextForAssignedResponse.Code, nextForAssignedResponse.Body.String())
 	}
@@ -76,7 +76,7 @@ func TestHTTPTasksLifecycle(t *testing.T) {
 		t.Fatalf("next assigned should include unassigned task = %+v, want dependency %+v", next, dependency)
 	}
 
-	patchReview := authedJSONRequest(http.MethodPatch, "/v1/tasks/"+int64String(&dependency.ID), `{
+	patchReview := jsonRequest(http.MethodPatch, "/v1/tasks/"+int64String(&dependency.ID), `{
 		"agent": "tester",
 		"status": "review"
 	}`)
@@ -87,7 +87,7 @@ func TestHTTPTasksLifecycle(t *testing.T) {
 	}
 
 	nextAfterReviewResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(nextAfterReviewResponse, authedJSONRequest(http.MethodGet, "/v1/projects/den-services/tasks/next", ""))
+	server.Handler.ServeHTTP(nextAfterReviewResponse, jsonRequest(http.MethodGet, "/v1/projects/den-services/tasks/next", ""))
 	if nextAfterReviewResponse.Code != http.StatusOK {
 		t.Fatalf("next after review status = %d body = %s", nextAfterReviewResponse.Code, nextAfterReviewResponse.Body.String())
 	}
@@ -97,7 +97,7 @@ func TestHTTPTasksLifecycle(t *testing.T) {
 	}
 
 	detailResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(detailResponse, authedJSONRequest(http.MethodGet, "/v1/projects/den-services/tasks/"+int64String(&task.ID), ""))
+	server.Handler.ServeHTTP(detailResponse, jsonRequest(http.MethodGet, "/v1/projects/den-services/tasks/"+int64String(&task.ID), ""))
 	if detailResponse.Code != http.StatusOK {
 		t.Fatalf("detail status = %d body = %s", detailResponse.Code, detailResponse.Body.String())
 	}
@@ -111,7 +111,7 @@ func TestHTTPTasksLifecycle(t *testing.T) {
 func TestHTTPReviewTransitionEndpoint(t *testing.T) {
 	server := testServer(t)
 	createResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(createResponse, authedJSONRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{
+	server.Handler.ServeHTTP(createResponse, jsonRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{
 		"title":"Conditional review transition"
 	}`))
 	var task TaskResponse
@@ -120,7 +120,7 @@ func TestHTTPReviewTransitionEndpoint(t *testing.T) {
 	inProgressResponse := httptest.NewRecorder()
 	server.Handler.ServeHTTP(
 		inProgressResponse,
-		authedJSONRequest(
+		jsonRequest(
 			http.MethodPatch,
 			"/v1/projects/den-services/tasks/"+int64String(&task.ID),
 			`{"agent":"runner","status":"in_progress"}`,
@@ -134,7 +134,7 @@ func TestHTTPReviewTransitionEndpoint(t *testing.T) {
 	transitionResponse := httptest.NewRecorder()
 	server.Handler.ServeHTTP(
 		transitionResponse,
-		authedJSONRequest(http.MethodPost, transitionPath, `{"agent":"reviewer"}`),
+		jsonRequest(http.MethodPost, transitionPath, `{"agent":"reviewer"}`),
 	)
 	if transitionResponse.Code != http.StatusOK {
 		t.Fatalf("transition status = %d body=%s", transitionResponse.Code, transitionResponse.Body.String())
@@ -147,7 +147,7 @@ func TestHTTPReviewTransitionEndpoint(t *testing.T) {
 	}
 
 	retryResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(retryResponse, authedJSONRequest(http.MethodPost, transitionPath, `{"agent":"reviewer"}`))
+	server.Handler.ServeHTTP(retryResponse, jsonRequest(http.MethodPost, transitionPath, `{"agent":"reviewer"}`))
 	decodeJSON(t, retryResponse.Body, &result)
 	if retryResponse.Code != http.StatusOK || result.TaskTransition != TaskTransitionAlreadySatisfied {
 		t.Fatalf("retry status=%d result=%+v", retryResponse.Code, result)
@@ -157,12 +157,12 @@ func TestHTTPReviewTransitionEndpoint(t *testing.T) {
 func TestHTTPHumanAcceptanceEasyPathAndDetailProjection(t *testing.T) {
 	server := testServer(t)
 	createResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(createResponse, authedJSONRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{"title":"Human reviewed"}`))
+	server.Handler.ServeHTTP(createResponse, jsonRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{"title":"Human reviewed"}`))
 	var task TaskResponse
 	decodeJSON(t, createResponse.Body, &task)
 
 	acceptResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(acceptResponse, authedJSONRequest(
+	server.Handler.ServeHTTP(acceptResponse, jsonRequest(
 		http.MethodPost,
 		"/v1/projects/den-services/tasks/"+int64String(&task.ID)+"/human-acceptance-reviews",
 		`{"reviewer_identity":"user","idempotency_key":"easy-path","lifecycle_effect":"complete_task"}`,
@@ -184,7 +184,7 @@ func TestHTTPHumanAcceptanceEasyPathAndDetailProjection(t *testing.T) {
 	}
 
 	detailResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(detailResponse, authedJSONRequest(http.MethodGet, "/v1/tasks/"+int64String(&task.ID), ""))
+	server.Handler.ServeHTTP(detailResponse, jsonRequest(http.MethodGet, "/v1/tasks/"+int64String(&task.ID), ""))
 	var detail TaskDetailResponse
 	decodeJSON(t, detailResponse.Body, &detail)
 	if len(detail.HumanAcceptanceReviews) != 1 || detail.HumanAcceptanceReviews[0].Verdict != HumanAcceptanceVerdictLooksGood {
@@ -196,7 +196,7 @@ func TestHTTPCrossProjectDependencyBlocksAndProjectsOwner(t *testing.T) {
 	server := testServer(t)
 
 	upstreamResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(upstreamResponse, authedJSONRequest(http.MethodPost, "/v1/projects/upstream/tasks", `{"title":"Upstream"}`))
+	server.Handler.ServeHTTP(upstreamResponse, jsonRequest(http.MethodPost, "/v1/projects/upstream/tasks", `{"title":"Upstream"}`))
 	if upstreamResponse.Code != http.StatusCreated {
 		t.Fatalf("create upstream status = %d body = %s", upstreamResponse.Code, upstreamResponse.Body.String())
 	}
@@ -204,7 +204,7 @@ func TestHTTPCrossProjectDependencyBlocksAndProjectsOwner(t *testing.T) {
 	decodeJSON(t, upstreamResponse.Body, &upstream)
 
 	downstreamResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(downstreamResponse, authedJSONRequest(http.MethodPost, "/v1/projects/downstream/tasks", `{"title":"Downstream"}`))
+	server.Handler.ServeHTTP(downstreamResponse, jsonRequest(http.MethodPost, "/v1/projects/downstream/tasks", `{"title":"Downstream"}`))
 	if downstreamResponse.Code != http.StatusCreated {
 		t.Fatalf("create downstream status = %d body = %s", downstreamResponse.Code, downstreamResponse.Body.String())
 	}
@@ -212,13 +212,13 @@ func TestHTTPCrossProjectDependencyBlocksAndProjectsOwner(t *testing.T) {
 	decodeJSON(t, downstreamResponse.Body, &downstream)
 
 	addResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(addResponse, authedJSONRequest(http.MethodPost, "/v1/tasks/"+int64String(&downstream.ID)+"/dependencies", `{"depends_on":`+int64String(&upstream.ID)+`}`))
+	server.Handler.ServeHTTP(addResponse, jsonRequest(http.MethodPost, "/v1/tasks/"+int64String(&downstream.ID)+"/dependencies", `{"depends_on":`+int64String(&upstream.ID)+`}`))
 	if addResponse.Code != http.StatusOK {
 		t.Fatalf("add cross-project dependency status = %d body = %s", addResponse.Code, addResponse.Body.String())
 	}
 
 	detailResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(detailResponse, authedJSONRequest(http.MethodGet, "/v1/tasks/"+int64String(&downstream.ID), ""))
+	server.Handler.ServeHTTP(detailResponse, jsonRequest(http.MethodGet, "/v1/tasks/"+int64String(&downstream.ID), ""))
 	if detailResponse.Code != http.StatusOK {
 		t.Fatalf("detail status = %d body = %s", detailResponse.Code, detailResponse.Body.String())
 	}
@@ -229,18 +229,18 @@ func TestHTTPCrossProjectDependencyBlocksAndProjectsOwner(t *testing.T) {
 	}
 
 	nextResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(nextResponse, authedJSONRequest(http.MethodGet, "/v1/projects/downstream/tasks/next", ""))
+	server.Handler.ServeHTTP(nextResponse, jsonRequest(http.MethodGet, "/v1/projects/downstream/tasks/next", ""))
 	if nextResponse.Code != http.StatusOK || !strings.Contains(nextResponse.Body.String(), "No unblocked tasks available.") {
 		t.Fatalf("next while cross-project dependency unfinished = %d body = %s", nextResponse.Code, nextResponse.Body.String())
 	}
 
 	completeResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(completeResponse, authedJSONRequest(http.MethodPatch, "/v1/tasks/"+int64String(&upstream.ID), `{"agent":"tester","status":"review"}`))
+	server.Handler.ServeHTTP(completeResponse, jsonRequest(http.MethodPatch, "/v1/tasks/"+int64String(&upstream.ID), `{"agent":"tester","status":"review"}`))
 	if completeResponse.Code != http.StatusOK {
 		t.Fatalf("complete upstream status = %d body = %s", completeResponse.Code, completeResponse.Body.String())
 	}
 	nextResponse = httptest.NewRecorder()
-	server.Handler.ServeHTTP(nextResponse, authedJSONRequest(http.MethodGet, "/v1/projects/downstream/tasks/next", ""))
+	server.Handler.ServeHTTP(nextResponse, jsonRequest(http.MethodGet, "/v1/projects/downstream/tasks/next", ""))
 	if nextResponse.Code != http.StatusOK {
 		t.Fatalf("next after cross-project dependency completion = %d body = %s", nextResponse.Code, nextResponse.Body.String())
 	}
@@ -254,7 +254,7 @@ func TestHTTPCrossProjectDependencyBlocksAndProjectsOwner(t *testing.T) {
 func TestHTTPNextTaskIncludesUnassignedSubtasksOfReviewParents(t *testing.T) {
 	server := testServer(t)
 
-	createParent := authedJSONRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{
+	createParent := jsonRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{
 		"title": "Parent design",
 		"priority": 3
 	}`)
@@ -266,7 +266,7 @@ func TestHTTPNextTaskIncludesUnassignedSubtasksOfReviewParents(t *testing.T) {
 	var parent TaskResponse
 	decodeJSON(t, parentResponse.Body, &parent)
 
-	patchParent := authedJSONRequest(http.MethodPatch, "/v1/tasks/"+int64String(&parent.ID), `{
+	patchParent := jsonRequest(http.MethodPatch, "/v1/tasks/"+int64String(&parent.ID), `{
 		"agent": "tester",
 		"status": "review"
 	}`)
@@ -276,7 +276,7 @@ func TestHTTPNextTaskIncludesUnassignedSubtasksOfReviewParents(t *testing.T) {
 		t.Fatalf("patch parent status = %d body = %s", patchResponse.Code, patchResponse.Body.String())
 	}
 
-	createChild := authedJSONRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{
+	createChild := jsonRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{
 		"title": "Follow-on implementation",
 		"priority": 1,
 		"parent_id": `+int64String(&parent.ID)+`
@@ -290,7 +290,7 @@ func TestHTTPNextTaskIncludesUnassignedSubtasksOfReviewParents(t *testing.T) {
 	decodeJSON(t, childResponse.Body, &child)
 
 	nextResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(nextResponse, authedJSONRequest(http.MethodGet, "/v1/projects/den-services/tasks/next?assigned_to=codex", ""))
+	server.Handler.ServeHTTP(nextResponse, jsonRequest(http.MethodGet, "/v1/projects/den-services/tasks/next?assigned_to=codex", ""))
 	if nextResponse.Code != http.StatusOK {
 		t.Fatalf("next assigned status = %d body = %s", nextResponse.Code, nextResponse.Body.String())
 	}
@@ -301,20 +301,10 @@ func TestHTTPNextTaskIncludesUnassignedSubtasksOfReviewParents(t *testing.T) {
 	}
 }
 
-func TestHTTPRequiresAuth(t *testing.T) {
-	server := testServer(t)
-	request := httptest.NewRequest(http.MethodGet, "/v1/projects/den-services/tasks", nil)
-	response := httptest.NewRecorder()
-	server.Handler.ServeHTTP(response, request)
-	if response.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
-	}
-}
-
 func TestHTTPTaskListPagination(t *testing.T) {
 	server := testServer(t)
 	for _, title := range []string{"First", "Second"} {
-		request := authedJSONRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{"title":"`+title+`","priority":2}`)
+		request := jsonRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{"title":"`+title+`","priority":2}`)
 		response := httptest.NewRecorder()
 		server.Handler.ServeHTTP(response, request)
 		if response.Code != http.StatusCreated {
@@ -322,7 +312,7 @@ func TestHTTPTaskListPagination(t *testing.T) {
 		}
 	}
 	response := httptest.NewRecorder()
-	server.Handler.ServeHTTP(response, authedJSONRequest(http.MethodGet, "/v1/projects/den-services/tasks?limit=1&offset=1", ""))
+	server.Handler.ServeHTTP(response, jsonRequest(http.MethodGet, "/v1/projects/den-services/tasks?limit=1&offset=1", ""))
 	var tasks []TaskSummaryResponse
 	decodeJSON(t, response.Body, &tasks)
 	if response.Code != http.StatusOK || len(tasks) != 1 || tasks[0].Title != "Second" {
@@ -333,7 +323,7 @@ func TestHTTPTaskListPagination(t *testing.T) {
 func TestHTTPTaskChangeBackfillAndStream(t *testing.T) {
 	server := testServer(t)
 
-	createTask := authedJSONRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{
+	createTask := jsonRequest(http.MethodPost, "/v1/projects/den-services/tasks", `{
 		"title": "Streamed task",
 		"priority": 2
 	}`)
@@ -344,7 +334,7 @@ func TestHTTPTaskChangeBackfillAndStream(t *testing.T) {
 	}
 
 	changesResponse := httptest.NewRecorder()
-	server.Handler.ServeHTTP(changesResponse, authedJSONRequest(http.MethodGet, "/v1/projects/den-services/tasks/changes", ""))
+	server.Handler.ServeHTTP(changesResponse, jsonRequest(http.MethodGet, "/v1/projects/den-services/tasks/changes", ""))
 	if changesResponse.Code != http.StatusOK {
 		t.Fatalf("changes status = %d body = %s", changesResponse.Code, changesResponse.Body.String())
 	}
@@ -357,7 +347,7 @@ func TestHTTPTaskChangeBackfillAndStream(t *testing.T) {
 		t.Fatal("changes response missing next cursor")
 	}
 
-	patchReview := authedJSONRequest(http.MethodPatch, "/v1/tasks/"+int64String(&changes.Events[0].TaskID), `{
+	patchReview := jsonRequest(http.MethodPatch, "/v1/tasks/"+int64String(&changes.Events[0].TaskID), `{
 		"agent": "tester",
 		"status": "review"
 	}`)
@@ -367,7 +357,7 @@ func TestHTTPTaskChangeBackfillAndStream(t *testing.T) {
 		t.Fatalf("patch status = %d body = %s", patchResponse.Code, patchResponse.Body.String())
 	}
 
-	streamRequest := authedJSONRequest(http.MethodGet, "/v1/projects/den-services/tasks/changes/stream?after="+changes.NextCursor, "")
+	streamRequest := jsonRequest(http.MethodGet, "/v1/projects/den-services/tasks/changes/stream?after="+changes.NextCursor, "")
 	streamContext, cancel := context.WithCancel(streamRequest.Context())
 	t.Cleanup(cancel)
 	streamRequest = streamRequest.WithContext(streamContext)
@@ -390,9 +380,8 @@ func TestHTTPTaskChangeBackfillAndStream(t *testing.T) {
 func testServer(t *testing.T) *http.Server {
 	t.Helper()
 	cfg := &Config{
-		BindAddr:     "127.0.0.1:0",
-		DatabaseURL:  "postgres://unused",
-		ServiceToken: "test-token",
+		BindAddr:    "127.0.0.1:0",
+		DatabaseURL: "postgres://unused",
 		Stream: StreamConfig{
 			PollInterval:      10 * time.Millisecond,
 			HeartbeatInterval: time.Second,
@@ -408,13 +397,12 @@ func testServer(t *testing.T) *http.Server {
 	return server
 }
 
-func authedJSONRequest(method string, path string, body string) *http.Request {
+func jsonRequest(method string, path string, body string) *http.Request {
 	var reader io.Reader
 	if body != "" {
 		reader = bytes.NewBufferString(body)
 	}
 	request := httptest.NewRequest(method, path, reader)
-	request.Header.Set("Authorization", "Bearer test-token")
 	if body != "" {
 		request.Header.Set("Content-Type", "application/json")
 	}

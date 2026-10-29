@@ -15,15 +15,12 @@ func TestAgentGuidanceClientDocumentReferencesUsesGuidanceSuccessorRoute(t *test
 		if r.URL.Query().Get("document_project_id") != "asha-rulebench" || r.URL.Query().Get("document_slug") != "north-star" {
 			t.Fatalf("query = %q", r.URL.RawQuery)
 		}
-		if r.Header.Get("Authorization") != "Bearer guidance-token" {
-			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
-		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"references":[],"count":0}`))
 	}))
 	defer server.Close()
 
-	client := NewAgentGuidanceClient(server.URL, "guidance-token")
+	client := NewAgentGuidanceClient(server.URL)
 	references, ready, err := client.DocumentReferences(context.Background(), "asha-rulebench", "north-star")
 	if err != nil {
 		t.Fatalf("DocumentReferences() error = %v", err)

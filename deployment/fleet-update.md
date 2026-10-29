@@ -22,15 +22,13 @@ before changing either one.
 Preflight also rejects route migrations whose owning successor is not enrolled.
 Before a fleet update, both hosts must have:
 
-- `DEN_GATEWAY_KNOWLEDGE_UPSTREAM_TOKEN` in `gateway.env`;
 - an active registered `den-go@handoff.service` with its PostgreSQL role,
-  schema migration, config, and service environment;
-- `DEN_HANDOFF_SERVICE_TOKEN` in `mcp.env`; and
+  schema migration, config, and service environment; and
 - a `handoff` backend entry in MCP `config.yaml`.
 
 These are deployment prerequisites, not values for the updater to invent.
-Provision them from the existing owning-service tokens and database role using
-the token policy and [`postgresql.md`](postgresql.md), deploy Handoff, smoke
+Provision the database role using [`postgresql.md`](postgresql.md), deploy
+Handoff, smoke
 `:8099/health`, then run fleet preflight again. The per-service deployer takes
 transaction-local config snapshots and restores them with the previous binary
 after a failed activation; `systemctl reset-failed` is part of that recovery.

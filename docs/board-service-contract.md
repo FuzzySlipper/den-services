@@ -17,7 +17,7 @@ Board is a new successor service in `board/` with PostgreSQL schema `den_board`.
 
 ## Normal HTTP surface
 
-The browser and CLI use the same authenticated REST contract through Gateway where appropriate:
+The browser and CLI use the same REST contract through Gateway where appropriate:
 
 - `POST /v1/projects/{project_id}/board/posts`
 - `GET /v1/projects/{project_id}/board/posts?after_id=&limit=`
@@ -55,7 +55,7 @@ The always-at-hand MCP surface contains only common creation and bounded travers
 - `create_board_comment`, `list_board_comments`, `get_board_comment`, `get_board_comment_path`
 - `purge_board_post`, `purge_board_comment`
 
-Board search is intentionally absent from MCP `tools/list`. Agents use the centralized CLI for this less-common operation. The CLI sends a hidden `search_board_posts` transport operation through the authenticated MCP facade, which routes to Board's typed REST owner without exposing Board's loopback port or service token. The hidden operation has no tombstone and is callable by exact name, but is never model-discoverable. This keeps MCP discovery focused while preserving a short, working agent path.
+Board search is intentionally absent from MCP `tools/list`. Agents use the centralized CLI for this less-common operation. The CLI sends a hidden `search_board_posts` transport operation through the MCP facade, which routes to Board's typed REST owner without exposing Board's loopback port. The hidden operation has no tombstone and is callable by exact name, but is never model-discoverable. This keeps MCP discovery focused while preserving a short, working agent path.
 
 ## CLI and web consumers
 

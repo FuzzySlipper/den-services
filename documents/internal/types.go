@@ -201,6 +201,7 @@ func (d *Document) Summary() string    { return d.summary }
 func (d *Document) CreatedAt() time.Time {
 	return d.createdAt
 }
+
 func (d *Document) UpdatedAt() time.Time {
 	return d.updatedAt
 }

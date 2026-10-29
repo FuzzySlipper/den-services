@@ -230,11 +230,3 @@ DEN_MCP_SMOKE_WRITE_PROJECT=den-services \
 DEN_MCP_SMOKE_WRITE_SLUG=mcp-smoke-disposable \
 python3 mcp/scripts/hermes_smoke.py --mode both
 ```
-
-The live mode passes backend service tokens through to the MCP process when
-their normal service-token variables are set, such as `DEN_CORE_SERVICE_TOKEN`,
-`DEN_TASKS_SERVICE_TOKEN`, `DEN_MESSAGES_SERVICE_TOKEN`,
-`DEN_DOCUMENTS_SERVICE_TOKEN`, `DEN_REVIEW_SERVICE_TOKEN`,
-`DEN_GUIDANCE_SERVICE_TOKEN`, `DEN_LIBRARIAN_SERVICE_TOKEN`,
-`DEN_HANDOFF_SERVICE_TOKEN`, and `DEN_BOARD_SERVICE_TOKEN`. Token values
-are never printed by the harness.

@@ -46,7 +46,7 @@ func main() {
 	defer pool.Close()
 	service, err := boardrelay.NewService(
 		boardrelay.NewStore(pool),
-		boardrelay.NewHTTPBoardClient(cfg.BoardBaseURL, cfg.BoardToken, cfg.GitHub.RequestTimeout),
+		boardrelay.NewHTTPBoardClient(cfg.BoardBaseURL, cfg.GitHub.RequestTimeout),
 		boardrelay.NewHTTPGitHubClient(cfg.GitHub.APIBaseURL, cfg.GitHub.Token, cfg.GitHub.RequestTimeout),
 		cfg.GitHub.Repository,
 		time.Now,

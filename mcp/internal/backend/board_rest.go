@@ -132,9 +132,6 @@ func buildBoardRESTRequest(ctx context.Context, backend config.BackendConfig, ro
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	if backend.ServiceToken != "" {
-		request.Header.Set("Authorization", "Bearer "+backend.ServiceToken)
-	}
 	return request, nil
 }
 

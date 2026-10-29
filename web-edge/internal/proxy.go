@@ -25,8 +25,6 @@ func newGatewayProxy(cfg GatewayConfig, logger *slog.Logger) http.Handler {
 			// Keep encoded slashes inside document slugs as one route segment.
 			request.Out.URL.RawPath = strings.TrimPrefix(request.In.URL.EscapedPath(), "/api")
 			request.SetXForwarded()
-			request.Out.Header.Del("Authorization")
-			request.Out.Header.Set("Authorization", "Bearer "+cfg.BearerToken)
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			logger.Error("gateway proxy failed", "method", r.Method, "path", r.URL.Path, "error", err)

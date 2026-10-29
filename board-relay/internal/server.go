@@ -3,7 +3,6 @@ package boardrelay
 import (
 	"net/http"
 
-	"den-services/shared/api"
 	"den-services/shared/health"
 )
 
@@ -16,15 +15,11 @@ func NewHTTPServer(cfg *Config, buildInfo health.BuildInfo, service RelayUseCase
 	if err != nil {
 		return nil, err
 	}
-	auth, err := api.NewServiceTokenAuth(cfg.ServiceToken)
-	if err != nil {
-		return nil, err
-	}
 	apiMux := http.NewServeMux()
 	NewHandler(service).RegisterRoutes(apiMux)
 	root := http.NewServeMux()
 	root.Handle("GET /health", healthHandler)
 	root.Handle("GET /version", versionHandler)
-	root.Handle("/", auth.Middleware(apiMux))
+	root.Handle("/", apiMux)
 	return &http.Server{Addr: cfg.BindAddr, Handler: root, ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout}, nil
 }

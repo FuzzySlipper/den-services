@@ -10,17 +10,14 @@ import (
 	"den-services/shared/api"
 )
 
-func NewAuthenticatedRequest(method string, url string, body []byte, serviceToken string) (*http.Request, error) {
+func NewJSONRequest(method string, url string, body []byte) (*http.Request, error) {
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
 	}
 	request, err := http.NewRequest(method, url, reader)
 	if err != nil {
-		return nil, fmt.Errorf("creating authenticated request: %w", err)
-	}
-	if serviceToken != "" {
-		request.Header.Set("Authorization", "Bearer "+serviceToken)
+		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")

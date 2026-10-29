@@ -14,7 +14,6 @@ import (
 type Config struct {
 	BindAddr     string
 	DatabaseURL  string
-	ServiceToken string
 	DefaultLimit int
 	MaxLimit     int
 	Stream       StreamConfig
@@ -84,7 +83,6 @@ func LoadConfigFromPath(path string) (*Config, error) {
 	cfg := &Config{
 		BindAddr:     file.BindAddr,
 		DatabaseURL:  databaseURL,
-		ServiceToken: values.String("DEN_TIMELINE_SERVICE_TOKEN", ""),
 		DefaultLimit: file.Query.DefaultLimit,
 		MaxLimit:     file.Query.MaxLimit,
 		Stream:       streamConfig,
@@ -102,9 +100,6 @@ func (c *Config) validate() error {
 	}
 	if c.DatabaseURL == "" {
 		return errors.New("database_url is required")
-	}
-	if c.ServiceToken == "" {
-		return errors.New("service token is required")
 	}
 	if c.DefaultLimit <= 0 || c.MaxLimit <= 0 || c.DefaultLimit > c.MaxLimit {
 		return errors.New("query limits must be positive and default_limit must not exceed max_limit")

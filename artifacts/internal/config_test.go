@@ -15,8 +15,7 @@ func TestLoadConfigFromPathWithValues(t *testing.T) {
 		t.Fatalf("writing config: %v", err)
 	}
 	values := sharedconfig.FromMap(map[string]string{
-		"DEN_ARTIFACTS_DATABASE_URL":  "postgres://example",
-		"DEN_ARTIFACTS_SERVICE_TOKEN": "token",
+		"DEN_ARTIFACTS_DATABASE_URL": "postgres://example",
 	})
 
 	cfg, err := LoadConfigFromPathWithValues(path, values)
@@ -37,7 +36,6 @@ func TestLoadConfigFromPathWithValues(t *testing.T) {
 func validConfig() string {
 	return `bind_addr: "127.0.0.1:8090"
 database_url_env: "DEN_ARTIFACTS_DATABASE_URL"
-service_token_env: "DEN_ARTIFACTS_SERVICE_TOKEN"
 storage:
   backend: "filesystem"
   root_path: "/var/lib/den/artifacts"

@@ -15,10 +15,8 @@ import (
 type Config struct {
 	BindAddr               string
 	DatabaseURL            string
-	ServiceToken           string
 	AdapterIdentity        string
 	ProjectsBaseURL        string
-	ProjectsToken          string
 	ProjectsRequestTimeout time.Duration
 	Limits                 Limits
 	HTTP                   HTTPConfig
@@ -32,10 +30,8 @@ type HTTPConfig struct {
 type configFile struct {
 	BindAddr               string         `yaml:"bind_addr"`
 	DatabaseURLEnv         string         `yaml:"database_url_env"`
-	ServiceTokenEnv        string         `yaml:"service_token_env"`
 	AdapterIdentity        string         `yaml:"adapter_identity"`
 	ProjectsBaseURLEnv     string         `yaml:"projects_base_url_env"`
-	ProjectsTokenEnv       string         `yaml:"projects_token_env"`
 	ProjectsRequestTimeout string         `yaml:"projects_request_timeout"`
 	Limits                 limitsFile     `yaml:"limits"`
 	HTTP                   httpConfigFile `yaml:"http"`
@@ -100,7 +96,6 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	serviceToken := values.String(f.ServiceTokenEnv, "")
 	adapterIdentity := strings.TrimSpace(f.AdapterIdentity)
 	if adapterIdentity == "" {
 		adapterIdentity = DefaultAdapterIdentity
@@ -125,10 +120,8 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 	return &Config{
 		BindAddr:               f.BindAddr,
 		DatabaseURL:            values.String(f.DatabaseURLEnv, ""),
-		ServiceToken:           serviceToken,
 		AdapterIdentity:        adapterIdentity,
 		ProjectsBaseURL:        values.String(f.ProjectsBaseURLEnv, ""),
-		ProjectsToken:          values.String(f.ProjectsTokenEnv, serviceToken),
 		ProjectsRequestTimeout: projectTimeout,
 		Limits:                 limits,
 		HTTP:                   HTTPConfig{ReadHeaderTimeout: readHeaderTimeout, MaxRequestBodyBytes: maxRequestBodyBytes},
@@ -142,17 +135,11 @@ func (c *Config) Validate() error {
 	if strings.TrimSpace(c.DatabaseURL) == "" {
 		return errors.New("database url is required")
 	}
-	if strings.TrimSpace(c.ServiceToken) == "" {
-		return errors.New("service token is required")
-	}
 	if strings.TrimSpace(c.AdapterIdentity) == "" {
 		return errors.New("adapter_identity is required")
 	}
 	if strings.TrimSpace(c.ProjectsBaseURL) == "" {
 		return errors.New("projects base url is required")
-	}
-	if strings.TrimSpace(c.ProjectsToken) == "" {
-		return errors.New("projects token is required")
 	}
 	if c.ProjectsRequestTimeout <= 0 {
 		return errors.New("projects_request_timeout must be positive")

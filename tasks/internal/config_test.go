@@ -15,9 +15,7 @@ func TestLoadConfigFromPathWithValues(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`
 bind_addr: "127.0.0.1:8092"
 database_url_env: "DEN_TASKS_DATABASE_URL"
-service_token_env: "DEN_TASKS_SERVICE_TOKEN"
 projects_base_url_env: "DEN_PROJECTS_BASE_URL"
-projects_token_env: "DEN_PROJECTS_SERVICE_TOKEN"
 stream:
   poll_interval: "2s"
   heartbeat_interval: "15s"
@@ -29,10 +27,8 @@ http:
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	cfg, err := LoadConfigFromPathWithValues(path, sharedconfig.FromMap(map[string]string{
-		"DEN_TASKS_DATABASE_URL":     "postgres://tasks",
-		"DEN_TASKS_SERVICE_TOKEN":    "tasks-token",
-		"DEN_PROJECTS_BASE_URL":      "http://127.0.0.1:8091",
-		"DEN_PROJECTS_SERVICE_TOKEN": "projects-token",
+		"DEN_TASKS_DATABASE_URL": "postgres://tasks",
+		"DEN_PROJECTS_BASE_URL":  "http://127.0.0.1:8091",
 	}))
 	if err != nil {
 		t.Fatalf("LoadConfigFromPathWithValues() error = %v", err)
@@ -43,11 +39,8 @@ http:
 	if cfg.DatabaseURL != "postgres://tasks" {
 		t.Fatalf("DatabaseURL = %q", cfg.DatabaseURL)
 	}
-	if cfg.ServiceToken != "tasks-token" {
-		t.Fatalf("ServiceToken = %q", cfg.ServiceToken)
-	}
-	if cfg.ProjectsBaseURL != "http://127.0.0.1:8091" || cfg.ProjectsToken != "projects-token" {
-		t.Fatalf("projects config = %q %q", cfg.ProjectsBaseURL, cfg.ProjectsToken)
+	if cfg.ProjectsBaseURL != "http://127.0.0.1:8091" {
+		t.Fatalf("ProjectsBaseURL = %q", cfg.ProjectsBaseURL)
 	}
 	if cfg.Stream.PollInterval != 2*time.Second || cfg.Stream.HeartbeatInterval != 15*time.Second {
 		t.Fatalf("Stream intervals = %+v", cfg.Stream)
@@ -65,9 +58,7 @@ func TestLoadConfigRequiresProjectsBaseURL(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`
 bind_addr: "127.0.0.1:8092"
 database_url_env: "DEN_TASKS_DATABASE_URL"
-service_token_env: "DEN_TASKS_SERVICE_TOKEN"
 projects_base_url_env: "DEN_PROJECTS_BASE_URL"
-projects_token_env: "DEN_PROJECTS_SERVICE_TOKEN"
 stream:
   poll_interval: "2s"
   heartbeat_interval: "15s"
@@ -79,9 +70,7 @@ http:
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	_, err := LoadConfigFromPathWithValues(path, sharedconfig.FromMap(map[string]string{
-		"DEN_TASKS_DATABASE_URL":     "postgres://tasks",
-		"DEN_TASKS_SERVICE_TOKEN":    "tasks-token",
-		"DEN_PROJECTS_SERVICE_TOKEN": "projects-token",
+		"DEN_TASKS_DATABASE_URL": "postgres://tasks",
 	}))
 	if err == nil || !strings.Contains(err.Error(), "projects base url is required") {
 		t.Fatalf("LoadConfigFromPathWithValues() error = %v", err)

@@ -93,7 +93,7 @@ func TestServiceAddEntryAcceptsSameScopeDocumentProjectFromDocumentsClient(t *te
 	defer server.Close()
 
 	store := newMemoryStore()
-	service := NewService(store, fakeProjects{}, NewDocumentsClient(server.URL, ""), fixedClock, 4096)
+	service := NewService(store, fakeProjects{}, NewDocumentsClient(server.URL), fixedClock, 4096)
 	entry, err := service.AddEntry(ctx, "rusty-crew", AddEntryRequest{
 		DocumentProjectID: "rusty-crew",
 		DocumentSlug:      "architecture-phase0-boundary-clarifications-2026-07-01",
@@ -628,7 +628,7 @@ func TestKnowledgeClientRequestsArchivedMetadata(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	metadata, err := NewKnowledgeClient(server.URL, "").GetKnowledge(context.Background(), "archived-card")
+	metadata, err := NewKnowledgeClient(server.URL).GetKnowledge(context.Background(), "archived-card")
 	if err != nil {
 		t.Fatalf("GetKnowledge = %v", err)
 	}
