@@ -75,7 +75,12 @@ den-tool ops job den-agents-git
 den-tool ops errors
 den-tool ops run --job JOB --engine borg -- COMMAND ARGS   # wrap and report a run
 den-tool ops replay            # deliver reports spooled during an Ops outage
+den-tool ops collect --dry-run # show what the den-agents collector would report
 ```
+
+On den-agents, `den-ops-collect.timer` runs `den-tool ops collect` every five
+minutes. It reads existing evidence (Borg runner files, thin config reports,
+the SnapRAID journal, Proxmox vzdump logs) and never runs a job itself.
 
 Ops only records what machines report. Never start, rerun or "fix" a backup
 because a status says it is overdue or failed; tell the owner instead.

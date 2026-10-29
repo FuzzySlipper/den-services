@@ -1,0 +1,15 @@
+[Unit]
+Description=Report backup and maintenance evidence to Den Ops
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=agent
+Group=agent
+Environment=HOME=/home/agent
+ExecStart=/home/agent/.local/bin/den-tool ops collect --config /home/agent/.config/den-ops-collect/config.json
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=10min

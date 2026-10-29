@@ -23,9 +23,12 @@ const opsUsage = `usage:
   den-tool ops register-host <host_id> <host.json|->
   den-tool ops replay [--json]
   den-tool ops run --job <job_id> [run flags] -- <command> [args...]
+  den-tool ops collect [--config FILE] [--dry-run] [--resend] [--json]
 
 DEN_OPS_URL overrides the Ops base URL (default ` + defaultOpsURL + `).
-DEN_OPS_SPOOL overrides where undeliverable reports wait for replay.`
+DEN_OPS_SPOOL overrides where undeliverable reports wait for replay.
+DEN_OPS_COLLECT_CONFIG overrides the collect config
+(default ~/.config/den-ops-collect/config.json).`
 
 type opsArgs struct {
 	positional []string
@@ -41,8 +44,11 @@ func handleOps(args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	}
-	if args[0] == "run" {
+	switch args[0] {
+	case "run":
 		return runOpsRun(args[1:], stdout, stderr)
+	case "collect":
+		return runOpsCollect(args[1:], stdout, stderr)
 	}
 	parsed, err := parseOpsArgs(args[1:])
 	if err != nil {

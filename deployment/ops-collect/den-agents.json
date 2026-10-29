@@ -1,0 +1,124 @@
+{
+  "lookback": "336h",
+  "hosts": {
+    "den-agents": {"display_name": "den-agents", "role": "Agent workstation, Proxmox VM 100 on den-prox", "notes": "No Proxmox guest backup job covers this VM, and its 2 TB /data disk is backup=0. Project files are covered by den-agents-git. The thin host configuration backups and the Ops collector also run here."},
+    "den-nas": {"display_name": "den-nas", "role": "NAS (SnapRAID array, backup storage)", "notes": "Configuration and small app state: den-nas-config. Bulk media is protected only by SnapRAID parity (den-nas-snapraid), which is not a backup."},
+    "den-k8": {"display_name": "den-k8", "role": "Build host", "notes": "Configuration only: den-k8-config. No whole-machine backup."},
+    "den-win11": {"display_name": "den-win11", "role": "Windows 11 test machine", "notes": "Configuration, Sunshine and Enshrouded saves only: den-win11-config. No whole-machine backup."},
+    "den-prox": {"display_name": "den-prox", "role": "Proxmox host (node den-prox)", "notes": "Host configuration: den-prox-config. It has no Proxmox guest backup job."},
+    "den-prox-mini": {"display_name": "den-prox-mini", "role": "Proxmox host (node prox)", "notes": "Host configuration: den-prox-mini-config. Its guest backups are the den-prox-mini-vzdump-* jobs."}
+  },
+  "jobs": {
+    "den-agents-git": {
+      "host_id": "den-agents", "display_name": "den-agents Git projects", "engine": "borg", "kind": "backup",
+      "source": "den-agents:/home/agent,/data,/opt,/usr/local/src (discovered Git repositories)",
+      "scope": "Git repositories with working trees, worktrees, submodules, alternates and LFS stores",
+      "target": "den-nas:/mnt/storage/backup/den-agents/borg",
+      "schedule": {"timezone": "America/Los_Angeles", "times": ["07:00"], "weekdays": [], "grace": "3h"},
+      "heartbeat_stale_after": "10m",
+      "retention": "30 daily, 12 weekly, 12 monthly, 3 yearly",
+      "recovery_pointer": "den-nas:/mnt/storage/backup/den-agents/recovery/ and den-agents ~/.local/lib/den-agents-backup/README.md",
+      "notes": "Runner: den-agents-backup.timer 07:00 Pacific, start window 07:00-10:00. Borg exit 1 is a warning, 2 a failure.",
+      "enabled": true
+    },
+    "den-agents-git-maintenance": {
+      "host_id": "den-agents", "display_name": "den-agents Git repository maintenance", "engine": "borg", "kind": "maintenance",
+      "source": "den-nas:/mnt/storage/backup/den-agents/borg",
+      "scope": "Compact and check the repository and latest archive; the first Saturday of a month also reads all data and runs the restore test",
+      "target": "den-nas:/mnt/storage/backup/den-agents/borg",
+      "schedule": {"timezone": "America/Los_Angeles", "times": ["09:00"], "weekdays": ["sat"], "grace": "3h"},
+      "heartbeat_stale_after": "10m",
+      "recovery_pointer": "den-agents ~/.local/lib/den-agents-backup/README.md",
+      "notes": "Runner: den-agents-backup-maintenance.timer. Its checks are also recorded on den-agents-git.",
+      "enabled": true
+    },
+    "den-nas-config": {
+      "host_id": "den-nas", "display_name": "den-nas configuration", "engine": "borg", "kind": "backup",
+      "source": "den-nas /etc, NAS scripts, Compose files and small app databases (allowlist)",
+      "scope": "Configuration and small persistent app state; no media, downloads or recordings",
+      "target": "den-agents:~/.local/state/den-config-backup/borg (NAS copy: host-configs-nas-copy)",
+      "schedule": {"timezone": "America/Los_Angeles", "times": ["07:00"], "weekdays": [], "grace": "3h"},
+      "retention": "30 daily, 12 weekly, 12 monthly, 3 yearly",
+      "recovery_pointer": "den-agents ~/.local/lib/den-config-backup/README.md; NAS copy /mnt/storage/backup/host-configs/current",
+      "notes": "Runner: den-config-backup.service, started by the 07:00 Git timer. Each run restores the new archive locally and checks it.",
+      "enabled": true
+    },
+    "den-k8-config": {
+      "host_id": "den-k8", "display_name": "den-k8 configuration", "engine": "borg", "kind": "backup",
+      "source": "den-k8 /etc, agent dotfiles and tool settings (allowlist)",
+      "scope": "Configuration and inventories only",
+      "target": "den-agents:~/.local/state/den-config-backup/borg (NAS copy: host-configs-nas-copy)",
+      "schedule": {"timezone": "America/Los_Angeles", "times": ["07:00"], "weekdays": [], "grace": "3h"},
+      "retention": "30 daily, 12 weekly, 12 monthly, 3 yearly",
+      "recovery_pointer": "den-agents ~/.local/lib/den-config-backup/README.md; NAS copy /mnt/storage/backup/host-configs/current",
+      "notes": "Runner: den-config-backup.service, started by the 07:00 Git timer.",
+      "enabled": true
+    },
+    "den-win11-config": {
+      "host_id": "den-win11", "display_name": "den-win11 configuration", "engine": "borg", "kind": "backup",
+      "source": "den-win11 OpenSSH, Sunshine, Enshrouded server and saves, scheduled task XML (allowlist)",
+      "scope": "Configuration and small saves; no installed programs or games",
+      "target": "den-agents:~/.local/state/den-config-backup/borg (NAS copy: host-configs-nas-copy)",
+      "schedule": {"timezone": "America/Los_Angeles", "times": ["07:00"], "weekdays": [], "grace": "3h"},
+      "retention": "30 daily, 12 weekly, 12 monthly, 3 yearly",
+      "recovery_pointer": "den-agents ~/.local/lib/den-config-backup/README.md; NAS copy /mnt/storage/backup/host-configs/current",
+      "notes": "Runner: den-config-backup.service, started by the 07:00 Git timer.",
+      "enabled": true
+    },
+    "den-prox-config": {
+      "host_id": "den-prox", "display_name": "den-prox host configuration", "engine": "borg", "kind": "backup",
+      "source": "den-prox /etc (with /etc/pve), pmxcfs config.db snapshot, cloud-init snippets, inventories",
+      "scope": "Proxmox host configuration; no guest disks or dumps",
+      "target": "den-agents:~/.local/state/den-config-backup/borg (NAS copy: host-configs-nas-copy)",
+      "schedule": {"timezone": "America/Los_Angeles", "times": ["07:00"], "weekdays": [], "grace": "3h"},
+      "retention": "30 daily, 12 weekly, 12 monthly, 3 yearly",
+      "recovery_pointer": "den-agents ~/.local/lib/den-config-backup/README.md (Proxmox rebuild section)",
+      "notes": "Runner: den-config-backup.service. The restore check verifies the pmxcfs database for node den-prox.",
+      "enabled": true
+    },
+    "den-prox-mini-config": {
+      "host_id": "den-prox-mini", "display_name": "den-prox-mini host configuration", "engine": "borg", "kind": "backup",
+      "source": "den-prox-mini /etc (with /etc/pve), pmxcfs config.db snapshot, October 2 recovery files, inventories",
+      "scope": "Proxmox host configuration; no guest disks or dumps",
+      "target": "den-agents:~/.local/state/den-config-backup/borg (NAS copy: host-configs-nas-copy)",
+      "schedule": {"timezone": "America/Los_Angeles", "times": ["07:00"], "weekdays": [], "grace": "3h"},
+      "retention": "30 daily, 12 weekly, 12 monthly, 3 yearly",
+      "recovery_pointer": "den-agents ~/.local/lib/den-config-backup/README.md (Proxmox rebuild section)",
+      "notes": "Runner: den-config-backup.service. The restore check verifies the pmxcfs database for node prox.",
+      "enabled": true
+    },
+    "host-configs-nas-copy": {
+      "host_id": "den-agents", "display_name": "Host configurations: NAS recovery copy", "engine": "ssh-tar", "kind": "replication",
+      "source": "den-agents:~/.local/state/den-config-backup/borg",
+      "scope": "Cold copy of the whole configuration Borg repository and its recovery key",
+      "target": "den-nas:/mnt/storage/backup/host-configs/current",
+      "schedule": {"timezone": "America/Los_Angeles", "times": ["07:00"], "weekdays": [], "grace": "3h"},
+      "retention": "2 complete generations",
+      "recovery_pointer": "den-nas:/mnt/storage/backup/host-configs/current (verify with verify_mirror.py)",
+      "notes": "A busy NAS maintenance lock defers the copy (warning) and keeps the previous generation; the last success shows the age of the current copy.",
+      "enabled": true
+    },
+    "den-nas-snapraid": {
+      "host_id": "den-nas", "display_name": "den-nas SnapRAID parity", "engine": "snapraid", "kind": "maintenance",
+      "source": "den-nas /mnt/data1, /mnt/data2, /mnt/data3",
+      "scope": "Parity sync daily; Sunday also scrubs 25% of the array. Storage maintenance, not a backup.",
+      "target": "den-nas:/mnt/parity",
+      "schedule": {"timezone": "America/Los_Angeles", "times": ["08:00"], "weekdays": [], "grace": "2h"},
+      "heartbeat_stale_after": "20m",
+      "recovery_pointer": "den-nas /etc/snapraid.conf; content files on each data disk",
+      "notes": "Runner: snapraid-daily.timer (Mon-Sat) and snapraid-weekly.timer (Sun) at 08:00 Pacific via /usr/local/bin/snapraid-maintenance.sh. Log: /var/log/snapraid-maintenance.log.",
+      "enabled": true
+    }
+  },
+  "sources": [
+    {"type": "borg-runner", "name": "den-agents-git", "state_dir": "/home/agent/.local/state/den-agents-backup", "maintenance_job": "den-agents-git-maintenance"},
+    {"type": "thin-config", "name": "den-config-backup", "state_dir": "/home/agent/.local/state/den-config-backup", "nas_copy_job": "host-configs-nas-copy"},
+    {"type": "snapraid", "name": "den-nas-snapraid", "job_id": "den-nas-snapraid", "host_id": "den-nas",
+     "units": ["snapraid-daily.service", "snapraid-weekly.service"],
+     "ssh": ["ssh", "-F", "/home/agent/server-access/den-nas/config", "target"]},
+    {"type": "proxmox-vzdump", "name": "den-prox-mini", "host_id": "den-prox-mini", "node": "prox",
+     "ssh": ["ssh", "-F", "/home/agent/.config/den-config-backup/ssh/den-prox-mini/config", "-i", "/home/agent/.config/den-config-backup/ssh/den-prox-mini/identity", "-o", "UserKnownHostsFile=/home/agent/.config/den-config-backup/ssh/den-prox-mini/known_hosts", "target"]},
+    {"type": "proxmox-vzdump", "name": "den-prox", "host_id": "den-prox", "node": "den-prox",
+     "ssh": ["ssh", "-F", "/home/agent/.config/den-config-backup/ssh/den-prox/config", "-i", "/home/agent/.config/den-config-backup/ssh/den-prox/identity", "-o", "UserKnownHostsFile=/home/agent/.config/den-config-backup/ssh/den-prox/known_hosts", "target"]}
+  ]
+}

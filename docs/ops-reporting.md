@@ -82,14 +82,8 @@ den-tool ops verification den-agents-git restore-test-$(date -u +%Y%m%dT%H%M%SZ)
   ~/.local/state/den-agents-backup/restore-test.json
 ```
 
-To hook this into systemd without touching the service itself, add a drop-in
-such as `ExecStopPost=-/usr/local/bin/den-tool ops report %h/.local/state/den-agents-backup/latest.json`:
-
-- `ExecStopPost` runs whatever the backup's outcome was.
-- The leading `-` keeps a reporting failure from changing the unit's result.
-- Undelivered reports wait in the spool.
-
-Wiring this up for den-agents is task 10446.
+On den-agents these files are reported automatically by the collector (below),
+so the backup service itself is unchanged.
 
 ### Windows (PowerShell, no den-tool needed)
 
@@ -115,33 +109,26 @@ exit $code
 - `den-tool.exe` also builds for Windows (`GOOS=windows go build ./cmd/den-tool`),
   and `den-tool ops run` works there too.
 
-### Proxmox VM/CT backups (collector)
+### Proxmox VM/CT backups
 
-Proxmox runs vzdump on its own schedule, so Ops gets a *collector*, not a
-wrapper. A small script on the Proxmox host (or anywhere with its SSH bundle)
-reads the finished tasks and reports each one:
+Proxmox runs vzdump on its own schedule, so the collector (below) reads what
+Proxmox records instead of wrapping anything. Over SSH it reads the cluster
+backup jobs, the guest list and each guest's config, the vzdump task logs and
+the backup storage inventory:
 
-```sh
-pvesh get /nodes/$(hostname)/tasks --typefilter vzdump --limit 50 --output-format json
-```
-
-For each finished task, send one report:
-
-| Report field | Value |
-|---|---|
-| `job_id` | Stable per backup job or guest, e.g. `prox-mini-vzdump-106` |
-| `run_id` | The task's `upid`, which is stable, so collecting the same task twice is harmless |
-| `started_at` / `finished_at` | The task's `starttime` / `endtime` (epoch → RFC 3339 UTC) |
-| `state` | From `status`: `OK` → `success`, a status containing `WARNINGS` → `warning`, anything else → `failed` |
-| `error` / `warnings` | The status text |
-
-Two rules for the collector:
-- Archive inventory (`pvesh get /nodes/NODE/storage/STORE/content --content backup`)
-  can fill in `archive_name` and size.
-- A configured job with no task is *not* a backup. Leave it to Ops to show it as
-  `never_reported` or `overdue`.
-
-Building these collectors is task 10446.
+- **Coverage:** every guest becomes an Ops host. A guest in an enabled backup
+  job gets the job `<proxmox-host>-vzdump-<vmid>` with the job's schedule (in
+  the node's time zone), target and retention. A guest in no job stays a host
+  with no job, so it shows as *not configured*.
+- **Exclusions:** the job scope and host notes list the disks vzdump leaves
+  out: VM disks with `backup=0`, and container mount points that are bind
+  mounts or lack `backup=1`.
+- **Runs:** each guest's part of a task log is one run (`<UPID>:<vmid>`), with
+  its archive volume, size and local start and finish times. `WARN:` lines make
+  it a warning and `ERROR: Backup of VM … failed` a failure. A guest still
+  running is reported as a heartbeat.
+- **Not claimed:** archives on NFS storage are not verified and no restore is
+  tested, so Ops shows no verification for these jobs.
 
 ### Anything else (curl)
 
@@ -152,6 +139,50 @@ curl -fsS -X PUT --data-binary @report.json \
 
 Required fields are `state` and `started_at`, plus `finished_at` once the run is
 over. Resending the same body is always safe.
+
+## The den-agents collector
+
+`den-tool ops collect` reports evidence that jobs already leave behind. It
+never starts, retries or stops a job. On den-agents,
+`den-ops-collect.timer` runs it five minutes after the last run finished,
+with the checked-in config `deployment/ops-collect/den-agents.json`
+(installed to `~/.config/den-ops-collect/config.json`).
+
+Each collection does this:
+
+1. **Registers** the configured hosts and jobs, every time. A job that never
+   reports still shows as `never_reported`, and a replaced Ops ledger gets its
+   expectations back within five minutes. Run history comes back with
+   `--resend`.
+2. **Reads every source.** One source failing (say, den-nas unreachable) is
+   printed as a warning, and the others still report.
+3. **Sends only evidence that changed.** A cache (`~/.local/state/den-tool/ops-collect-cache.json`)
+   remembers every body already delivered or spooled.
+4. **Spools during an outage.** If Ops is unreachable, the rest of the
+   collection goes to the spool and the next collection replays it first.
+
+| Source | Reads | Reports |
+|---|---|---|
+| `borg-runner` | `~/.local/state/den-agents-backup`: `runs/*/result.json`, `latest.json`, restore-test files | `den-agents-git` runs, heartbeats, restore tests. Maintenance runs go to `den-agents-git-maintenance`; their repository check is also recorded on `den-agents-git` |
+| `thin-config` | `~/.local/state/den-config-backup`: `reports/*.json`, `maintenance.json`, `latest.json`, `mirror-verification.json` | One run per host capture, with its local extract-and-check as the restore test; the local repository check on each host job; the NAS copy as `host-configs-nas-copy` runs (a busy NAS lock is a warning) with its own repository check and NAS restore test |
+| `snapraid` | den-nas journal for `snapraid-daily` and `snapraid-weekly` | `den-nas-snapraid` maintenance runs (one per systemd invocation, exit code and error tail on failure; nonzero SnapRAID error counts as notices); the weekly scrub as a verification |
+| `proxmox-vzdump` | den-prox-mini and den-prox, over the thin backup's SSH bundles | Guest hosts, per-guest vzdump jobs and runs (see above) |
+
+The collector looks back 14 days, so a fresh ledger fills with that history.
+SnapRAID rescans 14 days only when the collector has not run for a day;
+otherwise it reads the last 3. Proxmox task logs are fetched once per finished
+task.
+
+```sh
+systemctl status den-ops-collect.timer den-ops-collect.service
+journalctl -u den-ops-collect.service -n 20
+den-tool ops collect --dry-run   # print what would be sent, send nothing
+den-tool ops collect --resend    # send everything again, e.g. after an Ops ledger restore
+scripts/install-ops-collect.sh   # (re)install den-tool, the config and the timer
+```
+
+Stop it with `sudo systemctl disable --now den-ops-collect.timer`; no backup
+job depends on it.
 
 ## 3. Read status
 
