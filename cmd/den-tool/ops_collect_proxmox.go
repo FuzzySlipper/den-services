@@ -117,6 +117,17 @@ func collectProxmox(ctx context.Context, source opsCollectSource, env opsCollect
 	if err != nil {
 		return nil, err
 	}
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(output, &members); err != nil {
+		return nil, fmt.Errorf("parse proxmox inventory: %w", err)
+	}
+	// Coverage is only judged from a complete inventory: a failed read must
+	// never look like "no backup jobs" or "no guests".
+	for _, key := range []string{"jobs", "guests", "tasks", "storages"} {
+		if raw := members[key]; len(raw) == 0 || string(raw) == "null" {
+			return nil, fmt.Errorf("proxmox inventory incomplete: %s could not be read; coverage left unchanged", key)
+		}
+	}
 	var inventory proxmoxInventory
 	if err := json.Unmarshal(output, &inventory); err != nil {
 		return nil, fmt.Errorf("parse proxmox inventory: %w", err)
@@ -159,12 +170,15 @@ func collectProxmox(ctx context.Context, source opsCollectSource, env opsCollect
 	if err := json.Unmarshal(output, &detail); err != nil {
 		return nil, fmt.Errorf("parse proxmox details: %w", err)
 	}
+	var problems []string
 	configs := map[int]map[string]any{}
-	for vmid := range guests {
+	for _, vmid := range sortedVMIDs(guests) {
 		var config map[string]any
-		if json.Unmarshal(detail["config-"+strconv.Itoa(vmid)], &config) == nil {
-			configs[vmid] = config
+		if json.Unmarshal(detail["config-"+strconv.Itoa(vmid)], &config) != nil || config == nil {
+			problems = append(problems, fmt.Sprintf("config of guest %d could not be read; its disk exclusions are reported as unknown", vmid))
+			continue
 		}
+		configs[vmid] = config
 	}
 	archives := map[string]proxmoxContent{}
 	for _, storage := range jobStorages(jobs) {
@@ -189,7 +203,11 @@ func collectProxmox(ctx context.Context, source opsCollectSource, env opsCollect
 	for _, jobID := range sortedKeys(plan.jobs) {
 		writes = append(writes, opsCollectWrite{Path: opsPath("jobs", jobID), Body: mustJSON(plan.jobs[jobID])})
 	}
-	var problems []string
+	retired, err := retireProxmoxJobs(ctx, source, env, plan)
+	if err != nil {
+		problems = append(problems, err.Error())
+	}
+	writes = append(writes, retired...)
 	for index, task := range pendingTasks {
 		var lines []proxmoxLogLine
 		if err := json.Unmarshal(detail["log-"+strconv.Itoa(index)], &lines); err != nil || len(lines) == 0 {
@@ -281,7 +299,9 @@ func planProxmoxCoverage(source opsCollectSource, guests map[int]proxmoxGuest, c
 		} else {
 			notes += " Not in any enabled Proxmox backup job."
 		}
-		if excluded := excludedVolumes(guest, configs[vmid]); len(excluded) > 0 {
+		if configs[vmid] == nil {
+			notes += " Disk exclusions unknown: the guest config could not be read."
+		} else if excluded := excludedVolumes(guest, configs[vmid]); len(excluded) > 0 {
 			notes += " Not in guest backups: " + strings.Join(excluded, "; ") + "."
 		}
 		plan.hosts[hostSlug(guest.Name)] = map[string]any{
@@ -507,6 +527,9 @@ func jobStorages(jobs []proxmoxBackupJob) []string {
 
 func guestScope(guest proxmoxGuest, config map[string]any, mode string) string {
 	scope := fmt.Sprintf("whole guest, vzdump %s mode", mode)
+	if config == nil {
+		return scope + "; disk exclusions unknown (the guest config could not be read)"
+	}
 	if excluded := excludedVolumes(guest, config); len(excluded) > 0 {
 		scope += "; excludes " + strings.Join(excluded, ", ")
 	}
@@ -605,4 +628,71 @@ func truthy(value any) bool {
 	default:
 		return false
 	}
+}
+
+// opsRegisteredJob is the part of an Ops job a collector needs to re-register
+// it unchanged except for being disabled.
+type opsRegisteredJob struct {
+	JobID           string `json:"job_id"`
+	HostID          string `json:"host_id"`
+	DisplayName     string `json:"display_name"`
+	Engine          string `json:"engine"`
+	Kind            string `json:"kind"`
+	Source          string `json:"source"`
+	Scope           string `json:"scope"`
+	Target          string `json:"target"`
+	Retention       string `json:"retention"`
+	RecoveryPointer string `json:"recovery_pointer"`
+	Notes           string `json:"notes"`
+	Registered      bool   `json:"registered"`
+	Enabled         bool   `json:"enabled"`
+	Schedule        *struct {
+		Timezone     string   `json:"timezone"`
+		Times        []string `json:"times"`
+		Weekdays     []string `json:"weekdays"`
+		GraceSeconds int64    `json:"grace_seconds"`
+	} `json:"schedule"`
+	HeartbeatStaleAfterSeconds int64 `json:"heartbeat_stale_after_seconds"`
+}
+
+// retireProxmoxJobs disables guest jobs this source registered earlier that
+// the current (complete) inventory no longer has: the guest left every
+// enabled backup job, or its job was disabled. The job and its runs stay in
+// Ops; it just stops counting as coverage.
+func retireProxmoxJobs(ctx context.Context, source opsCollectSource, env opsCollectEnv, plan proxmoxPlan) ([]opsCollectWrite, error) {
+	if env.registeredJobs == nil {
+		return nil, nil
+	}
+	registered, err := env.registeredJobs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not list Ops jobs, so removed Proxmox coverage was not retired this time: %w", err)
+	}
+	prefix := source.HostID + "-vzdump-"
+	var writes []opsCollectWrite
+	for _, job := range registered {
+		if !strings.HasPrefix(job.JobID, prefix) || !job.Registered || !job.Enabled {
+			continue
+		}
+		if _, current := plan.jobs[job.JobID]; current {
+			continue
+		}
+		body := map[string]any{
+			"host_id": job.HostID, "display_name": job.DisplayName, "engine": job.Engine, "kind": job.Kind,
+			"source": job.Source, "scope": job.Scope, "target": job.Target, "retention": job.Retention,
+			"recovery_pointer": job.RecoveryPointer, "enabled": false,
+			"notes": strings.TrimSpace(fmt.Sprintf("%s Disabled %s: no enabled Proxmox backup job on %s includes this guest any more.",
+				job.Notes, env.now.UTC().Format("2006-01-02"), source.HostID)),
+		}
+		if job.Schedule != nil {
+			body["schedule"] = map[string]any{
+				"timezone": job.Schedule.Timezone, "times": job.Schedule.Times, "weekdays": job.Schedule.Weekdays,
+				"grace": fmt.Sprintf("%ds", job.Schedule.GraceSeconds),
+			}
+		}
+		if job.HeartbeatStaleAfterSeconds > 0 {
+			body["heartbeat_stale_after"] = fmt.Sprintf("%ds", job.HeartbeatStaleAfterSeconds)
+		}
+		writes = append(writes, opsCollectWrite{Path: opsPath("jobs", job.JobID), Body: mustJSON(body)})
+	}
+	return writes, nil
 }

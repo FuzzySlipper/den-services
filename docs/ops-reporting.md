@@ -127,6 +127,15 @@ the backup storage inventory:
   its archive volume, size and local start and finish times. `WARN:` lines make
   it a warning and `ERROR: Backup of VM … failed` a failure. A guest still
   running is reported as a heartbeat.
+- **Unreadable data:** if a guest's config can't be read, its scope and notes
+  say the disk exclusions are unknown, and the collection reports a warning.
+  If the job list, guest list, tasks or storage can't be read, the source
+  changes nothing that time.
+- **Removed coverage:** when a complete inventory no longer has a guest in any
+  enabled job (the guest was removed from the job, or the job was disabled), its
+  `<proxmox-host>-vzdump-<vmid>` job is re-registered with `enabled: false`. Its
+  history stays in Ops, and the guest shows as *not configured*. If Ops can't be
+  read at that moment, nothing is retired until the next collection.
 - **Not claimed:** archives on NFS storage are not verified and no restore is
   tested, so Ops shows no verification for these jobs.
 

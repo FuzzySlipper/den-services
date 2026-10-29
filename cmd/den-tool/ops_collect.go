@@ -81,6 +81,9 @@ type opsCollectEnv struct {
 	lookback time.Duration
 	cache    *opsCollectCache
 	remote   func(ctx context.Context, ssh []string, command string) ([]byte, error)
+	// registeredJobs lists the jobs Ops has now, so sources can retire
+	// coverage that disappeared. Nil skips that reconciliation.
+	registeredJobs func(ctx context.Context) ([]opsRegisteredJob, error)
 }
 
 type opsCollectSummary struct {
@@ -121,7 +124,22 @@ func runOpsCollect(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return writeRuntimeError(stderr, fmt.Errorf("lookback: %w", err))
 	}
-	env := opsCollectEnv{now: time.Now().UTC(), lookback: lookback, cache: cache, remote: runRemoteCommand}
+	env := opsCollectEnv{
+		now: time.Now().UTC(), lookback: lookback, cache: cache, remote: runRemoteCommand,
+		registeredJobs: func(ctx context.Context) ([]opsRegisteredJob, error) {
+			body, err := client.Do(ctx, http.MethodGet, "/v1/ops/jobs", nil)
+			if err != nil {
+				return nil, err
+			}
+			var response struct {
+				Jobs []opsRegisteredJob `json:"jobs"`
+			}
+			if err := json.Unmarshal(body, &response); err != nil {
+				return nil, fmt.Errorf("decode ops jobs: %w", err)
+			}
+			return response.Jobs, nil
+		},
+	}
 	ctx := context.Background()
 	writes, failures := collectOpsEvidence(ctx, config, env)
 	for _, failure := range failures {

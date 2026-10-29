@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -553,5 +554,189 @@ func TestOpsCollectReportsThroughOutageIntoRealOps(t *testing.T) {
 	again := cli(t, 0, "ops", "collect", "--config", configPath, "--json")
 	if err := json.Unmarshal([]byte(again), &summary); err != nil || summary.Delivered != 8 || summary.Spooled != 0 {
 		t.Fatalf("repeat collection = %s", again)
+	}
+}
+
+const proxmoxTestInventory = `{"jobs":[{"id":"backup-1","schedule":"6:00","enabled":%s,"vmid":"%s","storage":"backup-server","mode":"snapshot"}],
+  "guests":[{"vmid":100,"name":"opnsense","type":"qemu","node":"prox","status":"running"},
+            {"vmid":106,"name":"den-services","type":"lxc","node":"prox","status":"running"}],
+  "tasks":[],"storages":[{"storage":"backup-server","type":"nfs","server":"192.168.1.9","export":"/mnt/storage/backup/prox"}],
+  "timezone":"America/Los_Angeles"}`
+
+// proxmoxTestEnv fakes the two SSH calls of a proxmox-vzdump collection.
+func proxmoxTestEnv(now time.Time, inventory string, config106 string) opsCollectEnv {
+	env := testCollectEnv(now)
+	env.remote = func(_ context.Context, _ []string, command string) ([]byte, error) {
+		if strings.Contains(command, "/cluster/backup") {
+			return []byte(inventory), nil
+		}
+		return []byte(`{"config-100":{"scsi0":"local-zfs:vm-100-disk-1,size=64G"},"config-106":` + config106 + `,"content-backup-server":[]}`), nil
+	}
+	return env
+}
+
+var proxmoxTestSource = opsCollectSource{Type: "proxmox-vzdump", HostID: "den-prox-mini", Node: "prox", SSH: []string{"ssh", "target"}}
+
+func TestProxmoxUnreadableGuestConfigIsUnknownCoverage(t *testing.T) {
+	now := time.Date(2026, 10, 29, 16, 0, 0, 0, time.UTC)
+	env := proxmoxTestEnv(now, fmt.Sprintf(proxmoxTestInventory, "1", "100,106"), "null")
+	writes, err := collectProxmox(context.Background(), proxmoxTestSource, env, nil)
+	if err == nil || !strings.Contains(err.Error(), "config of guest 106 could not be read") {
+		t.Fatalf("missing config was not reported: %v", err)
+	}
+	bodies := writesByPath(t, writes)
+	scope := bodies["/v1/ops/jobs/den-prox-mini-vzdump-106"]["scope"].(string)
+	if !strings.Contains(scope, "disk exclusions unknown") {
+		t.Fatalf("unreadable config published as plain whole-guest coverage: %q", scope)
+	}
+	if notes := bodies["/v1/ops/hosts/den-services"]["notes"].(string); !strings.Contains(notes, "Disk exclusions unknown") {
+		t.Fatalf("host notes = %q", notes)
+	}
+	if scope := bodies["/v1/ops/jobs/den-prox-mini-vzdump-100"]["scope"].(string); scope != "whole guest, vzdump snapshot mode" {
+		t.Fatalf("a readable guest was affected: %q", scope)
+	}
+}
+
+func TestProxmoxIncompleteInventoryChangesNothing(t *testing.T) {
+	now := time.Date(2026, 10, 29, 16, 0, 0, 0, time.UTC)
+	inventory := strings.Replace(fmt.Sprintf(proxmoxTestInventory, "1", "100"), `"jobs":[{"id":"backup-1","schedule":"6:00","enabled":1,"vmid":"100","storage":"backup-server","mode":"snapshot"}]`, `"jobs":null`, 1)
+	env := proxmoxTestEnv(now, inventory, `{}`)
+	env.registeredJobs = func(context.Context) ([]opsRegisteredJob, error) {
+		t.Fatal("an incomplete inventory must not reach coverage reconciliation")
+		return nil, nil
+	}
+	writes, err := collectProxmox(context.Background(), proxmoxTestSource, env, nil)
+	if err == nil || len(writes) != 0 {
+		t.Fatalf("incomplete inventory = %d writes, %v", len(writes), err)
+	}
+}
+
+func registeredVzdumpJob(id string, host string) opsRegisteredJob {
+	job := opsRegisteredJob{
+		JobID: id, HostID: host, DisplayName: host + " Proxmox backup", Engine: "vzdump", Kind: "backup",
+		Scope: "whole guest, vzdump snapshot mode", Registered: true, Enabled: true, HeartbeatStaleAfterSeconds: 1800,
+	}
+	job.Schedule = &struct {
+		Timezone     string   `json:"timezone"`
+		Times        []string `json:"times"`
+		Weekdays     []string `json:"weekdays"`
+		GraceSeconds int64    `json:"grace_seconds"`
+	}{Timezone: "America/Los_Angeles", Times: []string{"06:00"}, Weekdays: []string{}, GraceSeconds: 7200}
+	return job
+}
+
+func TestProxmoxRetiresCoverageThatDisappeared(t *testing.T) {
+	now := time.Date(2026, 10, 29, 16, 0, 0, 0, time.UTC)
+	previous := []opsRegisteredJob{
+		registeredVzdumpJob("den-prox-mini-vzdump-100", "opnsense"),
+		registeredVzdumpJob("den-prox-mini-vzdump-106", "den-services"),
+		registeredVzdumpJob("den-prox-vzdump-100", "den-agents"), // another source's job
+	}
+	for _, test := range []struct {
+		name, enabled, members string
+		retired                []string
+	}{
+		{"guest removed from the job", "1", "100", []string{"den-prox-mini-vzdump-106"}},
+		{"job disabled", "0", "100,106", []string{"den-prox-mini-vzdump-100", "den-prox-mini-vzdump-106"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			env := proxmoxTestEnv(now, fmt.Sprintf(proxmoxTestInventory, test.enabled, test.members), `{"rootfs":"local-zfs:subvol-106-disk-0"}`)
+			env.registeredJobs = func(context.Context) ([]opsRegisteredJob, error) { return previous, nil }
+			writes, err := collectProxmox(context.Background(), proxmoxTestSource, env, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bodies := writesByPath(t, writes)
+			var retired []string
+			for path, body := range bodies {
+				if body["enabled"] == false {
+					retired = append(retired, strings.TrimPrefix(path, "/v1/ops/jobs/"))
+				}
+			}
+			slices.Sort(retired)
+			if !slices.Equal(retired, test.retired) {
+				t.Fatalf("retired = %v, want %v", retired, test.retired)
+			}
+			body := bodies["/v1/ops/jobs/den-prox-mini-vzdump-106"]
+			schedule := body["schedule"].(map[string]any)
+			if body["host_id"] != "den-services" || body["engine"] != "vzdump" || schedule["grace"] != "7200s" || body["heartbeat_stale_after"] != "1800s" {
+				t.Fatalf("retired registration lost its fields: %v", body)
+			}
+		})
+	}
+
+	env := proxmoxTestEnv(now, fmt.Sprintf(proxmoxTestInventory, "1", "100"), `{}`)
+	env.registeredJobs = func(context.Context) ([]opsRegisteredJob, error) { return nil, fmt.Errorf("ops service unreachable") }
+	writes, err := collectProxmox(context.Background(), proxmoxTestSource, env, nil)
+	if err == nil || !strings.Contains(err.Error(), "not retired") {
+		t.Fatalf("Ops outage during reconciliation = %v", err)
+	}
+	for _, write := range writes {
+		if strings.Contains(string(write.Body), `"enabled":false`) {
+			t.Fatalf("coverage retired without knowing what Ops has: %s", write.Path)
+		}
+	}
+}
+
+// TestProxmoxRetirementRoundTripsThroughRealOps registers derived coverage in
+// the real Ops service, removes the guest from its job, and checks that the
+// job is disabled (history kept) and the guest becomes not configured.
+func TestProxmoxRetirementRoundTripsThroughRealOps(t *testing.T) {
+	opsURL := startOpsService(t)
+	client, err := NewOpsClient(opsURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	put := func(writes []opsCollectWrite) {
+		for _, write := range writes {
+			if _, err := client.Do(ctx, "PUT", write.Path, write.Body); err != nil {
+				t.Fatalf("PUT %s: %v", write.Path, err)
+			}
+		}
+	}
+	listJobs := func(ctx context.Context) ([]opsRegisteredJob, error) {
+		body, err := client.Do(ctx, "GET", "/v1/ops/jobs", nil)
+		if err != nil {
+			return nil, err
+		}
+		var response struct {
+			Jobs []opsRegisteredJob `json:"jobs"`
+		}
+		return response.Jobs, json.Unmarshal(body, &response)
+	}
+	now := time.Now().UTC()
+	first := proxmoxTestEnv(now, fmt.Sprintf(proxmoxTestInventory, "1", "100,106"), `{}`)
+	first.registeredJobs = listJobs
+	writes, err := collectProxmox(ctx, proxmoxTestSource, first, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	put(writes)
+
+	second := proxmoxTestEnv(now, fmt.Sprintf(proxmoxTestInventory, "1", "100"), `{}`)
+	second.registeredJobs = listJobs
+	writes, err = collectProxmox(ctx, proxmoxTestSource, second, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	put(writes)
+
+	job := getJSON(t, opsURL+"/v1/ops/jobs/den-prox-mini-vzdump-106")["job"].(map[string]any)
+	if job["enabled"] != false || job["status"] != "disabled" || job["host_id"] != "den-services" {
+		t.Fatalf("retired job = %v", job)
+	}
+	for _, item := range getJSON(t, opsURL+"/v1/ops/hosts")["hosts"].([]any) {
+		host := item.(map[string]any)
+		switch host["host_id"] {
+		case "den-services":
+			if host["coverage"] != "not_configured" {
+				t.Fatalf("guest removed from its backup job still counts as covered: %v", host)
+			}
+		case "opnsense":
+			if host["coverage"] != "configured" {
+				t.Fatalf("still-covered guest = %v", host)
+			}
+		}
 	}
 }
