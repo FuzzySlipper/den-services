@@ -1,0 +1,4 @@
+#!/bin/sh
+# asset-resources is now "den-tool resources"; kept so existing scripts and
+# habits keep working. See den-services docs/resources-operations.md.
+exec "$HOME/.local/bin/den-tool" resources "$@"

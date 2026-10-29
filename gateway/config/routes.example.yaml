@@ -283,3 +283,10 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8102"
     successor_upstream_url: "http://127.0.0.1:8102"
     successor_mode: "always"
+
+  - name: "resources-routes"
+    path_pattern: "/v1/resources"
+    methods: ["GET", "POST", "PUT"]
+    legacy_upstream_url: "http://127.0.0.1:8103"
+    successor_upstream_url: "http://127.0.0.1:8103"
+    successor_mode: "always"

@@ -153,6 +153,13 @@ func TestInstallerCheckDetectsSourceDriftUntilReinstall(t *testing.T) {
 			copyTestFile(t, sourceRoot, root, filepath.Join("cmd", "den-tool", entry.Name()))
 		}
 	}
+	probes, err := os.ReadDir(filepath.Join(sourceRoot, "cmd", "den-tool", "resources_probe"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range probes {
+		copyTestFile(t, sourceRoot, root, filepath.Join("cmd", "den-tool", "resources_probe", entry.Name()))
+	}
 
 	home := t.TempDir()
 	if output, err := runInstaller(t, root, home); err != nil {

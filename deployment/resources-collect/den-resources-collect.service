@@ -1,0 +1,17 @@
+[Unit]
+Description=Report workshop machine activity to the Den Resources service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agent
+Group=agent
+Environment=HOME=/home/agent
+ExecStart=/home/agent/.local/bin/den-tool resources collect --config /home/agent/.config/den-resources-collect/config.json
+Restart=always
+RestartSec=10
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

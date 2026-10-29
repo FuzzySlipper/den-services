@@ -1,0 +1,15 @@
+# Resources service configuration: workshop machine activity, the shared
+# resource directory and the advisory work ledger.
+# Copy to /data/services/resources/config/config.yaml for deployment.
+#
+# The service keeps its own SQLite store on local disk and never polls hosts;
+# den-tool resources collect on den-agents pushes telemetry.
+
+bind_addr: "127.0.0.1:8103"
+database_path: "/data/services/resources/data/resources.sqlite3"
+
+http:
+  read_header_timeout: "5s"
+
+# Telemetry and app probes older than this show as stale (unknown).
+stale_after: "90s"

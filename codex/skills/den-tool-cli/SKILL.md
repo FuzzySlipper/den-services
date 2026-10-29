@@ -85,6 +85,21 @@ the SnapRAID journal, Proxmox vzdump logs) and never runs a job itself.
 Ops only records what machines report. Never start, rerun or "fix" a backup
 because a status says it is overdue or failed; tell the owner instead.
 
+Workshop machine activity, shared installations and work check-ins live in
+the Resources service (`docs/resources-api-contract.md`; page at
+`http://192.168.1.5:18080/resources`). `asset-resources` is a wrapper for the
+same commands:
+
+```sh
+den-tool resources status      # machines, native queues, current check-ins
+den-tool resources resources m5-comfy   # one shared install and its notes
+den-tool resources run --host den-m5 --resource m5-comfy --purpose 'Generate' -- COMMAND
+den-tool resources check-in --host den-nimo --purpose 'Async job' --ttl 600
+```
+
+Wrap only commands that wait for their real work to finish. Claims are
+advisory; "quiet" or "stale" never means a machine or install is free.
+
 ## Respect authority and risk
 
 - Treat `list`, `search`, and `describe` as local read-only discovery.

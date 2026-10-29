@@ -1,0 +1,170 @@
+{
+  "poll_seconds": 20,
+  "hosts": [
+    {
+      "id": "den-agents",
+      "name": "den-agents",
+      "role": "Source, Workbench, Blender and durable outputs · RX 9070 XT",
+      "transport": "local",
+      "disks": [
+        "/",
+        "/home",
+        "/data"
+      ],
+      "docker_sockets": [
+        "/run/docker.sock"
+      ],
+      "access": "Local shell on den-agents",
+      "note": "Accepted assets stay in their requesting repository."
+    },
+    {
+      "id": "den-nimo",
+      "name": "den-nimo",
+      "role": "Strix Halo · shared AMD inference and model serving",
+      "transport": "ssh",
+      "ssh": [
+        "den-nimo"
+      ],
+      "disks": [
+        "/",
+        "/home"
+      ],
+      "docker_sockets": [
+        "/run/docker.sock",
+        "/run/awq-docker.sock"
+      ],
+      "access": "ssh den-nimo",
+      "apps": [
+        {
+          "name": "ComfyUI",
+          "kind": "comfy",
+          "url": "http://192.168.1.23:8188",
+          "resources": [
+            "nimo-comfy",
+            "nimo-models"
+          ]
+        },
+        {
+          "name": "TRELLIS mesh",
+          "kind": "health",
+          "url": "http://192.168.1.23:8189"
+        },
+        {
+          "name": "SkinTokens rig",
+          "kind": "health",
+          "url": "http://192.168.1.23:8191"
+        }
+      ],
+      "note": "Unified memory. Includes the separate AWQ Docker daemon.",
+      "timeout": 40
+    },
+    {
+      "id": "den-m5",
+      "name": "den-m5",
+      "role": "Strix Halo · ComfyUI, training and mesh experiments",
+      "transport": "ssh",
+      "ssh": [
+        "den-m5"
+      ],
+      "disks": [
+        "/",
+        "/home"
+      ],
+      "docker_sockets": [
+        "/run/docker.sock"
+      ],
+      "access": "ssh den-m5",
+      "apps": [
+        {
+          "name": "ComfyUI",
+          "kind": "comfy",
+          "url": "http://192.168.1.24:8188",
+          "resources": [
+            "m5-comfy",
+            "m5-models"
+          ]
+        }
+      ],
+      "note": "Prefer existing shared ComfyUI and model mounts over another install."
+    },
+    {
+      "id": "gpu-lab",
+      "name": "Owner GPU lab",
+      "role": "On demand · RTX 5090 · owner desktop",
+      "transport": "ssh",
+      "ssh": [
+        "-F",
+        "~/server-access/gpu-lab/config",
+        "target"
+      ],
+      "disks": [
+        "/",
+        "/srv/gpu-lab/workspace",
+        "/srv/gpu-lab/cache"
+      ],
+      "docker_sockets": [
+        "/run/docker.sock"
+      ],
+      "access": "~/server-access/gpu-lab/connect",
+      "apps": [
+        {
+          "name": "ComfyUI",
+          "kind": "comfy",
+          "url": "http://192.168.1.20:8188",
+          "resources": [
+            "lab-comfy",
+            "lab-cache"
+          ]
+        }
+      ],
+      "note": "CPU, RAM and processes cover the Linux lab, not Windows desktop apps. Never start or stop the owner's lab to collect status."
+    },
+    {
+      "id": "den-win11",
+      "name": "den-win11",
+      "role": "Windows test desktop · RTX 3080",
+      "transport": "windows",
+      "ssh": [
+        "den-win11"
+      ],
+      "probe_script": "C:/Users/agent/.local/share/asset-resources/probe.ps1",
+      "timeout": 35,
+      "access": "ssh den-win11; desktop helper for GUI or P:",
+      "note": "Plain SSH sees local paths; P: is only mapped in the console session."
+    },
+    {
+      "id": "den-nas",
+      "name": "den-nas",
+      "role": "Shared development stash · storage",
+      "transport": "ssh",
+      "ssh": [
+        "den-nas"
+      ],
+      "disks": [
+        "/",
+        "/mnt/storage/dev"
+      ],
+      "docker_sockets": [],
+      "access": "ssh den-nas; /mnt/den-nas-dev on Linux",
+      "note": "Shared stash for inactive material. Keep original path and restore instructions."
+    }
+  ],
+  "workbench_roots": [
+    "/home/agent/dev/asset-pipeline/requests"
+  ],
+  "workbench_resources": {
+    "gpu:den-nimo": {
+      "host": "den-nimo",
+      "resources": [
+        "nimo-comfy",
+        "nimo-models"
+      ]
+    },
+    "render:den-agents": {
+      "host": "den-agents",
+      "resources": [
+        "agents-workbench"
+      ]
+    }
+  }
+}

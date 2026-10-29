@@ -20,6 +20,7 @@ use (
 	./observation
 	./ops
 	./projects
+	./resources
 	./review
 	./runtime
 	./shared

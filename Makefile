@@ -1,4 +1,4 @@
-SERVICES := shared delivery runtime observation gateway timeline mcp doc-publish artifacts migration integration librarian handoff board ops
+SERVICES := shared delivery runtime observation gateway timeline mcp doc-publish artifacts migration integration librarian handoff board ops resources
 GOCACHE ?= $(CURDIR)/.gocache
 GOLANGCI_LINT_CACHE ?= $(CURDIR)/.golangci-lint-cache
 

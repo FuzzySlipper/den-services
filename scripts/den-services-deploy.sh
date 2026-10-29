@@ -433,6 +433,41 @@ ROUTE
   fi
 }
 
+ensure_gateway_resources_route() {
+  local routes_target="${service_root}/config/routes.yaml"
+  local staged_routes=""
+  local write_target="${routes_target}"
+
+  [[ "${service}" == "gateway" ]] || return 0
+  [[ -f "${routes_target}" ]] || return 0
+  if grep -Eq '^[[:space:]]*- name:.*resources-routes' "${routes_target}" ||
+    grep -Eq "^[[:space:]]*path_pattern:[[:space:]]*\"/v1/resources\"" "${routes_target}"; then
+    return 0
+  fi
+
+  backup_config_file "${routes_target}" "routes.yaml"
+  if [[ ! -w "${routes_target}" ]]; then
+    staged_routes="$(mktemp /tmp/den-gateway-routes.XXXXXX)"
+    cp "${routes_target}" "${staged_routes}"
+    write_target="${staged_routes}"
+  fi
+
+  cat >> "${write_target}" <<'ROUTE'
+
+  - name: "resources-routes"
+    path_pattern: "/v1/resources"
+    methods: ["GET", "POST", "PUT"]
+    legacy_upstream_url: "http://127.0.0.1:8103"
+    successor_upstream_url: "http://127.0.0.1:8103"
+    successor_mode: "always"
+ROUTE
+
+  if [[ -n "${staged_routes}" ]]; then
+    run_systemctl install -m 0644 "${staged_routes}" "${routes_target}"
+    rm -f "${staged_routes}"
+  fi
+}
+
 ensure_gateway_manual_review_route() {
   local routes_target="${service_root}/config/routes.yaml"
   local staged_routes=""
@@ -727,6 +762,7 @@ ensure_gateway_knowledge_route
 ensure_gateway_board_routes
 ensure_gateway_manual_review_route
 ensure_gateway_ops_route
+ensure_gateway_resources_route
 if [[ "${service}" == "mcp" && -f mcp/routes.example.yaml ]]; then
   ensure_mcp_board_backend
   ensure_mcp_board_relay_backend

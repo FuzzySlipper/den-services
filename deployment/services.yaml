@@ -204,6 +204,16 @@ services:
     version_url: "http://127.0.0.1:8102/version"
     systemd_unit: "den-go@ops.service"
 
+  - name: "resources"
+    module: "resources"
+    binary_name: "resources"
+    binary_path: "./resources/cmd/resources"
+    config_example: "resources/config/config.example.yaml"
+    env_example: "resources/config/resources.env.example"
+    health_url: "http://127.0.0.1:8103/health"
+    version_url: "http://127.0.0.1:8103/version"
+    systemd_unit: "den-go@resources.service"
+
   - name: "mcp"
     module: "mcp"
     binary_name: "mcp"
