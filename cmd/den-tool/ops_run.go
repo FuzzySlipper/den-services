@@ -198,7 +198,8 @@ func runOpsRun(args []string, _ io.Writer, stderr io.Writer) int {
 // calls heartbeat periodically until it exits. The returned code is what a
 // shell would report (128+signal when the command was killed).
 func runForwardingSignals(command *exec.Cmd, interval time.Duration, heartbeat func(time.Time)) (int, error) {
-	ownProcessGroup(command)
+	restoreTerminal := ownProcessGroup(command)
+	defer restoreTerminal()
 	// A process left behind by the command can hold its stderr pipe open;
 	// stop waiting for that output shortly after the command itself exits.
 	command.WaitDelay = processOutputGrace

@@ -7,7 +7,7 @@ import (
 	"os/exec"
 )
 
-func ownProcessGroup(*exec.Cmd) {}
+func ownProcessGroup(*exec.Cmd) func() { return func() {} }
 
 // signalProcessTree stops the command. Windows cannot deliver INT/TERM to
 // another console process, so cancellation ends it outright.
