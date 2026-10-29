@@ -54,7 +54,8 @@ type opsCollectSource struct {
 	// SSH is the command that reaches a remote host, ending with the host
 	// alias; the remote command is appended as one argument.
 	SSH []string `json:"ssh"`
-	// JobID, HostID and Units describe a snapraid source.
+	// JobID, HostID and Units describe a snapraid source; JobID and HostID
+	// also name a github-zip source's aggregate job and its host.
 	JobID  string   `json:"job_id"`
 	HostID string   `json:"host_id"`
 	Units  []string `json:"units"`
@@ -241,6 +242,10 @@ func (s opsCollectSource) validate() error {
 		if s.StateDir == "" {
 			return fmt.Errorf("%s needs state_dir", s.Type)
 		}
+	case "github-zip":
+		if s.StateDir == "" || s.JobID == "" || s.HostID == "" {
+			return errors.New("github-zip needs state_dir, job_id and host_id")
+		}
 	case "snapraid":
 		if len(s.SSH) == 0 || s.JobID == "" || s.HostID == "" || len(s.Units) == 0 {
 			return errors.New("snapraid needs ssh, job_id, host_id and units")
@@ -283,6 +288,8 @@ func collectOpsEvidence(ctx context.Context, config opsCollectConfig, env opsCol
 			collected, err = collectBorgRunner(source, env)
 		case "thin-config":
 			collected, err = collectThinConfig(source, env)
+		case "github-zip":
+			collected, err = collectGitHubZip(source, env)
 		case "snapraid":
 			collected, err = collectSnapraid(ctx, source, env)
 		case "proxmox-vzdump":

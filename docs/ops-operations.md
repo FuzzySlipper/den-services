@@ -100,6 +100,7 @@ is shown as such and never as healthy.
 | den-k8, den-win11 | `den-k8-config`, `den-win11-config` | Configuration only; no whole-machine backup |
 | den-prox, den-prox-mini | `den-prox-config`, `den-prox-mini-config` | Host configuration only |
 | Guests on den-prox-mini | `den-prox-mini-vzdump-{100,103,104,105,106,107}` | `gate-deb` (VM 102) and `unifi` (CT 101) are in no backup job and show as *not configured*. vzdump archives are never verified or restore-tested |
+| GitHub (FuzzySlipper) | `github-archives`, `github-fuzzyslipper-*` (8 repositories) | Default-branch source ZIPs only: no Git history, local uncommitted work, submodule repositories, and LFS payloads only if GitHub includes them. The ZIP CRC check is not a restore |
 | Thin config NAS copy | `host-configs-nas-copy` | — |
 | Ops itself (CT106) | `ops-sqlite-export`, `den-prox-mini-vzdump-106` | Whole-CT restore not tested |
 
