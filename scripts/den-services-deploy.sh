@@ -720,6 +720,13 @@ cat > "${stage_dir}/build-info.json" <<INFO
 INFO
 
 echo "Installing ${service} ${commit}"
+# Services run as the den-go@ unit's user, so a first install (run as root by
+# scripts/deploy.sh) creates the service tree owned by that user, not root.
+service_owner=()
+if [[ "${EUID}" -eq 0 ]]; then
+  service_owner=(-o "${DEN_SERVICE_USER:-agent}" -g "${DEN_SERVICE_GROUP:-agents}")
+  [[ -d "${service_root}" ]] || install -d -m 0755 "${service_owner[@]}" "${service_root}"
+fi
 if [[ ! -d "${service_root}" ]]; then
   echo "${service_root} does not exist; create it owned by agent:agents before deploying ${service}" >&2
   exit 1
@@ -729,7 +736,7 @@ if [[ ! -w "${service_root}" ]]; then
   exit 1
 fi
 
-install -d -m 0755 \
+install -d -m 0755 "${service_owner[@]}" \
   "${service_root}/bin" \
   "${service_root}/releases" \
   "${service_root}/config" \

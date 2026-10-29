@@ -29,6 +29,13 @@ registered service. The host checkout cannot fetch from GitHub, so do not run
 `git pull` there. crew-review runs this script after a `looks_good` verdict on a
 den-services task, so a reviewed change normally deploys itself.
 
+A new service in `deployment/services.yaml` is skipped until its unit is
+enabled. Before its first deploy, run
+`sudo systemctl enable den-go@<service>.service` on CT106 and add
+`/etc/den-services/<service>.env` from the service's env example. The deploy
+then creates `/data/services/<service>` and its subdirectories owned by
+`agent:agents`, the user the unit runs as, and installs the example config.
+
 Verification included all service health/version checks, matching database
 counts, MCP reads, an artifact upload/read/delete, browser task navigation,
 and isolated PostgreSQL recovery from the first full LXC backup.
