@@ -85,6 +85,10 @@ func (s *Service) ReportTelemetry(ctx context.Context, id string, request Teleme
 		if probe.SampledAt != nil && probe.SampledAt.Before(now) {
 			sampled = *probe.SampledAt
 		}
+		if host.SampledAt != nil && sampled.Before(*host.SampledAt) {
+			// Older than what is shown: never replace newer readings with it.
+			return tx.PutHost(host)
+		}
 		host.Telemetry, host.Error, host.ReceivedAt, host.SampledAt = request.Telemetry, "", &now, &sampled
 		if err := tx.PutHost(host); err != nil {
 			return err
@@ -93,13 +97,16 @@ func (s *Service) ReportTelemetry(ctx context.Context, id string, request Teleme
 		if err != nil {
 			return err
 		}
+		// Derived resource dates are the sample's time, not the receipt's,
+		// and an older sample never overrides a newer observation.
 		for _, resource := range found {
 			changed := false
-			if present, ok := probe.Paths[resource.ProbedPath()]; ok {
-				resource.PathPresent, resource.PathCheckedAt, changed = &present, &now, true
+			present, probed := probe.Paths[resource.ProbedPath()]
+			if probed && !after(resource.PathCheckedAt, sampled) {
+				resource.PathPresent, resource.PathCheckedAt, changed = &present, &sampled, true
 			}
-			if resource.Match != "" && probe.matches(resource.Match) {
-				resource.ObservedActivityAt, changed = &now, true
+			if resource.Match != "" && probe.matches(resource.Match) && !after(resource.ObservedActivityAt, sampled) {
+				resource.ObservedActivityAt, changed = &sampled, true
 			}
 			if changed {
 				if err := tx.PutResource(resource); err != nil {
@@ -110,6 +117,9 @@ func (s *Service) ReportTelemetry(ctx context.Context, id string, request Teleme
 		return nil
 	})
 }
+
+// after reports whether at is set and later than than.
+func after(at *time.Time, than time.Time) bool { return at != nil && at.After(than) }
 
 // ReportApps records one round of native-queue and health probes. A running
 // ComfyUI queue is observed activity for the resources it names.
@@ -131,6 +141,21 @@ func (s *Service) ReportApps(ctx context.Context, id string, request AppsRequest
 		if err != nil {
 			return err
 		}
+		// An app can only vouch for resources on its own machine; a config
+		// typo must not timestamp another host's directory entries.
+		owned := map[string]*Resource{}
+		for _, app := range request.Apps {
+			for _, key := range app.Resources {
+				resource, err := tx.Resource(key)
+				if err != nil {
+					return err
+				}
+				if resource == nil || resource.Host != id {
+					return validationFailed("app %s names resource %q, which does not belong to %s", app.Name, key, id)
+				}
+				owned[key] = resource
+			}
+		}
 		host.Apps, host.AppsCheckedAt, host.UpdatedAt = request.Apps, &now, now
 		if err := tx.PutHost(host); err != nil {
 			return err
@@ -140,15 +165,10 @@ func (s *Service) ReportApps(ctx context.Context, id string, request AppsRequest
 				continue
 			}
 			for _, key := range app.Resources {
-				resource, err := tx.Resource(key)
-				if err != nil {
+				resource := owned[key]
+				resource.ObservedActivityAt = &now
+				if err := tx.PutResource(resource); err != nil {
 					return err
-				}
-				if resource != nil {
-					resource.ObservedActivityAt = &now
-					if err := tx.PutResource(resource); err != nil {
-						return err
-					}
 				}
 			}
 		}

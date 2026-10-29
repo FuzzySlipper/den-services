@@ -233,13 +233,33 @@ func TestTelemetryUpdatesPathsActivityAndStatus(t *testing.T) {
 		t.Fatalf("stale host = %+v", host)
 	}
 
-	// An old snapshot pushed again stays stale.
+	// An old snapshot pushed again stays stale, and the directory keeps the
+	// sample's time rather than the receipt's.
+	before, _ := service.Resource(ctx, "m5-comfy")
 	if err := service.ReportTelemetry(ctx, "den-m5", TelemetryRequest{Telemetry: json.RawMessage(snapshot)}); err != nil {
 		t.Fatal(err)
 	}
 	state, _ = service.State(ctx, 10)
 	if host := state.Hosts[0]; !host.Stale {
 		t.Fatalf("re-pushed old snapshot looks fresh: %+v", host)
+	}
+	replayed, _ := service.Resource(ctx, "m5-comfy")
+	if !replayed.PathCheckedAt.Equal(*before.PathCheckedAt) || !replayed.ObservedActivityAt.Equal(*before.ObservedActivityAt) ||
+		replayed.PathCheckedAt.After(clock.now.Add(-time.Minute)) {
+		t.Fatalf("replay refreshed resource dates: before %+v after %+v", before, replayed)
+	}
+
+	// A snapshot older than the one shown changes neither the host nor the
+	// newer path observation.
+	older := strings.Replace(snapshot, `"/home/agent/comfy": true`, `"/home/agent/comfy": false`, 1)
+	older = strings.Replace(older, jsonNumber(clock.now.Add(-2*time.Minute-5*time.Second)), jsonNumber(clock.now.Add(-10*time.Minute)), 1)
+	if err := service.ReportTelemetry(ctx, "den-m5", TelemetryRequest{Telemetry: json.RawMessage(older)}); err != nil {
+		t.Fatal(err)
+	}
+	kept, _ := service.Resource(ctx, "m5-comfy")
+	state, _ = service.State(ctx, 10)
+	if !*kept.PathPresent || !state.Hosts[0].SampledAt.Equal(*before.PathCheckedAt) {
+		t.Fatalf("older snapshot overwrote newer data: %+v host %+v", kept, state.Hosts[0])
 	}
 	err = service.ReportTelemetry(ctx, "den-m5", TelemetryRequest{})
 	wantCode(t, err, "validation_failed")
@@ -263,6 +283,12 @@ func TestAppsMarkObservedAndQueueStatus(t *testing.T) {
 	resource, _ := service.Resource(ctx, "m5-comfy")
 	if resource.ObservedActivityAt != nil {
 		t.Fatal("an idle queue is not observed activity")
+	}
+	// An app naming another host's resource is refused and changes nothing.
+	foreign := AppsRequest{Apps: []App{{Name: "ComfyUI", Kind: "comfy", Resources: []string{"nimo-models"}, Online: true, Running: ptr(1), Queued: ptr(0)}}}
+	wantCode(t, service.ReportApps(ctx, "den-m5", foreign), "validation_failed")
+	if nimo, _ := service.Resource(ctx, "nimo-models"); nimo.ObservedActivityAt != nil {
+		t.Fatalf("foreign resource observed: %+v", nimo)
 	}
 	apps.Apps[0].Running = ptr(1)
 	if err := service.ReportApps(ctx, "den-m5", apps); err != nil {

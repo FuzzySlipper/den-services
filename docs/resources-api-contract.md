@@ -215,7 +215,7 @@ is returned unchanged.
 |---|---|
 | `PUT /v1/resources/hosts/{id}` | `{"name","role","access","note","position"}`. Registers or updates a host, and keeps its telemetry |
 | `POST /v1/resources/hosts/{id}/telemetry` | `{"telemetry": {…}}` or `{"error": "…"}`. A snapshot also updates `path_present` and observed activity for that host's resources |
-| `POST /v1/resources/hosts/{id}/apps` | `{"apps": [App without checked_at/stale]}`. Running comfy apps mark their `resources` as observed |
+| `POST /v1/resources/hosts/{id}/apps` | `{"apps": [App without checked_at/stale]}`. Each named resource must belong to this host, or the report is refused. Running comfy apps mark their `resources` as observed |
 | `PUT /v1/resources/settings` | `{"poll_seconds": 20}`. Lets the collector publish its cadence for display |
 
 Telemetry is checked before it is saved:
@@ -224,4 +224,9 @@ Telemetry is checked before it is saved:
 
 A malformed snapshot is rejected and does not replace the last good one.
 `sampled_at` is clamped to the receive time, so an old snapshot that is
-pushed again stays stale.
+pushed again stays stale. Rules for older snapshots:
+- A snapshot older than the host's current one changes nothing except
+  `attempted_at`.
+- `path_checked_at` and `observed_activity_at` take the sample's time, not
+  the receive time.
+- An older sample never replaces a newer observation.
