@@ -1,5 +1,5 @@
 {
-  "revision": "mcp-catalog-v6",
+  "revision": "mcp-catalog-v7",
   "tools": [
     {
       "name": "add_agent_guidance_entry",
@@ -2264,85 +2264,6 @@
       }
     },
     {
-      "name": "get_user_notifications",
-      "description": "Get the canonical user notification feed. Returns notifications across projects, newest first, with optional filters for project, task, sender, metadata type, urgency, and read state. Each notification includes id, project_id, task_id, sender, content, metadata, urgency, is_read, and created_at. Concise by default with content previews.",
-      "backend": "messages",
-      "operation": "get_user_notifications",
-      "workflow_tier": "operator",
-      "risk": "read",
-      "input_schema": {
-        "properties": {
-          "is_read": {
-            "default": null,
-            "description": "Filter by read state. Must provide read_for_agent when set.",
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "limit": {
-            "default": 20,
-            "description": "Max results. Default 20, max 100.",
-            "type": "integer"
-          },
-          "metadata_type": {
-            "default": null,
-            "description": "Filter by metadata type, e.g. 'agent_work_complete'.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "offset": {
-            "default": 0,
-            "description": "Offset for pagination. Default 0.",
-            "type": "integer"
-          },
-          "project_id": {
-            "default": null,
-            "description": "Filter to a specific project/space ID. Omit for cross-project listing.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "read_for_agent": {
-            "default": null,
-            "description": "Agent identity for read-state derivation. Required when is_read is set.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "sender": {
-            "default": null,
-            "description": "Filter by sender/agent identity.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "task_id": {
-            "default": null,
-            "description": "Filter to a specific task ID.",
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "urgency": {
-            "default": null,
-            "description": "Filter by urgency: low, normal, or high.",
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "type": "object"
-      }
-    },
-    {
       "name": "list_agent_guidance_entries",
       "description": "List first-class agent guidance entries for a project or space. Use include_global to also show inherited _global entries.",
       "backend": "guidance",
@@ -2769,57 +2690,6 @@
       }
     },
     {
-      "name": "mark_notifications_read",
-      "description": "Mark explicit user notification IDs as read for an agent identity. For scoped operations, use mark_project_notifications_read or mark_task_notifications_read.",
-      "backend": "messages",
-      "operation": "mark_notifications_read",
-      "workflow_tier": "operator",
-      "risk": "write",
-      "input_schema": {
-        "properties": {
-          "agent": {
-            "description": "Agent identity to mark read for.",
-            "type": "string"
-          },
-          "notification_ids": {
-            "description": "Comma-separated notification IDs to mark as read.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "agent",
-          "notification_ids"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "mark_project_notifications_read",
-      "description": "Mark all notifications in one project as read for an agent identity.",
-      "backend": "messages",
-      "operation": "mark_project_notifications_read",
-      "workflow_tier": "operator",
-      "risk": "write",
-      "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "agent": {
-            "description": "Agent identity to mark read for.",
-            "type": "string"
-          },
-          "project_id": {
-            "description": "Project whose notifications should be marked read.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "agent",
-          "project_id"
-        ],
-        "type": "object"
-      }
-    },
-    {
       "name": "mark_read",
       "description": "Mark messages as read for an agent.",
       "backend": "messages",
@@ -2840,32 +2710,6 @@
         "required": [
           "agent",
           "message_ids"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "mark_task_notifications_read",
-      "description": "Mark all notifications on one canonical task as read for an agent identity. Project scope is derived from the task.",
-      "backend": "messages",
-      "operation": "mark_task_notifications_read",
-      "workflow_tier": "operator",
-      "risk": "write",
-      "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "agent": {
-            "description": "Agent identity to mark read for.",
-            "type": "string"
-          },
-          "task_id": {
-            "description": "Canonical task whose notifications should be marked read.",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "agent",
-          "task_id"
         ],
         "type": "object"
       }
@@ -3603,56 +3447,6 @@
             "description": "Reply to an existing message (forms a thread).",
             "type": [
               "integer",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "project_id",
-          "sender",
-          "content"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "send_user_notification",
-      "description": "Send a user-facing notification message in a project. Use this when you have noteworthy information for the user that should not require stopping the run or waiting for a final response. Examples: server needs redeployment, a long-running task completed, a blocking issue needs user decision. Notifications appear prominently in the Den Desktop Messages tab.Prefer this over send_message when the message is specifically for the user rather than general task tracking.",
-      "backend": "messages",
-      "operation": "send_user_notification",
-      "workflow_tier": "operator",
-      "risk": "write",
-      "input_schema": {
-        "properties": {
-          "content": {
-            "description": "Notification body (markdown). Keep it concise and actionable.",
-            "type": "string"
-          },
-          "metadata": {
-            "default": null,
-            "description": "Optional JSON metadata object or JSON-encoded string."
-          },
-          "project_id": {
-            "description": "Project ID.",
-            "type": "string"
-          },
-          "sender": {
-            "description": "Your agent identity, e.g. 'pi' or another manual agent identity.",
-            "type": "string"
-          },
-          "task_id": {
-            "default": null,
-            "description": "Attach to a task by ID.",
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "urgency": {
-            "default": null,
-            "description": "Optional urgency hint: low, normal, or high. Defaults to normal.",
-            "type": [
-              "string",
               "null"
             ]
           }

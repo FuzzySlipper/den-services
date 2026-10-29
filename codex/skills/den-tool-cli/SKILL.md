@@ -1,6 +1,6 @@
 ---
 name: den-tool-cli
-description: Discover and invoke Den operations through the globally installed `den-tool` CLI. Use when an agent needs Den tasks, reviews, messages, documents, Knowledge, Board, backup status (Ops), handoffs, guidance, notifications, or long-tail MCP operations from a shell; when a Den operation is missing from ordinary MCP discovery; or when diagnosing whether Den tooling is installed and reachable. Prefer an already available native Den MCP tool for the same operation, and use this CLI as the discoverable shell and fallback surface.
+description: Discover and invoke Den operations through the globally installed `den-tool` CLI. Use when an agent needs Den tasks, reviews, messages, documents, Knowledge, Board, backup status (Ops), handoffs, guidance, or long-tail MCP operations from a shell; when a Den operation is missing from ordinary MCP discovery; or when diagnosing whether Den tooling is installed and reachable. Prefer an already available native Den MCP tool for the same operation, and use this CLI as the discoverable shell and fallback surface.
 ---
 
 # Den Tool CLI
@@ -25,7 +25,7 @@ agent's ordinary MCP projection. It does not access service databases directly.
 
    ```sh
    den-tool search review context
-   den-tool search notification --json
+   den-tool search handoff --json
    ```
 
 3. Describe the exact catalog ID before first use. Check its risk, required
@@ -52,8 +52,8 @@ Flags accept schema spelling or kebab case. Arrays and objects are JSON values.
 For nested, generated, or otherwise complex input, pass one complete object:
 
 ```sh
-den-tool den send_user_notification --args-json \
-  '{"project_id":"den-services","sender":"codex","content":"CI duration alert","urgency":"high"}'
+den-tool den send_message --args-json \
+  '{"project_id":"den-services","task_id":10442,"sender":"codex","content":"CI duration alert"}'
 ```
 
 Do not mix `--args-json` with field flags. The CLI validates unknown fields,

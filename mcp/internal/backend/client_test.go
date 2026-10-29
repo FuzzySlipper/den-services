@@ -772,58 +772,6 @@ func TestClientCallsMessagesRESTGetMessagesWrapsListStructuredContent(t *testing
 	}
 }
 
-func TestClientCallsMessagesRESTGetUserNotificationsQuery(t *testing.T) {
-	var sawRawQuery string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/v1/user-notifications" {
-			t.Fatalf("request = %s %s, want GET /v1/user-notifications", r.Method, r.URL.Path)
-		}
-		sawRawQuery = r.URL.RawQuery
-		_, _ = w.Write([]byte(`[{"id":7001,"project_id":"den-services","content_preview":"wake up","created_at":"2026-07-05T08:00:00Z"}]`))
-	}))
-	defer server.Close()
-
-	isRead := false
-	verbose := true
-	arguments, err := json.Marshal(map[string]any{
-		"project_id":     "den-services",
-		"task_id":        3726,
-		"sender":         "codex",
-		"metadata_type":  "review",
-		"urgency":        "normal",
-		"read_for_agent": "planner",
-		"is_read":        isRead,
-		"limit":          10,
-		"offset":         5,
-		"verbose":        verbose,
-	})
-	if err != nil {
-		t.Fatalf("Marshal() error = %v", err)
-	}
-	client := NewClient(server.Client())
-	result, failure, err := client.Call(context.Background(), testBackend("messages", server.URL), messagesRouteForTest("get_user_notifications", http.MethodGet, "/v1/user-notifications"), ToolCall{
-		ToolName:  "get_user_notifications",
-		Operation: "get_user_notifications",
-		RequestID: json.RawMessage(`1`),
-		Arguments: arguments,
-	})
-	if err != nil {
-		t.Fatalf("Call() error = %v", err)
-	}
-	if failure != nil {
-		t.Fatalf("Call() failure = %#v", failure)
-	}
-	for _, want := range []string{"project_id=den-services", "task_id=3726", "sender=codex", "metadata_type=review", "urgency=normal", "read_for_agent=planner", "is_read=false", "limit=10", "offset=5", "verbose=true"} {
-		if !strings.Contains(sawRawQuery, want) {
-			t.Fatalf("RawQuery = %q, missing %s", sawRawQuery, want)
-		}
-	}
-	items := structuredItemsForTest(t, result)
-	if len(items) != 1 || items[0]["id"] != float64(7001) {
-		t.Fatalf("structured notification items = %#v", items)
-	}
-}
-
 func TestClientCallsMessagesRESTRenderWorkerPromptPath(t *testing.T) {
 	var sawPath string
 	var sawRawQuery string

@@ -814,7 +814,7 @@ def assert_ergonomic_tool_schemas(tools: list[dict[str, Any]], label: str) -> No
     for name in ("get_details",):
         if name not in by_name:
             raise SmokeError(f"{label} tools/list missing {name}")
-    for name in ("mark_project_notifications_read", "mark_task_notifications_read", "ensure_document_discussion"):
+    for name in ("ensure_document_discussion",):
         if name in by_name:
             raise SmokeError(f"{label} tools/list unexpectedly exposes long-tail tool {name}")
 

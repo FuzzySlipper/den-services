@@ -26,8 +26,6 @@ type messagesToolArguments struct {
 	Metadata                json.RawMessage `json:"metadata"`
 	Agent                   string          `json:"agent"`
 	MessageIDs              json.RawMessage `json:"message_ids"`
-	NotificationIDs         json.RawMessage `json:"notification_ids"`
-	Urgency                 string          `json:"urgency"`
 	UnreadFor               string          `json:"unread_for"`
 	Cursor                  *int64          `json:"cursor"`
 	Limit                   *int            `json:"limit"`
@@ -38,10 +36,6 @@ type messagesToolArguments struct {
 	Role                    string          `json:"role"`
 	RunID                   string          `json:"run_id"`
 	CompletionReportingMode string          `json:"completion_reporting_mode"`
-	MetadataType            string          `json:"metadata_type"`
-	ReadForAgent            string          `json:"read_for_agent"`
-	IsRead                  *bool           `json:"is_read"`
-	Offset                  *int            `json:"offset"`
 }
 
 type sendMessageBody struct {
@@ -56,23 +50,6 @@ type sendMessageBody struct {
 type markReadBody struct {
 	Agent      string  `json:"agent"`
 	MessageIDs []int64 `json:"message_ids,omitempty"`
-}
-
-type sendNotificationBody struct {
-	TaskID   *int64         `json:"task_id,omitempty"`
-	Sender   string         `json:"sender"`
-	Content  string         `json:"content"`
-	Metadata map[string]any `json:"metadata,omitempty"`
-	Urgency  string         `json:"urgency,omitempty"`
-}
-
-type markNotificationsReadBody struct {
-	Agent           string  `json:"agent"`
-	NotificationIDs []int64 `json:"notification_ids,omitempty"`
-}
-
-type markScopedNotificationsReadBody struct {
-	Agent string `json:"agent"`
 }
 
 func (c *Client) callMessagesREST(ctx context.Context, backend config.BackendConfig, route Route, call ToolCall) (Result, *Failure, error) {
@@ -157,28 +134,7 @@ func messagesRESTRequestBody(operation string, arguments messagesToolArguments) 
 			return nil, err
 		}
 		return json.Marshal(markReadBody{Agent: strings.TrimSpace(arguments.Agent), MessageIDs: messageIDs})
-	case "send_user_notification":
-		return json.Marshal(sendNotificationBody{
-			TaskID:   arguments.TaskID,
-			Sender:   strings.TrimSpace(arguments.Sender),
-			Content:  arguments.Content,
-			Metadata: metadata,
-			Urgency:  strings.TrimSpace(arguments.Urgency),
-		})
-	case "mark_notifications_read":
-		notificationIDs, err := parseInt64List(arguments.NotificationIDs)
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(markNotificationsReadBody{
-			Agent:           strings.TrimSpace(arguments.Agent),
-			NotificationIDs: notificationIDs,
-		})
-	case "mark_project_notifications_read":
-		return json.Marshal(markScopedNotificationsReadBody{Agent: strings.TrimSpace(arguments.Agent)})
-	case "mark_task_notifications_read":
-		return json.Marshal(markScopedNotificationsReadBody{Agent: strings.TrimSpace(arguments.Agent)})
-	case "get_messages", "wait_for_messages", "get_thread", "get_user_notifications", "get_latest_task_packet", "render_worker_prompt", "get_latest_worker_completion":
+	case "get_messages", "wait_for_messages", "get_thread", "get_latest_task_packet", "render_worker_prompt", "get_latest_worker_completion":
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("%w: messages operation %s", ErrUnsupportedAdapter, operation)
@@ -208,17 +164,6 @@ func messagesRESTURL(baseURL string, route Route, arguments messagesToolArgument
 		setInt64Query(query, "cursor", arguments.Cursor)
 		setIntQuery(query, "limit", arguments.Limit)
 		setIntQuery(query, "timeout_ms", arguments.TimeoutMS)
-	case "get_user_notifications":
-		setStringValueQuery(query, "project_id", arguments.ProjectID)
-		setInt64Query(query, "task_id", arguments.TaskID)
-		setStringValueQuery(query, "sender", arguments.Sender)
-		setStringValueQuery(query, "metadata_type", arguments.MetadataType)
-		setStringValueQuery(query, "urgency", arguments.Urgency)
-		setStringValueQuery(query, "read_for_agent", arguments.ReadForAgent)
-		setBoolQuery(query, "is_read", arguments.IsRead)
-		setIntQuery(query, "limit", arguments.Limit)
-		setIntQuery(query, "offset", arguments.Offset)
-		setBoolQuery(query, "verbose", arguments.Verbose)
 	case "get_latest_task_packet":
 		setStringValueQuery(query, "packet_type", arguments.PacketType)
 		setStringValueQuery(query, "role", arguments.Role)

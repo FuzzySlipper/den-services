@@ -412,15 +412,6 @@ func modernizeInputSchema(name string, schema Schema) Schema {
 		object["required"] = filtered
 	}
 	switch name {
-	case "mark_notifications_read":
-		delete(properties, "mark_all")
-		delete(properties, "scope_project_id")
-		delete(properties, "scope_task_id")
-		properties["notification_ids"] = map[string]any{
-			"type":        "string",
-			"description": "Comma-separated notification IDs to mark as read.",
-		}
-		changed = true
 	case "get_document_discussion":
 		delete(properties, "create_if_missing")
 		changed = true
@@ -436,9 +427,6 @@ func modernizeInputSchema(name string, schema Schema) Schema {
 			continue
 		}
 		filtered = append(filtered, value)
-	}
-	if name == "mark_notifications_read" && !containsRequired(filtered, "notification_ids") {
-		filtered = append(filtered, "notification_ids")
 	}
 	if len(filtered) == 0 {
 		delete(object, "required")
@@ -479,8 +467,6 @@ func modernizeDescription(name, description string) string {
 		return "Create or idempotently reuse a review request for the current checkout and task context. The reviewer reads the current repository state when the request is handled."
 	case "request_review":
 		return "Direct-review fallback only: create or idempotently reuse a Den review round without enqueueing or routing a managed reviewer. Ordinary agent review submissions must use submit_task_for_review."
-	case "mark_notifications_read":
-		return "Mark explicit user notification IDs as read for an agent identity. For scoped operations, use mark_project_notifications_read or mark_task_notifications_read."
 	case "get_document_discussion":
 		return "Read discussion threads and comments for a document without creating state. Use ensure_document_discussion only when a default thread must exist."
 	case "den_knowledge_store":
@@ -522,15 +508,6 @@ func knowledgeStoreMetadataProperties() map[string]any {
 		"last_reviewed_at": NullableStringSchema("RFC 3339 timestamp or YYYY-MM-DD date of the last verification. Omit to keep the current value; a reviewed entry that has none is stamped with the current time. Pass a new date when you re-verify the entry."),
 		"review_due_at":    NullableStringSchema("RFC 3339 timestamp or YYYY-MM-DD date when the entry should next be re-verified. Omit to keep the current value."),
 	}
-}
-
-func containsRequired(required []any, field string) bool {
-	for _, value := range required {
-		if value == field {
-			return true
-		}
-	}
-	return false
 }
 
 func taskContextTools() []ToolDefinition {
@@ -731,26 +708,6 @@ func contractErgonomicsTools() []ToolDefinition {
 			}, "detail_ref"),
 		},
 		{
-			Name:        "mark_project_notifications_read",
-			Description: "Mark all notifications in one project as read for an agent identity.",
-			Backend:     "messages",
-			Operation:   "mark_project_notifications_read",
-			InputSchema: ObjectSchema(map[string]Schema{
-				"agent":      StringSchema("Agent identity to mark read for."),
-				"project_id": StringSchema("Project whose notifications should be marked read."),
-			}, "agent", "project_id"),
-		},
-		{
-			Name:        "mark_task_notifications_read",
-			Description: "Mark all notifications on one canonical task as read for an agent identity. Project scope is derived from the task.",
-			Backend:     "messages",
-			Operation:   "mark_task_notifications_read",
-			InputSchema: ObjectSchema(map[string]Schema{
-				"agent":   StringSchema("Agent identity to mark read for."),
-				"task_id": IntegerSchema("Canonical task whose notifications should be marked read."),
-			}, "agent", "task_id"),
-		},
-		{
 			Name:        "ensure_document_discussion",
 			Description: "Ensure a document has a default discussion thread and return it. Use get_document_discussion for read-only lookup.",
 			Backend:     "documents",
@@ -806,7 +763,6 @@ var longTailToolNames = map[string]struct{}{
 	"get_project":                        {},
 	"get_space":                          {},
 	"get_task_workflow_summary":          {},
-	"get_user_notifications":             {},
 	"list_agent_guidance_entries":        {},
 	"list_discussion_threads":            {},
 	"list_documents":                     {},
@@ -814,10 +770,7 @@ var longTailToolNames = map[string]struct{}{
 	"list_review_pipeline":               {},
 	"list_review_rounds":                 {},
 	"list_spaces":                        {},
-	"mark_notifications_read":            {},
-	"mark_project_notifications_read":    {},
 	"mark_read":                          {},
-	"mark_task_notifications_read":       {},
 	"post_review_findings":               {},
 	"purge_board_comment":                {},
 	"purge_board_post":                   {},
@@ -834,7 +787,15 @@ var longTailToolNames = map[string]struct{}{
 	"update_space_visibility":            {},
 }
 
+// notificationsRetiredMessage tombstones the user-notification tools: nothing
+// read those notifications, so Den Web and the facade no longer offer them.
+const notificationsRetiredMessage = "Den user notifications are retired because nothing read them. Use a task-thread message (send_message) to reach the user or another agent."
+
 var retiredToolPolicies = map[string]retiredToolPolicy{
+	"send_user_notification":  {message: notificationsRetiredMessage},
+	"get_user_notifications":  {message: notificationsRetiredMessage},
+	"mark_notifications_read": {message: notificationsRetiredMessage},
+
 	"send_agent_stream_message": {message: "send_agent_stream_message is retired from the MCP facade during the Core-off purge. Use task-thread messages or successor delivery/notification paths for supported wakes."},
 	"get_agent_stream_entry":    {message: "agent-stream Core readback is retired from the default MCP facade pending a successor observation surface."},
 	"list_agent_stream":         {message: "agent-stream Core readback is retired from the default MCP facade pending a successor observation surface."},

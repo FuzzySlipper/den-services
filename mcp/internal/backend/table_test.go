@@ -485,11 +485,6 @@ func messagesRoute(operation string) bool {
 		"wait_for_messages",
 		"get_thread",
 		"mark_read",
-		"send_user_notification",
-		"get_user_notifications",
-		"mark_notifications_read",
-		"mark_project_notifications_read",
-		"mark_task_notifications_read",
 		"get_latest_task_packet",
 		"render_worker_prompt":
 		return true

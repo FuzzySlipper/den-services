@@ -19,8 +19,8 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 38 {
-		t.Fatalf("tool count = %d, want 38", len(names))
+	if len(names) != 37 {
+		t.Fatalf("tool count = %d, want 37", len(names))
 	}
 	for _, name := range []string{
 		"comment_on_document",
@@ -53,7 +53,6 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		"respond_to_review_finding",
 		"search_documents",
 		"send_message",
-		"send_user_notification",
 		"set_handoff",
 		"submit_task_for_review",
 		"store_document",
@@ -101,7 +100,6 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		"get_project",
 		"get_space",
 		"get_task_workflow_summary",
-		"get_user_notifications",
 		"list_agent_guidance_entries",
 		"list_discussion_threads",
 		"list_documents",
@@ -109,10 +107,7 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		"list_review_pipeline",
 		"list_review_rounds",
 		"list_spaces",
-		"mark_notifications_read",
-		"mark_project_notifications_read",
 		"mark_read",
-		"mark_task_notifications_read",
 		"post_review_findings",
 		"purge_board_comment",
 		"purge_board_post",
@@ -143,8 +138,8 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 			t.Fatalf("%s discovery class = %q", name, tool.DiscoveryClass)
 		}
 	}
-	if catalog := registry.CatalogTools(); len(catalog) != 94 {
-		t.Fatalf("catalog tool count = %d, want 94", len(catalog))
+	if catalog := registry.CatalogTools(); len(catalog) != 89 {
+		t.Fatalf("catalog tool count = %d, want 89", len(catalog))
 	}
 	if len(longTailToolNames) != len(longTailNames) {
 		t.Fatalf("long-tail policy count = %d, want %d", len(longTailToolNames), len(longTailNames))
@@ -401,14 +396,14 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if err != nil {
 		t.Fatalf("ToolsForProfile(managed-runtime) error = %v", err)
 	}
-	if len(direct) != 38 {
-		t.Fatalf("direct tool count = %d, want 38", len(direct))
+	if len(direct) != 37 {
+		t.Fatalf("direct tool count = %d, want 37", len(direct))
 	}
 	if len(managed) >= len(direct) {
 		t.Fatalf("managed tool count = %d, want fewer than direct %d", len(managed), len(direct))
 	}
-	if len(managed) != 34 {
-		t.Fatalf("managed tool count = %d, want 34", len(managed))
+	if len(managed) != 33 {
+		t.Fatalf("managed tool count = %d, want 33", len(managed))
 	}
 	for _, name := range []string{"discover_github_checks", "watch_github_checks", "get_github_check_gate", "wait_for_github_checks", "await_github_checks", "request_review", "create_review_round"} {
 		if containsListedTool(managed, name) {
@@ -445,7 +440,7 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if catalog.HiddenToolCount == 0 || catalog.WorkflowTiers[WorkflowTierPrimitive] != 0 {
 		t.Fatalf("managed catalog = %#v", catalog)
 	}
-	if catalog.VisibleToolCount != 34 || catalog.HiddenToolCount != 60 {
+	if catalog.VisibleToolCount != 33 || catalog.HiddenToolCount != 56 {
 		t.Fatalf("managed catalog counts = %#v", catalog)
 	}
 	if !slices.Contains(catalog.HiddenWorkflowTiers, WorkflowTierPrimitive) {
@@ -526,8 +521,7 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 			tool.Name != "get_review_context" &&
 			tool.Name != "list_review_pipeline" &&
 			tool.Name != "finalize_review" && tool.Name != "request_campaign_review" &&
-			tool.Name != "get_details" && tool.Name != "mark_project_notifications_read" &&
-			tool.Name != "mark_task_notifications_read" && tool.Name != "ensure_document_discussion" &&
+			tool.Name != "get_details" && tool.Name != "ensure_document_discussion" &&
 			tool.Name != "record_human_acceptance_review" && tool.Name != "set_handoff" &&
 			tool.Name != "get_handoff" && tool.Name != "den_knowledge_delete" && !strings.HasSuffix(tool.Name, "_board_post") &&
 			!strings.HasSuffix(tool.Name, "_board_comment") && tool.Name != "list_board_posts" &&
@@ -677,7 +671,7 @@ func TestTaskScopedSchemasDeriveProject(t *testing.T) {
 	}
 	for _, name := range []string{
 		"get_latest_task_packet", "post_review_findings", "request_review", "request_campaign_review", "split_review_findings_to_follow_up",
-		"await_github_checks", "watch_github_checks", "get_github_check_gate", "wait_for_github_checks", "mark_task_notifications_read",
+		"await_github_checks", "watch_github_checks", "get_github_check_gate", "wait_for_github_checks",
 	} {
 		tool, err := registry.Resolve(name)
 		if err != nil {
@@ -790,4 +784,30 @@ func containsListedTool(tools []ListedTool, name string) bool {
 		}
 	}
 	return false
+}
+
+func TestDefaultRegistryRetiresUserNotificationTools(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry() error = %v", err)
+	}
+	for _, name := range []string{"send_user_notification", "get_user_notifications", "mark_notifications_read"} {
+		tool, err := registry.Resolve(name)
+		if err != nil {
+			t.Fatalf("Resolve(%s) error = %v", name, err)
+		}
+		if !tool.Hidden || !strings.Contains(tool.TombstoneMessage, "send_message") {
+			t.Fatalf("%s = hidden %v, tombstone %q; want a hidden tombstone pointing at send_message", name, tool.Hidden, tool.TombstoneMessage)
+		}
+	}
+	for _, name := range []string{"mark_project_notifications_read", "mark_task_notifications_read"} {
+		if _, err := registry.Resolve(name); err == nil {
+			t.Fatalf("%s still resolves", name)
+		}
+	}
+	for _, tool := range registry.CatalogTools() {
+		if strings.Contains(tool.Name, "notification") {
+			t.Fatalf("tools/list still offers %s", tool.Name)
+		}
+	}
 }

@@ -77,33 +77,6 @@ func TestTaskScopedCallRejectsRemovedProjectArgument(t *testing.T) {
 	}
 }
 
-func TestMarkNotificationModesHaveSinglePurposeBodies(t *testing.T) {
-	tests := []struct {
-		name      string
-		operation string
-		arguments string
-		want      string
-	}{
-		{"explicit ids", "mark_notifications_read", `{"agent":"root","notification_ids":"1,2"}`, `{"agent":"root","notification_ids":[1,2]}`},
-		{"project scope", "mark_project_notifications_read", `{"agent":"root","project_id":"den-services"}`, `{"agent":"root"}`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			arguments, err := decodeMessagesToolArguments(json.RawMessage(tt.arguments))
-			if err != nil {
-				t.Fatal(err)
-			}
-			body, err := messagesRESTRequestBody(tt.operation, arguments)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(body) != tt.want {
-				t.Fatalf("body = %s, want %s", body, tt.want)
-			}
-		})
-	}
-}
-
 func TestEnsureDocumentDiscussionIsTheOnlyCreatingRead(t *testing.T) {
 	arguments := documentsToolArguments{ProjectID: "den-services", Slug: "spec"}
 	readURL, err := documentsRESTURL("http://example.test", Route{Operation: "get_document_discussion", Path: "/v1/projects/{project_id}/documents/{slug}/discussion"}, arguments)
