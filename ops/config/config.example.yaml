@@ -1,0 +1,17 @@
+# Ops service configuration: central backup and maintenance status.
+# Copy to /data/services/ops/config/config.yaml for deployment.
+#
+# Ops keeps its own SQLite ledger on local disk. It does not use the Den
+# Postgres database or the NAS, so status stays readable when either is down.
+
+bind_addr: "127.0.0.1:8102"
+database_path: "/data/services/ops/data/ops.sqlite3"
+
+http:
+  read_header_timeout: "5s"
+
+defaults:
+  # A running job whose newest heartbeat is older than this shows as unknown.
+  heartbeat_stale_after: "15m"
+  # Runs and checks returned by list endpoints when no ?limit= is given.
+  run_list_limit: 50

@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "job_id": "den-agents-git",
+  "run_id": "20261031T090000-1000",
+  "host": "den-agents",
+  "engine": "borg",
+  "runner": "borgmatic",
+  "kind": "maintenance",
+  "started_at": "2026-10-31T16:00:00.000000+00:00",
+  "state": "success",
+  "warnings": [],
+  "target": "/mnt/storage/backup/den-agents/borg",
+  "local_run_directory": "/home/agent/.local/state/den-agents-backup/runs/20261031T090000-1000",
+  "phase": "check",
+  "exit_code": 0,
+  "verification": {
+    "kind": "repository-and-latest-archive",
+    "at": "2026-10-31T16:40:00.000000+00:00",
+    "state": "success",
+    "full_data_read": true
+  },
+  "restore_test": {
+    "schema_version": 1,
+    "job_id": "den-agents-git",
+    "kind": "restore_test",
+    "state": "success",
+    "at": "2026-10-29T04:30:10.608668+00:00",
+    "archive": "den-agents-git-2026-10-29T04-24-43",
+    "restored_to": "/home/agent/.local/state/den-agents-backup/restore-results/restore-6r30q19h",
+    "repositories_checked": [
+      "main",
+      "sub-source",
+      "worktree",
+      "shared-clone",
+      "main/submodule"
+    ],
+    "files_compared": [
+      "main/source.txt",
+      "main/staged.txt",
+      "main/untracked.env",
+      "worktree/untracked.py",
+      "lfs-storage/objects/sample"
+    ],
+    "remapped_fixture_metadata": [
+      "main/.git/config",
+      "main/.git/worktrees/worktree/gitdir",
+      "main/.git/modules/submodule/config",
+      "shared-clone/.git/config",
+      "shared-clone/.git/objects/info/alternates",
+      "worktree/.git"
+    ],
+    "scope": "isolated fixture: dirty/staged/untracked, linked worktree, submodule, alternates and LFS-store bytes"
+  },
+  "updated_at": "2026-10-31T16:45:00.000000+00:00",
+  "finished_at": "2026-10-31T16:45:00.000000+00:00"
+}

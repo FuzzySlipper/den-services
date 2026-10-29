@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "job_id": "den-agents-git",
+  "run_id": "20261028T212037-2462905",
+  "host": "den-agents",
+  "engine": "borg",
+  "runner": "borgmatic",
+  "kind": "backup",
+  "started_at": "2026-10-29T04:20:37.986760+00:00",
+  "state": "success",
+  "warnings": [],
+  "target": "/mnt/storage/backup/den-agents/borg",
+  "local_run_directory": "/home/agent/.local/state/den-agents-backup/runs/20261028T212037-2462905",
+  "phase": "create",
+  "updated_at": "2026-10-29T04:27:42.374327+00:00",
+  "directories_scanned": 303598,
+  "repository_count": 251,
+  "source_count": 184,
+  "source_notices": [
+    "Existing checkout metadata is missing: /data/worktrees/worktrees/crew-services-9687",
+    "Existing checkout metadata is missing: /data/worktrees/worktrees/rusty-engine-9686"
+  ],
+  "manifest": "/home/agent/.local/state/den-agents-backup/runs/20261028T212037-2462905/manifest.json",
+  "exit_code": 0,
+  "archive": {
+    "command_line": [
+      "/usr/bin/borg",
+      "create",
+      "--patterns-from",
+      "/tmp/borgmatic-g0z5ol4j/borgmatic/tmp20wyrs4q",
+      "--checkpoint-interval",
+      "600",
+      "--compression",
+      "zstd,1",
+      "--upload-ratelimit",
+      "40960",
+      "--one-file-system",
+      "--remote-path",
+      "/usr/local/bin/den-agents-borg",
+      "--json",
+      "ssh://target/mnt/storage/backup/den-agents/borg::den-agents-git-{utcnow:%Y-%m-%dT%H-%M-%S}"
+    ],
+    "duration": 173.247727,
+    "end": "2026-10-28T21:27:37.000000",
+    "id": "e7f64bce379d2b12d5227bffdc6ae7aa8d91ca4c82542f2ac9ea07901c3120f0",
+    "limits": {
+      "max_archive_size": 0.003253609342478897
+    },
+    "name": "den-agents-git-2026-10-29T04-24-43",
+    "start": "2026-10-28T21:24:44.000000",
+    "stats": {
+      "compressed_size": 194479790574,
+      "deduplicated_size": 132660210,
+      "nfiles": 1020550,
+      "original_size": 283373557310
+    }
+  },
+  "stats": {
+    "compressed_size": 194479790574,
+    "deduplicated_size": 132660210,
+    "nfiles": 1020550,
+    "original_size": 283373557310
+  },
+  "backup_complete": true,
+  "finished_at": "2026-10-29T04:27:42.374304+00:00"
+}
