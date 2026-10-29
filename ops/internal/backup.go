@@ -46,10 +46,14 @@ type Backup struct {
 	databasePath string
 	defaults     DefaultsConfig
 	now          func() time.Time
+	// verify is the restore test; tests replace it to simulate a failure.
+	verify func(ctx context.Context, export string, runID string) map[string]any
 }
 
 func NewBackup(store *Store, service *Service, config BackupConfig, databasePath string, defaults DefaultsConfig, now func() time.Time) *Backup {
-	return &Backup{store: store, service: service, config: config, databasePath: databasePath, defaults: defaults, now: now}
+	backup := &Backup{store: store, service: service, config: config, databasePath: databasePath, defaults: defaults, now: now}
+	backup.verify = backup.restoreTest
+	return backup
 }
 
 // Register records the backup job's expectation, so a backup that never runs
@@ -97,11 +101,16 @@ func (b *Backup) Run(ctx context.Context) (map[string]any, error) {
 			size := info.Size()
 			report["archive"] = map[string]any{"id": name, "name": name}
 			report["stats"] = map[string]any{"original_size": size}
-			report["restore_test"] = b.restoreTest(ctx, final, runID)
-			if pruned, err := b.prune(); err != nil {
-				report["warnings"] = []string{"Pruning old exports failed: " + err.Error()}
-			} else if len(pruned) > 0 {
-				report["pruned"] = pruned
+			restore := b.verify(ctx, final, runID)
+			report["restore_test"] = restore
+			// Older exports are only retired once the new one is proven
+			// restorable; otherwise they stay as the recovery copies.
+			if restore["state"] == "success" {
+				if pruned, err := b.prune(); err != nil {
+					report["warnings"] = []string{"Pruning old exports failed: " + err.Error()}
+				} else if len(pruned) > 0 {
+					report["pruned"] = pruned
+				}
 			}
 		}
 	}
@@ -145,9 +154,9 @@ func (b *Backup) export(ctx context.Context, final string) error {
 	}
 	temporary := filepath.Join(b.config.Directory, "."+filepath.Base(final)+".tmp")
 	_ = os.Remove(temporary)
-	if _, err := b.store.db.ExecContext(ctx, "vacuum into ?", temporary); err != nil {
+	if err := b.store.ExportTo(ctx, temporary); err != nil {
 		_ = os.Remove(temporary)
-		return fmt.Errorf("vacuum into %s: %w", temporary, err)
+		return err
 	}
 	if err := syncFile(temporary); err != nil {
 		_ = os.Remove(temporary)
@@ -179,20 +188,12 @@ func (b *Backup) restoreTest(ctx context.Context, export string, runID string) m
 		return failedCheck(result, err)
 	}
 	defer restored.Close()
-	var integrity string
-	if err := restored.db.QueryRowContext(ctx, "pragma integrity_check").Scan(&integrity); err != nil {
+	check, err := restored.CheckLedger(ctx)
+	if err != nil {
 		return failedCheck(result, err)
 	}
-	if integrity != "ok" {
-		return failedCheck(result, fmt.Errorf("integrity_check: %s", integrity))
-	}
-	counts := map[string]int{}
-	for _, table := range []string{"hosts", "jobs", "runs", "verifications"} {
-		var count int
-		if err := restored.db.QueryRowContext(ctx, "select count(*) from "+table).Scan(&count); err != nil {
-			return failedCheck(result, err)
-		}
-		counts[table] = count
+	if check.Integrity != "ok" {
+		return failedCheck(result, fmt.Errorf("integrity_check: %s", check.Integrity))
 	}
 	summary, err := NewService(restored, b.now, b.defaults).Summary(ctx)
 	if err != nil {
@@ -201,7 +202,7 @@ func (b *Backup) restoreTest(ctx context.Context, export string, runID string) m
 	result["state"] = "success"
 	result["checked"] = []string{
 		"integrity_check ok",
-		fmt.Sprintf("%d hosts, %d jobs, %d runs, %d verifications", counts["hosts"], counts["jobs"], counts["runs"], counts["verifications"]),
+		fmt.Sprintf("%d hosts, %d jobs, %d runs, %d verifications", check.Hosts, check.Jobs, check.Runs, check.Verifications),
 		fmt.Sprintf("summary computed from the restored copy: %d jobs, overall %s", len(summary.Jobs), summary.Status),
 	}
 	result["scope"] = "Copied the export to a scratch file, opened it as an Ops ledger, ran integrity_check and computed a status summary"

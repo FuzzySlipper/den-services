@@ -150,3 +150,34 @@ func TestBackupConfigIsOptionalAndValidated(t *testing.T) {
 		}
 	}
 }
+
+func TestBackupKeepsVerifiedExportsWhenARestoreTestFails(t *testing.T) {
+	clock := &fixedClock{now: time.Date(2026, 10, 29, 12, 30, 0, 0, time.UTC)}
+	directory := filepath.Join(t.TempDir(), "daily")
+	backup, service := newTestBackup(t, directory, clock)
+	backup.config.Keep = 1
+	if err := backup.Register(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := backup.Run(context.Background()); err != nil || result["state"] != "success" {
+		t.Fatalf("first export = %v, %v", result, err)
+	}
+	backup.verify = func(_ context.Context, export string, runID string) map[string]any {
+		return map[string]any{"kind": "restore_test", "run_id": runID, "at": clock.now, "archive": filepath.Base(export), "state": "failed", "detail": "simulated unreadable export"}
+	}
+	clock.now = clock.now.Add(24 * time.Hour)
+	result, err := backup.Run(context.Background())
+	if err != nil || result["state"] != "failed" || result["pruned"] != nil {
+		t.Fatalf("second export = %v, %v", result, err)
+	}
+	if _, err := os.Stat(filepath.Join(directory, "ops-20261029T123000Z.sqlite3")); err != nil {
+		t.Fatalf("the verified export was pruned after a failed restore test: %v", err)
+	}
+	detail, err := service.JobDetail(context.Background(), "ops-sqlite-export", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.View.Status != StatusFailed || detail.View.Runs.LastSuccess == nil || detail.View.Runs.LastSuccess.ArchiveName != "ops-20261029T123000Z.sqlite3" {
+		t.Fatalf("job = %+v", detail.View)
+	}
+}

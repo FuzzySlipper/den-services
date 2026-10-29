@@ -57,7 +57,8 @@ The Ops service backs up its own ledger. Every day at 05:30 Pacific, as job
 2. copies the snapshot to a scratch file, opens it as an Ops ledger, runs
    `integrity_check` and computes a status summary. That is the run's restore
    test, and its counts appear in the run;
-3. keeps the newest 14 snapshots;
+3. keeps the newest 14 snapshots, pruning only after the new snapshot passes
+   its restore test, so a bad export never pushes out a good one;
 4. records the run in its own ledger. A failure shows as `failed`, and a
    missed day as `overdue`.
 
