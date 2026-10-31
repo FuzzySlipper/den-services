@@ -8,7 +8,7 @@ never starts, retries or wakes anything, and a stored report is only ever read.
 - **Source:** `ops/` in den-services (Handler → Service → Store). Operating
   runbook: [ops-operations.md](ops-operations.md).
 - **Storage:** the service's own SQLite file (`database_path`, deployed at
-  `/data/services/ops/data/ops.sqlite3`). The owner chose SQLite deliberately
+  `/data/services/ops/data/ops.sqlite3`). Patch chose SQLite deliberately
   (campaign 10442). That is an exception to the usual Postgres posture: Ops has
   no Postgres or NAS dependency for startup or status reads.
 - **Service address:** `127.0.0.1:8102`. Gateway and web-edge expose the same

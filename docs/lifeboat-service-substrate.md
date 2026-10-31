@@ -25,7 +25,7 @@ pattern:
 - typed YAML config loaded by the service;
 - shared `/health`, `/version`, and JSON error envelope helpers from `shared/`
   (Den-internal services do not authenticate callers; do not add bearer-token
-  auth without an owner decision);
+  auth without a decision from Patch);
 - versioned SQL migrations in `migration/postgres/den_<domain>/`;
 - runtime services using only app-role database credentials, never migration
   credentials.

@@ -718,7 +718,7 @@ Do not create a configuration surface where individual settings are pulled from 
 
 ### No Den-internal caller authentication
 
-Den runs on a trusted home LAN. Den-internal services (owner services, Gateway, MCP, web-edge) do not authenticate callers and do not send bearer tokens to each other. Do not add bearer-token or other caller authentication between Den services without an explicit owner decision. Database roles/passwords and genuine external credentials are unaffected.
+Den runs on a trusted home LAN. Den-internal services (owner services, Gateway, MCP, web-edge) do not authenticate callers and do not send bearer tokens to each other. Do not add bearer-token or other caller authentication between Den services without an explicit decision from Patch. Database roles/passwords and genuine external credentials are unaffected.
 
 ---
 

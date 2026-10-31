@@ -11,7 +11,7 @@ Before making design or implementation changes, read the project-specific guidan
 - Den document `den-services/go-codestyle` — Go style and review rules.
 - Den document `den-services/service-registry` — current service registry.
 
-Read those documents with the Den MCP `get_document` tool (`project_id="den-services"`) or `den-tool den get_document`. If neither is available, ask the user for current copies before changing architecture.
+Read those documents with the Den MCP `get_document` tool (`project_id="den-services"`) or `den-tool den get_document`. If neither is available, ask Patch for current copies before changing architecture.
 
 ## Operating stance
 

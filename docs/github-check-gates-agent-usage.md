@@ -9,7 +9,7 @@ below are the deliberate direct/unmanaged Den path and the typed operator
 readback/recovery surface.
 
 crew-review has no gate bypass. If GitHub Actions cannot make progress (an
-outage or exhausted quota), tell the owner instead of removing required checks.
+outage or exhausted quota), tell Patch instead of removing required checks.
 
 ## Automatic review source recording
 

@@ -83,7 +83,7 @@ minutes. It reads existing evidence (Borg runner files, thin config reports,
 the SnapRAID journal, Proxmox vzdump logs) and never runs a job itself.
 
 Ops only records what machines report. Never start, rerun or "fix" a backup
-because a status says it is overdue or failed; tell the owner instead.
+because a status says it is overdue or failed; tell Patch instead.
 
 Workshop machine activity, shared installations and work check-ins live in
 the Resources service (`docs/resources-api-contract.md`; page at
@@ -105,7 +105,7 @@ advisory; "quiet" or "stale" never means a machine or install is free.
 - Treat `list`, `search`, and `describe` as local read-only discovery.
 - Read the described operation's `risk` before invocation. Read operations are
   diagnostic; write and destructive operations still require authority from
-  the user's request and the normal Den workflow.
+  Patch's request and the normal Den workflow.
 - Prefer bounded reads and follow returned detail references instead of dumping
   broad datasets into context.
 - Preserve exact task, review-round, and revision semantics. A CLI call does
