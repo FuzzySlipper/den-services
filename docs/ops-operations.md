@@ -96,7 +96,7 @@ is shown as such and never as healthy.
 | Machine | Tracked jobs | Not covered |
 |---|---|---|
 | den-agents (VM 100 on den-prox) | `den-agents-git` (Git projects to den-nas Borg), `den-agents-git-maintenance` | No Proxmox guest backup of the VM; its 2 TB `/data` disk is `backup=0`. Only Git project trees are backed up |
-| den-nas | `den-nas-config`, `den-nas-snapraid` | Media, downloads and recordings have only SnapRAID parity, which is not a backup |
+| den-nas | `den-nas-config`, `den-nas-snapraid`, `den-nas-offsite` (pictures, documents and bare Git repositories to B2 Restic), `den-nas-offsite-maintenance` | Other media, downloads and recordings have only SnapRAID parity, which is not a backup. Offsite Git is pushed history only. The offsite restore test is a sample restore; a full read of every pack is the first-Saturday `--read-data` check |
 | den-k8, den-win11 | `den-k8-config`, `den-win11-config` | Configuration only; no whole-machine backup |
 | den-prox, den-prox-mini | `den-prox-config`, `den-prox-mini-config` | Host configuration only |
 | Guests on den-prox-mini | `den-prox-mini-vzdump-{100,103,104,105,106,107}` | `gate-deb` (VM 102) and `unifi` (CT 101) are in no backup job and show as *not configured*. vzdump archives are never verified or restore-tested |

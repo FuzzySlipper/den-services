@@ -9,7 +9,7 @@
     "den-nas": {
       "display_name": "den-nas",
       "role": "NAS (SnapRAID array, backup storage)",
-      "notes": "Configuration and small app state: den-nas-config. Bulk media is protected only by SnapRAID parity (den-nas-snapraid), which is not a backup."
+      "notes": "Configuration and small app state: den-nas-config. Pictures, documents and the bare Git repositories also go offsite to B2 (den-nas-offsite). Other bulk media is protected only by SnapRAID parity (den-nas-snapraid), which is not a backup."
     },
     "den-k8": {
       "display_name": "den-k8",
@@ -209,6 +209,51 @@
       "notes": "A busy NAS maintenance lock defers the copy (warning) and keeps the previous generation; the last success shows the age of the current copy.",
       "enabled": true
     },
+    "den-nas-offsite": {
+      "host_id": "den-nas",
+      "display_name": "den-nas offsite backup (B2)",
+      "engine": "restic",
+      "kind": "backup",
+      "source": "den-nas /mnt/storage/pictures, /mnt/storage/backup/documents, every bare Git repository under /srv/git and the Git host configuration",
+      "scope": "Photos, documents and consistent captures of the bare Git repositories: pushed commits and history only (unfinished work in working clones is covered by den-agents-git)",
+      "target": "Backblaze B2 den-nas-emergency-20261030/restic (s3.us-west-004.backblazeb2.com), encrypted by Restic",
+      "schedule": {
+        "timezone": "America/Los_Angeles",
+        "times": [
+          "07:00"
+        ],
+        "weekdays": [],
+        "grace": "3h"
+      },
+      "heartbeat_stale_after": "30m",
+      "retention": "7 daily, 4 weekly, 12 monthly",
+      "recovery_pointer": "den-agents ~/server-access/backups/offsite/README.md (restore with restic from the B2 repository)",
+      "notes": "Runner: den-offsite-backup.timer 07:00 Pacific, Persistent=false, so a missed morning is not caught up. Saturday prune and check are reported on den-nas-offsite-maintenance.",
+      "enabled": true
+    },
+    "den-nas-offsite-maintenance": {
+      "host_id": "den-nas",
+      "display_name": "den-nas offsite repository maintenance",
+      "engine": "restic",
+      "kind": "maintenance",
+      "source": "Backblaze B2 den-nas-emergency-20261030/restic",
+      "scope": "Saturday, after a complete capture: restic prune (max 5% unused) and restic check; the first Saturday of a month the check also reads every stored pack (--read-data)",
+      "target": "Backblaze B2 den-nas-emergency-20261030/restic",
+      "schedule": {
+        "timezone": "America/Los_Angeles",
+        "times": [
+          "07:00"
+        ],
+        "weekdays": [
+          "sat"
+        ],
+        "grace": "3h"
+      },
+      "heartbeat_stale_after": "30m",
+      "recovery_pointer": "den-agents ~/server-access/backups/offsite/README.md",
+      "notes": "Runs inside the Saturday den-nas-offsite run and is skipped when that capture fails. Its checks are also recorded on den-nas-offsite.",
+      "enabled": true
+    },
     "den-nas-snapraid": {
       "host_id": "den-nas",
       "display_name": "den-nas SnapRAID parity",
@@ -260,6 +305,20 @@
         "snapraid-daily.service",
         "snapraid-weekly.service"
       ],
+      "ssh": [
+        "ssh",
+        "-F",
+        "/home/agent/server-access/den-nas/config",
+        "target"
+      ]
+    },
+    {
+      "type": "restic-offsite",
+      "name": "den-nas-offsite",
+      "state_dir": "/var/lib/den-offsite-backup",
+      "job_id": "den-nas-offsite",
+      "maintenance_job": "den-nas-offsite-maintenance",
+      "host_id": "den-nas",
       "ssh": [
         "ssh",
         "-F",

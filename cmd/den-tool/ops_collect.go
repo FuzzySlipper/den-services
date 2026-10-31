@@ -44,10 +44,11 @@ type opsCollectConfig struct {
 type opsCollectSource struct {
 	Type string `json:"type"`
 	Name string `json:"name"`
-	// StateDir is the local report directory of a borg-runner or thin-config job.
+	// StateDir is the report directory of a borg-runner, thin-config or
+	// github-zip job, or the NAS directory a restic-offsite source reads.
 	StateDir string `json:"state_dir"`
-	// MaintenanceJob receives a borg-runner's maintenance runs, so a weekly
-	// check never counts as an attempt of the daily backup.
+	// MaintenanceJob receives a borg-runner's or restic-offsite's maintenance
+	// runs, so a weekly check never counts as an attempt of the daily backup.
 	MaintenanceJob string `json:"maintenance_job"`
 	// NASCopyJob receives a thin-config run's NAS recovery copy and its checks.
 	NASCopyJob string `json:"nas_copy_job"`
@@ -55,7 +56,8 @@ type opsCollectSource struct {
 	// alias; the remote command is appended as one argument.
 	SSH []string `json:"ssh"`
 	// JobID, HostID and Units describe a snapraid source; JobID and HostID
-	// also name a github-zip source's aggregate job and its host.
+	// also name a github-zip source's aggregate job and a restic-offsite
+	// source's backup job, and their host.
 	JobID  string   `json:"job_id"`
 	HostID string   `json:"host_id"`
 	Units  []string `json:"units"`
@@ -254,6 +256,10 @@ func (s opsCollectSource) validate() error {
 		if len(s.SSH) == 0 || s.Node == "" || s.HostID == "" {
 			return errors.New("proxmox-vzdump needs ssh, node and host_id")
 		}
+	case "restic-offsite":
+		if len(s.SSH) == 0 || s.StateDir == "" || s.JobID == "" || s.MaintenanceJob == "" || s.HostID == "" {
+			return errors.New("restic-offsite needs ssh, state_dir, job_id, maintenance_job and host_id")
+		}
 	default:
 		return fmt.Errorf("unknown source type %q", s.Type)
 	}
@@ -294,15 +300,22 @@ func collectOpsEvidence(ctx context.Context, config opsCollectConfig, env opsCol
 			collected, err = collectSnapraid(ctx, source, env)
 		case "proxmox-vzdump":
 			collected, err = collectProxmox(ctx, source, env, config.Hosts)
+		case "restic-offsite":
+			collected, err = collectResticOffsite(ctx, source, env, config.Jobs)
 		}
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", source.label(), err))
 		}
 		for _, write := range collected {
-			// Derived registrations go before any evidence that needs them.
+			// Derived registrations go before any evidence that needs them,
+			// and replace a configured registration of the same job.
 			if strings.HasPrefix(write.Path, "/v1/ops/hosts/") || !strings.Contains(strings.TrimPrefix(write.Path, "/v1/ops/jobs/"), "/") {
 				write.Always = true
-				writes = append(writes, write)
+				if index := slices.IndexFunc(writes, func(existing opsCollectWrite) bool { return existing.Path == write.Path }); index >= 0 {
+					writes[index] = write
+				} else {
+					writes = append(writes, write)
+				}
 			} else {
 				evidence = append(evidence, write)
 			}
