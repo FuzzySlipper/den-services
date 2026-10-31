@@ -41,6 +41,30 @@ func TestDiscoveryCommandsExposeAvailabilityInJSONAndHumanSearch(t *testing.T) {
 	}
 }
 
+func TestDenToolCommandsAreAvailableWithoutARepositoryCheckout(t *testing.T) {
+	// A host like den-k8 has den-tool and the network but no checkout.
+	t.Setenv("DEN_REPO_ROOT", t.TempDir())
+	for id, want := range map[string]string{
+		"den.den_knowledge_search": "available",
+		"board.list-posts":         "available",
+		"den-services.go-test":     "unavailable",
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := runCLI([]string{"describe", id, "--json"}, &stdout, &stderr); code != 0 {
+			t.Fatalf("describe %s code = %d, stderr = %q", id, code, stderr.String())
+		}
+		var readback struct {
+			Availability string `json:"availability"`
+		}
+		if err := json.Unmarshal(stdout.Bytes(), &readback); err != nil {
+			t.Fatalf("describe %s JSON: %v", id, err)
+		}
+		if readback.Availability != want {
+			t.Errorf("describe %s availability = %q, want %q: %s", id, readback.Availability, want, stdout.String())
+		}
+	}
+}
+
 func TestToolReadbackExplainsMissingWorkingDirectoryAndExecutable(t *testing.T) {
 	missingDirectory := testTool("missing-directory", RiskRead)
 	missingDirectory.WorkingDirectory = filepath.Join(t.TempDir(), "absent")

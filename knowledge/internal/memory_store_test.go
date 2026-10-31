@@ -88,7 +88,6 @@ func (s *memoryStore) UpsertEntry(_ context.Context, entry *Entry, keep Preserve
 			Status:          entry.Status(),
 			CurationState:   entry.CurationState(),
 			Tags:            entry.Tags(),
-			Audience:        entry.Audience(),
 			Aliases:         entry.Aliases(),
 			SourceRefs:      entry.SourceRefs(),
 			AccuracyNotes:   entry.AccuracyNotes(),
@@ -116,7 +115,6 @@ func (s *memoryStore) UpsertEntry(_ context.Context, entry *Entry, keep Preserve
 		Status:          entry.Status(),
 		CurationState:   entry.CurationState(),
 		Tags:            entry.Tags(),
-		Audience:        entry.Audience(),
 		Aliases:         entry.Aliases(),
 		SourceRefs:      entry.SourceRefs(),
 		AccuracyNotes:   entry.AccuracyNotes(),
@@ -158,7 +156,7 @@ func (s *memoryStore) ListEntries(_ context.Context, query ListQuery) ([]EntrySu
 		if query.Kind != "" && entry.Kind() != query.Kind {
 			continue
 		}
-		if !hasAll(entry.Tags(), query.RequiredTags) || !hasAny(entry.Tags(), query.AnyTags) || !hasAll(entry.Audience(), query.Audience) {
+		if !hasAll(entry.Tags(), query.RequiredTags) || !hasAny(entry.Tags(), query.AnyTags) {
 			continue
 		}
 		summaries = append(summaries, EntrySummary{
@@ -170,7 +168,6 @@ func (s *memoryStore) ListEntries(_ context.Context, query ListQuery) ([]EntrySu
 			Status:         entry.Status(),
 			CurationState:  entry.CurationState(),
 			Tags:           entry.Tags(),
-			Audience:       entry.Audience(),
 			Aliases:        entry.Aliases(),
 			SourceRefs:     entry.SourceRefs(),
 			LastReviewedAt: entry.LastReviewedAt(),
@@ -193,7 +190,7 @@ func (s *memoryStore) SearchEntries(_ context.Context, query SearchQuery) ([]Sea
 		if query.Kind != "" && entry.Kind() != query.Kind {
 			continue
 		}
-		if !hasAll(entry.Tags(), query.RequiredTags) || !hasAny(entry.Tags(), query.AnyTags) || !hasAll(entry.Audience(), query.Audience) {
+		if !hasAll(entry.Tags(), query.RequiredTags) || !hasAny(entry.Tags(), query.AnyTags) {
 			continue
 		}
 		haystack := strings.ToLower(entry.Title() + " " + entry.Summary() + " " + entry.BodyMarkdown() + " " + strings.Join(entry.Tags(), " "))
@@ -215,7 +212,6 @@ func (s *memoryStore) SearchEntries(_ context.Context, query SearchQuery) ([]Sea
 			Status:         entry.Status(),
 			CurationState:  entry.CurationState(),
 			Tags:           entry.Tags(),
-			Audience:       entry.Audience(),
 			Aliases:        entry.Aliases(),
 			SourceRefs:     entry.SourceRefs(),
 			Snippet:        entry.Summary(),

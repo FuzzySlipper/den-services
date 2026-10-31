@@ -126,7 +126,6 @@ type Entry struct {
 	status          string
 	curationState   string
 	tags            []string
-	audience        []string
 	aliases         []string
 	sourceRefs      []SourceRef
 	accuracyNotes   string
@@ -149,7 +148,6 @@ type NewEntryParams struct {
 	Status          string
 	CurationState   string
 	Tags            []string
-	Audience        []string
 	Aliases         []string
 	SourceRefs      []SourceRef
 	AccuracyNotes   string
@@ -214,7 +212,6 @@ func NewEntry(params NewEntryParams) (*Entry, error) {
 		status:          status,
 		curationState:   curationState,
 		tags:            normalizeLabels(params.Tags),
-		audience:        normalizeLabels(params.Audience),
 		aliases:         normalizeLabels(params.Aliases),
 		sourceRefs:      append([]SourceRef(nil), params.SourceRefs...),
 		accuracyNotes:   strings.TrimSpace(params.AccuracyNotes),
@@ -274,7 +271,6 @@ func (e *Entry) Kind() string               { return e.kind }
 func (e *Entry) Status() string             { return e.status }
 func (e *Entry) CurationState() string      { return e.curationState }
 func (e *Entry) Tags() []string             { return append([]string(nil), e.tags...) }
-func (e *Entry) Audience() []string         { return append([]string(nil), e.audience...) }
 func (e *Entry) Aliases() []string          { return append([]string(nil), e.aliases...) }
 func (e *Entry) SourceRefs() []SourceRef    { return append([]SourceRef(nil), e.sourceRefs...) }
 func (e *Entry) AccuracyNotes() string      { return e.accuracyNotes }
@@ -295,7 +291,6 @@ type EntrySummary struct {
 	Status          string
 	CurationState   string
 	Tags            []string
-	Audience        []string
 	Aliases         []string
 	SourceRefs      []SourceRef
 	AccuracyNotes   string
@@ -316,7 +311,6 @@ type SearchResult struct {
 	Status         string
 	CurationState  string
 	Tags           []string
-	Audience       []string
 	Aliases        []string
 	SourceRefs     []SourceRef
 	Snippet        string
@@ -387,12 +381,12 @@ type OutlineSection struct {
 func entryDigest(entry *Entry) string {
 	payload, _ := json.Marshal(struct {
 		Slug, Title, Summary, Body, Kind, Status, CurationState, ReplacementSlug, LastReviewedAt, UpdatedAt string
-		Tags, Audience, Aliases                                                                             []string
+		Tags, Aliases                                                                                       []string
 		SourceRefs                                                                                          []SourceRef
 	}{
 		Slug: entry.Slug(), Title: entry.Title(), Summary: entry.Summary(), Body: entry.BodyMarkdown(), Kind: entry.Kind(), Status: entry.Status(),
 		CurationState: entry.CurationState(), ReplacementSlug: entry.ReplacementSlug(), LastReviewedAt: formatOptionalTime(entry.LastReviewedAt()), UpdatedAt: entry.UpdatedAt().UTC().Format(time.RFC3339Nano),
-		Tags: entry.Tags(), Audience: entry.Audience(), Aliases: entry.Aliases(), SourceRefs: entry.SourceRefs(),
+		Tags: entry.Tags(), Aliases: entry.Aliases(), SourceRefs: entry.SourceRefs(),
 	})
 	hash := sha256.Sum256(payload)
 	return hex.EncodeToString(hash[:])
@@ -419,7 +413,6 @@ type ListQuery struct {
 	Status            string
 	RequiredTags      []string
 	AnyTags           []string
-	Audience          []string
 	IncludeDeprecated bool
 	IncludeUnreviewed bool
 	IncludeArchived   bool
@@ -432,7 +425,6 @@ type SearchQuery struct {
 	RequiredTags      []string
 	AnyTags           []string
 	Kind              string
-	Audience          []string
 	Status            string
 	IncludeDeprecated bool
 	IncludeUnreviewed bool
@@ -444,7 +436,6 @@ type GuideQuery struct {
 	Question          string
 	RequiredTags      []string
 	AnyTags           []string
-	Audience          []string
 	ContextBudget     int
 	IncludeFollowUps  bool
 	IncludeDeprecated bool

@@ -1455,7 +1455,7 @@ func TestClientCallsKnowledgeRESTStoreEntry(t *testing.T) {
 	if sawPath != "/v1/knowledge/entries" {
 		t.Fatalf("path = %q, want knowledge entries", sawPath)
 	}
-	if sawBody.Slug != "mcp-routing" || len(sawBody.Tags) != 2 || sawBody.Audience[0] != "agents" {
+	if sawBody.Slug != "mcp-routing" || len(sawBody.Tags) != 2 {
 		t.Fatalf("body = %#v", sawBody)
 	}
 }
@@ -1585,10 +1585,10 @@ func TestClientCallsKnowledgeRESTSearchAndGuide(t *testing.T) {
 	if failure != nil {
 		t.Fatalf("Call() guide failure = %#v", failure)
 	}
-	if sawSearchBody.Query != "routing" || !sawSearchBody.IncludeUnreviewed || !sawSearchBody.IncludeArchived || sawSearchBody.Limit != 5 || sawSearchBody.RequiredTags[0] != "mcp" || sawSearchBody.Audience[0] != "agents" || sawSearchBody.Kind != "convention" || sawSearchBody.Status != "reviewed" {
+	if sawSearchBody.Query != "routing" || !sawSearchBody.IncludeUnreviewed || !sawSearchBody.IncludeArchived || sawSearchBody.Limit != 5 || sawSearchBody.RequiredTags[0] != "mcp" || sawSearchBody.Kind != "convention" || sawSearchBody.Status != "reviewed" {
 		t.Fatalf("search body = %#v", sawSearchBody)
 	}
-	if sawGuideBody.Question != "How route?" || sawGuideBody.ContextBudget != 500 || sawGuideBody.IncludeFollowUps == nil || *sawGuideBody.IncludeFollowUps != includeFollowUps || sawGuideBody.Audience[0] != "agents" {
+	if sawGuideBody.Question != "How route?" || sawGuideBody.ContextBudget != 500 || sawGuideBody.IncludeFollowUps == nil || *sawGuideBody.IncludeFollowUps != includeFollowUps {
 		t.Fatalf("guide body = %#v", sawGuideBody)
 	}
 }

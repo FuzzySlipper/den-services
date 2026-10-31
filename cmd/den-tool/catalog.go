@@ -245,7 +245,17 @@ func (c Catalog) Search(terms []string) Catalog {
 	return result
 }
 
+// SelfContained reports whether the tool is one of den-tool's own commands
+// (den.*, board.*). Those need only den-tool and the network, never a
+// repository checkout, so their working directory is not checked.
+func (t Tool) SelfContained() bool {
+	return len(t.Argv) > 0 && t.Argv[0] == "den-tool"
+}
+
 func CheckAvailability(tool Tool) Availability {
+	if tool.SelfContained() {
+		return Availability{Available: true}
+	}
 	info, err := os.Stat(tool.WorkingDirectory)
 	if err != nil {
 		return Availability{Reason: fmt.Sprintf("working directory %q is unavailable: %v", tool.WorkingDirectory, err)}

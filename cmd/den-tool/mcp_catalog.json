@@ -1113,16 +1113,6 @@
               "null"
             ]
           },
-          "audience": {
-            "description": "Optional audience labels that selected knowledge entries must match.",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
           "context_budget": {
             "default": null,
             "description": "Max characters for the answer (default 1600).",
@@ -1307,16 +1297,6 @@
               "null"
             ]
           },
-          "audience": {
-            "description": "Optional audience labels that matching knowledge entries must include.",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
           "include_archived": {
             "default": false,
             "description": "Include archived Knowledge entries.",
@@ -1378,7 +1358,7 @@
     },
     {
       "name": "den_knowledge_store",
-      "description": "Create or update a knowledge entry. Only planner and runner profiles can upsert knowledge. Global scope — no project_id required. Use curation_state='agent_curated' with status='reviewed' for verified content, or 'unreviewed_import' with status='draft' for imported candidates awaiting review. Tags and audience are replaced on every call; pass the full sets. Aliases, source_refs, accuracy_notes, replacement_slug, last_reviewed_at and review_due_at keep their current values when omitted; pass an empty list or string to clear one. Revisions are automatically created on updates.",
+      "description": "Create or update a knowledge entry. Global scope — no project_id required. Use curation_state='agent_curated' with status='reviewed' for verified content, or 'unreviewed_import' with status='draft' for imported candidates awaiting review. Tags are replaced on every call; pass the full set. Aliases, source_refs, accuracy_notes, replacement_slug, last_reviewed_at and review_due_at keep their current values when omitted; pass an empty list or string to clear one. Revisions are automatically created on updates.",
       "backend": "knowledge",
       "operation": "den_knowledge_store",
       "workflow_tier": "operator",
@@ -1396,20 +1376,6 @@
             "description": "Alternative names for the entry. Omit to keep the current aliases; pass [] to clear them.",
             "items": {
               "type": "string"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "audience": {
-            "default": null,
-            "description": "JSON array of audience labels.",
-            "items": {
-              "type": [
-                "string",
-                "null"
-              ]
             },
             "type": [
               "array",

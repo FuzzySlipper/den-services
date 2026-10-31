@@ -400,9 +400,9 @@ order by id`,
 			TargetKeySQL: "select id from den_knowledge.knowledge_entries order by id",
 			Rerun:        recreate,
 			SQL: `
-insert into den_knowledge.knowledge_entries(id, slug, title, summary, body_markdown, kind, status, curation_state, audience_json, aliases_json, source_refs_json, accuracy_notes, replacement_slug, last_reviewed_at, review_due_at, created_by, updated_by, created_at, updated_at)
+insert into den_knowledge.knowledge_entries(id, slug, title, summary, body_markdown, kind, status, curation_state, aliases_json, source_refs_json, accuracy_notes, replacement_slug, last_reviewed_at, review_due_at, created_by, updated_by, created_at, updated_at)
 overriding system value
-select id, slug, title, summary, body_markdown, kind, status, curation_state, audience_json, aliases_json, source_refs_json, accuracy_notes, replacement_slug, nullif(last_reviewed_at, '')::timestamptz, nullif(review_due_at, '')::timestamptz, created_by, updated_by, created_at::timestamptz, updated_at::timestamptz
+select id, slug, title, summary, body_markdown, kind, status, curation_state, aliases_json, source_refs_json, accuracy_notes, replacement_slug, nullif(last_reviewed_at, '')::timestamptz, nullif(review_due_at, '')::timestamptz, created_by, updated_by, created_at::timestamptz, updated_at::timestamptz
 from den_core.knowledge_entries
 order by id`,
 		},

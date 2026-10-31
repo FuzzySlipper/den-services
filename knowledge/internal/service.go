@@ -63,7 +63,6 @@ func (s *Service) StoreEntry(ctx context.Context, req StoreEntryRequest) (*Entry
 		Status:          req.Status,
 		CurationState:   req.CurationState,
 		Tags:            req.Tags,
-		Audience:        req.Audience,
 		Aliases:         valueOrZero(req.Aliases),
 		SourceRefs:      valueOrZero(req.SourceRefs),
 		AccuracyNotes:   valueOrZero(req.AccuracyNotes),
@@ -112,7 +111,6 @@ func (s *Service) ListEntries(ctx context.Context, query ListQuery) ([]EntrySumm
 	}
 	query.RequiredTags = normalizeLabels(query.RequiredTags)
 	query.AnyTags = normalizeLabels(query.AnyTags)
-	query.Audience = normalizeLabels(query.Audience)
 	query.Limit = clampLimit(query.Limit, 50)
 	query.Offset = max(query.Offset, 0)
 	return s.store.ListEntries(ctx, query)
@@ -137,7 +135,6 @@ func (s *Service) SearchEntries(ctx context.Context, query SearchQuery) ([]Searc
 	}
 	query.RequiredTags = normalizeLabels(query.RequiredTags)
 	query.AnyTags = normalizeLabels(query.AnyTags)
-	query.Audience = normalizeLabels(query.Audience)
 	query.Limit = clampLimit(query.Limit, DefaultSearchLimit)
 	return s.store.SearchEntries(ctx, query)
 }
@@ -159,7 +156,6 @@ func (s *Service) Guide(ctx context.Context, query GuideQuery) (GuideResponse, e
 		Query:             strings.Join(terms, " OR "),
 		RequiredTags:      query.RequiredTags,
 		AnyTags:           query.AnyTags,
-		Audience:          query.Audience,
 		IncludeDeprecated: query.IncludeDeprecated,
 		IncludeUnreviewed: query.IncludeUnreviewed,
 		Limit:             10,

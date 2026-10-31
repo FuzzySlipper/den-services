@@ -342,18 +342,11 @@ func modernizeInputSchema(name string, schema Schema) Schema {
 		properties["source_limits"] = sourceLimitsInputSchema()
 		changed = true
 	case "den_knowledge_guide":
-		properties["audience"] = map[string]any{
-			"type":        []string{"array", "null"},
-			"items":       map[string]any{"type": "string"},
-			"description": "Optional audience labels that selected knowledge entries must match.",
-		}
+		// Knowledge entries no longer carry an audience (#10512).
+		delete(properties, "audience")
 		changed = true
 	case "den_knowledge_search":
-		properties["audience"] = map[string]any{
-			"type":        []string{"array", "null"},
-			"items":       map[string]any{"type": "string"},
-			"description": "Optional audience labels that matching knowledge entries must include.",
-		}
+		delete(properties, "audience")
 		properties["kind"] = NullableStringSchema("Optional Knowledge kind filter.")
 		properties["status"] = NullableStringSchema("Optional comma-separated Knowledge status filter.")
 		properties["include_archived"] = map[string]any{
@@ -363,6 +356,7 @@ func modernizeInputSchema(name string, schema Schema) Schema {
 		}
 		changed = true
 	case "den_knowledge_store":
+		delete(properties, "audience")
 		for field, schema := range knowledgeStoreMetadataProperties() {
 			properties[field] = schema
 		}
@@ -470,7 +464,7 @@ func modernizeDescription(name, description string) string {
 	case "get_document_discussion":
 		return "Read discussion threads and comments for a document without creating state. Use ensure_document_discussion only when a default thread must exist."
 	case "den_knowledge_store":
-		return "Create or update a knowledge entry. Only planner and runner profiles can upsert knowledge. Global scope — no project_id required. Use curation_state='agent_curated' with status='reviewed' for verified content, or 'unreviewed_import' with status='draft' for imported candidates awaiting review. Tags and audience are replaced on every call; pass the full sets. Aliases, source_refs, accuracy_notes, replacement_slug, last_reviewed_at and review_due_at keep their current values when omitted; pass an empty list or string to clear one. Revisions are automatically created on updates."
+		return "Create or update a knowledge entry. Global scope — no project_id required. Use curation_state='agent_curated' with status='reviewed' for verified content, or 'unreviewed_import' with status='draft' for imported candidates awaiting review. Tags are replaced on every call; pass the full set. Aliases, source_refs, accuracy_notes, replacement_slug, last_reviewed_at and review_due_at keep their current values when omitted; pass an empty list or string to clear one. Revisions are automatically created on updates."
 	case "store_document":
 		return "Create or update a document. The full markdown content is persisted; the MCP result returns bounded metadata, byte count, SHA-256, and a preview so large writes are not mistaken for clipped storage."
 	default:

@@ -24,7 +24,6 @@ type knowledgeToolArguments struct {
 	CurationState     string          `json:"curation_state"`
 	Summary           string          `json:"summary"`
 	Tags              json.RawMessage `json:"tags"`
-	Audience          json.RawMessage `json:"audience"`
 	Aliases           json.RawMessage `json:"aliases"`
 	SourceRefs        json.RawMessage `json:"source_refs"`
 	AccuracyNotes     *string         `json:"accuracy_notes"`
@@ -64,7 +63,6 @@ type knowledgeStoreBody struct {
 	CurationState   string                `json:"curation_state,omitempty"`
 	Summary         string                `json:"summary,omitempty"`
 	Tags            []string              `json:"tags,omitempty"`
-	Audience        []string              `json:"audience,omitempty"`
 	Aliases         *[]string             `json:"aliases,omitempty"`
 	SourceRefs      *[]knowledgeSourceRef `json:"source_refs,omitempty"`
 	AccuracyNotes   *string               `json:"accuracy_notes,omitempty"`
@@ -90,7 +88,6 @@ type knowledgeSearchBody struct {
 	RequiredTags      []string `json:"required_tags,omitempty"`
 	AnyTags           []string `json:"any_tags,omitempty"`
 	Kind              string   `json:"kind,omitempty"`
-	Audience          []string `json:"audience,omitempty"`
 	Status            string   `json:"status,omitempty"`
 	IncludeDeprecated bool     `json:"include_deprecated,omitempty"`
 	IncludeUnreviewed bool     `json:"include_unreviewed,omitempty"`
@@ -102,7 +99,6 @@ type knowledgeGuideBody struct {
 	Question          string   `json:"question"`
 	RequiredTags      []string `json:"required_tags,omitempty"`
 	AnyTags           []string `json:"any_tags,omitempty"`
-	Audience          []string `json:"audience,omitempty"`
 	ContextBudget     int      `json:"context_budget,omitempty"`
 	IncludeFollowUps  *bool    `json:"include_follow_ups,omitempty"`
 	IncludeDeprecated bool     `json:"include_deprecated,omitempty"`
@@ -209,10 +205,6 @@ func knowledgeRESTRequestBody(operation string, arguments knowledgeToolArguments
 	if err != nil {
 		return nil, err
 	}
-	audience, err := parseStringList(arguments.Audience)
-	if err != nil {
-		return nil, err
-	}
 	switch operation {
 	case "den_knowledge_store":
 		tags, err := parseStringList(arguments.Tags)
@@ -222,7 +214,7 @@ func knowledgeRESTRequestBody(operation string, arguments knowledgeToolArguments
 		body := knowledgeStoreBody{
 			Slug: strings.TrimSpace(arguments.Slug), Title: strings.TrimSpace(arguments.Title), BodyMarkdown: arguments.BodyMarkdown,
 			Kind: strings.TrimSpace(arguments.Kind), Status: strings.TrimSpace(arguments.Status), CurationState: strings.TrimSpace(arguments.CurationState),
-			Summary: strings.TrimSpace(arguments.Summary), Tags: tags, Audience: audience,
+			Summary: strings.TrimSpace(arguments.Summary), Tags: tags,
 			AccuracyNotes: trimmedOptional(arguments.AccuracyNotes), ReplacementSlug: trimmedOptional(arguments.ReplacementSlug),
 			ChangedBy: strings.TrimSpace(arguments.ChangedBy), ChangeNote: strings.TrimSpace(arguments.ChangeNote),
 		}
@@ -242,7 +234,7 @@ func knowledgeRESTRequestBody(operation string, arguments knowledgeToolArguments
 	case "den_knowledge_search":
 		return json.Marshal(knowledgeSearchBody{
 			Query: strings.TrimSpace(arguments.Query), RequiredTags: requiredTags, AnyTags: anyTags, Kind: strings.TrimSpace(arguments.Kind),
-			Audience: audience, Status: strings.TrimSpace(arguments.Status), IncludeDeprecated: arguments.IncludeDeprecated,
+			Status: strings.TrimSpace(arguments.Status), IncludeDeprecated: arguments.IncludeDeprecated,
 			IncludeUnreviewed: arguments.IncludeUnreviewed, IncludeArchived: arguments.IncludeArchived, Limit: arguments.Limit,
 		})
 	case "den_knowledge_guide":
@@ -251,7 +243,7 @@ func knowledgeRESTRequestBody(operation string, arguments knowledgeToolArguments
 			contextBudget = *arguments.ContextBudget
 		}
 		return json.Marshal(knowledgeGuideBody{
-			Question: strings.TrimSpace(arguments.Question), RequiredTags: requiredTags, AnyTags: anyTags, Audience: audience,
+			Question: strings.TrimSpace(arguments.Question), RequiredTags: requiredTags, AnyTags: anyTags,
 			ContextBudget: contextBudget, IncludeFollowUps: arguments.IncludeFollowUps, IncludeDeprecated: arguments.IncludeDeprecated,
 			IncludeUnreviewed: arguments.IncludeUnreviewed,
 		})

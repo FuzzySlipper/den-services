@@ -19,7 +19,6 @@ type StoreEntryRequest struct {
 	CurationState   string       `json:"curation_state,omitempty"`
 	Summary         string       `json:"summary,omitempty"`
 	Tags            []string     `json:"tags,omitempty"`
-	Audience        []string     `json:"audience,omitempty"`
 	Aliases         *[]string    `json:"aliases,omitempty"`
 	SourceRefs      *[]SourceRef `json:"source_refs,omitempty"`
 	AccuracyNotes   *string      `json:"accuracy_notes,omitempty"`
@@ -116,7 +115,6 @@ type SearchRequest struct {
 	RequiredTags      []string `json:"required_tags,omitempty"`
 	AnyTags           []string `json:"any_tags,omitempty"`
 	Kind              string   `json:"kind,omitempty"`
-	Audience          []string `json:"audience,omitempty"`
 	Status            string   `json:"status,omitempty"`
 	IncludeDeprecated bool     `json:"include_deprecated,omitempty"`
 	IncludeUnreviewed bool     `json:"include_unreviewed,omitempty"`
@@ -128,7 +126,6 @@ type GuideRequest struct {
 	Question          string   `json:"question"`
 	RequiredTags      []string `json:"required_tags,omitempty"`
 	AnyTags           []string `json:"any_tags,omitempty"`
-	Audience          []string `json:"audience,omitempty"`
 	ContextBudget     int      `json:"context_budget,omitempty"`
 	IncludeFollowUps  *bool    `json:"include_follow_ups,omitempty"`
 	IncludeDeprecated bool     `json:"include_deprecated,omitempty"`
@@ -145,7 +142,6 @@ type EntryResponse struct {
 	Status          string      `json:"status"`
 	CurationState   string      `json:"curation_state"`
 	Tags            []string    `json:"tags,omitempty"`
-	Audience        []string    `json:"audience,omitempty"`
 	Aliases         []string    `json:"aliases,omitempty"`
 	SourceRefs      []SourceRef `json:"source_refs,omitempty"`
 	AccuracyNotes   string      `json:"accuracy_notes,omitempty"`
@@ -167,7 +163,6 @@ type EntrySummaryResponse struct {
 	Status          string      `json:"status"`
 	CurationState   string      `json:"curation_state"`
 	Tags            []string    `json:"tags,omitempty"`
-	Audience        []string    `json:"audience,omitempty"`
 	Aliases         []string    `json:"aliases,omitempty"`
 	SourceRefs      []SourceRef `json:"source_refs,omitempty"`
 	AccuracyNotes   string      `json:"accuracy_notes,omitempty"`
@@ -188,7 +183,6 @@ type SearchResponse struct {
 	Status         string      `json:"status"`
 	CurationState  string      `json:"curation_state"`
 	Tags           []string    `json:"tags,omitempty"`
-	Audience       []string    `json:"audience,omitempty"`
 	Aliases        []string    `json:"aliases,omitempty"`
 	SourceRefs     []SourceRef `json:"source_refs,omitempty"`
 	Snippet        string      `json:"snippet"`
@@ -240,7 +234,6 @@ func toEntryResponse(entry *Entry) EntryResponse {
 		Status:          entry.Status(),
 		CurationState:   entry.CurationState(),
 		Tags:            entry.Tags(),
-		Audience:        entry.Audience(),
 		Aliases:         entry.Aliases(),
 		SourceRefs:      entry.SourceRefs(),
 		AccuracyNotes:   entry.AccuracyNotes(),

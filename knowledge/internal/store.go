@@ -76,7 +76,6 @@ func (s *Store) UpsertEntry(ctx context.Context, entry *Entry, keep PreservedFie
 		entry.Kind(),
 		entry.Status(),
 		entry.CurationState(),
-		jsonOrNil(entry.Audience()),
 		jsonOrNil(entry.Aliases()),
 		jsonOrNilSourceRefs(entry.SourceRefs()),
 		emptyToNil(entry.AccuracyNotes()),
@@ -133,7 +132,6 @@ func (s *Store) ListEntries(ctx context.Context, query ListQuery) ([]EntrySummar
 		query.IncludeArchived,
 		query.RequiredTags,
 		query.AnyTags,
-		query.Audience,
 		query.Limit,
 		query.Offset,
 	)
@@ -173,7 +171,6 @@ func (s *Store) SearchEntries(ctx context.Context, query SearchQuery) ([]SearchR
 		query.IncludeArchived,
 		query.RequiredTags,
 		query.AnyTags,
-		query.Audience,
 		query.Limit,
 	)
 	if err != nil {
@@ -350,7 +347,6 @@ func insertRevision(ctx context.Context, tx pgx.Tx, existing *Entry, changedBy s
 		existing.Status(),
 		existing.CurationState(),
 		jsonOrNil(existing.Tags()),
-		jsonOrNil(existing.Audience()),
 		jsonOrNil(existing.Aliases()),
 		jsonOrNilSourceRefs(existing.SourceRefs()),
 		emptyToNil(existing.AccuracyNotes()),
@@ -411,13 +407,9 @@ type scanner interface {
 
 func scanEntry(row scanner) (*Entry, error) {
 	var params NewEntryParams
-	var audience []byte
 	var aliases []byte
 	var sourceRefs []byte
-	if err := row.Scan(&params.ID, &params.Slug, &params.Title, &params.Summary, &params.BodyMarkdown, &params.Kind, &params.Status, &params.CurationState, &audience, &aliases, &sourceRefs, &params.AccuracyNotes, &params.ReplacementSlug, &params.LastReviewedAt, &params.ReviewDueAt, &params.CreatedBy, &params.UpdatedBy, &params.CreatedAt, &params.UpdatedAt); err != nil {
-		return nil, err
-	}
-	if err := decodeJSON(audience, &params.Audience); err != nil {
+	if err := row.Scan(&params.ID, &params.Slug, &params.Title, &params.Summary, &params.BodyMarkdown, &params.Kind, &params.Status, &params.CurationState, &aliases, &sourceRefs, &params.AccuracyNotes, &params.ReplacementSlug, &params.LastReviewedAt, &params.ReviewDueAt, &params.CreatedBy, &params.UpdatedBy, &params.CreatedAt, &params.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if err := decodeJSON(aliases, &params.Aliases); err != nil {
@@ -431,14 +423,10 @@ func scanEntry(row scanner) (*Entry, error) {
 
 func scanSummary(row scanner) (EntrySummary, error) {
 	var summary EntrySummary
-	var audience []byte
 	var aliases []byte
 	var sourceRefs []byte
-	if err := row.Scan(&summary.ID, &summary.Slug, &summary.Title, &summary.Summary, &summary.Kind, &summary.Status, &summary.CurationState, &audience, &aliases, &sourceRefs, &summary.AccuracyNotes, &summary.ReplacementSlug, &summary.LastReviewedAt, &summary.ReviewDueAt, &summary.CreatedBy, &summary.UpdatedBy, &summary.CreatedAt, &summary.UpdatedAt); err != nil {
+	if err := row.Scan(&summary.ID, &summary.Slug, &summary.Title, &summary.Summary, &summary.Kind, &summary.Status, &summary.CurationState, &aliases, &sourceRefs, &summary.AccuracyNotes, &summary.ReplacementSlug, &summary.LastReviewedAt, &summary.ReviewDueAt, &summary.CreatedBy, &summary.UpdatedBy, &summary.CreatedAt, &summary.UpdatedAt); err != nil {
 		return EntrySummary{}, fmt.Errorf("scanning knowledge summary: %w", err)
-	}
-	if err := decodeJSON(audience, &summary.Audience); err != nil {
-		return EntrySummary{}, err
 	}
 	if err := decodeJSON(aliases, &summary.Aliases); err != nil {
 		return EntrySummary{}, err
@@ -451,14 +439,10 @@ func scanSummary(row scanner) (EntrySummary, error) {
 
 func scanSearchResult(row scanner) (SearchResult, error) {
 	var result SearchResult
-	var audience []byte
 	var aliases []byte
 	var sourceRefs []byte
-	if err := row.Scan(&result.Slug, &result.Title, &result.Summary, &result.Kind, &result.Status, &result.CurationState, &audience, &aliases, &sourceRefs, &result.Snippet, &result.Rank, &result.UpdatedAt, &result.LastReviewedAt); err != nil {
+	if err := row.Scan(&result.Slug, &result.Title, &result.Summary, &result.Kind, &result.Status, &result.CurationState, &aliases, &sourceRefs, &result.Snippet, &result.Rank, &result.UpdatedAt, &result.LastReviewedAt); err != nil {
 		return SearchResult{}, fmt.Errorf("scanning knowledge search result: %w", err)
-	}
-	if err := decodeJSON(audience, &result.Audience); err != nil {
-		return SearchResult{}, err
 	}
 	if err := decodeJSON(aliases, &result.Aliases); err != nil {
 		return SearchResult{}, err
@@ -516,8 +500,8 @@ func timeOrNil(value *time.Time) any {
 }
 
 const (
-	entryColumns   = `id, slug, title, coalesce(summary, ''), body_markdown, kind, status, curation_state, audience_json, aliases_json, source_refs_json, coalesce(accuracy_notes, ''), coalesce(replacement_slug, ''), last_reviewed_at, review_due_at, coalesce(created_by, ''), coalesce(updated_by, ''), created_at, updated_at`
-	summaryColumns = `id, slug, title, coalesce(summary, ''), kind, status, curation_state, audience_json, aliases_json, source_refs_json, coalesce(accuracy_notes, ''), coalesce(replacement_slug, ''), last_reviewed_at, review_due_at, coalesce(created_by, ''), coalesce(updated_by, ''), created_at, updated_at`
+	entryColumns   = `id, slug, title, coalesce(summary, ''), body_markdown, kind, status, curation_state, aliases_json, source_refs_json, coalesce(accuracy_notes, ''), coalesce(replacement_slug, ''), last_reviewed_at, review_due_at, coalesce(created_by, ''), coalesce(updated_by, ''), created_at, updated_at`
+	summaryColumns = `id, slug, title, coalesce(summary, ''), kind, status, curation_state, aliases_json, source_refs_json, coalesce(accuracy_notes, ''), coalesce(replacement_slug, ''), last_reviewed_at, review_due_at, coalesce(created_by, ''), coalesce(updated_by, ''), created_at, updated_at`
 )
 
 const headlineOptions = `StartSel=<b>, StopSel=</b>, MaxWords=32, MinWords=8, ShortWord=3, HighlightAll=false, MaxFragments=2, FragmentDelimiter=...`
@@ -525,8 +509,8 @@ const headlineOptions = `StartSel=<b>, StopSel=</b>, MaxWords=32, MinWords=8, Sh
 const getEntryBySlugForUpdateSQL = `select ` + entryColumns + ` from den_knowledge.knowledge_entries where slug = $1 for update`
 
 const upsertEntrySQL = `
-insert into den_knowledge.knowledge_entries(slug, title, summary, body_markdown, kind, status, curation_state, audience_json, aliases_json, source_refs_json, accuracy_notes, replacement_slug, last_reviewed_at, review_due_at, created_by, updated_by, created_at, updated_at)
-values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+insert into den_knowledge.knowledge_entries(slug, title, summary, body_markdown, kind, status, curation_state, aliases_json, source_refs_json, accuracy_notes, replacement_slug, last_reviewed_at, review_due_at, created_by, updated_by, created_at, updated_at)
+values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 on conflict (slug) do update set
   title = excluded.title,
   summary = excluded.summary,
@@ -534,7 +518,6 @@ on conflict (slug) do update set
   kind = excluded.kind,
   status = excluded.status,
   curation_state = excluded.curation_state,
-  audience_json = excluded.audience_json,
   aliases_json = excluded.aliases_json,
   source_refs_json = excluded.source_refs_json,
   accuracy_notes = excluded.accuracy_notes,
@@ -569,16 +552,15 @@ where ($1::text is null or ke.kind = $1)
     select 1 from den_knowledge.knowledge_entry_tags ket2
     where ket2.entry_id = ke.id and ket2.tag = any($7::text[])
   ))
-  and (coalesce(array_length($8::text[], 1), 0) = 0 or coalesce(ke.audience_json, '[]'::jsonb) ?& $8::text[])
 order by ke.updated_at desc, ke.id desc
-limit $9 offset $10`
+limit $8 offset $9`
 
 const searchEntriesSQL = `
 with search as (
   select websearch_to_tsquery('english', $1) as query
 )
 select ke.slug, ke.title, coalesce(ke.summary, ''), ke.kind, ke.status, ke.curation_state,
-       ke.audience_json, ke.aliases_json, ke.source_refs_json,
+       ke.aliases_json, ke.source_refs_json,
        ts_headline('english', coalesce(ke.summary, '') || ' ' || coalesce(ke.body_markdown, ''), search.query, $2) as snippet,
        ts_rank_cd(ke.search_vector, search.query) as rank,
        ke.updated_at, ke.last_reviewed_at
@@ -601,9 +583,8 @@ where ke.search_vector @@ search.query
     select 1 from den_knowledge.knowledge_entry_tags ket2
     where ket2.entry_id = ke.id and ket2.tag = any($9::text[])
   ))
-  and (coalesce(array_length($10::text[], 1), 0) = 0 or coalesce(ke.audience_json, '[]'::jsonb) ?& $10::text[])
 order by rank desc, ke.updated_at desc, ke.id desc
-limit $11`
+limit $10`
 
 const nextRevisionSQL = `select coalesce(max(revision_number), 0) + 1 from den_knowledge.knowledge_entry_revisions where entry_id = $1`
 
@@ -612,8 +593,8 @@ select coalesce((select max(revision_number) from den_knowledge.knowledge_entry_
 from den_knowledge.knowledge_entries ke where ke.slug = $1`
 
 const insertRevisionSQL = `
-insert into den_knowledge.knowledge_entry_revisions(entry_id, revision_number, title, summary, body_markdown, kind, status, curation_state, tags_json, audience_json, aliases_json, source_refs_json, accuracy_notes, replacement_slug, changed_by, change_note)
-values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`
+insert into den_knowledge.knowledge_entry_revisions(entry_id, revision_number, title, summary, body_markdown, kind, status, curation_state, tags_json, aliases_json, source_refs_json, accuracy_notes, replacement_slug, changed_by, change_note)
+values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`
 
 const listRevisionsSQL = `
 select kr.id, kr.entry_id, kr.revision_number, kr.title, kr.kind, kr.status, kr.curation_state, coalesce(kr.change_note, ''), coalesce(kr.changed_by, ''), kr.created_at

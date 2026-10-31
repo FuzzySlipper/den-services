@@ -597,11 +597,13 @@ func TestParitySchemasExposeOnlySupportedBoundedControls(t *testing.T) {
 	if _, ok := propertiesFor("query_librarian")["source_limits"]; !ok {
 		t.Fatal("query_librarian is missing source_limits")
 	}
-	if _, ok := propertiesFor("den_knowledge_guide")["audience"]; !ok {
-		t.Fatal("den_knowledge_guide is missing audience")
+	for _, tool := range []string{"den_knowledge_guide", "den_knowledge_search", "den_knowledge_store"} {
+		if _, ok := propertiesFor(tool)["audience"]; ok {
+			t.Fatalf("%s still offers the retired entry audience", tool)
+		}
 	}
 	knowledgeSearch := propertiesFor("den_knowledge_search")
-	for _, property := range []string{"audience", "kind", "status", "include_archived"} {
+	for _, property := range []string{"kind", "status", "include_archived"} {
 		if _, ok := knowledgeSearch[property]; !ok {
 			t.Fatalf("den_knowledge_search is missing %s", property)
 		}
