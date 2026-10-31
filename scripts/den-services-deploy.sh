@@ -468,6 +468,44 @@ ROUTE
   fi
 }
 
+ensure_gateway_wiki_route() {
+  local routes_target="${service_root}/config/routes.yaml"
+  local staged_routes=""
+  local write_target="${routes_target}"
+
+  [[ "${service}" == "gateway" ]] || return 0
+  [[ -f "${routes_target}" ]] || return 0
+  if grep -Eq '^[[:space:]]*- name:.*wiki-mcp-routes' "${routes_target}" ||
+    grep -Eq "^[[:space:]]*path_pattern:[[:space:]]*\"/v1/wiki/mcp\"" "${routes_target}"; then
+    return 0
+  fi
+
+  backup_config_file "${routes_target}" "routes.yaml"
+  if [[ ! -w "${routes_target}" ]]; then
+    staged_routes="$(mktemp /tmp/den-gateway-routes.XXXXXX)"
+    cp "${routes_target}" "${staged_routes}"
+    write_target="${staged_routes}"
+  fi
+
+  cat >> "${write_target}" <<'ROUTE'
+
+  - name: "wiki-mcp-routes"
+    path_pattern: "/v1/wiki/mcp"
+    methods: ["POST"]
+    legacy_upstream_url: "https://wiki.dragonden.stream"
+    successor_upstream_url: "https://wiki.dragonden.stream"
+    successor_mode: "always"
+    path_rewrite:
+      from_prefix: "/v1/wiki/mcp"
+      to_prefix: "/mcp"
+ROUTE
+
+  if [[ -n "${staged_routes}" ]]; then
+    run_systemctl install -m 0644 "${staged_routes}" "${routes_target}"
+    rm -f "${staged_routes}"
+  fi
+}
+
 ensure_gateway_manual_review_route() {
   local routes_target="${service_root}/config/routes.yaml"
   local staged_routes=""
@@ -770,6 +808,7 @@ ensure_gateway_board_routes
 ensure_gateway_manual_review_route
 ensure_gateway_ops_route
 ensure_gateway_resources_route
+ensure_gateway_wiki_route
 if [[ "${service}" == "mcp" && -f mcp/routes.example.yaml ]]; then
   ensure_mcp_board_backend
   ensure_mcp_board_relay_backend

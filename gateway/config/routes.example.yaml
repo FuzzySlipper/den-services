@@ -290,3 +290,16 @@ routes:
     legacy_upstream_url: "http://127.0.0.1:8103"
     successor_upstream_url: "http://127.0.0.1:8103"
     successor_mode: "always"
+
+  # den-wiki's MCP facade, for den-web's read-only wiki viewer. den-wiki runs on
+  # its own CT and accepts only the LAN Caddy, so this goes through Caddy's
+  # wiki.dragonden.stream. Only /mcp is routed; the ledger HTTP API is not.
+  - name: "wiki-mcp-routes"
+    path_pattern: "/v1/wiki/mcp"
+    methods: ["POST"]
+    legacy_upstream_url: "https://wiki.dragonden.stream"
+    successor_upstream_url: "https://wiki.dragonden.stream"
+    successor_mode: "always"
+    path_rewrite:
+      from_prefix: "/v1/wiki/mcp"
+      to_prefix: "/mcp"

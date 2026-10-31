@@ -41,6 +41,7 @@ func TestDeployableRouteExampleCoversBrowserOwners(t *testing.T) {
 		{"GET", "/v1/resources/state", "127.0.0.1:8103"},
 		{"POST", "/v1/resources/work/6f0c", "127.0.0.1:8103"},
 		{"PUT", "/v1/resources/hosts/den-m5", "127.0.0.1:8103"},
+		{"POST", "/v1/wiki/mcp", "wiki.dragonden.stream"},
 	}
 	for _, testCase := range cases {
 		match, ok := table.Match(testCase.method, testCase.path, false)
