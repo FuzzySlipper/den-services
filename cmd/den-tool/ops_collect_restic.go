@@ -167,6 +167,21 @@ func isResticMaintenanceWarning(warning string) bool {
 	return strings.HasPrefix(warning, "Prune failed") || strings.HasPrefix(warning, "Repository check failed")
 }
 
+// resticMaintenanceException returns the error of a run the runner aborted
+// during prune or check. The runner appends the exception as the last warning
+// and leaves the phase where it stopped; any capture before it still stands.
+func resticMaintenanceException(report reportFile) (string, bool) {
+	phase := report.text("phase")
+	if report.text("state") != "error" || (phase != "prune" && phase != "check") {
+		return "", false
+	}
+	warnings := anyStrings(report.fields["warnings"])
+	if len(warnings) == 0 {
+		return phase + " was interrupted", true
+	}
+	return warnings[len(warnings)-1], true
+}
+
 // resticBackupRun maps a run report onto Ops fields. Its state comes from the
 // capture and retention only; prune and check go to the maintenance job.
 func resticBackupRun(source opsCollectSource, runID string, report reportFile) map[string]any {
@@ -180,9 +195,13 @@ func resticBackupRun(source opsCollectSource, runID string, report reportFile) m
 	run["local_run_directory"] = "den-nas:" + source.StateDir + "/runs/" + runID
 	run["log_path"] = "den-nas:" + source.StateDir + "/runs/" + runID + "/backup.stderr"
 
+	exception, maintenanceProblem := resticMaintenanceException(report)
+	all := anyStrings(report.fields["warnings"])
+	if maintenanceProblem && len(all) > 0 && all[len(all)-1] == exception {
+		all = all[:len(all)-1]
+	}
 	warnings := []string{}
-	maintenanceProblem := false
-	for _, warning := range anyStrings(report.fields["warnings"]) {
+	for _, warning := range all {
 		if isResticMaintenanceWarning(warning) {
 			maintenanceProblem = true
 			continue
@@ -191,10 +210,14 @@ func resticBackupRun(source opsCollectSource, runID string, report reportFile) m
 	}
 	run["warnings"] = warnings
 	if _, finished := report.time("finished_at"); finished {
-		switch report.text("state") {
-		case "error":
+		complete, _ := report.fields["backup_complete"].(bool)
+		switch {
+		case report.text("state") == "error" && !complete:
 			run["state"] = "failed"
 			run["error"] = firstNonEmpty(strings.Join(warnings, "; "), "the offsite backup run failed")
+		case report.text("state") == "error" && !maintenanceProblem:
+			// A later step failed after a complete capture; the capture still counts.
+			run["state"] = "warning"
 		default:
 			run["state"] = "success"
 			if len(warnings) > 0 {
@@ -270,7 +293,9 @@ func resticMaintenanceRun(source opsCollectSource, runID string, report reportFi
 	if code, ok := resticExitCode(check); hasCheck && (!ok || code != 0) {
 		failures = append(failures, fmt.Sprintf("check exited %d", code))
 	}
-	if !hasPrune && !hasCheck && report.text("state") == "error" {
+	if exception, ok := resticMaintenanceException(report); ok {
+		failures = append(failures, exception)
+	} else if !hasPrune && !hasCheck && report.text("state") == "error" {
 		failures = append(failures, strings.Join(anyStrings(report.fields["warnings"]), "; "))
 	}
 	run["state"] = "success"

@@ -210,3 +210,49 @@ func TestResticSourceReadsStatusFilesOnlyAndReplacesTheConfiguredRegistration(t 
 		t.Fatalf("notes = %q", notes)
 	}
 }
+
+func TestResticExceptionDuringMaintenanceKeepsTheCaptureAndFailsMaintenance(t *testing.T) {
+	// backup.py's exception handler sets state:error and appends the exception,
+	// but keeps backup_complete and still writes last-success.json.
+	started := time.Date(2026, 11, 14, 15, 0, 0, 0, time.UTC)
+	aborted := resticReport(started, map[string]any{
+		"run_id": "20261114T150000Z", "state": "error", "phase": "check",
+		"prune":    map[string]any{"exit_code": 0},
+		"warnings": []any{"TimeoutExpired: restic check timed out"},
+	})
+	retention := resticReport(started.Add(-24*time.Hour), map[string]any{
+		"run_id": "20261113T150000Z", "state": "error", "phase": "retention",
+		"warnings": []any{"OSError: disk full"},
+	})
+	bundle := resticBundleOf(t, map[string]any{
+		"runs/20261114T150000Z/report.json": aborted,
+		"runs/20261113T150000Z/report.json": retention,
+	})
+	writes, problems := resticWrites(resticTestSource(), bundle, nil)
+	if len(problems) != 0 {
+		t.Fatalf("problems = %v", problems)
+	}
+	bodies := writesByPath(t, writes)
+
+	capture := bodies["/v1/ops/jobs/den-nas-offsite/runs/20261114T150000Z"]
+	if capture["state"] != "success" || capture["backup_complete"] != true || len(capture["warnings"].([]any)) != 0 {
+		t.Fatalf("capture = %v", capture)
+	}
+	maintenance := bodies["/v1/ops/jobs/den-nas-offsite-maintenance/runs/20261114T150000Z"]
+	if maintenance["state"] != "failed" || !strings.Contains(maintenance["error"].(string), "TimeoutExpired") {
+		t.Fatalf("maintenance = %v", maintenance)
+	}
+	if _, ok := bodies["/v1/ops/jobs/den-nas-offsite/verifications/20261114T150000Z:check"]; ok {
+		t.Fatal("an aborted check produced a verification")
+	}
+
+	// An exception after a complete capture outside maintenance is a warning,
+	// which Ops keeps as a complete backup.
+	late := bodies["/v1/ops/jobs/den-nas-offsite/runs/20261113T150000Z"]
+	if late["state"] != "warning" || late["backup_complete"] != true || late["warnings"].([]any)[0] != "OSError: disk full" {
+		t.Fatalf("retention exception = %v", late)
+	}
+	if _, ok := bodies["/v1/ops/jobs/den-nas-offsite-maintenance/runs/20261113T150000Z"]; ok {
+		t.Fatal("a retention exception became a maintenance run")
+	}
+}
