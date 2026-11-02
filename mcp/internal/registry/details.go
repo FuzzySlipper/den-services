@@ -45,7 +45,7 @@ func firstDetailArgument(toolName string) string {
 func taskDerivesProject(name string) bool {
 	switch name {
 	case "get_latest_task_packet", "post_review_findings", "request_review", "request_campaign_review", "split_review_findings_to_follow_up",
-		"await_github_checks", "watch_github_checks", "get_github_check_gate", "wait_for_github_checks":
+		"submit_task_for_review", "await_github_checks", "watch_github_checks", "get_github_check_gate", "wait_for_github_checks":
 		return true
 	default:
 		return false
@@ -56,4 +56,16 @@ func taskDerivesProject(name string) bool {
 // identity before dispatching the tool to its owning backend.
 func TaskDerivesProject(name string) bool {
 	return taskDerivesProject(name)
+}
+
+// TaskOptionalProject reports whether a project-scoped tool that also takes a
+// task_id may omit project_id when it names a task: the facade then derives the
+// project from the canonical task.
+func TaskOptionalProject(name string) bool {
+	switch name {
+	case "send_message", "get_messages", "query_librarian":
+		return true
+	default:
+		return false
+	}
 }

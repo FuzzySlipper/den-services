@@ -294,10 +294,13 @@ func TestManagedSubmissionToolIsProviderNeutralAndKeepsPublicInput(t *testing.T)
 	if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"project_id", "task_id", "repository", "ref", "required_checks", "review_summary_md"} {
+	for _, field := range []string{"task_id", "repository", "ref", "required_checks", "review_summary_md"} {
 		if schema.Properties[field] == nil || !slices.Contains(schema.Required, field) {
 			t.Fatalf("submission schema missing required %s: %#v", field, schema)
 		}
+	}
+	if schema.Properties["project_id"] != nil {
+		t.Fatal("submission schema still takes project_id; it is derived from task_id")
 	}
 	for _, field := range []string{"commit_sha", "base_commit", "supersedes_round", "supersede_reason", "notify_address"} {
 		if schema.Properties[field] == nil || slices.Contains(schema.Required, field) {

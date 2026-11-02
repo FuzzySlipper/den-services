@@ -67,11 +67,14 @@ func (l *Locator) Call(ctx context.Context, call ToolCall) (Result, *Failure, er
 	}
 	var result Result
 	var failure *Failure
-	if registry.TaskDerivesProject(call.Operation) {
+	switch {
+	case registry.TaskDerivesProject(call.Operation):
 		call, failure, err = l.client.withCanonicalTaskProject(ctx, backends, call)
-		if failure != nil || err != nil {
-			return result, failure, err
-		}
+	case registry.TaskOptionalProject(call.Operation):
+		call, failure, err = l.client.withOptionalTaskProject(ctx, backends, call)
+	}
+	if failure != nil || err != nil {
+		return result, failure, err
 	}
 	switch route.RequestAdapter {
 	case RequestAdapterMCPProjectSummaryCompose:

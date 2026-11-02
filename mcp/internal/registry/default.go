@@ -301,6 +301,15 @@ func modernizeInputSchema(name string, schema Schema) Schema {
 			changed = true
 		}
 	}
+	if TaskOptionalProject(name) {
+		if _, exists := properties["project_id"]; exists {
+			properties["project_id"] = map[string]any{
+				"type":        "string",
+				"description": "Project ID. Optional when task_id is given: the task's project is used.",
+			}
+			changed = true
+		}
+	}
 	switch name {
 	case "get_agent_guidance":
 		properties["max_bytes"] = map[string]any{
@@ -417,7 +426,7 @@ func modernizeInputSchema(name string, schema Schema) Schema {
 	filtered := make([]any, 0, len(required)+1)
 	for _, value := range required {
 		field, _ := value.(string)
-		if field == "verbose" || (field == "project_id" && taskDerivesProject(name)) {
+		if field == "verbose" || (field == "project_id" && (taskDerivesProject(name) || TaskOptionalProject(name))) {
 			continue
 		}
 		filtered = append(filtered, value)
@@ -641,8 +650,7 @@ func reviewSubmissionTools() []ToolDefinition {
 		Operation:    "submit_task_for_review",
 		WorkflowTier: WorkflowTierGreenPath,
 		InputSchema: ObjectSchema(map[string]Schema{
-			"project_id": StringSchema("Exact Den project ID owning the task."),
-			"task_id":    IntegerSchema("Canonical Den task ID to submit for review."),
+			"task_id":    IntegerSchema("Canonical Den task ID to submit for review; its project is derived from it."),
 			"repository": StringSchema("GitHub repository as owner/name."),
 			"commit_sha": NullableStringSchema("Optional full 40-character review commit override. Omit to resolve the latest commit on the pushed ref whose subject contains (#task_id). The receipt pins the resolved SHA."),
 			"ref":        StringSchema("Branch or ref associated with the submitted commit."),
@@ -656,7 +664,7 @@ func reviewSubmissionTools() []ToolDefinition {
 			"review_summary_md": StringSchema("Markdown summary supplied to the Den review request."),
 			"reviewer":          NullableStringSchema("Optional reviewer identity; defaults to the configured review identity."),
 			"notify_address":    NullableStringSchema("Optional crew messaging address of the submitting session. crew-review sends gate-failure notices there. Session hooks normally fill it in; omit it if you have none."),
-		}, "project_id", "task_id", "repository", "ref", "required_checks", "review_summary_md"),
+		}, "task_id", "repository", "ref", "required_checks", "review_summary_md"),
 	}}
 }
 

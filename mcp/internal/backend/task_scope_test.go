@@ -123,3 +123,72 @@ func TestGetDocumentDiscussionRejectsRemovedCreateIfMissingBeforeDispatch(t *tes
 		t.Fatalf("backend requests = %d, want 0", got)
 	}
 }
+
+func TestSubmitForReviewAndProjectToolsDeriveTheTaskProject(t *testing.T) {
+	var taskReads atomic.Int32
+	var submitted map[string]any
+	var messagesPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/tasks/42":
+			taskReads.Add(1)
+			_, _ = w.Write([]byte(`{"task":{"id":42,"project_id":"den-services","title":"Task","status":"in_progress"}}`))
+		case r.URL.Path == "/v1/review-submissions":
+			_ = json.NewDecoder(r.Body).Decode(&submitted)
+			_, _ = w.Write([]byte(`{"review_round_id":9}`))
+		case strings.HasSuffix(r.URL.Path, "/messages"):
+			messagesPath = r.URL.Path
+			_, _ = w.Write([]byte(`{"items":[]}`))
+		default:
+			t.Fatalf("unexpected request %s", r.URL.String())
+		}
+	}))
+	defer server.Close()
+	table, err := NewRouteTable([]Route{{
+		Operation: "submit_task_for_review", Backend: "crew-review", Method: http.MethodPost, Path: "/v1/review-submissions",
+		RequestAdapter: RequestAdapterMCPReviewREST, ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}, {
+		Operation: "get_messages", Backend: "messages", Method: http.MethodGet, Path: "/v1/projects/{project_id}/messages",
+		RequestAdapter: RequestAdapterMCPMessagesREST, ResponseAdapter: ResponseAdapterMCPToolResultJSON,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	locator, err := NewLocator([]config.BackendConfig{
+		testBackend("tasks", server.URL), testBackend("crew-review", server.URL), testBackend("messages", server.URL),
+	}, table, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(operation, arguments string) {
+		t.Helper()
+		if _, failure, err := locator.Call(context.Background(), ToolCall{
+			ToolName: operation, Operation: operation, RequestID: json.RawMessage(`1`), Arguments: json.RawMessage(arguments),
+		}); err != nil || failure != nil {
+			t.Fatalf("%s: Call() = %v, %#v", operation, err, failure)
+		}
+	}
+
+	call("submit_task_for_review", `{"task_id":42,"repository":"owner/repo","ref":"main","required_checks":[],"review_summary_md":"s"}`)
+	if submitted["project_id"] != "den-services" {
+		t.Fatalf("submission = %v", submitted)
+	}
+	// Sessions started on the old schema still send the task's own project.
+	call("submit_task_for_review", `{"project_id":"den-services","task_id":42,"repository":"owner/repo","ref":"main","required_checks":[],"review_summary_md":"s"}`)
+	if _, _, err := locator.Call(context.Background(), ToolCall{
+		ToolName: "submit_task_for_review", Operation: "submit_task_for_review", RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"project_id":"den-web","task_id":42,"repository":"owner/repo","ref":"main","required_checks":[],"review_summary_md":"s"}`),
+	}); err == nil || !strings.Contains(err.Error(), "not task 42's project") {
+		t.Fatalf("mismatched project_id: err = %v", err)
+	}
+	call("get_messages", `{"task_id":42}`)
+	if messagesPath != "/v1/projects/den-services/messages" {
+		t.Fatalf("messages path = %q", messagesPath)
+	}
+	// A project-scoped call that names its project needs no task read.
+	before := taskReads.Load()
+	call("get_messages", `{"project_id":"other","task_id":42}`)
+	if messagesPath != "/v1/projects/other/messages" || taskReads.Load() != before {
+		t.Fatalf("explicit project: path = %q, task reads %d -> %d", messagesPath, before, taskReads.Load())
+	}
+}

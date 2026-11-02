@@ -2037,7 +2037,7 @@
             "type": "integer"
           },
           "project_id": {
-            "description": "Project ID.",
+            "description": "Project ID. Optional when task_id is given: the task's project is used.",
             "type": "string"
           },
           "since": {
@@ -2065,9 +2065,6 @@
             ]
           }
         },
-        "required": [
-          "project_id"
-        ],
         "type": "object"
       }
     },
@@ -2892,7 +2889,7 @@
             "type": "boolean"
           },
           "project_id": {
-            "description": "Project or space ID to search within.",
+            "description": "Project ID. Optional when task_id is given: the task's project is used.",
             "type": "string"
           },
           "query": {
@@ -2955,7 +2952,6 @@
           }
         },
         "required": [
-          "project_id",
           "query"
         ],
         "type": "object"
@@ -3393,7 +3389,7 @@
             "description": "Optional JSON metadata object or JSON-encoded string, e.g. {\"type\":\"review_request\"}."
           },
           "project_id": {
-            "description": "Project ID.",
+            "description": "Project ID. Optional when task_id is given: the task's project is used.",
             "type": "string"
           },
           "sender": {
@@ -3418,7 +3414,6 @@
           }
         },
         "required": [
-          "project_id",
           "sender",
           "content"
         ],
@@ -3667,10 +3662,6 @@
               "null"
             ]
           },
-          "project_id": {
-            "description": "Exact Den project ID owning the task.",
-            "type": "string"
-          },
           "ref": {
             "description": "Branch or ref associated with the submitted commit.",
             "type": "string"
@@ -3713,12 +3704,11 @@
             ]
           },
           "task_id": {
-            "description": "Canonical Den task ID to submit for review.",
+            "description": "Canonical Den task ID to submit for review; its project is derived from it.",
             "type": "integer"
           }
         },
         "required": [
-          "project_id",
           "task_id",
           "repository",
           "ref",

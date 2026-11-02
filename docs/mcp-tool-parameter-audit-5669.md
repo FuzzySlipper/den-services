@@ -122,3 +122,21 @@ unless a specific tool has an ambiguous default or an invalid combination.
    `verbose` parameter.
 4. Split `mark_notifications_read` modes in its owning service rather than in a
    facade-only shim.
+
+## Follow-up: one rule for task-keyed tools (2026-11-01)
+
+Agents kept guessing which task tools wanted `project_id`: `update_task` and
+`get_task` take none, while `submit_task_for_review` still required it. Patch
+asked for one rule, since the task already carries its project:
+
+- Every tool that requires `task_id` takes no `project_id`.
+  `submit_task_for_review` joins the derived family; the facade reads the
+  canonical task and fills in the project before dispatch. Passing
+  `project_id` to these tools is still rejected, with an error that says to
+  omit it. The one exception is `submit_task_for_review`, which required it
+  until now: sessions keep the schema they started with, so it accepts the
+  task's own project and rejects any other.
+- `send_message`, `get_messages` and `query_librarian` stay project-scoped,
+  but `project_id` is optional when `task_id` is given: the facade derives it
+  from the task. A call that names its project is dispatched unchanged, with
+  no task read. This settles finding 4 without adding task-scoped variants.
