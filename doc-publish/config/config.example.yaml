@@ -12,6 +12,7 @@ blog:
   author_name: "Den Publisher" # Git commit author name.
   author_email: "den-publisher@example.invalid" # Git commit author email.
   push: true # Push commits after a successful publish.
+  asset_dir: "assets/wiki" # Images of published wiki pages, one directory per page. Required with wiki.base_url.
 
 records:
   path: "/data/services/doc-publish/data/publications" # File-backed publication audit records.
@@ -19,6 +20,11 @@ records:
 source:
   documents_base_url: "http://127.0.0.1:8094" # Canonical documents service base URL on den-srv.
   request_timeout: "5s" # Timeout for source document fetches.
+
+wiki: # Optional: publish single den-wiki pages. Leave base_url empty to disable.
+  base_url: "https://wiki.dragonden.stream" # den-wiki; doc-publish fetches /v1/export and /v1/export/asset.
+  request_timeout: "30s" # Timeout for a page or image fetch.
+  max_asset_bytes: 52428800 # Largest image accepted from a wiki page (50 MiB).
 
 git:
   command_timeout: "15s" # Timeout for individual git commands.

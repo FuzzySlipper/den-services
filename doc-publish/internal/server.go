@@ -19,7 +19,11 @@ func NewHTTPServer(cfg *Config, buildInfo health.BuildInfo) (*http.Server, error
 	store := NewFilePublicationStore(cfg.Records.Path)
 	fetcher := NewHTTPDocumentFetcher(cfg.Source.DocumentsBaseURL, cfg.Source.RequestTimeout)
 	publisher := NewGitPublisher(cfg.Blog, cfg.Git.CommandTimeout)
-	service, err := NewService(cfg.Blog, store, fetcher, publisher, nowUTC)
+	var wiki WikiFetcher
+	if cfg.Wiki.Enabled() {
+		wiki = NewHTTPWikiFetcher(cfg.Wiki)
+	}
+	service, err := NewService(cfg.Blog, store, fetcher, wiki, publisher, nowUTC)
 	if err != nil {
 		return nil, err
 	}

@@ -16,6 +16,7 @@ type Config struct {
 	Blog     BlogConfig
 	Records  RecordsConfig
 	Source   SourceConfig
+	Wiki     WikiConfig
 	Git      GitConfig
 	HTTP     HTTPConfig
 }
@@ -29,6 +30,9 @@ type BlogConfig struct {
 	AuthorName        string
 	AuthorEmail       string
 	Push              bool
+	// AssetDir holds the images of published wiki pages, one directory per
+	// page. Required only when wiki publishing is enabled.
+	AssetDir string
 }
 
 type RecordsConfig struct {
@@ -38,6 +42,18 @@ type RecordsConfig struct {
 type SourceConfig struct {
 	DocumentsBaseURL string
 	RequestTimeout   time.Duration
+}
+
+// WikiConfig enables publishing single den-wiki pages. An empty BaseURL
+// disables it.
+type WikiConfig struct {
+	BaseURL        string
+	RequestTimeout time.Duration
+	MaxAssetBytes  int64
+}
+
+func (c WikiConfig) Enabled() bool {
+	return c.BaseURL != ""
 }
 
 type GitConfig struct {
@@ -53,6 +69,7 @@ type configFile struct {
 	Blog     blogConfigFile    `yaml:"blog"`
 	Records  recordsConfigFile `yaml:"records"`
 	Source   sourceConfigFile  `yaml:"source"`
+	Wiki     wikiConfigFile    `yaml:"wiki"`
 	Git      gitConfigFile     `yaml:"git"`
 	HTTP     httpConfigFile    `yaml:"http"`
 }
@@ -66,6 +83,13 @@ type blogConfigFile struct {
 	AuthorName        string `yaml:"author_name"`
 	AuthorEmail       string `yaml:"author_email"`
 	Push              bool   `yaml:"push"`
+	AssetDir          string `yaml:"asset_dir"`
+}
+
+type wikiConfigFile struct {
+	BaseURL        string `yaml:"base_url"`
+	RequestTimeout string `yaml:"request_timeout"`
+	MaxAssetBytes  int64  `yaml:"max_asset_bytes"`
 }
 
 type recordsConfigFile struct {
@@ -125,6 +149,13 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	var wikiTimeout time.Duration
+	if f.Wiki.BaseURL != "" {
+		wikiTimeout, err = parseRequiredDuration("wiki.request_timeout", f.Wiki.RequestTimeout)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &Config{
 		BindAddr: f.BindAddr,
 		Blog: BlogConfig{
@@ -136,11 +167,17 @@ func (f configFile) toConfig(values sharedconfig.Values) (*Config, error) {
 			AuthorName:        f.Blog.AuthorName,
 			AuthorEmail:       f.Blog.AuthorEmail,
 			Push:              f.Blog.Push,
+			AssetDir:          f.Blog.AssetDir,
 		},
 		Records: RecordsConfig{Path: f.Records.Path},
 		Source: SourceConfig{
 			DocumentsBaseURL: f.Source.DocumentsBaseURL,
 			RequestTimeout:   sourceTimeout,
+		},
+		Wiki: WikiConfig{
+			BaseURL:        f.Wiki.BaseURL,
+			RequestTimeout: wikiTimeout,
+			MaxAssetBytes:  f.Wiki.MaxAssetBytes,
 		},
 		Git:  GitConfig{CommandTimeout: gitTimeout},
 		HTTP: HTTPConfig{ReadHeaderTimeout: readHeaderTimeout},
@@ -162,6 +199,14 @@ func (c *Config) validate() error {
 	}
 	if c.Source.DocumentsBaseURL == "" {
 		return errors.New("source.documents_base_url is required")
+	}
+	if c.Wiki.Enabled() {
+		if c.Blog.AssetDir == "" {
+			return errors.New("blog.asset_dir is required when wiki.base_url is set")
+		}
+		if c.Wiki.RequestTimeout <= 0 || c.Wiki.MaxAssetBytes <= 0 {
+			return errors.New("wiki.request_timeout and wiki.max_asset_bytes must be positive")
+		}
 	}
 	if c.Source.RequestTimeout <= 0 || c.Git.CommandTimeout <= 0 || c.HTTP.ReadHeaderTimeout <= 0 {
 		return errors.New("timeouts must be positive")

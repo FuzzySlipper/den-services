@@ -40,11 +40,20 @@ func (s *FilePublicationStore) FindBySource(_ context.Context, source DocumentSo
 		if err != nil {
 			return nil, err
 		}
-		if record.DocumentProjectID == source.DocumentProjectID && record.DocumentSlug == source.DocumentSlug {
+		if sameSource(record, source) {
 			return record, nil
 		}
 	}
 	return nil, notFound("no publication record for source document")
+}
+
+// sameSource reports whether a record was published from source: the same
+// wiki page, or the same Den document.
+func sameSource(record *PublicationRecord, source DocumentSource) bool {
+	if source.Kind() == SourceKindWiki {
+		return record.WikiPage == source.WikiPage
+	}
+	return record.WikiPage == "" && record.DocumentProjectID == source.DocumentProjectID && record.DocumentSlug == source.DocumentSlug
 }
 
 func (s *FilePublicationStore) Save(_ context.Context, record PublicationRecord) error {

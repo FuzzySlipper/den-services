@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -22,6 +23,12 @@ type DocumentFetcher interface {
 	Fetch(ctx context.Context, source DocumentSource) (*SourceDocument, error)
 }
 
+// WikiFetcher fetches a den-wiki page rendered for the blog, and its images.
+type WikiFetcher interface {
+	FetchPage(ctx context.Context, page string, assetBase string) (*SourceDocument, error)
+	FetchAsset(ctx context.Context, page string, asset SourceAsset) ([]byte, error)
+}
+
 type BlogPublisher interface {
 	Publish(ctx context.Context, post RenderedPost, overwrite bool, dryRun bool) (string, error)
 	Exists(ctx context.Context, postPath string) (bool, error)
@@ -31,11 +38,14 @@ type Service struct {
 	cfg       BlogConfig
 	store     PublicationStore
 	fetcher   DocumentFetcher
+	wiki      WikiFetcher
 	publisher BlogPublisher
 	clock     func() time.Time
 }
 
-func NewService(cfg BlogConfig, store PublicationStore, fetcher DocumentFetcher, publisher BlogPublisher, clock func() time.Time) (*Service, error) {
+// NewService builds the service. wiki may be nil: wiki page sources are then
+// rejected.
+func NewService(cfg BlogConfig, store PublicationStore, fetcher DocumentFetcher, wiki WikiFetcher, publisher BlogPublisher, clock func() time.Time) (*Service, error) {
 	if store == nil {
 		return nil, invalidRequest("publication store is required")
 	}
@@ -48,7 +58,10 @@ func NewService(cfg BlogConfig, store PublicationStore, fetcher DocumentFetcher,
 	if clock == nil {
 		return nil, invalidRequest("clock is required")
 	}
-	return &Service{cfg: cfg, store: store, fetcher: fetcher, publisher: publisher, clock: clock}, nil
+	if wiki != nil && cfg.AssetDir == "" {
+		return nil, invalidRequest("blog asset_dir is required for wiki pages")
+	}
+	return &Service{cfg: cfg, store: store, fetcher: fetcher, wiki: wiki, publisher: publisher, clock: clock}, nil
 }
 
 func (s *Service) Preview(ctx context.Context, req PublicationRequest) (*PublicationResponse, error) {
@@ -79,13 +92,17 @@ func (s *Service) Publish(ctx context.Context, req PublicationRequest) (*Publica
 	if err != nil {
 		return nil, err
 	}
+	assets, err := s.fetchAssets(ctx, req.Source, document)
+	if err != nil {
+		return nil, err
+	}
 	effectiveOverwrite := req.Options.Overwrite
 	if previous, err := s.store.FindBySource(ctx, req.Source); err == nil && previous != nil {
 		effectiveOverwrite = true
 	} else if err != nil && !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
-	commit, err := s.publisher.Publish(ctx, RenderedPost{Slug: response.Slug, Path: response.PostPath, Markdown: response.PreviewMarkdown}, effectiveOverwrite, false)
+	commit, err := s.publisher.Publish(ctx, RenderedPost{Slug: response.Slug, Path: response.PostPath, Markdown: response.PreviewMarkdown, Assets: assets}, effectiveOverwrite, false)
 	if err != nil {
 		record.Status = PublicationStatusFailed
 		record.LastError = err.Error()
@@ -112,6 +129,16 @@ func (s *Service) Get(ctx context.Context, id string) (*PublicationRecord, error
 }
 
 func (s *Service) documentForRequest(ctx context.Context, req PublicationRequest, requireFetch bool) (*SourceDocument, []string, error) {
+	if req.Source.Kind() == SourceKindWiki {
+		if s.wiki == nil {
+			return nil, nil, invalidRequest("wiki pages cannot be published: wiki.base_url is not configured")
+		}
+		document, err := s.wiki.FetchPage(ctx, req.Source.WikiPage, s.wikiAssetBase(req.Source.WikiPage))
+		if err != nil {
+			return nil, nil, err
+		}
+		return document, document.Warnings, nil
+	}
 	if requireFetch || req.Document == nil {
 		document, err := s.fetcher.Fetch(ctx, req.Source)
 		if err != nil {
@@ -153,11 +180,17 @@ func (s *Service) prepare(ctx context.Context, req PublicationRequest, document 
 			return nil, nil, err
 		}
 	}
+	assetPaths, err := s.assetPaths(req.Source, document)
+	if err != nil {
+		return nil, nil, err
+	}
 	record := &PublicationRecord{
 		ID:                id,
 		SourceProjectID:   req.Source.ProjectID,
 		DocumentProjectID: req.Source.DocumentProjectID,
 		DocumentSlug:      req.Source.DocumentSlug,
+		WikiPage:          req.Source.WikiPage,
+		AssetPaths:        assetPaths,
 		SourceVersion:     document.UpdatedAt.Format(time.RFC3339),
 		Title:             rendered.Title,
 		Slug:              rendered.Slug,
@@ -179,6 +212,7 @@ func (s *Service) prepare(ctx context.Context, req PublicationRequest, document 
 		PostPath:        rendered.Path,
 		PublicURL:       rendered.PublicURL,
 		PreviewMarkdown: rendered.Markdown,
+		AssetPaths:      assetPaths,
 		Source:          req.Source,
 	}
 	if dryRun {
@@ -187,12 +221,63 @@ func (s *Service) prepare(ctx context.Context, req PublicationRequest, document 
 	return response, record, nil
 }
 
+// wikiAssetDir is the repo directory a wiki page's images go in.
+func (s *Service) wikiAssetDir(page string) string {
+	return path.Join(s.cfg.AssetDir, wikiKey(page))
+}
+
+// wikiAssetBase is the public URL prefix of a wiki page's images.
+func (s *Service) wikiAssetBase(page string) string {
+	return strings.TrimRight(s.cfg.PublicBaseURL, "/") + "/" + s.wikiAssetDir(page) + "/"
+}
+
+// assetPaths returns the repo paths a wiki page's images are published at.
+func (s *Service) assetPaths(source DocumentSource, document *SourceDocument) ([]string, error) {
+	if source.Kind() != SourceKindWiki {
+		return nil, nil
+	}
+	dir := s.wikiAssetDir(source.WikiPage)
+	paths := make([]string, 0, len(document.Assets))
+	for _, asset := range document.Assets {
+		if !safeAssetName(asset.Name) {
+			return nil, invalidRequest(fmt.Sprintf("wiki asset name %q is not a plain file name", asset.Name))
+		}
+		paths = append(paths, path.Join(dir, asset.Name))
+	}
+	return paths, nil
+}
+
+// fetchAssets fetches a wiki page's images, each checked against its sha256.
+func (s *Service) fetchAssets(ctx context.Context, source DocumentSource, document *SourceDocument) ([]PostAsset, error) {
+	paths, err := s.assetPaths(source, document)
+	if err != nil || len(paths) == 0 {
+		return nil, err
+	}
+	assets := make([]PostAsset, 0, len(paths))
+	for i, asset := range document.Assets {
+		content, err := s.wiki.FetchAsset(ctx, source.WikiPage, asset)
+		if err != nil {
+			return nil, err
+		}
+		assets = append(assets, PostAsset{Path: paths[i], Content: content})
+	}
+	return assets, nil
+}
+
 type RenderedPost struct {
 	Title     string
 	Slug      string
 	Path      string
 	PublicURL string
 	Markdown  string
+	// Assets are files committed with the post: a wiki page's images.
+	Assets []PostAsset
+}
+
+// PostAsset is one file published beside a post, at a repo-relative path.
+type PostAsset struct {
+	Path    string
+	Content []byte
 }
 
 func RenderPost(document *SourceDocument, options PublicationOptions, postDir string, publicBaseURL string, now time.Time) (RenderedPost, error) {

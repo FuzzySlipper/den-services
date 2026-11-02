@@ -222,6 +222,7 @@ func newTestService(t *testing.T) (*Service, *fakePublisher) {
 		testBlogConfig(t.TempDir(), "file:///tmp/remote.git", false),
 		NewFilePublicationStore(t.TempDir()),
 		fakeFetcher{document: testDocument()},
+		nil,
 		publisher,
 		func() time.Time { return time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC) },
 	)

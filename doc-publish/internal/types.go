@@ -67,10 +67,27 @@ func (s PublicationStatus) IsValid() bool {
 	return false
 }
 
+// SourceKind says where a publication's source comes from.
+type SourceKind string
+
+const (
+	SourceKindDocument SourceKind = "document"
+	SourceKindWiki     SourceKind = "wiki"
+)
+
+// DocumentSource names a Den document or, with WikiPage, one den-wiki page.
 type DocumentSource struct {
 	ProjectID         string `json:"project_id,omitempty"`
-	DocumentProjectID string `json:"document_project_id"`
-	DocumentSlug      string `json:"document_slug"`
+	DocumentProjectID string `json:"document_project_id,omitempty"`
+	DocumentSlug      string `json:"document_slug,omitempty"`
+	WikiPage          string `json:"wiki_page,omitempty"`
+}
+
+func (s DocumentSource) Kind() SourceKind {
+	if s.WikiPage != "" {
+		return SourceKindWiki
+	}
+	return SourceKindDocument
 }
 
 type SourceDocument struct {
@@ -78,6 +95,18 @@ type SourceDocument struct {
 	Slug      string    `json:"slug,omitempty"`
 	Markdown  string    `json:"markdown"`
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	// Assets and Warnings come only from a fetched wiki page, never from a
+	// request payload.
+	Assets   []SourceAsset `json:"-"`
+	Warnings []string      `json:"-"`
+}
+
+// SourceAsset is a file a wiki page shows, which is published beside the post.
+type SourceAsset struct {
+	Name        string
+	SHA256      string
+	Size        int64
+	ContentType string
 }
 
 type PublicationOptions struct {
@@ -91,8 +120,10 @@ type PublicationOptions struct {
 type PublicationRecord struct {
 	ID                string            `json:"id"`
 	SourceProjectID   string            `json:"source_project_id,omitempty"`
-	DocumentProjectID string            `json:"document_project_id"`
-	DocumentSlug      string            `json:"document_slug"`
+	DocumentProjectID string            `json:"document_project_id,omitempty"`
+	DocumentSlug      string            `json:"document_slug,omitempty"`
+	WikiPage          string            `json:"wiki_page,omitempty"`
+	AssetPaths        []string          `json:"asset_paths,omitempty"`
 	SourceVersion     string            `json:"source_version,omitempty"`
 	Title             string            `json:"title"`
 	Slug              string            `json:"slug"`

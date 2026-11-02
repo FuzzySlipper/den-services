@@ -48,6 +48,12 @@ func (p *GitPublisher) Publish(ctx context.Context, post RenderedPost, overwrite
 	if err != nil {
 		return "", err
 	}
+	assetPaths := make([]string, len(post.Assets))
+	for i, asset := range post.Assets {
+		if assetPaths[i], err = p.safeAssetPath(asset.Path); err != nil {
+			return "", err
+		}
+	}
 	if exists, err := p.Exists(ctx, post.Path); err != nil {
 		return "", err
 	} else if exists && !overwrite {
@@ -62,7 +68,19 @@ func (p *GitPublisher) Publish(ctx context.Context, post RenderedPost, overwrite
 	if err := os.WriteFile(path, []byte(post.Markdown), 0o644); err != nil {
 		return "", fmt.Errorf("writing post: %w", err)
 	}
-	if _, err := p.git(ctx, "add", "--", post.Path); err != nil {
+	for i, asset := range post.Assets {
+		if err := os.MkdirAll(filepath.Dir(assetPaths[i]), 0o755); err != nil {
+			return "", fmt.Errorf("creating asset directory: %w", err)
+		}
+		if err := os.WriteFile(assetPaths[i], asset.Content, 0o644); err != nil {
+			return "", fmt.Errorf("writing asset: %w", err)
+		}
+	}
+	add := []string{"add", "--", post.Path}
+	for _, asset := range post.Assets {
+		add = append(add, asset.Path)
+	}
+	if _, err := p.git(ctx, add...); err != nil {
 		return "", err
 	}
 	message := "Publish " + post.Slug
@@ -110,16 +128,28 @@ func (p *GitPublisher) verifyRepo(ctx context.Context) error {
 }
 
 func (p *GitPublisher) safePostPath(postPath string) (string, error) {
-	if postPath == "" || filepath.IsAbs(postPath) {
-		return "", invalidRequest("post path must be relative")
+	return p.safeRepoPath(postPath, p.cfg.PostDir, "post", "post_dir")
+}
+
+func (p *GitPublisher) safeAssetPath(assetPath string) (string, error) {
+	if p.cfg.AssetDir == "" {
+		return "", invalidRequest("asset path given but blog asset_dir is not configured")
 	}
-	clean := filepath.Clean(filepath.FromSlash(postPath))
-	postDir := filepath.Clean(filepath.FromSlash(p.cfg.PostDir))
+	return p.safeRepoPath(assetPath, p.cfg.AssetDir, "asset", "asset_dir")
+}
+
+// safeRepoPath resolves a repo-relative path that must stay inside dir.
+func (p *GitPublisher) safeRepoPath(rel string, dir string, kind string, dirKey string) (string, error) {
+	if rel == "" || filepath.IsAbs(rel) {
+		return "", invalidRequest(kind + " path must be relative")
+	}
+	clean := filepath.Clean(filepath.FromSlash(rel))
+	base := filepath.Clean(filepath.FromSlash(dir))
 	if clean == "." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || clean == ".." {
-		return "", invalidRequest("post path escapes repo")
+		return "", invalidRequest(kind + " path escapes repo")
 	}
-	if clean != postDir && !strings.HasPrefix(clean, postDir+string(filepath.Separator)) {
-		return "", invalidRequest("post path must be inside configured post_dir")
+	if clean != base && !strings.HasPrefix(clean, base+string(filepath.Separator)) {
+		return "", invalidRequest(kind + " path must be inside configured " + dirKey)
 	}
 	full := filepath.Join(p.cfg.RepoPath, clean)
 	root, err := filepath.Abs(p.cfg.RepoPath)
@@ -131,7 +161,7 @@ func (p *GitPublisher) safePostPath(postPath string) (string, error) {
 		return "", err
 	}
 	if abs != root && !strings.HasPrefix(abs, root+string(filepath.Separator)) {
-		return "", invalidRequest("post path escapes repo")
+		return "", invalidRequest(kind + " path escapes repo")
 	}
 	return abs, nil
 }
