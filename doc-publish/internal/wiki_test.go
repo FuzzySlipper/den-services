@@ -112,6 +112,13 @@ func (f *fakeWiki) FetchAsset(_ context.Context, _ string, asset SourceAsset) ([
 
 func newWikiService(t *testing.T, wiki *fakeWiki) (*Service, *fakePublisher, *FilePublicationStore) {
 	t.Helper()
+	service, publisher, store, _ := newWikiServiceAt(t, wiki)
+	return service, publisher, store
+}
+
+// newWikiServiceAt also returns the service clock's time, for tests to move.
+func newWikiServiceAt(t *testing.T, wiki *fakeWiki) (*Service, *fakePublisher, *FilePublicationStore, *time.Time) {
+	t.Helper()
 	publisher := &fakePublisher{commit: "abc123"}
 	store := NewFilePublicationStore(t.TempDir())
 	cfg := testBlogConfig(t.TempDir(), "file:///tmp/remote.git", false)
@@ -120,12 +127,13 @@ func newWikiService(t *testing.T, wiki *fakeWiki) (*Service, *fakePublisher, *Fi
 	if wiki != nil {
 		fetcher = wiki
 	}
+	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
 	service, err := NewService(cfg, store, fakeFetcher{document: testDocument()}, fetcher, publisher,
-		func() time.Time { return time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC) })
+		func() time.Time { return now })
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
-	return service, publisher, store
+	return service, publisher, store, &now
 }
 
 func wikiDocument() *SourceDocument {
@@ -180,6 +188,37 @@ func TestPublishWikiPageCommitsItsAssetsAndUpdatesTheSamePost(t *testing.T) {
 	// A Den document publication is never mistaken for the wiki page's.
 	if _, err := store.FindBySource(context.Background(), testSource()); err == nil {
 		t.Fatal("FindBySource(document) matched a wiki record")
+	}
+}
+
+func TestRepublishWikiPageUpdatesItsFirstPost(t *testing.T) {
+	wiki := &fakeWiki{document: wikiDocument()}
+	service, publisher, _, now := newWikiServiceAt(t, wiki)
+	first, err := service.Publish(context.Background(), PublicationRequest{Source: wikiSource(), RequestedBy: "pi"})
+	if err != nil {
+		t.Fatalf("first Publish() error = %v", err)
+	}
+	if first.PostPath != "_posts/2026-11-02-agent-memory.md" {
+		t.Fatalf("first post path = %s", first.PostPath)
+	}
+	// A day later, under a new title.
+	*now = now.Add(24 * time.Hour)
+	renamed := wikiDocument()
+	renamed.Title = "Memory for LLM agents"
+	wiki.document = renamed
+	for _, publish := range []func(context.Context, PublicationRequest) (*PublicationResponse, error){service.Preview, service.Publish} {
+		second, err := publish(context.Background(), PublicationRequest{Source: wikiSource(), RequestedBy: "pi"})
+		if err != nil {
+			t.Fatalf("second publish error = %v", err)
+		}
+		if second.PostPath != first.PostPath || second.Slug != first.Slug || second.PublicURL != first.PublicURL || second.PublicationID != first.PublicationID {
+			t.Fatalf("second = %+v, want post of %+v", second, first)
+		}
+		assertContains(t, second.PreviewMarkdown, `title: "Memory for LLM agents"`)
+		assertContains(t, second.PreviewMarkdown, `date: "2026-11-02 12:00:00 +0000"`)
+	}
+	if publisher.lastPost.Path != first.PostPath || publisher.publishCalls != 2 {
+		t.Fatalf("published %d times, last to %s", publisher.publishCalls, publisher.lastPost.Path)
 	}
 }
 

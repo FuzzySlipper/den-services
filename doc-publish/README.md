@@ -97,7 +97,9 @@ page path without `wiki/` and `.md`, slugified (`wiki/ai/agent-memory.md` →
 paths as `asset_paths` without fetching the images. Publish fetches each from
 `/v1/export/asset`, rejects any over `wiki.max_asset_bytes` or not matching its
 sha256, and commits them with the post in one commit. Publishing the same page
-again updates its post and images; an image the page no longer uses stays in
+again updates its post and images in place: the post keeps its first slug,
+date, path and URL even if the page's title changed, and only the title and
+body change; an image the page no longer uses stays in
 the blog repo.
 
 Wiki pages are disabled until `wiki.base_url` is set, and need

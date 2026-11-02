@@ -150,12 +150,12 @@ func (s *Service) documentForRequest(ctx context.Context, req PublicationRequest
 }
 
 func (s *Service) prepare(ctx context.Context, req PublicationRequest, document *SourceDocument, status PublicationStatus, dryRun bool) (*PublicationResponse, *PublicationRecord, error) {
-	rendered, err := RenderPost(document, req.Options, s.cfg.PostDir, s.cfg.PublicBaseURL, s.clock())
-	if err != nil {
-		return nil, nil, err
-	}
 	previous, err := s.store.FindBySource(ctx, req.Source)
 	if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, nil, err
+	}
+	rendered, err := s.render(req, document, previous)
+	if err != nil {
 		return nil, nil, err
 	}
 	if previous == nil {
@@ -219,6 +219,24 @@ func (s *Service) prepare(ctx context.Context, req PublicationRequest, document 
 		return response, record, nil
 	}
 	return response, record, nil
+}
+
+// render renders the post. A wiki page published before keeps its post: the
+// same slug, date, path and URL, so a new title or a later day updates that
+// post instead of adding another.
+func (s *Service) render(req PublicationRequest, document *SourceDocument, previous *PublicationRecord) (RenderedPost, error) {
+	if req.Source.Kind() != SourceKindWiki || previous == nil || previous.PostPath == "" {
+		return RenderPost(document, req.Options, s.cfg.PostDir, s.cfg.PublicBaseURL, s.clock())
+	}
+	options := req.Options
+	options.Slug = previous.Slug
+	rendered, err := RenderPost(document, options, s.cfg.PostDir, s.cfg.PublicBaseURL, previous.CreatedAt)
+	if err != nil {
+		return RenderedPost{}, err
+	}
+	rendered.Path = previous.PostPath
+	rendered.PublicURL = previous.PublicURL
+	return rendered, nil
 }
 
 // wikiAssetDir is the repo directory a wiki page's images go in.
