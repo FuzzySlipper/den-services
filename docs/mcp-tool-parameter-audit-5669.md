@@ -140,3 +140,25 @@ asked for one rule, since the task already carries its project:
   but `project_id` is optional when `task_id` is given: the facade derives it
   from the task. A call that names its project is dispatched unchanged, with
   no task read. This settles finding 4 without adding task-scoped variants.
+
+## Follow-up: MCP keeps only the frequent tools (2026-11-02)
+
+Patch set the rule: MCP `tools/list` holds the tools agents use all the time,
+and everything else is reached through `den-tool`. Ten tools moved to the
+long tail (still callable by exact name and as `den-tool den <operation>`):
+
+- `request_review`, `watch_github_checks`, `wait_for_github_checks`:
+  crew-review owns review routing and check gates and calls these by exact
+  name; listing them invited agents to bypass `submit_task_for_review`.
+- `get_document_discussion`, `comment_on_document`: 1 and 4 calls in the 30
+  days before the change.
+- `query_librarian`: 35 calls in 30 days. Testing found it keyword-matches
+  stopwords, misses the obvious task for an exact-topic query, pads results
+  with unrelated early tasks, answers a nonsense query with
+  `confidence: high`, and returns tens of kilobytes per call.
+- `send_message`, `get_messages`, `wait_for_messages`, `get_thread`: Den
+  messages are legacy now that crew messaging reaches sessions directly.
+  Services (crew-review's task-thread posts) keep calling them by name.
+
+Den Board left discovery the same day (#10555). `tools/list` is now 20 tools
+(19 in the managed-runtime profile).

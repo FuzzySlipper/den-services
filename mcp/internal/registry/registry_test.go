@@ -19,11 +19,10 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 30 {
-		t.Fatalf("tool count = %d, want 30", len(names))
+	if len(names) != 20 {
+		t.Fatalf("tool count = %d, want 20", len(names))
 	}
 	for _, name := range []string{
-		"comment_on_document",
 		"create_task",
 		"den_knowledge_get",
 		"den_knowledge_guide",
@@ -31,28 +30,19 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		"get_agent_guidance",
 		"get_details",
 		"get_document",
-		"get_document_discussion",
 		"get_handoff",
-		"get_messages",
 		"get_review_context",
 		"get_task",
 		"get_task_context",
-		"get_thread",
 		"list_review_findings",
 		"list_tasks",
 		"next_task",
-		"query_librarian",
-		"request_review",
 		"respond_to_review_finding",
 		"search_documents",
-		"send_message",
 		"set_handoff",
 		"submit_task_for_review",
 		"store_document",
 		"update_task",
-		"wait_for_github_checks",
-		"wait_for_messages",
-		"watch_github_checks",
 	} {
 		if !containsName(names, name) {
 			t.Fatalf("common tools missing %s", name)
@@ -69,6 +59,16 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		catalogNames = append(catalogNames, tool.Name)
 	}
 	longTailNames := []string{
+		"request_review",
+		"watch_github_checks",
+		"wait_for_github_checks",
+		"get_document_discussion",
+		"comment_on_document",
+		"query_librarian",
+		"send_message",
+		"get_messages",
+		"wait_for_messages",
+		"get_thread",
 		"discover_github_checks",
 		"add_agent_guidance_entry",
 		"add_dependency",
@@ -396,14 +396,14 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if err != nil {
 		t.Fatalf("ToolsForProfile(managed-runtime) error = %v", err)
 	}
-	if len(direct) != 30 {
-		t.Fatalf("direct tool count = %d, want 30", len(direct))
+	if len(direct) != 20 {
+		t.Fatalf("direct tool count = %d, want 20", len(direct))
 	}
 	if len(managed) >= len(direct) {
 		t.Fatalf("managed tool count = %d, want fewer than direct %d", len(managed), len(direct))
 	}
-	if len(managed) != 26 {
-		t.Fatalf("managed tool count = %d, want 26", len(managed))
+	if len(managed) != 19 {
+		t.Fatalf("managed tool count = %d, want 19", len(managed))
 	}
 	for _, name := range []string{"discover_github_checks", "watch_github_checks", "get_github_check_gate", "wait_for_github_checks", "await_github_checks", "request_review", "create_review_round"} {
 		if containsListedTool(managed, name) {
@@ -440,7 +440,7 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if catalog.HiddenToolCount == 0 || catalog.WorkflowTiers[WorkflowTierPrimitive] != 0 {
 		t.Fatalf("managed catalog = %#v", catalog)
 	}
-	if catalog.VisibleToolCount != 26 || catalog.HiddenToolCount != 54 {
+	if catalog.VisibleToolCount != 19 || catalog.HiddenToolCount != 61 {
 		t.Fatalf("managed catalog counts = %#v", catalog)
 	}
 	if !slices.Contains(catalog.HiddenWorkflowTiers, WorkflowTierPrimitive) {

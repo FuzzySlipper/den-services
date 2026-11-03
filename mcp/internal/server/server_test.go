@@ -76,8 +76,8 @@ func TestMCPToolsListIsStatic(t *testing.T) {
 	decodeResponse(t, response, &body)
 	result := body["result"].(map[string]any)
 	tools := result["tools"].([]any)
-	if len(tools) != 30 {
-		t.Fatalf("tool count = %d, want 30", len(tools))
+	if len(tools) != 20 {
+		t.Fatalf("tool count = %d, want 20", len(tools))
 	}
 	first := tools[0].(map[string]any)
 	if first["name"] != "search_documents" {
@@ -87,7 +87,7 @@ func TestMCPToolsListIsStatic(t *testing.T) {
 	if catalog["toolProfile"] != "direct" {
 		t.Fatalf("catalog profile = %v, want direct", catalog["toolProfile"])
 	}
-	if catalog["visibleToolCount"] != float64(30) || catalog["hiddenToolCount"] != float64(50) {
+	if catalog["visibleToolCount"] != float64(20) || catalog["hiddenToolCount"] != float64(60) {
 		t.Fatalf("catalog counts = %#v", catalog)
 	}
 }
@@ -113,8 +113,8 @@ func TestMCPToolsListManagedRuntimeProfileFiltersPrimitives(t *testing.T) {
 	decodeResponse(t, response, &responseBody)
 	result := responseBody["result"].(map[string]any)
 	tools := result["tools"].([]any)
-	if len(tools) != 26 {
-		t.Fatalf("managed tool count = %d, want 26", len(tools))
+	if len(tools) != 19 {
+		t.Fatalf("managed tool count = %d, want 19", len(tools))
 	}
 	for _, rawTool := range tools {
 		name := rawTool.(map[string]any)["name"]
@@ -129,7 +129,7 @@ func TestMCPToolsListManagedRuntimeProfileFiltersPrimitives(t *testing.T) {
 	if catalog["hiddenToolCount"].(float64) == 0 {
 		t.Fatal("managed catalog reports no hidden tools")
 	}
-	if catalog["visibleToolCount"] != float64(26) || catalog["hiddenToolCount"] != float64(54) {
+	if catalog["visibleToolCount"] != float64(19) || catalog["hiddenToolCount"] != float64(61) {
 		t.Fatalf("managed catalog counts = %#v", catalog)
 	}
 
@@ -159,7 +159,7 @@ func TestMCPManagedRuntimeHeaderScopesInitializeAndToolsList(t *testing.T) {
 		decodeResponse(t, response, &responseBody)
 		result := responseBody["result"].(map[string]any)
 		catalog := result["catalog"].(map[string]any)
-		if catalog["toolProfile"] != "managed-runtime" || catalog["visibleToolCount"] != float64(26) {
+		if catalog["toolProfile"] != "managed-runtime" || catalog["visibleToolCount"] != float64(19) {
 			t.Fatalf("%s managed catalog = %#v", method, catalog)
 		}
 	}

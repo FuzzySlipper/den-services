@@ -740,7 +740,22 @@ var hiddenCompatibilityToolPolicies = map[string]hiddenToolPolicy{
 
 // longTailToolNames remains callable by exact MCP name and through den-tool,
 // but does not occupy ordinary model-facing tools/list discovery.
+//
+// Patch, 2026-11-02: MCP keeps only the frequently used tools. Review and
+// check-gate primitives are crew-review's (it calls them by exact name),
+// document discussions and the librarian are rare, and Den messages are
+// legacy now that crew messaging reaches sessions directly.
 var longTailToolNames = map[string]struct{}{
+	"request_review":                     {},
+	"watch_github_checks":                {},
+	"wait_for_github_checks":             {},
+	"get_document_discussion":            {},
+	"comment_on_document":                {},
+	"query_librarian":                    {},
+	"send_message":                       {},
+	"get_messages":                       {},
+	"wait_for_messages":                  {},
+	"get_thread":                         {},
 	"discover_github_checks":             {},
 	"add_agent_guidance_entry":           {},
 	"add_dependency":                     {},
@@ -795,7 +810,7 @@ var longTailToolNames = map[string]struct{}{
 
 // notificationsRetiredMessage tombstones the user-notification tools: nothing
 // read those notifications, so Den Web and the facade no longer offer them.
-const notificationsRetiredMessage = "Den user notifications are retired because nothing read them. Use a task-thread message (send_message) to reach the user or another agent."
+const notificationsRetiredMessage = "Den user notifications are retired because nothing read them. Use a task-thread message (den-tool den send_message) to reach Patch or another agent."
 
 var retiredToolPolicies = map[string]retiredToolPolicy{
 	"send_user_notification":  {message: notificationsRetiredMessage},
