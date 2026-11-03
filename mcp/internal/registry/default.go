@@ -87,6 +87,7 @@ func DefaultTools() ([]ToolDefinition, error) {
 	tools = append(tools, reviewPipelineTools()...)
 	tools = append(tools, contractErgonomicsTools()...)
 	tools = append(tools, handoffTools()...)
+	tools = append(tools, projectCrewNotifyTools()...)
 	tools = append(tools, knowledgeTools()...)
 	tools = append(tools, boardTools()...)
 	tools = append(tools, boardRelayTools()...)
@@ -265,6 +266,34 @@ func handoffTools() []ToolDefinition {
 			InputSchema: ObjectSchema(map[string]Schema{"label": label}, "label"),
 		},
 	}
+}
+
+func projectCrewNotifyTools() []ToolDefinition {
+	return []ToolDefinition{{
+		Name:        "update_project_crew_notify",
+		Description: "Add or remove the crew addresses crew-review tells when one of the project's tasks passes review (event on_done). remove drops addresses, then add inserts each one or replaces its policy, so adding your own seat is one call. Den checks only the shape: a seat (scope.name) or a session (s/<hex>). get_project returns the list as project.crew_notify.",
+		Backend:     "projects",
+		Operation:   "update_project_crew_notify",
+		InputSchema: ObjectSchema(map[string]Schema{
+			"project_id": StringSchema("Project whose crew_notify list to edit."),
+			"event":      NullableStringSchema("Which list to edit. Only on_done exists; omit it."),
+			"add": mustSchema(map[string]any{
+				"type": []string{"array", "null"}, "maxItems": 16,
+				"items": map[string]any{
+					"type": "object", "additionalProperties": false, "required": []string{"address"},
+					"properties": map[string]any{
+						"address": map[string]any{"type": "string", "description": "Crew seat (scope.name, e.g. rusty-dagger.lead) or session (s/<hex>)."},
+						"policy":  map[string]any{"type": "string", "enum": []string{"no_wake", "next_turn"}, "description": "no_wake (default) queues the notice; next_turn wakes an idle holder."},
+					},
+				},
+				"description": "Addresses to add, or whose policy to change.",
+			}),
+			"remove": mustSchema(map[string]any{
+				"type": []string{"array", "null"}, "maxItems": 16, "items": map[string]any{"type": "string"},
+				"description": "Addresses to drop from the list.",
+			}),
+		}, "project_id"),
+	}}
 }
 
 func campaignReviewTools() []ToolDefinition {
@@ -805,6 +834,7 @@ var longTailToolNames = map[string]struct{}{
 	"update_discussion_thread":           {},
 	"update_document_visibility":         {},
 	"update_project":                     {},
+	"update_project_crew_notify":         {},
 	"update_space_visibility":            {},
 }
 

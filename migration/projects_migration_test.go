@@ -13,6 +13,7 @@ func TestProjectsMigrationDiscovered(t *testing.T) {
 	var initial *Migration
 	var deleteGrant *Migration
 	var repositoryURL *Migration
+	var crewNotify *Migration
 	for i := range migrations {
 		if migrations[i].Schema == "den_projects" && migrations[i].Version == 1 {
 			initial = &migrations[i]
@@ -22,6 +23,9 @@ func TestProjectsMigrationDiscovered(t *testing.T) {
 		}
 		if migrations[i].Schema == "den_projects" && migrations[i].Version == 3 {
 			repositoryURL = &migrations[i]
+		}
+		if migrations[i].Schema == "den_projects" && migrations[i].Version == 4 {
+			crewNotify = &migrations[i]
 		}
 	}
 	if initial == nil {
@@ -53,6 +57,18 @@ func TestProjectsMigrationDiscovered(t *testing.T) {
 	} {
 		if !strings.Contains(repositoryURL.SQL, want) {
 			t.Fatalf("projects repository URL migration missing %q", want)
+		}
+	}
+	if crewNotify == nil {
+		t.Fatal("den_projects version 4 crew_notify migration not discovered")
+	}
+	for _, want := range []string{
+		"add column crew_notify_json jsonb",
+		"create or replace view den_projects.visible_projects",
+		"create or replace view den_projects.visible_spaces",
+	} {
+		if !strings.Contains(crewNotify.SQL, want) {
+			t.Fatalf("projects crew_notify migration missing %q", want)
 		}
 	}
 }

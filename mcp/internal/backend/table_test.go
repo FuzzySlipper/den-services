@@ -426,6 +426,7 @@ func projectsSafeSubsetRoute(operation string) bool {
 	case "create_project",
 		"list_projects",
 		"update_project",
+		"update_project_crew_notify",
 		"create_space",
 		"list_spaces",
 		"update_space_visibility",

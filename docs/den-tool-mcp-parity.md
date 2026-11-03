@@ -10,6 +10,10 @@ schemas, owning routed backend, workflow tier, description, and risk class.
 Project creation and updates accept optional `repository_url` metadata, which
 can use HTTP(S), SSH/git, or scp-style Git remote forms.
 
+`update_project_crew_notify` edits a project's `crew_notify` list (the crew
+addresses crew-review tells when a task passes review); `get_project` returns
+it as `project.crew_notify`.
+
 This inventory is generated from `mcp/internal/registry` plus
 `mcp/routes.example.yaml`:
 

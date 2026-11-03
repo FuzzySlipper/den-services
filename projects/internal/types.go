@@ -87,6 +87,7 @@ type Scope struct {
 	repositoryURL string
 	description   string
 	settingsJSON  []byte
+	crewNotify    CrewNotify
 	createdAt     time.Time
 	updatedAt     time.Time
 }
@@ -101,6 +102,7 @@ type NewScopeParams struct {
 	RepositoryURL string
 	Description   string
 	SettingsJSON  []byte
+	CrewNotify    CrewNotify
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
@@ -145,6 +147,7 @@ func NewScope(params NewScopeParams) (*Scope, error) {
 		repositoryURL: repositoryURL,
 		description:   strings.TrimSpace(params.Description),
 		settingsJSON:  settingsJSON,
+		crewNotify:    CrewNotify{OnDone: append([]CrewNotifyTarget(nil), params.CrewNotify.OnDone...)},
 		createdAt:     createdAt,
 		updatedAt:     updatedAt,
 	}, nil
@@ -184,6 +187,10 @@ func (s *Scope) Description() string {
 
 func (s *Scope) SettingsJSON() []byte {
 	return append([]byte(nil), s.settingsJSON...)
+}
+
+func (s *Scope) CrewNotify() CrewNotify {
+	return CrewNotify{OnDone: append([]CrewNotifyTarget(nil), s.crewNotify.OnDone...)}
 }
 
 func (s *Scope) CreatedAt() time.Time {

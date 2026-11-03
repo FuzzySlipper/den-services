@@ -14,6 +14,7 @@ type ScopeStore interface {
 	GetScope(ctx context.Context, id string) (*Scope, error)
 	ListScopes(ctx context.Context, query ListScopesQuery) ([]*Scope, error)
 	UpdateScope(ctx context.Context, id string, patch ScopePatch, updatedAt time.Time) (*Scope, error)
+	UpdateCrewNotify(ctx context.Context, id string, edit func(CrewNotify) (CrewNotify, error), updatedAt time.Time) (*Scope, error)
 	UpdateVisibility(ctx context.Context, id string, visibility string, updatedAt time.Time) (*Scope, error)
 	DeleteScope(ctx context.Context, id string) (*Scope, error)
 }
@@ -144,6 +145,24 @@ func (s *Service) UpdateProject(ctx context.Context, id string, req UpdateProjec
 		HasSettings:   hasSettings,
 	}
 	return s.store.UpdateScope(ctx, strings.TrimSpace(id), patch, s.clock().UTC())
+}
+
+func (s *Service) UpdateCrewNotify(ctx context.Context, id string, req UpdateCrewNotifyRequest) (*Scope, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, validationFailed(ErrMissingID)
+	}
+	// Validate the request before taking the row lock.
+	if _, err := req.apply(CrewNotify{}); err != nil {
+		return nil, validationFailed(err)
+	}
+	return s.store.UpdateCrewNotify(ctx, id, func(current CrewNotify) (CrewNotify, error) {
+		next, err := req.apply(current)
+		if err != nil {
+			return CrewNotify{}, validationFailed(err)
+		}
+		return next, nil
+	}, s.clock().UTC())
 }
 
 func (s *Service) UpdateVisibility(ctx context.Context, id string, visibility string) (*Scope, error) {

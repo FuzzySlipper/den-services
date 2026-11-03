@@ -93,6 +93,44 @@ func (s *Store) UpdateScope(ctx context.Context, id string, patch ScopePatch, up
 	return scope, nil
 }
 
+// UpdateCrewNotify applies edit to the stored crew_notify under a row lock, so
+// concurrent additions from different agents are not lost.
+func (s *Store) UpdateCrewNotify(ctx context.Context, id string, edit func(CrewNotify) (CrewNotify, error), updatedAt time.Time) (*Scope, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("updating crew_notify of %s: %w", id, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var raw []byte
+	err = tx.QueryRow(ctx, lockCrewNotifySQL, id).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, notFound(id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading crew_notify of %s: %w", id, err)
+	}
+	current, err := decodeCrewNotify(raw)
+	if err != nil {
+		return nil, fmt.Errorf("scope %s: %w", id, err)
+	}
+	next, err := edit(current)
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := encodeCrewNotify(next)
+	if err != nil {
+		return nil, err
+	}
+	scope, err := scanScope(tx.QueryRow(ctx, updateCrewNotifySQL, id, jsonOrNil(encoded), updatedAt))
+	if err != nil {
+		return nil, fmt.Errorf("updating crew_notify of %s: %w", id, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("updating crew_notify of %s: %w", id, err)
+	}
+	return scope, nil
+}
+
 func (s *Store) UpdateVisibility(ctx context.Context, id string, visibility string, updatedAt time.Time) (*Scope, error) {
 	scope, err := scanScope(s.pool.QueryRow(ctx, updateVisibilitySQL, id, visibility, updatedAt))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -144,6 +182,7 @@ func scanScope(row rowScanner) (*Scope, error) {
 	var repositoryURL *string
 	var description *string
 	var settingsJSON []byte
+	var crewNotifyJSON []byte
 	var createdAt time.Time
 	var updatedAt time.Time
 	if err := row.Scan(
@@ -156,10 +195,15 @@ func scanScope(row rowScanner) (*Scope, error) {
 		&repositoryURL,
 		&description,
 		&settingsJSON,
+		&crewNotifyJSON,
 		&createdAt,
 		&updatedAt,
 	); err != nil {
 		return nil, err
+	}
+	crewNotify, err := decodeCrewNotify(crewNotifyJSON)
+	if err != nil {
+		return nil, fmt.Errorf("scope %s: %w", id, err)
 	}
 	return NewScope(NewScopeParams{
 		ID:            id,
@@ -171,6 +215,7 @@ func scanScope(row rowScanner) (*Scope, error) {
 		RepositoryURL: nilToString(repositoryURL),
 		Description:   nilToString(description),
 		SettingsJSON:  settingsJSON,
+		CrewNotify:    crewNotify,
 		CreatedAt:     createdAt,
 		UpdatedAt:     updatedAt,
 	})
@@ -204,7 +249,7 @@ func isUniqueViolation(err error) bool {
 
 const scopeColumns = `
 id, name, kind, visibility, owner, root_path, repository_url, description, settings_json,
-created_at, updated_at`
+crew_notify_json, created_at, updated_at`
 
 const createScopeSQL = `
 insert into den_projects.projects (
@@ -235,6 +280,19 @@ set name = coalesce($2, name),
     owner = case when $6::text is null then owner when $6::text = '' then null else $6::text end,
     settings_json = case when $7::boolean then $8::jsonb else settings_json end,
     updated_at = $9
+where id = $1
+returning ` + scopeColumns
+
+const lockCrewNotifySQL = `
+select crew_notify_json
+from den_projects.projects
+where id = $1
+for update`
+
+const updateCrewNotifySQL = `
+update den_projects.projects
+set crew_notify_json = $2::jsonb,
+    updated_at = $3
 where id = $1
 returning ` + scopeColumns
 

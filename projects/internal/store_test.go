@@ -62,6 +62,19 @@ func TestPostgresStoreScopeLifecycle(t *testing.T) {
 	if updated.RootPath() != "" || updated.RepositoryURL() != "" {
 		t.Fatalf("updated paths = root_path:%q repository_url:%q", updated.RootPath(), updated.RepositoryURL())
 	}
+	notified, err := store.UpdateCrewNotify(ctx, created.ID(), func(current CrewNotify) (CrewNotify, error) {
+		return UpdateCrewNotifyRequest{Add: []CrewNotifyTarget{{Address: "projects-store.lead"}}}.apply(current)
+	}, fixedClock().Add(90*time.Second))
+	if err != nil {
+		t.Fatalf("UpdateCrewNotify() error = %v", err)
+	}
+	reread, err := store.GetScope(ctx, created.ID())
+	if err != nil {
+		t.Fatalf("GetScope() error = %v", err)
+	}
+	if got := reread.CrewNotify().OnDone; len(got) != 1 || got[0] != (CrewNotifyTarget{Address: "projects-store.lead", Policy: CrewNotifyNoWake}) || len(notified.CrewNotify().OnDone) != 1 {
+		t.Fatalf("crew_notify = %+v", got)
+	}
 	archived, err := store.UpdateVisibility(ctx, created.ID(), VisibilityArchived, fixedClock().Add(2*time.Minute))
 	if err != nil {
 		t.Fatalf("UpdateVisibility() error = %v", err)

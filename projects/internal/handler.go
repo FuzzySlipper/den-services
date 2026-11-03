@@ -14,6 +14,7 @@ type ScopeUseCases interface {
 	ListProjects(ctx context.Context, includeHidden bool, includeArchived bool) ([]*Scope, error)
 	ListSpaces(ctx context.Context, kind string, includeHidden bool, includeArchived bool) ([]*Scope, error)
 	UpdateProject(ctx context.Context, id string, req UpdateProjectRequest) (*Scope, error)
+	UpdateCrewNotify(ctx context.Context, id string, req UpdateCrewNotifyRequest) (*Scope, error)
 	UpdateVisibility(ctx context.Context, id string, visibility string) (*Scope, error)
 	ArchiveSpace(ctx context.Context, id string) (*Scope, error)
 	AssertWritable(ctx context.Context, id string, allowArchived bool) (*Scope, error)
@@ -33,6 +34,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/projects", h.listProjects)
 	mux.HandleFunc("GET /v1/projects/{id}", h.getProject)
 	mux.HandleFunc("PATCH /v1/projects/{id}", h.updateProject)
+	mux.HandleFunc("POST /v1/projects/{id}/crew-notify", h.updateCrewNotify)
 
 	mux.HandleFunc("POST /v1/spaces", h.createSpace)
 	mux.HandleFunc("GET /v1/spaces", h.listSpaces)
@@ -79,6 +81,20 @@ func (h *Handler) updateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scope, err := h.service.UpdateProject(r.Context(), r.PathValue("id"), req)
+	if err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, toScopeResponse(scope))
+}
+
+func (h *Handler) updateCrewNotify(w http.ResponseWriter, r *http.Request) {
+	var req UpdateCrewNotifyRequest
+	if err := api.DecodeJSON(r, &req); err != nil {
+		api.WriteServiceError(w, err)
+		return
+	}
+	scope, err := h.service.UpdateCrewNotify(r.Context(), r.PathValue("id"), req)
 	if err != nil {
 		api.WriteServiceError(w, err)
 		return

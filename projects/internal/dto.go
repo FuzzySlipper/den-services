@@ -65,6 +65,7 @@ type ScopeResponse struct {
 	RepositoryURL string          `json:"repository_url,omitempty"`
 	Description   string          `json:"description,omitempty"`
 	SettingsJSON  json.RawMessage `json:"settings_json,omitempty"`
+	CrewNotify    *CrewNotify     `json:"crew_notify,omitempty"`
 	CreatedAt     time.Time       `json:"created_at"`
 	UpdatedAt     time.Time       `json:"updated_at"`
 	Writable      bool            `json:"writable"`
@@ -100,6 +101,9 @@ func toScopeResponse(scope *Scope) ScopeResponse {
 	}
 	if settings := scope.SettingsJSON(); len(settings) > 0 {
 		response.SettingsJSON = json.RawMessage(settings)
+	}
+	if notify := scope.CrewNotify(); !notify.IsEmpty() {
+		response.CrewNotify = &notify
 	}
 	return response
 }

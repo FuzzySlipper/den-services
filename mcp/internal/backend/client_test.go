@@ -373,6 +373,34 @@ func TestClientCallsProjectsRESTUpdateProjectPathParameter(t *testing.T) {
 	}
 }
 
+func TestClientCallsProjectsRESTCrewNotifyRoute(t *testing.T) {
+	var sawPath, sawBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.Method + " " + r.URL.EscapedPath()
+		body, _ := io.ReadAll(r.Body)
+		sawBody = string(body)
+		_, _ = w.Write([]byte(`{"id":"rusty-dagger","name":"Rusty Dagger","kind":"project","visibility":"normal","writable":true,"crew_notify":{"on_done":[{"address":"rusty-dagger.lead","policy":"no_wake"}]}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client())
+	result, failure, err := client.Call(context.Background(), testBackend("projects", server.URL), projectsRoute("update_project_crew_notify", http.MethodPost, "/v1/projects/{project_id}/crew-notify"), ToolCall{
+		ToolName:  "update_project_crew_notify",
+		Operation: "update_project_crew_notify",
+		RequestID: json.RawMessage(`1`),
+		Arguments: json.RawMessage(`{"project_id":"rusty-dagger","add":[{"address":"rusty-dagger.lead"}],"remove":null}`),
+	})
+	if err != nil || failure != nil {
+		t.Fatalf("Call() = %v, %#v", err, failure)
+	}
+	if sawPath != "POST /v1/projects/rusty-dagger/crew-notify" || sawBody != `{"add":[{"address":"rusty-dagger.lead"}]}` {
+		t.Fatalf("request = %s %s", sawPath, sawBody)
+	}
+	if encoded, _ := json.Marshal(result.Value); !strings.Contains(string(encoded), "rusty-dagger.lead") {
+		t.Fatalf("result = %s", encoded)
+	}
+}
+
 func TestClientCallsProjectsRESTDeleteSpaceAdminRoute(t *testing.T) {
 	var sawPath string
 	var sawBody deleteSpaceBody

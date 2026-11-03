@@ -59,6 +59,7 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		catalogNames = append(catalogNames, tool.Name)
 	}
 	longTailNames := []string{
+		"update_project_crew_notify",
 		"request_review",
 		"watch_github_checks",
 		"wait_for_github_checks",
@@ -135,8 +136,8 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 			t.Fatalf("%s discovery class = %q", name, tool.DiscoveryClass)
 		}
 	}
-	if catalog := registry.CatalogTools(); len(catalog) != 80 {
-		t.Fatalf("catalog tool count = %d, want 80", len(catalog))
+	if catalog := registry.CatalogTools(); len(catalog) != 81 {
+		t.Fatalf("catalog tool count = %d, want 81", len(catalog))
 	}
 	if len(longTailToolNames) != len(longTailNames) {
 		t.Fatalf("long-tail policy count = %d, want %d", len(longTailToolNames), len(longTailNames))
@@ -440,7 +441,7 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if catalog.HiddenToolCount == 0 || catalog.WorkflowTiers[WorkflowTierPrimitive] != 0 {
 		t.Fatalf("managed catalog = %#v", catalog)
 	}
-	if catalog.VisibleToolCount != 19 || catalog.HiddenToolCount != 61 {
+	if catalog.VisibleToolCount != 19 || catalog.HiddenToolCount != 62 {
 		t.Fatalf("managed catalog counts = %#v", catalog)
 	}
 	if !slices.Contains(catalog.HiddenWorkflowTiers, WorkflowTierPrimitive) {
@@ -525,7 +526,8 @@ func TestDefaultRegistryMatchesCapturedVisibleSnapshotSubset(t *testing.T) {
 			tool.Name != "record_human_acceptance_review" && tool.Name != "set_handoff" &&
 			tool.Name != "get_handoff" && tool.Name != "den_knowledge_delete" && !strings.HasSuffix(tool.Name, "_board_post") &&
 			!strings.HasSuffix(tool.Name, "_board_comment") && tool.Name != "list_board_posts" &&
-			tool.Name != "list_board_comments" && tool.Name != "get_board_comment_path" && tool.Name != "submit_task_for_review" {
+			tool.Name != "list_board_comments" && tool.Name != "get_board_comment_path" && tool.Name != "submit_task_for_review" &&
+			tool.Name != "update_project_crew_notify" {
 			t.Fatalf("unexpected non-snapshot tool %q", tool.Name)
 		}
 	}

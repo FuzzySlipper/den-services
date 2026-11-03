@@ -3586,6 +3586,74 @@
       }
     },
     {
+      "name": "update_project_crew_notify",
+      "description": "Add or remove the crew addresses crew-review tells when one of the project's tasks passes review (event on_done). remove drops addresses, then add inserts each one or replaces its policy, so adding your own seat is one call. Den checks only the shape: a seat (scope.name) or a session (s/\u003chex\u003e). get_project returns the list as project.crew_notify.",
+      "backend": "projects",
+      "operation": "update_project_crew_notify",
+      "workflow_tier": "operator",
+      "risk": "write",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "add": {
+            "description": "Addresses to add, or whose policy to change.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "address": {
+                  "description": "Crew seat (scope.name, e.g. rusty-dagger.lead) or session (s/\u003chex\u003e).",
+                  "type": "string"
+                },
+                "policy": {
+                  "description": "no_wake (default) queues the notice; next_turn wakes an idle holder.",
+                  "enum": [
+                    "no_wake",
+                    "next_turn"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "address"
+              ],
+              "type": "object"
+            },
+            "maxItems": 16,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "event": {
+            "description": "Which list to edit. Only on_done exists; omit it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_id": {
+            "description": "Project whose crew_notify list to edit.",
+            "type": "string"
+          },
+          "remove": {
+            "description": "Addresses to drop from the list.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "update_space_visibility",
       "description": "Update a space's visibility (normal, hidden, archived). The preferred green path for removing spaces from normal lists without data loss. Archived spaces are preserved but excluded from default list views.",
       "backend": "projects",

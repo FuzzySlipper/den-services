@@ -126,6 +126,7 @@ create table den_projects.projects (
     repository_url text,
     description text,
     settings_json jsonb,
+    crew_notify_json jsonb,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
@@ -146,6 +147,14 @@ Service rules:
   an empty string.
 - `settings_json` is opaque JSON owned by the project registry; callers must
   not infer schema beyond their own documented keys.
+- `crew_notify_json` (API field `crew_notify`) names crew-messaging addresses
+  to tell about the project's tasks, by event. Only `on_done` exists: crew-review
+  reads it through `get_project` and tells each address when one of the
+  project's tasks passes review. Each entry is `{address, policy}`: `address` is
+  a crew seat (`scope.name`) or session (`s/<hex>`), checked for shape only, and
+  `policy` is `no_wake` (default) or `next_turn`. At most 16 per event. Den
+  never calls crew-messaging. Reads omit the field when no list is set
+  (Patch, 2026-11-03, #10560).
 - `created_at` is immutable after insert.
 - `updated_at` changes on every metadata or visibility update.
 
@@ -177,6 +186,13 @@ Project routes:
 - `PATCH /v1/projects/{id}`
   - Updates non-null `name`, `root_path`, `repository_url`, `description`,
     `owner`, `settings_json`.
+- `POST /v1/projects/{id}/crew-notify`
+  - Request: optional `event` (only `on_done`, the default), `add` (list of
+    `{address, policy}`), `remove` (list of addresses). Applied under a row
+    lock: `remove` first, then each `add` is inserted or has its policy
+    replaced, so an agent adds its own seat in one call. Returns the project
+    row. MCP and den-tool: `update_project_crew_notify` (long tail, so
+    `den-tool den update_project_crew_notify --project-id P --add '[{"address":"P.lead"}]'`).
 
 Space routes:
 

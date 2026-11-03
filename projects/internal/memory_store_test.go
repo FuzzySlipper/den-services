@@ -80,6 +80,7 @@ func (s *memoryStore) UpdateScope(_ context.Context, id string, patch ScopePatch
 		RepositoryURL: scope.RepositoryURL(),
 		Description:   scope.Description(),
 		SettingsJSON:  scope.SettingsJSON(),
+		CrewNotify:    scope.CrewNotify(),
 		CreatedAt:     scope.CreatedAt(),
 		UpdatedAt:     updatedAt,
 	}
@@ -126,6 +127,39 @@ func (s *memoryStore) UpdateVisibility(_ context.Context, id string, visibility 
 		RepositoryURL: scope.RepositoryURL(),
 		Description:   scope.Description(),
 		SettingsJSON:  scope.SettingsJSON(),
+		CrewNotify:    scope.CrewNotify(),
+		CreatedAt:     scope.CreatedAt(),
+		UpdatedAt:     updatedAt,
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.scopes[id] = updated
+	return cloneScope(updated), nil
+}
+
+func (s *memoryStore) UpdateCrewNotify(_ context.Context, id string, edit func(CrewNotify) (CrewNotify, error), updatedAt time.Time) (*Scope, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	scope, ok := s.scopes[id]
+	if !ok {
+		return nil, notFound(id)
+	}
+	next, err := edit(scope.CrewNotify())
+	if err != nil {
+		return nil, err
+	}
+	updated, err := NewScope(NewScopeParams{
+		ID:            scope.ID(),
+		Name:          scope.Name(),
+		Kind:          scope.Kind(),
+		Visibility:    scope.Visibility(),
+		Owner:         scope.Owner(),
+		RootPath:      scope.RootPath(),
+		RepositoryURL: scope.RepositoryURL(),
+		Description:   scope.Description(),
+		SettingsJSON:  scope.SettingsJSON(),
+		CrewNotify:    next,
 		CreatedAt:     scope.CreatedAt(),
 		UpdatedAt:     updatedAt,
 	})
@@ -158,6 +192,7 @@ func cloneScope(scope *Scope) *Scope {
 		RepositoryURL: scope.RepositoryURL(),
 		Description:   scope.Description(),
 		SettingsJSON:  scope.SettingsJSON(),
+		CrewNotify:    scope.CrewNotify(),
 		CreatedAt:     scope.CreatedAt(),
 		UpdatedAt:     scope.UpdatedAt(),
 	})

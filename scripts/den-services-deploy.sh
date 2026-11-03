@@ -708,6 +708,8 @@ install_mcp_routes() {
     "/v1/knowledge/maps" "mcp_knowledge_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "den_knowledge_get_map" "knowledge" "GET" \
     "/v1/knowledge/maps/{slug}" "mcp_knowledge_rest" "mcp_tool_result_json"
+  append_mcp_route_if_missing "${routes_target}" "update_project_crew_notify" "projects" "POST" \
+    "/v1/projects/{project_id}/crew-notify" "mcp_projects_rest" "mcp_tool_result_json"
   append_mcp_route_if_missing "${routes_target}" "sync_board_github" "board-relay" "POST" \
     "/v1/projects/{project_id}/board/github-sync" "mcp_board_relay_rest" "mcp_tool_result_json" "30s"
   append_mcp_route_if_missing "${routes_target}" "set_board_github_visibility" "board-relay" "PATCH" \

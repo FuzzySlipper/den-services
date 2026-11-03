@@ -28,6 +28,15 @@ type projectsToolArguments struct {
 	IncludeHidden   bool            `json:"include_hidden"`
 	IncludeArchived bool            `json:"include_archived"`
 	Force           bool            `json:"force"`
+	Event           string          `json:"event"`
+	Add             json.RawMessage `json:"add"`
+	Remove          json.RawMessage `json:"remove"`
+}
+
+type updateCrewNotifyBody struct {
+	Event  string          `json:"event,omitempty"`
+	Add    json.RawMessage `json:"add,omitempty"`
+	Remove json.RawMessage `json:"remove,omitempty"`
 }
 
 type createProjectBody struct {
@@ -157,6 +166,8 @@ func projectsRESTRequestBody(operation string, arguments projectsToolArguments) 
 			Owner:         arguments.Owner,
 			SettingsJSON:  arguments.SettingsJSON,
 		})
+	case "update_project_crew_notify":
+		return json.Marshal(updateCrewNotifyBody{Event: strings.TrimSpace(arguments.Event), Add: nullAsAbsent(arguments.Add), Remove: nullAsAbsent(arguments.Remove)})
 	case "create_space":
 		return json.Marshal(createSpaceBody{
 			ID:           arguments.ID,
@@ -290,4 +301,11 @@ func stringValue(value *string) string {
 		return ""
 	}
 	return strings.TrimSpace(*value)
+}
+
+func nullAsAbsent(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	return raw
 }
