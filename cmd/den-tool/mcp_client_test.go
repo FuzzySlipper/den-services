@@ -89,7 +89,7 @@ func TestDenCLIInvokesLongTailReadWriteAndDestructiveOperations(t *testing.T) {
 	for _, args := range [][]string{
 		{"den", "get_project", "--project-id", "den-services"},
 		{"den", "add_dependency", "--task-id", "2", "--depends-on", "1"},
-		{"den", "purge_board_post", "--post-id", "1", "--actor-identity", "test", "--reason", "test"},
+		{"board", "purge-post", "--post-id", "1", "--actor", "test", "--reason", "test"},
 	} {
 		var stdout bytes.Buffer
 		var stderr bytes.Buffer

@@ -117,7 +117,9 @@ func boardTools() []ToolDefinition {
 	commentID := IntegerSchema("Board comment ID.")
 	afterID := NullableIntegerSchema("Optional exclusive cursor ID for the next bounded page.")
 	limit := NullableIntegerSchema("Optional page size from 1 to 100.")
-	return []ToolDefinition{
+	// Board is reached through `den-tool board`, not MCP discovery, so it is
+	// not confused with crew-board. Exact-name calls still route.
+	tools := []ToolDefinition{
 		{
 			Name: "create_board_post", Description: "Create a titled Board post. Board is durable passive conversation, not an executable task, wake, or instruction lane.", Backend: "board", Operation: "create_board_post",
 			InputSchema: ObjectSchema(map[string]Schema{
@@ -129,7 +131,7 @@ func boardTools() []ToolDefinition {
 			InputSchema: ObjectSchema(map[string]Schema{"project_id": projectID, "after_id": afterID, "limit": limit}, "project_id"),
 		},
 		{
-			Name: "search_board_posts", Description: "CLI-only bounded Board search transport. Hidden from model discovery so uncommon search does not occupy the always-loaded MCP surface.", Backend: "board", Operation: "search_board_posts", Hidden: true,
+			Name: "search_board_posts", Description: "Bounded Board full-text search.", Backend: "board", Operation: "search_board_posts", Hidden: true,
 			InputSchema: ObjectSchema(map[string]Schema{"project_id": projectID, "query": StringSchema("Board full-text search query."), "after_id": afterID, "limit": limit}, "project_id", "query"),
 		},
 		{
@@ -163,6 +165,10 @@ func boardTools() []ToolDefinition {
 			InputSchema: ObjectSchema(map[string]Schema{"comment_id": commentID, "actor_identity": StringSchema("Identity performing the purge."), "reason": StringSchema("Moderation reason retained without copying purged content.")}, "comment_id", "actor_identity", "reason"),
 		},
 	}
+	for index := range tools {
+		tools[index].Hidden = true
+	}
+	return tools
 }
 
 func reviewPipelineTools() []ToolDefinition {
@@ -774,8 +780,6 @@ var longTailToolNames = map[string]struct{}{
 	"list_spaces":                        {},
 	"mark_read":                          {},
 	"post_review_findings":               {},
-	"purge_board_comment":                {},
-	"purge_board_post":                   {},
 	"query_archived_documents":           {},
 	"record_human_acceptance_review":     {},
 	"remove_dependency":                  {},

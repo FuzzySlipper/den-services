@@ -19,21 +19,16 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 
-	if len(names) != 37 {
-		t.Fatalf("tool count = %d, want 37", len(names))
+	if len(names) != 30 {
+		t.Fatalf("tool count = %d, want 30", len(names))
 	}
 	for _, name := range []string{
 		"comment_on_document",
-		"create_board_comment",
-		"create_board_post",
 		"create_task",
 		"den_knowledge_get",
 		"den_knowledge_guide",
 		"finalize_review",
 		"get_agent_guidance",
-		"get_board_comment",
-		"get_board_comment_path",
-		"get_board_post",
 		"get_details",
 		"get_document",
 		"get_document_discussion",
@@ -43,8 +38,6 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		"get_task",
 		"get_task_context",
 		"get_thread",
-		"list_board_comments",
-		"list_board_posts",
 		"list_review_findings",
 		"list_tasks",
 		"next_task",
@@ -63,6 +56,12 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 	} {
 		if !containsName(names, name) {
 			t.Fatalf("common tools missing %s", name)
+		}
+	}
+	// Den Board is CLI-only (den-tool board), so it is not confused with crew-board.
+	for _, name := range names {
+		if strings.Contains(name, "board") {
+			t.Fatalf("Board tool %s is in MCP discovery", name)
 		}
 	}
 	catalogNames := make([]string, 0, len(registry.CatalogTools()))
@@ -109,8 +108,6 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 		"list_spaces",
 		"mark_read",
 		"post_review_findings",
-		"purge_board_comment",
-		"purge_board_post",
 		"query_archived_documents",
 		"record_human_acceptance_review",
 		"remove_dependency",
@@ -138,8 +135,8 @@ func TestDefaultRegistryListsApprovedCommonSurface(t *testing.T) {
 			t.Fatalf("%s discovery class = %q", name, tool.DiscoveryClass)
 		}
 	}
-	if catalog := registry.CatalogTools(); len(catalog) != 89 {
-		t.Fatalf("catalog tool count = %d, want 89", len(catalog))
+	if catalog := registry.CatalogTools(); len(catalog) != 80 {
+		t.Fatalf("catalog tool count = %d, want 80", len(catalog))
 	}
 	if len(longTailToolNames) != len(longTailNames) {
 		t.Fatalf("long-tail policy count = %d, want %d", len(longTailToolNames), len(longTailNames))
@@ -399,14 +396,14 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if err != nil {
 		t.Fatalf("ToolsForProfile(managed-runtime) error = %v", err)
 	}
-	if len(direct) != 37 {
-		t.Fatalf("direct tool count = %d, want 37", len(direct))
+	if len(direct) != 30 {
+		t.Fatalf("direct tool count = %d, want 30", len(direct))
 	}
 	if len(managed) >= len(direct) {
 		t.Fatalf("managed tool count = %d, want fewer than direct %d", len(managed), len(direct))
 	}
-	if len(managed) != 33 {
-		t.Fatalf("managed tool count = %d, want 33", len(managed))
+	if len(managed) != 26 {
+		t.Fatalf("managed tool count = %d, want 26", len(managed))
 	}
 	for _, name := range []string{"discover_github_checks", "watch_github_checks", "get_github_check_gate", "wait_for_github_checks", "await_github_checks", "request_review", "create_review_round"} {
 		if containsListedTool(managed, name) {
@@ -428,8 +425,8 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 		}
 	}
 	for _, name := range []string{"create_board_post", "list_board_posts", "get_board_post", "create_board_comment", "list_board_comments", "get_board_comment", "get_board_comment_path"} {
-		if !containsListedTool(managed, name) {
-			t.Fatalf("managed profile hides Board operator tool %s", name)
+		if containsListedTool(managed, name) {
+			t.Fatalf("managed profile lists CLI-only Board tool %s", name)
 		}
 	}
 
@@ -443,7 +440,7 @@ func TestManagedRuntimeProfileHidesReviewPrimitivesButKeepsDirectAuthority(t *te
 	if catalog.HiddenToolCount == 0 || catalog.WorkflowTiers[WorkflowTierPrimitive] != 0 {
 		t.Fatalf("managed catalog = %#v", catalog)
 	}
-	if catalog.VisibleToolCount != 33 || catalog.HiddenToolCount != 56 {
+	if catalog.VisibleToolCount != 26 || catalog.HiddenToolCount != 54 {
 		t.Fatalf("managed catalog counts = %#v", catalog)
 	}
 	if !slices.Contains(catalog.HiddenWorkflowTiers, WorkflowTierPrimitive) {

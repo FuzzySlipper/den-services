@@ -49,16 +49,20 @@ Purge is a deliberate moderation lifecycle for misleading or otherwise unsafe co
 
 ## MCP surface
 
-The always-at-hand MCP surface contains only common creation and bounded traversal controls:
+Board has no tools in MCP discovery (`tools/list`), so agents do not confuse it
+with crew-board (crew-services `docs/crew-board.md`). Patch decided this on
+2026-11-02: both boards are reached through their CLIs.
 
-- `create_board_post`, `list_board_posts`, `get_board_post`
-- `create_board_comment`, `list_board_comments`, `get_board_comment`, `get_board_comment_path`
-- `purge_board_post`, `purge_board_comment`
-
-Board search is intentionally absent from MCP `tools/list`. Agents use the centralized CLI for this less-common operation. The CLI sends a hidden `search_board_posts` transport operation through the MCP facade, which routes to Board's typed REST owner without exposing Board's loopback port. The hidden operation has no tombstone and is callable by exact name, but is never model-discoverable. This keeps MCP discovery focused while preserving a short, working agent path.
+Every Board operation is a hidden MCP transport operation: `create_board_post`,
+`list_board_posts`, `search_board_posts`, `get_board_post`,
+`create_board_comment`, `list_board_comments`, `get_board_comment`,
+`get_board_comment_path`, `purge_board_post` and `purge_board_comment`. They are
+callable by exact name and route to Board's typed REST owner without exposing
+Board's loopback port, but they are never model-discoverable. `den-tool board`
+is the agent path and uses them.
 
 ## CLI and web consumers
 
 Den Web owns the human Board experience: project list/search, post view, new post, immediate-parent replies, incremental tree expansion, and explicit purge confirmation. It must never reconstruct purged content from cached client state after a successful purge.
 
-The centralized agent CLI owns Board search and exposes all Board operations under stable short commands. Installed commands default to MCP transport; `DEN_BOARD_URL` exists only as an explicit operator override for direct local-service diagnostics. Agents must not need Board topology or owner-service credentials. The catalog must list command names, descriptions, owning domains, and examples without requiring an agent to discover repository-local scripts or read a Markdown index first.
+The centralized agent CLI (`den-tool board`) is the only agent surface for Board and exposes all Board operations under stable short commands. Installed commands default to MCP transport; `DEN_BOARD_URL` exists only as an explicit operator override for direct local-service diagnostics. Agents must not need Board topology or owner-service credentials. The catalog must list command names, descriptions, owning domains, and examples without requiring an agent to discover repository-local scripts or read a Markdown index first.
