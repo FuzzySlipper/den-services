@@ -19,8 +19,7 @@ const compareFileLimit = 300
 // the gated commit because a paths filter skipped their workflow. For each
 // workflow it takes the nearest run on the ref before the gated commit; a
 // missing check in that run counts only when the job succeeded and
-// workflowSkippedSince proves nothing since then would have triggered it. A
-// workflow that ran on the gated commit is not skipped, so it never counts.
+// workflowSkippedSince proves nothing since then would have triggered it.
 func (c *GitHubClient) earlierPathFilteredPasses(ctx context.Context, query GitHubChangeQuery, laterCommits []string, missing []string) (map[string]githubCheckRunResponse, error) {
 	runs, readable, err := c.branchWorkflowRuns(ctx, query.Repository, strings.TrimSpace(query.Ref), "")
 	if err != nil || !readable {
@@ -58,25 +57,25 @@ func (c *GitHubClient) earlierPathFilteredPasses(ctx context.Context, query GitH
 }
 
 // nearestEarlierWorkflowRuns keeps the newest push or manual run of each
-// workflow older than the gated commit. runs are newest first.
+// workflow that has no run on the gated commit or a later one, whatever that
+// run's outcome: a workflow that ran there was not skipped, and its result
+// belongs to the rules for those commits. runs are newest first, but creation
+// order does not prove commit order, so those workflows are collected first.
 func nearestEarlierWorkflowRuns(runs []githubWorkflowRunResponse, commitSHA string, later []string) []githubWorkflowRunResponse {
-	commitSHA = strings.ToLower(commitSHA)
-	isLater := make(map[string]struct{}, len(later))
+	notEarlier := make(map[string]struct{}, len(later)+1)
+	notEarlier[strings.ToLower(commitSHA)] = struct{}{}
 	for _, sha := range later {
-		isLater[sha] = struct{}{}
+		notEarlier[sha] = struct{}{}
 	}
 	decided := make(map[string]struct{}, len(runs))
+	for _, run := range runs {
+		if _, ok := notEarlier[strings.ToLower(run.HeadSHA)]; ok {
+			decided[run.Path] = struct{}{}
+		}
+	}
 	var nearest []githubWorkflowRunResponse
 	for _, run := range runs {
-		sha := strings.ToLower(run.HeadSHA)
-		if _, ok := isLater[sha]; ok {
-			continue
-		}
 		if _, ok := decided[run.Path]; ok {
-			continue
-		}
-		if sha == commitSHA {
-			decided[run.Path] = struct{}{}
 			continue
 		}
 		if run.Event != "push" && run.Event != "workflow_dispatch" {

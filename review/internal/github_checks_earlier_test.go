@@ -13,6 +13,8 @@ import (
 const (
 	earlierGatedSHA  = "0123456789abcdef0123456789abcdef01234567"
 	earlierParentSHA = "1111111111111111111111111111111111111111"
+	earlierLaterSHA  = "3333333333333333333333333333333333333333"
+	earlierHeadSHA   = "4444444444444444444444444444444444444444"
 	docsWorkflowPath = ".github/workflows/docs.yml"
 	docsWorkflow     = `name: docs
 on:
@@ -33,6 +35,8 @@ type earlierFixture struct {
 	compareStatus string
 	jobConclusion string
 	gatedDocsRun  bool
+	gatedRunLast  bool
+	laterFailure  bool
 	contentsCode  int
 	olderPass     bool
 }
@@ -50,7 +54,13 @@ func (f earlierFixture) serve(t *testing.T) *httptest.Server {
 	if f.gatedDocsRun {
 		runs = append(runs, map[string]any{"id": 21, "head_sha": earlierGatedSHA, "path": docsWorkflowPath, "event": "push", "status": "completed", "conclusion": "success"})
 	}
+	if f.laterFailure {
+		runs = append([]map[string]any{{"id": 30, "head_sha": earlierLaterSHA, "path": docsWorkflowPath, "event": "push", "status": "completed", "conclusion": "failure"}}, runs...)
+	}
 	runs = append(runs, map[string]any{"id": 10, "head_sha": earlierParentSHA, "path": docsWorkflowPath, "event": "push", "status": "completed", "conclusion": f.jobConclusion})
+	if f.gatedRunLast {
+		runs = append(runs, map[string]any{"id": 21, "head_sha": earlierGatedSHA, "path": docsWorkflowPath, "event": "push", "status": "completed", "conclusion": "success"})
+	}
 	if f.olderPass {
 		runs = append(runs, map[string]any{"id": 9, "head_sha": "2222222222222222222222222222222222222222", "path": docsWorkflowPath, "event": "push", "status": "completed", "conclusion": "success"})
 	}
@@ -65,7 +75,13 @@ func (f earlierFixture) serve(t *testing.T) *httptest.Server {
 		case "/repos/owner/repo/commits/" + earlierGatedSHA + "/check-runs":
 			write(w, map[string]any{"check_runs": []map[string]any{{"id": 1, "name": "verify-rust", "status": "completed", "conclusion": "success"}}})
 		case "/repos/owner/repo/compare/" + earlierGatedSHA + "...main":
+			if f.laterFailure {
+				write(w, map[string]any{"status": "ahead", "commits": []map[string]string{{"sha": earlierLaterSHA}, {"sha": earlierHeadSHA}}})
+				return
+			}
 			write(w, map[string]any{"status": "identical"})
+		case "/repos/owner/repo/commits/" + earlierHeadSHA + "/check-runs":
+			write(w, map[string]any{"check_runs": []map[string]any{}})
 		case "/repos/owner/repo/actions/runs":
 			write(w, map[string]any{"workflow_runs": runs})
 		case "/repos/owner/repo/actions/runs/10/jobs":
@@ -142,6 +158,8 @@ func TestCheckChangeKeepsCheckMissingWithoutProofOfTheSkip(t *testing.T) {
 		{"nearest run failed behind an older pass", func(f *earlierFixture) { f.jobConclusion, f.olderPass = "failure", true }},
 		{"nearest job was skipped", func(f *earlierFixture) { f.jobConclusion = "skipped" }},
 		{"workflow ran on the gated commit", func(f *earlierFixture) { f.gatedDocsRun = true }},
+		{"workflow ran on the gated commit, listed after the earlier run", func(f *earlierFixture) { f.gatedRunLast = true }},
+		{"check failed on a later commit the gate did not read", func(f *earlierFixture) { f.laterFailure = true }},
 		{"workflow file is unreadable", func(f *earlierFixture) { f.contentsCode = http.StatusNotFound }},
 		{"comparison may be cut short", func(f *earlierFixture) {
 			f.changed = make([]map[string]string, compareFileLimit)

@@ -102,7 +102,8 @@ change is active. All of these must hold:
 - The nearest earlier push or manual run of the workflow on `ref` has a job with
   the check's exact name and the conclusion `success`. An older pass behind a
   nearer failure does not count, and neither does a skipped job.
-- The workflow did not run on the gated commit.
+- The workflow did not run on the gated commit or a later commit, whatever the
+  outcome of that run.
 - The workflow at the gated commit has an `on.push` `paths` or `paths-ignore`
   filter, using only `*`, `**` and a leading `!`.
 - The earlier commit is an ancestor of the gated commit, and fewer than 300
