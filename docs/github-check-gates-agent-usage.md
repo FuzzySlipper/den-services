@@ -76,8 +76,8 @@ Several tasks can therefore land as separate commits in one push and share the
 head's slow or serialized checks.
 
 - Each entry in `check_runs` carries `head_sha`, the commit whose run
-  satisfied or is deciding that check. Evidence messages name a later commit
-  when one was used.
+  satisfied or is deciding that check. Evidence messages name that commit
+  when it is not the gated one.
 - A cancelled run counts as missing, not failed.
 - A failure on a later commit keeps the check pending, because a later change
   may have caused it. The gate fails early only when the check failed on the
@@ -89,6 +89,31 @@ head's slow or serialized checks.
   new terminal event when it finishes. A still-failing result leaves the
   recorded terminal gate unchanged. A terminal gate keeps its stored `ref` and
   `required_checks` unless it reopens.
+
+## Checks skipped by a paths filter
+
+A workflow with a `paths:` filter does not run for a commit that misses those
+paths, so its check never appears there. Re-running it would test nothing new,
+so Review accepts the check from an earlier commit when it can prove the skip.
+This applies only to a check seen on neither the gated commit nor a later one,
+once the gated commit's own runs have finished and no workflow run for the
+change is active. All of these must hold:
+
+- The nearest earlier push or manual run of the workflow on `ref` has a job with
+  the check's exact name and the conclusion `success`. An older pass behind a
+  nearer failure does not count, and neither does a skipped job.
+- The workflow did not run on the gated commit.
+- The workflow at the gated commit has an `on.push` `paths` or `paths-ignore`
+  filter, using only `*`, `**` and a leading `!`.
+- The earlier commit is an ancestor of the gated commit, and fewer than 300
+  files changed between them.
+- None of those files would trigger the workflow, and the workflow file itself
+  is unchanged. The old name of a renamed file counts as changed.
+
+Anything else leaves the check missing, and the gate fails with
+`required_checks_missing` as before. The check's `head_sha` in `check_runs`
+names the earlier commit. This needs `Actions: read` and `Contents: read` on the
+token; without them the check stays missing.
 
 ## MCP tools
 
@@ -154,7 +179,7 @@ Use that payload with `get_github_check_gate`, or add `after_id` and `wait_ms` f
 
 Review records every check-run name observed for the exact SHA. When requested names are missing, the response includes `missing_required_checks`, `observed_check_runs`, and candidate names in `summary`. If GitHub has exposed terminal runs but the requested names still do not appear after the configured grace period, the gate fails with `terminal_reason=required_checks_missing` instead of consuming the full gate timeout. It does not fail this way while any Actions workflow run on the ref for the gated commit or a consulted later commit is still queued or running, because a run waiting in a concurrency group has no check runs yet. Matching remains exact; Review does not guess or fuzzy-match workflow labels.
 
-A correct name can also fail this way. A workflow with a `paths:` filter does not run for a commit that misses those paths, and a pass on an earlier commit does not count, so the check never appears. Resubmit without that check, or run the workflow on the ref (`gh workflow run <file> --ref <ref>`), since a pass on the head satisfies the gate.
+A correct name can also fail this way, when a workflow did not run for the commit and Review cannot show why (see "Checks skipped by a paths filter"). Resubmit without that check, or run the workflow on the ref (`gh workflow run <file> --ref <ref>`), since a pass on the head satisfies the gate.
 
 The response is the current gate record:
 

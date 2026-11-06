@@ -85,13 +85,26 @@ func (c *GitHubClient) CheckChange(ctx context.Context, query GitHubChangeQuery)
 		}
 	}
 	result := evaluateGitHubChangeRuns(own, later, query.RequiredChecks)
-	if result.Status == GitHubCheckGateStatusPending && len(result.MissingRequiredChecks) > 0 && result.AllObservedChecksTerminal &&
-		workflowRunsActive(branchRuns, query.CommitSHA, laterCommits) {
+	if result.Status != GitHubCheckGateStatusPending || len(result.MissingRequiredChecks) == 0 {
+		return result, nil
+	}
+	active := workflowRunsActive(branchRuns, query.CommitSHA, laterCommits)
+	if result.AllObservedChecksTerminal && active {
 		// A workflow run waiting in a concurrency group has no check runs yet,
 		// so a missing name is not proof of a misnamed check while any run
 		// for this change is still queued or running.
 		result.AllObservedChecksTerminal = false
 		result.Summary += ". Workflow runs for this change are still queued or running."
+	}
+	if active || !actionsReadable || !githubRunsCompleted(own) {
+		return result, nil
+	}
+	earlier, err := c.earlierPathFilteredPasses(ctx, query, laterCommits, result.MissingRequiredChecks)
+	if err != nil {
+		return GitHubCheckResult{}, err
+	}
+	if len(earlier) > 0 {
+		result = evaluateGitHubGateRuns(own, later, earlier, query.RequiredChecks)
 	}
 	return result, nil
 }
@@ -99,8 +112,8 @@ func (c *GitHubClient) CheckChange(ctx context.Context, query GitHubChangeQuery)
 // branchWorkflowRuns reads Actions workflow runs on ref, newest first, until
 // it reaches runs for the gated commit itself: every run for a later commit
 // was created after those, so older pages cannot hold a later commit's run.
-// Paging stops after maxWorkflowRunPages. readable is false when the token
-// cannot read Actions.
+// Paging stops after maxWorkflowRunPages, and an empty commitSHA reads that
+// many pages. readable is false when the token cannot read Actions.
 func (c *GitHubClient) branchWorkflowRuns(ctx context.Context, repository string, ref string, commitSHA string) ([]githubWorkflowRunResponse, bool, error) {
 	commitSHA = strings.ToLower(commitSHA)
 	var all []githubWorkflowRunResponse
@@ -219,16 +232,26 @@ func (c *GitHubClient) commitCheckRunsFromActions(ctx context.Context, repositor
 		if run.HeadSHA != commitSHA {
 			continue
 		}
-		var jobs githubWorkflowJobsResponse
-		if err := c.getJSON(ctx, fmt.Sprintf("/repos/%s/actions/runs/%d/jobs?per_page=100", repository, run.ID), &jobs); err != nil {
+		jobs, err := c.workflowRunJobs(ctx, repository, run.ID)
+		if err != nil {
 			return nil, err
 		}
-		for _, job := range jobs.Jobs {
-			checkRuns = append(checkRuns, githubCheckRunResponse{
-				ID: job.ID, Name: job.Name, Status: job.Status, Conclusion: job.Conclusion, HTMLURL: job.HTMLURL,
-				CreatedAt: job.CreatedAt, StartedAt: job.StartedAt, CompletedAt: job.CompletedAt,
-			})
-		}
+		checkRuns = append(checkRuns, jobs...)
+	}
+	return checkRuns, nil
+}
+
+func (c *GitHubClient) workflowRunJobs(ctx context.Context, repository string, runID int64) ([]githubCheckRunResponse, error) {
+	var jobs githubWorkflowJobsResponse
+	if err := c.getJSON(ctx, fmt.Sprintf("/repos/%s/actions/runs/%d/jobs?per_page=100", repository, runID), &jobs); err != nil {
+		return nil, err
+	}
+	checkRuns := make([]githubCheckRunResponse, 0, len(jobs.Jobs))
+	for _, job := range jobs.Jobs {
+		checkRuns = append(checkRuns, githubCheckRunResponse{
+			ID: job.ID, Name: job.Name, Status: job.Status, Conclusion: job.Conclusion, HTMLURL: job.HTMLURL,
+			CreatedAt: job.CreatedAt, StartedAt: job.StartedAt, CompletedAt: job.CompletedAt,
+		})
 	}
 	return checkRuns, nil
 }
@@ -413,6 +436,8 @@ type githubWorkflowRunsResponse struct {
 type githubWorkflowRunResponse struct {
 	ID         int64  `json:"id"`
 	HeadSHA    string `json:"head_sha"`
+	Path       string `json:"path"`
+	Event      string `json:"event"`
 	Status     string `json:"status"`
 	Conclusion string `json:"conclusion"`
 }
@@ -435,10 +460,16 @@ type githubWorkflowJobResponse struct {
 type githubCompareResponse struct {
 	Status  string                `json:"status"`
 	Commits []githubCompareCommit `json:"commits"`
+	Files   []githubCompareFile   `json:"files"`
 }
 
 type githubCompareCommit struct {
 	SHA string `json:"sha"`
+}
+
+type githubCompareFile struct {
+	Filename         string `json:"filename"`
+	PreviousFilename string `json:"previous_filename"`
 }
 
 type githubCheckRunResponse struct {
@@ -500,6 +531,13 @@ func evaluateGitHubCheckRuns(runs []githubCheckRunResponse, requiredChecks []str
 // it; only a failure on the gated commit, with no later run passing or still
 // running, fails the gate.
 func evaluateGitHubChangeRuns(own []githubCheckRunResponse, later []commitCheckRuns, requiredChecks []string) GitHubCheckResult {
+	return evaluateGitHubGateRuns(own, later, nil, requiredChecks)
+}
+
+// evaluateGitHubGateRuns is evaluateGitHubChangeRuns plus earlier, the proven
+// passes from earlierPathFilteredPasses, which satisfy a check seen on neither
+// the gated commit nor a later one.
+func evaluateGitHubGateRuns(own []githubCheckRunResponse, later []commitCheckRuns, earlier map[string]githubCheckRunResponse, requiredChecks []string) GitHubCheckResult {
 	ownLatest := latestGitHubCheckRunsByName(own)
 	laterLatest := latestRunsPerCommit(later)
 	observedRuns := make([]GitHubCheckRun, 0, len(ownLatest))
@@ -513,7 +551,7 @@ func evaluateGitHubChangeRuns(own []githubCheckRunResponse, later []commitCheckR
 	sort.Slice(observedRuns, func(i int, j int) bool { return observedRuns[i].Name < observedRuns[j].Name })
 	var missing, pending, failed []string
 	var resultRuns []GitHubCheckRun
-	fromLaterCommit := false
+	fromLaterCommit, fromEarlierCommit := false, false
 	for _, name := range trimSlice(requiredChecks) {
 		run, ok := ownLatest[name]
 		if ok && (run.Status != "completed" || successfulGitHubConclusion(run.Conclusion)) {
@@ -543,6 +581,11 @@ func evaluateGitHubChangeRuns(own []githubCheckRunResponse, later []commitCheckR
 			pending = append(pending, name)
 			resultRuns = append(resultRuns, convertGitHubCheckRun(*laterSeen))
 		default:
+			if earlierRun, found := earlier[name]; found {
+				resultRuns = append(resultRuns, convertGitHubCheckRun(earlierRun))
+				fromEarlierCommit = true
+				continue
+			}
 			missing = append(missing, name)
 			resultRuns = append(resultRuns, GitHubCheckRun{Name: name, Status: GitHubCheckGateStatusPending})
 		}
@@ -574,6 +617,9 @@ func evaluateGitHubChangeRuns(own []githubCheckRunResponse, later []commitCheckR
 	summary := "All required GitHub checks passed."
 	if fromLaterCommit {
 		summary = "All required GitHub checks passed; some passed on a later commit that contains this commit."
+	}
+	if fromEarlierCommit {
+		summary = "All required GitHub checks passed; some passed on an earlier commit, and their paths filters skip every file changed since."
 	}
 	return GitHubCheckResult{
 		Status: GitHubCheckGateStatusPassed, CheckRuns: resultRuns,
@@ -755,7 +801,7 @@ func appendCheckRunLinks(b *strings.Builder, runs []GitHubCheckRun, gateCommitSH
 			state += "/" + run.Conclusion
 		}
 		if run.HeadSHA != "" && run.HeadSHA != gateCommitSHA {
-			state += " on later commit `" + run.HeadSHA + "`"
+			state += " on commit `" + run.HeadSHA + "`"
 		}
 		if link != "" {
 			fmt.Fprintf(b, "- %s: %s (%s)\n", run.Name, state, link)
