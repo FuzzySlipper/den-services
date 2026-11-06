@@ -2005,7 +2005,8 @@ func TestPollGitHubCheckGateFailsInvalidRequiredNamesAfterGrace(t *testing.T) {
 		t.Fatalf("diagnostics missing: %+v", updated)
 	}
 	if len(messages.appended) != 1 || !strings.Contains(messages.appended[0].Content, "Verify Offline") ||
-		!strings.Contains(messages.appended[0].Content, GitHubCheckTerminalReasonRequiredChecksMissing) {
+		!strings.Contains(messages.appended[0].Content, GitHubCheckTerminalReasonRequiredChecksMissing) ||
+		!strings.Contains(messages.appended[0].Content, "paths filter") {
 		t.Fatalf("evidence = %+v", messages.appended)
 	}
 }

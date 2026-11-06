@@ -1350,8 +1350,9 @@ func (s *Service) evaluateGitHubCheckGate(ctx context.Context, gate *GitHubCheck
 	if result.Status == GitHubCheckGateStatusPending && missingRequiredChecksAreInvalid(gate, result, now, s.githubOptions.MissingCheckGrace) {
 		result.Status = GitHubCheckGateStatusFailed
 		result.TerminalReason = GitHubCheckTerminalReasonRequiredChecksMissing
-		result.Summary = "Required GitHub check names did not match the check runs observed for this commit."
-		result.FailureSummary = "Missing required checks: " + strings.Join(result.MissingRequiredChecks, ", ") + ". Observed check runs: " + strings.Join(githubCheckRunNames(result.ObservedCheckRuns), ", ") + "."
+		result.Summary = "Required GitHub checks never ran for this commit, or their names do not match the observed check runs."
+		result.FailureSummary = "Missing required checks: " + strings.Join(result.MissingRequiredChecks, ", ") + ". Observed check runs: " + strings.Join(githubCheckRunNames(result.ObservedCheckRuns), ", ") + ". " +
+			"If the name is right, its workflow probably did not run for this commit, for example because a paths filter skipped it: resubmit without that check, or run the workflow on the ref."
 	}
 	if result.Status == GitHubCheckGateStatusPending {
 		pending := GitHubCheckResult{

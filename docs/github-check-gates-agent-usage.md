@@ -154,6 +154,8 @@ Use that payload with `get_github_check_gate`, or add `after_id` and `wait_ms` f
 
 Review records every check-run name observed for the exact SHA. When requested names are missing, the response includes `missing_required_checks`, `observed_check_runs`, and candidate names in `summary`. If GitHub has exposed terminal runs but the requested names still do not appear after the configured grace period, the gate fails with `terminal_reason=required_checks_missing` instead of consuming the full gate timeout. It does not fail this way while any Actions workflow run on the ref for the gated commit or a consulted later commit is still queued or running, because a run waiting in a concurrency group has no check runs yet. Matching remains exact; Review does not guess or fuzzy-match workflow labels.
 
+A correct name can also fail this way. A workflow with a `paths:` filter does not run for a commit that misses those paths, and a pass on an earlier commit does not count, so the check never appears. Resubmit without that check, or run the workflow on the ref (`gh workflow run <file> --ref <ref>`), since a pass on the head satisfies the gate.
+
 The response is the current gate record:
 
 - `status`: `pending`, `passed`, `failed`, `timed_out`, or `superseded`.
