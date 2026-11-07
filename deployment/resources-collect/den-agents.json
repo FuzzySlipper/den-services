@@ -95,6 +95,10 @@
       "ssh": [
         "-F",
         "~/server-access/gpu-lab/config",
+        "-i",
+        "~/server-access/gpu-lab/identity",
+        "-o",
+        "UserKnownHostsFile=~/server-access/gpu-lab/known_hosts",
         "target"
       ],
       "disks": [
