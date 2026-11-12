@@ -1,0 +1,72 @@
+{
+  "probe_timeout_seconds": 20,
+  "hosts": [
+    {
+      "id": "den-k8",
+      "enabled": true,
+      "ssh": ["den-k8"],
+      "source_root": "/mnt/den-agents/dev",
+      "build_root": "/home/agent/.local/state/den-build",
+      "jobs": 8
+    },
+    {
+      "id": "den-nimo",
+      "enabled": false,
+      "ssh": ["den-nimo"],
+      "source_root": "agent@den-agents:/home/agent/dev",
+      "build_root": "/home/agent/.local/state/den-build",
+      "jobs": 8,
+      "max_gpu_percent": 10
+    },
+    {
+      "id": "den-m5",
+      "enabled": false,
+      "ssh": ["den-m5"],
+      "source_root": "agent@den-agents:/home/agent/dev",
+      "build_root": "/home/agent/.local/state/den-build",
+      "jobs": 8,
+      "max_gpu_percent": 10
+    }
+  ],
+  "toolchains": {
+    "rust": "rustup run stable cargo --version && cc --version",
+    "rust-verify": "cargo fmt --version && cargo clippy --version && type -P rg python3",
+    "engine-linux": "pkg-config --exists --print-errors alsa && compgen -G '/usr/share/vulkan/icd.d/lvp_icd*.json'",
+    "dotnet10": "dotnet --list-sdks | grep -E '^10\\.'",
+    "csharp-sdk": "type -P clang jq unzip rg python3 && find /usr/lib -name libclang.so -print -quit | grep .",
+    "engine-pair": "type -P cmake ninja node pnpm curl && node -e 'const [major, minor] = process.versions.node.split(\".\").map(Number); process.exit(major > 22 || (major === 22 && minor >= 13) ? 0 : 1)' && pnpm --version && pkg-config --exists --print-errors fontconfig libudev"
+  },
+  "repositories": {
+    "rusty-engine": {
+      "origin": "https://github.com/FuzzySlipper/rusty-engine.git",
+      "keep": ["target"],
+      "lanes": {
+        "verify": {
+          "command": ["./scripts/verify.sh"],
+          "toolchains": ["rust", "rust-verify", "engine-linux"],
+          "env": {"RUSTUP_TOOLCHAIN": "stable", "WGPU_BACKEND": "vulkan"},
+          "min_free_gib": 64
+        },
+        "verify-csharp": {
+          "command": ["./scripts/verify-csharp.sh"],
+          "toolchains": ["rust", "engine-linux", "dotnet10", "csharp-sdk"],
+          "env": {"RUSTUP_TOOLCHAIN": "stable"},
+          "min_free_gib": 64
+        },
+        "shader-matrix": {
+          "command": ["cargo", "test", "-p", "render-shaders", "--lib", "--locked", "--", "--include-ignored", "--test-threads=1"],
+          "toolchains": ["rust"],
+          "env": {"RUSTUP_TOOLCHAIN": "stable"},
+          "min_free_gib": 16
+        },
+        "pair": {
+          "command": ["bash", "-ec", "pnpm --dir render install --frozen-lockfile\n./scripts/build-csharp-release-pair.sh --output \"$DEN_BUILD_OUTPUT_DIR/pair\"\n./scripts/test-csharp-release-pair.sh \"$DEN_BUILD_OUTPUT_DIR\"/pair/*.tar.gz\nprintf 'Pair: %s/pair\\n' \"$DEN_BUILD_OUTPUT_DIR\""],
+          "toolchains": ["rust", "engine-linux", "dotnet10", "csharp-sdk", "engine-pair"],
+          "env": {"RUSTUP_TOOLCHAIN": "stable"},
+          "min_free_gib": 64,
+          "os": "ubuntu"
+        }
+      }
+    }
+  }
+}

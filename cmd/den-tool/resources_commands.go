@@ -246,7 +246,7 @@ func resourcesCommand(ctx context.Context, client *ResourcesClient, command stri
 			if !flags.has("source") || !flags.has("job-id") {
 				return nil, usagef("report requires --source and --job-id")
 			}
-			report["source"], report["external_id"] = flags.get("source", ""), flags.get("job-id", "")
+			report.Source, report.ExternalID = flags.get("source", ""), flags.get("job-id", "")
 		}
 		return postJSON(ctx, client, resourcesPath("work"), report)
 	case "heartbeat", "check-out":
@@ -285,15 +285,30 @@ func resourcesCommand(ctx context.Context, client *ResourcesClient, command stri
 	}
 }
 
+const defaultWorkTTLSeconds = 180
+
+type resourceWorkReport struct {
+	Host       string   `json:"host"`
+	Title      string   `json:"title"`
+	Owner      string   `json:"owner"`
+	Project    string   `json:"project"`
+	Resources  []string `json:"resources"`
+	State      string   `json:"state"`
+	TTLSeconds float64  `json:"ttl_seconds"`
+	Source     string   `json:"source"`
+	ExternalID string   `json:"external_id,omitempty"`
+	Note       string   `json:"note"`
+}
+
 // workReport builds a check-in from the work flags. Reports may carry any
 // state; a check-in starts queued or running.
-func workReport(flags resourcesFlags, anyState bool) (map[string]any, error) {
+func workReport(flags resourcesFlags, anyState bool) (resourceWorkReport, error) {
 	if !flags.has("purpose") {
-		return nil, usagef("--purpose is required: say what the work is")
+		return resourceWorkReport{}, usagef("--purpose is required: say what the work is")
 	}
-	ttl, err := strconv.ParseFloat(flags.get("ttl", "180"), 64)
+	ttl, err := strconv.ParseFloat(flags.get("ttl", strconv.Itoa(defaultWorkTTLSeconds)), 64)
 	if err != nil || ttl <= 0 {
-		return nil, usagef("--ttl must be a positive number of seconds")
+		return resourceWorkReport{}, usagef("--ttl must be a positive number of seconds")
 	}
 	state := flags.get("state", "running")
 	allowed := map[string]bool{"queued": true, "running": true}
@@ -301,7 +316,7 @@ func workReport(flags resourcesFlags, anyState bool) (map[string]any, error) {
 		allowed["completed"], allowed["failed"], allowed["cancelled"] = true, true, true
 	}
 	if !allowed[state] {
-		return nil, usagef("--state %q is not allowed here", state)
+		return resourceWorkReport{}, usagef("--state %q is not allowed here", state)
 	}
 	host, _ := os.Hostname()
 	project, _ := os.Getwd()
@@ -309,10 +324,10 @@ func workReport(flags resourcesFlags, anyState bool) (map[string]any, error) {
 	if resources == nil {
 		resources = []string{}
 	}
-	return map[string]any{
-		"host": flags.get("host", host), "title": flags.get("purpose", ""), "owner": flags.get("owner", defaultOwner()),
-		"project": flags.get("project", project), "resources": resources, "ttl_seconds": ttl, "state": state,
-		"source": "check-in", "note": flags.get("note", ""),
+	return resourceWorkReport{
+		Host: flags.get("host", host), Title: flags.get("purpose", ""), Owner: flags.get("owner", defaultOwner()),
+		Project: flags.get("project", project), Resources: resources, TTLSeconds: ttl, State: state,
+		Source: "check-in", Note: flags.get("note", ""),
 	}, nil
 }
 

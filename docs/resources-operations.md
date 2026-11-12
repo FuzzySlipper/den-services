@@ -84,6 +84,52 @@ scripts/install-resources-cli.sh den-nimo den-m5 "-F $HOME/server-access/gpu-lab
 
 Rerun that after a den-tool release that changes `resources`.
 
+## Route a headless build
+
+From den-agents, use a full Git commit SHA:
+
+```sh
+den-tool build run --repo rusty-engine --lane verify --ref "$(git -C ~/dev/rusty-engine rev-parse HEAD)"
+```
+
+The command uses [the build configuration](../deployment/build/den-agents.json)
+installed at `~/.config/den-build/config.json`. To install it the first time,
+run the following from the den-services checkout:
+
+```sh
+scripts/install-den-tool.sh
+install -D -m 0640 deployment/build/den-agents.json ~/.config/den-build/config.json
+```
+
+Use `--config FILE` or `DEN_BUILD_CONFIG_PATH` to select a different file.
+The config maps repositories and headless lanes to their scripts or CI
+commands, required toolchain probes, and minimum free disk space. Engine has
+`verify`, `verify-csharp`, `shader-matrix` and `pair`. The `pair` lane builds
+and exercises the SDK/runtime archive on Ubuntu and prints its worker-local
+output path. Run GPU, window and performance lanes on their usual hosts.
+
+The router ranks enabled workers using fresh Resources activity and CPU load.
+It then checks toolchains and free space on the worker over SSH. Use
+`--host HOST` to restrict selection to one enabled worker. Workers with a
+GPU threshold also require a GPU utilization reading and skip fresh native
+queues and active work reports. ComfyUI exposes its queue. Mesh and rig
+services currently expose health, so their activity is visible through
+Workbench reports and measured GPU utilization.
+
+den-k8 fetches Git objects from the den-agents NFS mount and builds on its
+own disk. The den-nimo and den-m5 entries use Git over SSH and are disabled
+during the Ubuntu reinstalls. Enable each after its SSH access, toolchains,
+and disk have been restored. The configured job count caps Cargo, Rust test,
+CMake and .NET parallelism on the worker.
+
+Each worker uses `build_root/REPO/checkout` and runs one routed job at a time.
+It resets the checkout to the requested commit and removes generated files
+except the cache directories named in `keep` (Engine keeps `target/`).
+Put retained outputs in `DEN_BUILD_OUTPUT_DIR`, which points outside the
+checkout. The log streams to the caller and the command returns the lane's
+exit code. The Resources ledger shows the worker, repo, lane, commit, and
+completion state.
+
 ## Deploy, data and recovery
 
 A `looks_good` review deploys the service through `scripts/deploy.sh`, which

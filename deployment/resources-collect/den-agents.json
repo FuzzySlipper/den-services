@@ -18,6 +18,20 @@
       "note": "Accepted assets stay in their requesting repository."
     },
     {
+      "id": "den-k8",
+      "name": "den-k8",
+      "role": "Ubuntu headless builds · Hermes and CraftSurvive runner",
+      "transport": "ssh",
+      "ssh": [
+        "den-k8"
+      ],
+      "disks": [
+        "/home"
+      ],
+      "access": "ssh den-k8",
+      "note": "Build on local disk. The den-agents NFS mount is a source for Git commits."
+    },
+    {
       "id": "den-nimo",
       "name": "den-nimo",
       "role": "Strix Halo · shared AMD inference and model serving",

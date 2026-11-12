@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-const toolVersion = "1.5.4"
+const toolVersion = "1.6.0"
 
 type catalogReadback struct {
 	Version string         `json:"version"`
@@ -56,6 +56,8 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 		return handleOps(args[1:], stdout, stderr)
 	case "resources":
 		return handleResources(args[1:], stdout, stderr)
+	case "build":
+		return handleBuild(args[1:], stdout, stderr)
 	default:
 		writeUsageError(stderr, fmt.Sprintf("unknown command %q", args[0]))
 		return 2
@@ -273,7 +275,7 @@ func writeHumanServiceJSON(writer io.Writer, body []byte) int {
 }
 
 func writeUsageError(writer io.Writer, message string) {
-	_, _ = fmt.Fprintf(writer, "den-tool: %s\nusage: den-tool list [--json] | search <terms...> [--json] | describe <id> [--json] | run <id> -- [extra args...] | board <subcommand> [flags] | den <operation> [flags] | ops <subcommand> [flags] | resources <subcommand> [flags]\n", message)
+	_, _ = fmt.Fprintf(writer, "den-tool: %s\nusage: den-tool list [--json] | search <terms...> [--json] | describe <id> [--json] | run <id> -- [extra args...] | board <subcommand> [flags] | den <operation> [flags] | ops <subcommand> [flags] | resources <subcommand> [flags] | build <subcommand> [flags]\n", message)
 }
 
 func writeRuntimeError(writer io.Writer, err error) int {

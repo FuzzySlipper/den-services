@@ -34,18 +34,19 @@ func runResourcesRun(args []string, client *ResourcesClient, stderr io.Writer) i
 		_, _ = fmt.Fprintf(stderr, "den-tool resources: %v\n", err)
 		return 2
 	}
-	// A stable reporter key lets a retried check-in find the same row after
-	// an uncertain HTTP response.
-	report["source"], report["external_id"] = "command", randomID()
-	ttl, _ := report["ttl_seconds"].(float64)
-	interval := min(30*time.Second, time.Duration(ttl/3*float64(time.Second)))
-	interval = max(interval, time.Second)
-
-	ctx := context.Background()
-	reporter := &workReporter{client: client, stderr: stderr}
-	reporter.checkIn(ctx, report)
+	report.Source, report.ExternalID = "command", randomID()
 	child := exec.Command(command[0], command[1:]...)
 	child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return runReportedCommand(context.Background(), child, client, report, stderr)
+}
+
+func runReportedCommand(ctx context.Context, child *exec.Cmd, client *ResourcesClient, report resourceWorkReport, stderr io.Writer) int {
+	interval := min(30*time.Second, time.Duration(report.TTLSeconds/3*float64(time.Second)))
+	interval = max(interval, time.Second)
+	reporter := &workReporter{client: client, stderr: stderr}
+	// The report's external ID lets a retry find the same row after an
+	// uncertain response.
+	reporter.checkIn(ctx, report)
 	exitCode, runErr := runForwardingSignals(child, interval, func(time.Time) { reporter.checkIn(ctx, report) })
 	if runErr != nil {
 		_, _ = fmt.Fprintf(stderr, "den-tool resources: %v\n", runErr)
@@ -60,7 +61,7 @@ func runResourcesRun(args []string, client *ResourcesClient, stderr io.Writer) i
 		}
 	}
 	if reporter.id != "" {
-		note := fmt.Sprintf("Command exited with status %d. %v", exitCode, report["note"])
+		note := fmt.Sprintf("Command exited with status %d. %s", exitCode, report.Note)
 		if _, err := postJSON(ctx, client, resourcesPath("work", reporter.id), map[string]any{"state": state, "note": strings.TrimSpace(note)}); err != nil {
 			_, _ = fmt.Fprintf(stderr, "resource-board: check-out could not be saved (%v); the check-in will become stale\n", err)
 		}
@@ -77,7 +78,7 @@ type workReporter struct {
 	failing bool
 }
 
-func (r *workReporter) checkIn(ctx context.Context, report map[string]any) {
+func (r *workReporter) checkIn(ctx context.Context, report resourceWorkReport) {
 	var body []byte
 	var err error
 	if r.id == "" {

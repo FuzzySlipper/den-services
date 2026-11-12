@@ -149,7 +149,11 @@ func TestInstallerCheckDetectsSourceDriftUntilReinstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if !entry.IsDir() && (strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), ".json")) {
+		if entry.IsDir() {
+			continue
+		}
+		switch filepath.Ext(entry.Name()) {
+		case ".go", ".json", ".sh":
 			copyTestFile(t, sourceRoot, root, filepath.Join("cmd", "den-tool", entry.Name()))
 		}
 	}
@@ -165,12 +169,12 @@ func TestInstallerCheckDetectsSourceDriftUntilReinstall(t *testing.T) {
 	if output, err := runInstaller(t, root, home); err != nil {
 		t.Fatalf("initial installer run: %v\n%s", err, output)
 	}
-	catalogPath := filepath.Join(root, "cmd", "den-tool", "catalog.json")
-	catalog, err := os.ReadFile(catalogPath)
+	workerPath := filepath.Join(root, "cmd", "den-tool", "build_worker.sh")
+	worker, err := os.ReadFile(workerPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(catalogPath, append(catalog, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(workerPath, append(worker, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if output, err := runInstaller(t, root, home, "--check"); err == nil || !strings.Contains(string(output), "source identity drifted") {
