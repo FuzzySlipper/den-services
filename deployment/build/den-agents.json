@@ -11,7 +11,7 @@
     },
     {
       "id": "den-nimo",
-      "enabled": false,
+      "enabled": true,
       "ssh": ["den-nimo"],
       "source_root": "agent@den-agents:/home/agent/dev",
       "build_root": "/home/agent/.local/state/den-build",
@@ -64,7 +64,7 @@
           "toolchains": ["rust", "engine-linux", "dotnet10", "csharp-sdk", "engine-pair"],
           "env": {"RUSTUP_TOOLCHAIN": "stable"},
           "min_free_gib": 64,
-          "os": "ubuntu"
+          "os": "ubuntu-26.04"
         }
       }
     }

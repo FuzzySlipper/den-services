@@ -33,7 +33,9 @@ if [[ "$mode" == probe ]]; then
     type -P git flock df >/dev/null || fail "git, flock and df are required"
     if [[ -n "$required_os" ]]; then
         . /etc/os-release
-        [[ "$ID" == "$required_os" ]] || fail "lane requires $required_os (found $ID)"
+        # "ubuntu" matches any release; "ubuntu-26.04" pins one (e.g. the glibc baseline).
+        [[ "$required_os" == "$ID" || "$required_os" == "$ID-$VERSION_ID" ]] ||
+            fail "lane requires $required_os (found $ID-$VERSION_ID)"
     fi
     check_disk
     if [[ -f "$root/.lock" ]]; then

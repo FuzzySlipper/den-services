@@ -105,8 +105,11 @@ Use `--config FILE` or `DEN_BUILD_CONFIG_PATH` to select a different file.
 The config maps repositories and headless lanes to their scripts or CI
 commands, required toolchain probes, and minimum free disk space. Engine has
 `verify`, `verify-csharp`, `shader-matrix` and `pair`. The `pair` lane builds
-and exercises the SDK/runtime archive on Ubuntu and prints its worker-local
-output path. Run GPU, window and performance lanes on their usual hosts.
+and exercises the SDK/runtime archive on Ubuntu 26.04 LTS and prints its
+worker-local output path. A lane's `os` is either an `/etc/os-release` `ID`
+(any release) or `ID-VERSION_ID`. The pair lane pins `ubuntu-26.04` so
+published pairs keep the LTS glibc baseline, and den-nimo and den-m5 (Ubuntu
+26.10) are refused for it. Run GPU, window and performance lanes on their usual hosts.
 
 The router ranks enabled workers using fresh Resources activity and CPU load.
 It then checks toolchains and free space on the worker over SSH. Use
@@ -117,9 +120,12 @@ services currently expose health, so their activity is visible through
 Workbench reports and measured GPU utilization.
 
 den-k8 fetches Git objects from the den-agents NFS mount and builds on its
-own disk. The den-nimo and den-m5 entries use Git over SSH and are disabled
-during the Ubuntu reinstalls. Enable each after its SSH access, toolchains,
-and disk have been restored. The configured job count caps Cargo, Rust test,
+own disk. The den-nimo and den-m5 entries use Git over SSH. Both machines are
+provisioned identically by server-access `strix-halo/provision`, which
+installs SSH access, sudo, and the Rust, .NET, Node and pnpm toolchains these
+lanes probe for. Enable a worker entry after provisioning it. den-nimo was
+enabled on 2026-11-11. den-m5 stays disabled until its reinstall is
+provisioned. The configured job count caps Cargo, Rust test,
 CMake and .NET parallelism on the worker.
 
 Each worker uses `build_root/REPO/checkout` and runs one routed job at a time.
