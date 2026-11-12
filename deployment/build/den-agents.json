@@ -60,7 +60,7 @@
           "min_free_gib": 16
         },
         "pair": {
-          "command": ["bash", "-ec", "pnpm --dir render install --frozen-lockfile\n./scripts/build-csharp-release-pair.sh --output \"$DEN_BUILD_OUTPUT_DIR/pair\"\n./scripts/test-csharp-release-pair.sh \"$DEN_BUILD_OUTPUT_DIR\"/pair/*.tar.gz\nprintf 'Pair: %s/pair\\n' \"$DEN_BUILD_OUTPUT_DIR\""],
+          "command": ["./scripts/build-and-test-csharp-release-pair.sh"],
           "toolchains": ["rust", "engine-linux", "dotnet10", "csharp-sdk", "engine-pair"],
           "env": {"RUSTUP_TOOLCHAIN": "stable"},
           "min_free_gib": 64,
