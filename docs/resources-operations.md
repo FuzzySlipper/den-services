@@ -115,8 +115,8 @@ The router ranks enabled workers using fresh Resources activity and CPU load.
 It then checks toolchains and free space on the worker over SSH. Use
 `--host HOST` to restrict selection to one enabled worker. Workers with a
 GPU threshold also require a GPU utilization reading and skip fresh native
-queues and active work reports. ComfyUI exposes its queue. Mesh and rig
-services currently expose health, so their activity is visible through
+queues and active work reports. ComfyUI exposes its queue on both Strix Halo
+hosts. For GPU work without a native queue report, the router uses active
 Workbench reports and measured GPU utilization.
 
 den-k8 fetches Git objects from the den-agents NFS mount and builds on its
