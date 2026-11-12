@@ -34,18 +34,16 @@
     {
       "id": "den-nimo",
       "name": "den-nimo",
-      "role": "Strix Halo · shared AMD inference and model serving",
+      "role": "Strix Halo · ComfyUI and agent work box (identical to den-m5)",
       "transport": "ssh",
       "ssh": [
         "den-nimo"
       ],
       "disks": [
-        "/",
-        "/home"
+        "/"
       ],
       "docker_sockets": [
-        "/run/docker.sock",
-        "/run/awq-docker.sock"
+        "/run/docker.sock"
       ],
       "access": "ssh den-nimo",
       "apps": [
@@ -57,32 +55,21 @@
             "nimo-comfy",
             "nimo-models"
           ]
-        },
-        {
-          "name": "TRELLIS mesh",
-          "kind": "health",
-          "url": "http://192.168.1.23:8189"
-        },
-        {
-          "name": "SkinTokens rig",
-          "kind": "health",
-          "url": "http://192.168.1.23:8191"
         }
       ],
-      "note": "Unified memory. Includes the separate AWQ Docker daemon.",
+      "note": "Unified memory. Ubuntu 26.10, provisioned by server-access strix-halo/provision; ComfyUI installs from strix-halo/comfy specs.",
       "timeout": 40
     },
     {
       "id": "den-m5",
       "name": "den-m5",
-      "role": "Strix Halo · ComfyUI, training and mesh experiments",
+      "role": "Strix Halo · ComfyUI and agent work box (identical to den-nimo)",
       "transport": "ssh",
       "ssh": [
         "den-m5"
       ],
       "disks": [
-        "/",
-        "/home"
+        "/"
       ],
       "docker_sockets": [
         "/run/docker.sock"
@@ -99,7 +86,7 @@
           ]
         }
       ],
-      "note": "Prefer existing shared ComfyUI and model mounts over another install."
+      "note": "Unified memory. Ubuntu 26.10, provisioned by server-access strix-halo/provision; ComfyUI installs from strix-halo/comfy specs."
     },
     {
       "id": "gpu-lab",
