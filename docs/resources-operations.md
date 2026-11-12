@@ -123,9 +123,8 @@ den-k8 fetches Git objects from the den-agents NFS mount and builds on its
 own disk. The den-nimo and den-m5 entries use Git over SSH. Both machines are
 provisioned identically by server-access `strix-halo/provision`, which
 installs SSH access, sudo, and the Rust, .NET, Node and pnpm toolchains these
-lanes probe for. Enable a worker entry after provisioning it. den-nimo was
-enabled on 2026-11-11. den-m5 stays disabled until its reinstall is
-provisioned. The configured job count caps Cargo, Rust test,
+lanes probe for. Enable a worker entry after provisioning it. Both were
+enabled on 2026-11-11 after provisioning. The configured job count caps Cargo, Rust test,
 CMake and .NET parallelism on the worker.
 
 Each worker uses `build_root/REPO/checkout` and runs one routed job at a time.

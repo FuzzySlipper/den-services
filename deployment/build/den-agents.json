@@ -20,7 +20,7 @@
     },
     {
       "id": "den-m5",
-      "enabled": false,
+      "enabled": true,
       "ssh": ["den-m5"],
       "source_root": "agent@den-agents:/home/agent/dev",
       "build_root": "/home/agent/.local/state/den-build",
