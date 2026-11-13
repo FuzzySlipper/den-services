@@ -43,9 +43,9 @@ func githubRepoReport(repository string, runID string, state string, started tim
 func githubFixture(t *testing.T, dir string, now time.Time) {
 	t.Helper()
 	pacific, _ := time.LoadLocation("America/Los_Angeles")
-	today := now.In(pacific).Format("2006-01-02")
-	yesterday := now.Add(-24 * time.Hour).In(pacific).Format("2006-01-02")
-	earlier, later := now.Add(-25*time.Hour), now.Add(-time.Hour)
+	later := now.Add(-time.Hour).In(pacific)
+	earlier := later.AddDate(0, 0, -1)
+	today, yesterday := later.Format("2006-01-02"), earlier.Format("2006-01-02")
 	alphaOld := githubRepoReport("Owner/alpha", "R1", "success", earlier, yesterday)
 	alphaOld["keep_daily"] = 7.0
 	betaOld := githubRepoReport("Owner/beta", "R1", "success", earlier, yesterday)
