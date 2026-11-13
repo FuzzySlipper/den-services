@@ -85,6 +85,13 @@ run_build() {
 
     export DEN_BUILD_OUTPUT_DIR="$root/$repo/outputs/$run_id"
     printf 'den-build: %s at %s\n' "$checkout" "$ref" >&2
+    if [[ "${RUSTUP_TOOLCHAIN:-}" == stable ]]; then
+        # The supervisor holds the worker lock through the refresh and the lane.
+        if ! rustup update stable --no-self-update >&2; then
+            printf 'den-build: warning: could not check for a Rust stable update. Using the installed toolchain.\n' >&2
+        fi
+        rustup run stable rustc --version >&2
+    fi
     exec "$@"
 }
 

@@ -135,6 +135,10 @@ checkout. The log streams to the caller and the command returns the lane's
 exit code. The Resources ledger shows the worker, repo, lane, commit, and
 completion state.
 
+Lanes that select Rust `stable` check for updates with rustup while holding
+the worker's build lock. The log records the compiler version. If the
+update fails, the worker warns and uses the installed stable toolchain.
+
 Rusty Dagger provides `ruleset`, `ruleset-1` through `ruleset-3`,
 `import-suite`, `verify` and `data`. From the Dagger checkout,
 `scripts/route.py ruleset` distributes the three parts across the workers.

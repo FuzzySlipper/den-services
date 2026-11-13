@@ -78,6 +78,22 @@ func TestBuildRunUsesPinnedCleanCheckoutAndKeepsCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", remoteBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("BUILD_TEST_PATH", os.Getenv("PATH"))
+	t.Setenv("BUILD_TEST_LOCK", filepath.Join(root, ".lock"))
+	t.Setenv("BUILD_TEST_UPDATE_LOG", filepath.Join(base, "rustup.log"))
+	t.Setenv("RUSTUP_TOOLCHAIN", "1.99.1")
+	writeBuildTestFile(t, filepath.Join(remoteBin, "rustup"), `#!/usr/bin/env bash
+set -eu
+if flock -n "$BUILD_TEST_LOCK" true; then
+    echo unlocked >> "$BUILD_TEST_UPDATE_LOG"
+fi
+printf '%s\n' "$*" >> "$BUILD_TEST_UPDATE_LOG"
+case "$*" in
+    "update stable --no-self-update") exit 1 ;;
+    "run stable rustc --version") echo "rustc fixture" ;;
+    *) exit 2 ;;
+esac
+`, 0o755)
 	helperPIDPath := filepath.Join(base, "compiler-helper.pid")
 	t.Setenv("BUILD_TEST_HELPER_PID", helperPIDPath)
 	t.Cleanup(func() {
@@ -90,6 +106,7 @@ func TestBuildRunUsesPinnedCleanCheckoutAndKeepsCache(t *testing.T) {
 		}
 	})
 	writeBuildTestFile(t, filepath.Join(remoteBin, "ssh"), `#!/usr/bin/env bash
+export PATH="$BUILD_TEST_PATH"
 if [[ ${@: -2:1} == no-tools ]]; then export BUILD_TEST_TOOLCHAIN=no
 else export BUILD_TEST_TOOLCHAIN=yes
 fi
@@ -174,6 +191,10 @@ exit "$(cat status)"
 					Command: []string{"./lane"}, Toolchains: []string{"fixture"}, MinFreeGiB: 1,
 					Env: map[string]string{"BUILD_TEST_ENV": "has a 'quote'"},
 				},
+				"verify-stable": {
+					Command: []string{"./lane"}, Toolchains: []string{"fixture"}, MinFreeGiB: 1,
+					Env: map[string]string{"BUILD_TEST_ENV": "has a 'quote'", "RUSTUP_TOOLCHAIN": "stable"},
+				},
 			}},
 		},
 	}
@@ -190,13 +211,25 @@ exit "$(cat status)"
 	}{
 		{ref: first, lane: "gpu", status: 2},
 		{ref: first, lane: "verify", output: "cold\noriginal\n", status: 0},
-		{ref: second, lane: "verify", output: "warm\nnext\n", status: 37},
+		{ref: second, lane: "verify-stable", output: "warm\nnext\n", status: 37},
 	} {
 		var stdout, stderr bytes.Buffer
 		args := []string{"build", "run", "--config", configPath, "--url", server.URL, "--repo", "sample", "--lane", run.lane, "--ref", run.ref}
 		if code := runCLI(args, &stdout, &stderr); code != run.status || stdout.String() != run.output {
 			t.Fatalf("build %s %s: got %d %q, want %d %q. stderr: %s", run.lane, run.ref, code, stdout.String(), run.status, run.output, stderr.String())
 		}
+		if run.lane == "verify-stable" && (!strings.Contains(stderr.String(), "warning: could not check for a Rust stable update") ||
+			!strings.Contains(stderr.String(), "rustc fixture")) {
+			t.Fatalf("build did not report the failed update and installed compiler: %s", stderr.String())
+		}
+	}
+
+	updateLog, err := os.ReadFile(filepath.Join(base, "rustup.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "update stable --no-self-update\nrun stable rustc --version\n"; string(updateLog) != want {
+		t.Fatalf("rustup calls = %q, want %q only for the stable lane while the worker is locked", updateLog, want)
 	}
 
 	mu.Lock()
