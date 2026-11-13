@@ -135,10 +135,12 @@ checkout. The log streams to the caller and the command returns the lane's
 exit code. The Resources ledger shows the worker, repo, lane, commit, and
 completion state.
 
-Rusty Dagger provides `ruleset`, `ruleset-1` through `ruleset-3`, `import`
-and `verify`. From the Dagger checkout, `scripts/route.py ruleset` distributes
-the three parts across the workers. Dagger keeps its inputs and imported data
-beside the worker checkout.
+Rusty Dagger provides `ruleset`, `ruleset-1` through `ruleset-3`,
+`import-suite`, `verify` and `data`. From the Dagger checkout,
+`scripts/route.py ruleset` distributes the three parts across the workers.
+Dagger test lanes keep a copy of the NAS data for the commit's importer
+revision beside the worker checkout. The `data` lane publishes missing
+revisions and uses den-k8 (Ubuntu 26.04) for consistent cinematic audio.
 
 The `rusty-dagger-main-check.timer` user timer on den-agents runs
 `scripts/route.py main` after boot and every half hour. Dagger handles worker

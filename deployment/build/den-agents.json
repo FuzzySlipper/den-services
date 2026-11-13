@@ -77,7 +77,8 @@
         "ruleset-1": {"command": ["./scripts/lane.sh", "ruleset", "1/3"], "toolchains": ["dotnet10", "dagger"], "min_free_gib": 32},
         "ruleset-2": {"command": ["./scripts/lane.sh", "ruleset", "2/3"], "toolchains": ["dotnet10", "dagger"], "min_free_gib": 32},
         "ruleset-3": {"command": ["./scripts/lane.sh", "ruleset", "3/3"], "toolchains": ["dotnet10", "dagger"], "min_free_gib": 32},
-        "import": {"command": ["./scripts/lane.sh", "import"], "toolchains": ["dotnet10", "dagger"], "min_free_gib": 32},
+        "import-suite": {"command": ["./scripts/lane.sh", "import-suite"], "toolchains": ["dotnet10", "dagger"], "min_free_gib": 32},
+        "data": {"command": ["./scripts/lane.sh", "data"], "toolchains": ["dotnet10", "dagger"], "min_free_gib": 32, "os": "ubuntu-26.04"},
         "verify": {"command": ["./scripts/lane.sh", "verify"], "toolchains": ["dotnet10", "dagger"], "min_free_gib": 48}
       }
     }
