@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the Rusty Dagger main verification round
+
+[Service]
+Type=oneshot
+Environment=PATH=/home/agent/.local/bin:/home/agent/.dotnet:/usr/local/bin:/usr/bin:/bin
+WorkingDirectory=/home/agent/dev/rusty-dagger
+ExecStart=/home/agent/dev/rusty-dagger/scripts/route.py main
+TimeoutStartSec=2h

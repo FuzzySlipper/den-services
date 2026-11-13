@@ -135,6 +135,24 @@ checkout. The log streams to the caller and the command returns the lane's
 exit code. The Resources ledger shows the worker, repo, lane, commit, and
 completion state.
 
+Rusty Dagger provides `ruleset`, `ruleset-1` through `ruleset-3`, `import`
+and `verify`. From the Dagger checkout, `scripts/route.py ruleset` distributes
+the three parts across the workers. Dagger keeps its inputs and imported data
+beside the worker checkout.
+
+The `rusty-dagger-main-check.timer` user timer on den-agents runs
+`scripts/route.py main` after boot and every half hour. Dagger handles worker
+selection and records the result on the commit. Install or update the units
+as `agent` from the den-services checkout.
+
+```sh
+install -d ~/.config/systemd/user
+install -m 0644 deployment/build/rusty-dagger-main-check.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now rusty-dagger-main-check.timer
+journalctl --user -u rusty-dagger-main-check.service -n 20
+```
+
 ## Deploy, data and recovery
 
 A `looks_good` review deploys the service through `scripts/deploy.sh`, which
