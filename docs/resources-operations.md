@@ -143,8 +143,9 @@ Rusty Dagger provides `ruleset`, `ruleset-1` through `ruleset-3`,
 `import-suite`, `verify` and `data`. From the Dagger checkout,
 `scripts/route.py ruleset` distributes the three parts across the workers.
 Dagger test lanes keep a copy of the NAS data for the commit's importer
-revision beside the worker checkout. The `data` lane publishes missing
-revisions and uses den-k8 (Ubuntu 26.04) for consistent cinematic audio.
+revision beside the worker checkout. The `data` lane can publish from any
+worker when the checked-out importer omits cinematics. For older revisions
+that publish cinematic audio, run the lane with `--host den-k8`.
 
 The `rusty-dagger-main-check.timer` user timer on den-agents runs
 `scripts/route.py main` after boot and every half hour. Dagger handles worker

@@ -35,7 +35,7 @@
     "dotnet10": "dotnet --list-sdks | grep -E '^10\\.'",
     "csharp-sdk": "type -P clang jq unzip rg python3 && find /usr/lib -name libclang.so -print -quit | grep .",
     "engine-pair": "type -P cmake ninja node pnpm curl && node -e 'const [major, minor] = process.versions.node.split(\".\").map(Number); process.exit(major > 22 || (major === 22 && minor >= 13) ? 0 : 1)' && pnpm --version && pkg-config --exists --print-errors fontconfig libudev",
-    "dagger": "type -P node npm python3 rsync zstd ssh curl ffmpeg && node -e 'process.exit(Number(process.versions.node.split(\".\")[0]) >= 22 ? 0 : 1)'"
+    "dagger": "type -P node npm python3 rsync zstd ssh curl && node -e 'process.exit(Number(process.versions.node.split(\".\")[0]) >= 22 ? 0 : 1)'"
   },
   "repositories": {
     "rusty-engine": {
@@ -78,7 +78,7 @@
         "ruleset-2": {"command": ["./scripts/lane.sh", "ruleset", "2/3"], "toolchains": ["dotnet10", "dagger"], "min_free_gib": 32},
         "ruleset-3": {"command": ["./scripts/lane.sh", "ruleset", "3/3"], "toolchains": ["dotnet10", "dagger"], "min_free_gib": 32},
         "import-suite": {"command": ["./scripts/lane.sh", "import-suite"], "toolchains": ["dotnet10", "dagger"], "min_free_gib": 32},
-        "data": {"command": ["./scripts/lane.sh", "data"], "toolchains": ["dotnet10", "dagger"], "min_free_gib": 32, "os": "ubuntu-26.04"},
+        "data": {"command": ["./scripts/lane.sh", "data"], "toolchains": ["dotnet10", "dagger"], "min_free_gib": 32},
         "verify": {"command": ["./scripts/lane.sh", "verify"], "toolchains": ["dotnet10", "dagger"], "min_free_gib": 48}
       }
     }
