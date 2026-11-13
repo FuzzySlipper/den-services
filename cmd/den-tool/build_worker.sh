@@ -11,6 +11,8 @@ min_free_gib=$7
 required_os=$8
 shift 8
 
+lock_busy_message='den-build: another routed build holds the worker lock'
+
 export CARGO_BUILD_JOBS="$jobs" CMAKE_BUILD_PARALLEL_LEVEL="$jobs"
 export RUST_TEST_THREADS="$jobs" DOTNET_PROCESSOR_COUNT="$jobs"
 unset DISPLAY WAYLAND_DISPLAY
@@ -38,9 +40,6 @@ if [[ "$mode" == probe ]]; then
             fail "lane requires $required_os (found $ID-$VERSION_ID)"
     fi
     check_disk
-    if [[ -f "$root/.lock" ]]; then
-        flock -n 9 9<"$root/.lock" || fail "another routed build holds $root"
-    fi
     if [[ "$source_repo" == /* ]]; then
         [[ "$(git -C "$source_repo" cat-file -t "$ref" 2>/dev/null)" == commit ]] ||
             fail "commit $ref is not available from $source_repo"
@@ -51,6 +50,14 @@ if [[ "$mode" == probe ]]; then
         fi
         shift 2
     done
+    if [[ -f "$root/.lock" ]]; then
+        flock -n -E 75 9 9<"$root/.lock" || {
+            case $? in
+                75) printf '%s\n' "$lock_busy_message"; exit 0 ;;
+                *) fail "could not check the worker lock in $root" ;;
+            esac
+        }
+    fi
     exit 0
 fi
 
@@ -99,7 +106,14 @@ run_build() {
 # so they must not inherit the descriptor.
 mkdir -p -- "$root"
 exec 9>"$root/.lock"
-flock -n 9 || fail "another routed build holds $root"
+flock -n -E 75 9 || {
+    case $? in
+        # Include the attempt ID so the client can distinguish lock contention
+        # from the lane itself returning 75.
+        75) printf '%s %s\n' "$lock_busy_message" "$2" >&2; exit 75 ;;
+        *) fail "could not acquire the worker lock in $root" ;;
+    esac
+}
 check_disk
 
 # SSH keeps stdin open while the CLI is alive. On disconnect, stop the whole

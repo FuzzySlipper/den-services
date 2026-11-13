@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestBuildHostRankingSkipsBusySharedMemoryAndStaleHosts(t *testing.T) {
@@ -54,7 +56,7 @@ func TestBuildHostRankingSkipsBusySharedMemoryAndStaleHosts(t *testing.T) {
 		{ID: "quiet-cpu", Enabled: true},
 		{ID: "quiet-strix", Enabled: true, MaxGPUPercent: &limit},
 	}
-	candidates, skipped := rankBuildHosts(hosts, state, "")
+	candidates, busy, skipped := rankBuildHosts(hosts, state, "")
 	var ids []string
 	for _, candidate := range candidates {
 		ids = append(ids, candidate.host.ID)
@@ -62,6 +64,151 @@ func TestBuildHostRankingSkipsBusySharedMemoryAndStaleHosts(t *testing.T) {
 	if want := []string{"quiet-strix", "quiet-cpu", "working-cpu"}; !reflect.DeepEqual(ids, want) {
 		t.Fatalf("ranked hosts %v, want %v (skipped %v)", ids, want, skipped)
 	}
+	ids = nil
+	for _, host := range busy {
+		ids = append(ids, host.ID)
+	}
+	if want := []string{"gpu-busy", "queued", "reported", "building"}; !reflect.DeepEqual(ids, want) {
+		t.Fatalf("temporarily busy hosts %v, want %v", ids, want)
+	}
+}
+
+func TestBuildWaitsOnlyForCompatibleWorkers(t *testing.T) {
+	for _, name := range []string{"bash", "git", "flock", "df"} {
+		if _, err := exec.LookPath(name); err != nil {
+			t.Skipf("requires Linux build tools: %v", err)
+		}
+	}
+	for _, test := range []struct {
+		name       string
+		toolchain  string
+		wait       bool
+		loseLock   bool
+		cancel     bool
+		wantCode   int
+		wantStarts int
+		wantQueue  bool
+	}{
+		{name: "wait then run the lane", toolchain: "true", wait: true, wantCode: 75, wantStarts: 1, wantQueue: true},
+		{name: "retry after a lock race", toolchain: "true", wait: true, loseLock: true, wantCode: 75, wantStarts: 2, wantQueue: true},
+		{name: "cancel while waiting", toolchain: "true", wait: true, cancel: true, wantCode: 130, wantQueue: true},
+		{name: "worker lacks the toolchain", toolchain: "false", wait: true, wantCode: 1},
+		{name: "immediate admission check", toolchain: "true", wait: false, wantCode: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			base := t.TempDir()
+			root := filepath.Join(base, "builds")
+			t.Setenv("PATH", base+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("BUILD_TEST_PATH", os.Getenv("PATH"))
+			t.Setenv("BUILD_TEST_LOCK", filepath.Join(root, ".lock"))
+			t.Setenv("BUILD_TEST_ATTEMPTS", filepath.Join(base, "attempted"))
+			t.Setenv("RUSTUP_TOOLCHAIN", "")
+			if test.loseLock {
+				t.Setenv("BUILD_TEST_RACE", "1")
+			} else {
+				t.Setenv("BUILD_TEST_RACE", "")
+			}
+			writeBuildTestFile(t, filepath.Join(base, "ssh"), `#!/usr/bin/env bash
+export PATH="$BUILD_TEST_PATH"
+remote=${@: -1}
+# Occupy the worker only after the first probe has succeeded.
+if [[ "$BUILD_TEST_RACE" == 1 && "$remote" == *"'den-build' 'run'"* && ! -e "$BUILD_TEST_ATTEMPTS" ]]; then
+    mkdir -p "$(dirname "$BUILD_TEST_LOCK")"
+    touch "$BUILD_TEST_ATTEMPTS"
+    exec flock "$BUILD_TEST_LOCK" bash -c "$remote"
+fi
+exec bash -c "$remote"
+`, 0o755)
+			source := filepath.Join(base, "sample")
+			buildTestGit(t, base, "init", "-q", source)
+			buildTestGit(t, source, "commit", "-qm", "first", "--allow-empty")
+			ref := buildTestGit(t, source, "rev-parse", "HEAD")
+			config := buildConfig{
+				ProbeTimeoutSeconds: 2,
+				QueuePollSeconds:    1,
+				Hosts: []buildHost{
+					{ID: "worker", Enabled: true, SSH: []string{"worker"}, BuildRoot: root, SourceRoot: base, Jobs: 2},
+				},
+				Toolchains: map[string]string{"fixture": test.toolchain},
+			}
+			job := buildJob{
+				repo: "sample", lane: "verify", ref: ref,
+				settings: buildLane{Command: []string{"bash", "-c", "echo ran; exit 75"}, Toolchains: []string{"fixture"}, MinFreeGiB: 1},
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			var samples int
+			var starts int
+			var checkouts []string
+			var mu sync.Mutex
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				defer mu.Unlock()
+				switch r.URL.Path {
+				case resourcesPath("state"):
+					samples++
+					busy := !test.loseLock && (samples == 1 || test.cancel)
+					if busy {
+						_, _ = io.WriteString(w, `{"hosts":[{"id":"worker","status":"working"}],"work":[{"host":"worker","source":"build","state":"running"}]}`)
+					} else {
+						_, _ = io.WriteString(w, `{"hosts":[{"id":"worker","status":"quiet"}]}`)
+					}
+				case resourcesPath("work"):
+					starts++
+					_, _ = io.WriteString(w, `{"id":"run"}`)
+				case resourcesPath("work", "run"):
+					var update struct{ State string }
+					if err := json.NewDecoder(r.Body).Decode(&update); err == nil {
+						checkouts = append(checkouts, update.State)
+					}
+					_, _ = io.WriteString(w, `{}`)
+				default:
+					t.Errorf("unexpected path %s", r.URL.Path)
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			client, err := NewResourcesClient(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var stdout bytes.Buffer
+			stderr := &buildQueueTestOutput{}
+			if test.cancel {
+				stderr.onQueue = cancel
+			}
+			code := runBuild(ctx, job, config, "worker", test.wait, client, &stdout, stderr)
+			if code != test.wantCode || strings.Contains(stderr.String(), "queued sample/verify") != test.wantQueue {
+				t.Fatalf("got exit %d, stderr %q", code, stderr.String())
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if starts != test.wantStarts {
+				t.Fatalf("worker start attempts = %d, want %d", starts, test.wantStarts)
+			}
+			if test.wantCode == 75 && stdout.String() != "ran\n" {
+				t.Fatalf("lane ran a different number of times: %q", stdout.String())
+			}
+			if test.loseLock && !reflect.DeepEqual(checkouts, []string{"cancelled", "failed"}) {
+				t.Fatalf("checkout states = %v", checkouts)
+			}
+			if !test.wantQueue && samples != 1 {
+				t.Fatalf("unexpected retry: read %d host samples", samples)
+			}
+		})
+	}
+}
+
+type buildQueueTestOutput struct {
+	bytes.Buffer
+	onQueue context.CancelFunc
+}
+
+func (b *buildQueueTestOutput) Write(data []byte) (int, error) {
+	if b.onQueue != nil && bytes.Contains(data, []byte("queued sample/verify")) {
+		b.onQueue()
+	}
+	return b.Buffer.Write(data)
 }
 
 func TestBuildRunUsesPinnedCleanCheckoutAndKeepsCache(t *testing.T) {
@@ -110,8 +257,11 @@ export PATH="$BUILD_TEST_PATH"
 if [[ ${@: -2:1} == no-tools ]]; then export BUILD_TEST_TOOLCHAIN=no
 else export BUILD_TEST_TOOLCHAIN=yes
 fi
+rustup() { "$BUILD_TEST_RUSTUP" "$@"; }
+export -f rustup
 exec bash -c "${@: -1}"
 `, 0o755)
+	t.Setenv("BUILD_TEST_RUSTUP", filepath.Join(remoteBin, "rustup"))
 	buildTestGit(t, base, "init", "-q", source)
 	writeBuildTestFile(t, filepath.Join(source, "lane"), `#!/usr/bin/env bash
 set -eu

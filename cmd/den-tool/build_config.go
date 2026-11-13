@@ -7,10 +7,15 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"time"
 )
 
+const defaultBuildQueuePoll = 5 * time.Second
+
 type buildConfig struct {
+	WaitForWorker       bool                       `json:"wait_for_worker"`
 	ProbeTimeoutSeconds int                        `json:"probe_timeout_seconds"`
+	QueuePollSeconds    int                        `json:"queue_poll_seconds"`
 	Hosts               []buildHost                `json:"hosts"`
 	Toolchains          map[string]string          `json:"toolchains"`
 	Repositories        map[string]buildRepository `json:"repositories"`
@@ -62,6 +67,9 @@ func (c buildConfig) validate() error {
 	if c.ProbeTimeoutSeconds <= 0 || len(c.Hosts) == 0 || len(c.Repositories) == 0 {
 		return fmt.Errorf("probe_timeout_seconds, hosts and repositories are required")
 	}
+	if c.QueuePollSeconds < 0 {
+		return fmt.Errorf("queue_poll_seconds must be positive when set")
+	}
 	hosts := make(map[string]bool)
 	for _, host := range c.Hosts {
 		if host.ID == "" || hosts[host.ID] || len(host.SSH) == 0 || !path.IsAbs(host.BuildRoot) || host.SourceRoot == "" || host.Jobs <= 0 {
@@ -97,4 +105,11 @@ func (c buildConfig) validate() error {
 		}
 	}
 	return nil
+}
+
+func (c buildConfig) queuePollInterval() time.Duration {
+	if c.QueuePollSeconds > 0 {
+		return time.Duration(c.QueuePollSeconds) * time.Second
+	}
+	return defaultBuildQueuePoll
 }

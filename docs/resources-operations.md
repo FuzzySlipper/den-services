@@ -113,8 +113,15 @@ published pairs keep the LTS glibc baseline, and den-nimo and den-m5 (Ubuntu
 
 The router ranks enabled workers using fresh Resources activity and CPU load.
 It then checks toolchains and free space on the worker over SSH. Use
-`--host HOST` to restrict selection to one enabled worker. Workers with a
-GPU threshold also require a GPU utilization reading and skip fresh native
+`--host HOST` to restrict selection to one enabled worker. The installed
+config sets `wait_for_worker`. When compatible workers are busy,
+`den-tool build run` prints a queued message and checks again every
+`queue_poll_seconds` (five seconds by default). Keep the command running to
+wait for a worker, or press Ctrl+C to cancel. Use `--no-wait` for an immediate
+result when capacity is unavailable. Older config files can enable waiting by
+adding `"wait_for_worker": true`.
+
+Workers with a GPU threshold also require a GPU utilization reading and skip fresh native
 queues and active work reports. ComfyUI exposes its queue on both Strix Halo
 hosts. For GPU work without a native queue report, the router uses active
 Workbench reports and measured GPU utilization.

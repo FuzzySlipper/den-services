@@ -203,12 +203,12 @@ func runForwardingSignals(command *exec.Cmd, interval time.Duration, heartbeat f
 	// A process left behind by the command can hold its stderr pipe open;
 	// stop waiting for that output shortly after the command itself exits.
 	command.WaitDelay = processOutputGrace
-	if err := command.Start(); err != nil {
-		return 127, fmt.Errorf("start %s: %w", command.Path, err)
-	}
 	signals := make(chan os.Signal, 2)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(signals)
+	if err := command.Start(); err != nil {
+		return 127, fmt.Errorf("start %s: %w", command.Path, err)
+	}
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
 	var ticks <-chan time.Time

@@ -8,15 +8,22 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 )
 
-const buildUsage = "usage: den-tool build run --repo REPO --lane LANE --ref COMMIT [--host HOST] [--config FILE] [--url URL]"
+const buildUsage = "usage: den-tool build run --repo REPO --lane LANE --ref COMMIT [--host HOST] [--no-wait] [--config FILE] [--url URL]"
 
-const buildWorkSource = "build"
+const (
+	buildWorkSource = "build"
+	buildLockBusy   = "den-build: another routed build holds the worker lock"
+	buildLockExit   = 75
+)
 
 type buildJob struct {
 	repo, lane, ref string
@@ -40,6 +47,7 @@ func handleBuild(args []string, stdout, stderr io.Writer) int {
 	lane := flags.String("lane", "", "configured headless lane")
 	ref := flags.String("ref", "", "full Git commit SHA")
 	host := flags.String("host", "", "only consider this build host")
+	noWait := flags.Bool("no-wait", false, "return immediately if the workers are busy")
 	configPath := flags.String("config", os.Getenv("DEN_BUILD_CONFIG_PATH"), "build config file")
 	url := flags.String("url", "", "Resources service base URL")
 	if err := flags.Parse(args[1:]); err != nil {
@@ -79,17 +87,50 @@ func handleBuild(args []string, stdout, stderr io.Writer) int {
 		return writeRuntimeError(stderr, err)
 	}
 	job := buildJob{repo: *repo, lane: *lane, ref: strings.ToLower(*ref), repository: repository, settings: settings}
-	return runBuild(context.Background(), job, config, *host, client, stdout, stderr)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return runBuild(ctx, job, config, *host, config.WaitForWorker && !*noWait, client, stdout, stderr)
 }
 
-func runBuild(ctx context.Context, job buildJob, config buildConfig, onlyHost string, client *ResourcesClient, stdout, stderr io.Writer) int {
-	worker, err := selectBuildHost(ctx, client, config, job, onlyHost)
-	if err != nil {
-		return writeRuntimeError(stderr, err)
+func runBuild(ctx context.Context, job buildJob, config buildConfig, onlyHost string, wait bool, client *ResourcesClient, stdout, stderr io.Writer) int {
+	var checkedBusy map[string]bool
+	if wait {
+		checkedBusy = make(map[string]bool)
 	}
+	queued := false
+	for ctx.Err() == nil {
+		worker, busy, err := selectBuildHost(ctx, client, config, job, onlyHost, checkedBusy)
+		if ctx.Err() != nil {
+			break
+		}
+		if err == nil {
+			code, lockBusy := runBuildOnHost(ctx, job, worker, client, stdout, stderr)
+			if !lockBusy {
+				return code
+			}
+			busy = true
+			err = fmt.Errorf("no eligible host for %s/%s (%s: another routed build holds the worker lock)", job.repo, job.lane, worker.ID)
+		}
+		if !wait || !busy {
+			return writeRuntimeError(stderr, err)
+		}
+		if !queued {
+			_, _ = fmt.Fprintf(stderr, "den-tool build: queued %s/%s at %s. Waiting for a compatible worker.\n", job.repo, job.lane, job.ref)
+			queued = true
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(config.queuePollInterval()):
+		}
+	}
+	_, _ = fmt.Fprintln(stderr, "den-tool build: cancelled before starting the lane")
+	return 130
+}
+
+func runBuildOnHost(ctx context.Context, job buildJob, worker buildHost, client *ResourcesClient, stdout, stderr io.Writer) (int, bool) {
 	input, connection, err := os.Pipe()
 	if err != nil {
-		return writeRuntimeError(stderr, err)
+		return writeRuntimeError(stderr, err), false
 	}
 	defer input.Close()
 	defer connection.Close()
@@ -100,8 +141,14 @@ func runBuild(ctx context.Context, job buildJob, config buildConfig, onlyHost st
 	arguments = append(arguments, job.repository.Keep...)
 	arguments = append(arguments, job.settings.Command...)
 	argv := job.remoteArgv(worker, "run", arguments)
-	child := exec.Command(argv[0], argv[1:]...)
-	child.Stdin, child.Stdout, child.Stderr = input, stdout, stderr
+	child := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	// runForwardingSignals handles cancellation after SSH has started.
+	child.Cancel = nil
+	tail := &tailBuffer{limit: stderrTailBytes}
+	child.Stdin, child.Stdout, child.Stderr = input, stdout, io.MultiWriter(stderr, tail)
+	lockBusy := func(code int) bool {
+		return code == buildLockExit && strings.HasSuffix(tail.String(), buildLockBusy+" "+runID)
+	}
 
 	_, _ = fmt.Fprintf(stderr, "den-tool build: %s/%s at %s on %s (%d jobs)\n", job.repo, job.lane, job.ref, worker.ID, worker.Jobs)
 	report := resourceWorkReport{
@@ -109,5 +156,6 @@ func runBuild(ctx context.Context, job buildJob, config buildConfig, onlyHost st
 		Resources: []string{}, State: "running", TTLSeconds: defaultWorkTTLSeconds, Source: buildWorkSource,
 		ExternalID: runID, Note: "Commit " + job.ref,
 	}
-	return runReportedCommand(ctx, child, client, report, stderr)
+	code := runReportedCommand(ctx, child, client, report, stderr, lockBusy)
+	return code, lockBusy(code)
 }

@@ -37,10 +37,10 @@ func runResourcesRun(args []string, client *ResourcesClient, stderr io.Writer) i
 	report.Source, report.ExternalID = "command", randomID()
 	child := exec.Command(command[0], command[1:]...)
 	child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
-	return runReportedCommand(context.Background(), child, client, report, stderr)
+	return runReportedCommand(context.Background(), child, client, report, stderr, nil)
 }
 
-func runReportedCommand(ctx context.Context, child *exec.Cmd, client *ResourcesClient, report resourceWorkReport, stderr io.Writer) int {
+func runReportedCommand(ctx context.Context, child *exec.Cmd, client *ResourcesClient, report resourceWorkReport, stderr io.Writer, cancelled func(int) bool) int {
 	interval := min(30*time.Second, time.Duration(report.TTLSeconds/3*float64(time.Second)))
 	interval = max(interval, time.Second)
 	reporter := &workReporter{client: client, stderr: stderr}
@@ -55,6 +55,13 @@ func runReportedCommand(ctx context.Context, child *exec.Cmd, client *ResourcesC
 	switch {
 	case runErr == nil && exitCode == 0:
 		state = "completed"
+	case ctx.Err() != nil:
+		state = "cancelled"
+		if runErr != nil {
+			exitCode = 130
+		}
+	case cancelled != nil && cancelled(exitCode):
+		state = "cancelled"
 	case runErr == nil:
 		if _, signalled := signalExitCode(child); signalled {
 			state = "cancelled"
@@ -62,7 +69,7 @@ func runReportedCommand(ctx context.Context, child *exec.Cmd, client *ResourcesC
 	}
 	if reporter.id != "" {
 		note := fmt.Sprintf("Command exited with status %d. %s", exitCode, report.Note)
-		if _, err := postJSON(ctx, client, resourcesPath("work", reporter.id), map[string]any{"state": state, "note": strings.TrimSpace(note)}); err != nil {
+		if _, err := postJSON(context.WithoutCancel(ctx), client, resourcesPath("work", reporter.id), map[string]any{"state": state, "note": strings.TrimSpace(note)}); err != nil {
 			_, _ = fmt.Fprintf(stderr, "resource-board: check-out could not be saved (%v); the check-in will become stale\n", err)
 		}
 	}

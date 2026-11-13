@@ -1,5 +1,7 @@
 {
   "probe_timeout_seconds": 20,
+  "wait_for_worker": true,
+  "queue_poll_seconds": 5,
   "hosts": [
     {
       "id": "den-k8",
