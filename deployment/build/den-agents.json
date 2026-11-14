@@ -17,8 +17,8 @@
       "ssh": ["den-nimo"],
       "source_root": "agent@den-agents:/home/agent/dev",
       "build_root": "/home/agent/.local/state/den-build",
-      "jobs": 8,
-      "max_gpu_percent": 10
+      "jobs": 16,
+      "jobs_when_busy": 8
     },
     {
       "id": "den-m5",
@@ -26,8 +26,8 @@
       "ssh": ["den-m5"],
       "source_root": "agent@den-agents:/home/agent/dev",
       "build_root": "/home/agent/.local/state/den-build",
-      "jobs": 8,
-      "max_gpu_percent": 10
+      "jobs": 16,
+      "jobs_when_busy": 8
     }
   ],
   "toolchains": {

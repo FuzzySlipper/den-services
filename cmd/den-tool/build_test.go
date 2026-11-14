@@ -73,6 +73,51 @@ func TestBuildHostRankingSkipsBusySharedMemoryAndStaleHosts(t *testing.T) {
 	}
 }
 
+func TestBuildHostRankingPrefersQuietWorkersToSharing(t *testing.T) {
+	var state buildResourcesState
+	err := json.Unmarshal([]byte(`{
+		"hosts": [
+			{"id":"comfy-running","status":"working","telemetry":{"cpu_percent":1},
+			 "apps":[{"name":"ComfyUI","online":true,"running":1,"queued":0}]},
+			{"id":"comfy-pending","status":"queued","telemetry":{"cpu_percent":2},
+			 "apps":[{"name":"ComfyUI","online":true,"running":0,"queued":1}]},
+			{"id":"quiet-strix","status":"quiet","telemetry":{"cpu_percent":4}},
+			{"id":"quiet-cpu","status":"quiet","telemetry":{"cpu_percent":6}},
+			{"id":"building","status":"working","telemetry":{"cpu_percent":1}}
+		],
+		"work": [
+			{"host":"building","state":"running","source":"build"},
+			{"host":"comfy-running","state":"running","source":"command"}
+		]
+	}`), &state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hosts := []buildHost{
+		{ID: "comfy-running", Enabled: true, Jobs: 16, JobsWhenBusy: 8},
+		{ID: "comfy-pending", Enabled: true, Jobs: 16, JobsWhenBusy: 8},
+		{ID: "quiet-strix", Enabled: true, Jobs: 16, JobsWhenBusy: 8},
+		{ID: "quiet-cpu", Enabled: true, Jobs: 8},
+		{ID: "building", Enabled: true, Jobs: 16, JobsWhenBusy: 8},
+	}
+	candidates, busy, _ := rankBuildHosts(hosts, state, "")
+	var order []string
+	var jobs []int
+	for _, candidate := range candidates {
+		order = append(order, candidate.host.ID)
+		jobs = append(jobs, candidate.host.Jobs)
+	}
+	if want := []string{"quiet-strix", "quiet-cpu", "comfy-pending", "comfy-running"}; !reflect.DeepEqual(order, want) {
+		t.Fatalf("ranked hosts %v, want %v", order, want)
+	}
+	if want := []int{16, 8, 8, 8}; !reflect.DeepEqual(jobs, want) {
+		t.Fatalf("jobs in ranked order %v, want %v", jobs, want)
+	}
+	if len(busy) != 1 || busy[0].ID != "building" {
+		t.Fatalf("busy slots = %v, want only the host with a running build", busy)
+	}
+}
+
 func TestBuildWaitsOnlyForCompatibleWorkers(t *testing.T) {
 	for _, name := range []string{"bash", "git", "flock", "df"} {
 		if _, err := exec.LookPath(name); err != nil {
@@ -84,6 +129,7 @@ func TestBuildWaitsOnlyForCompatibleWorkers(t *testing.T) {
 		toolchain  string
 		wait       bool
 		loseLock   bool
+		fallback   bool
 		cancel     bool
 		wantCode   int
 		wantStarts int
@@ -91,6 +137,7 @@ func TestBuildWaitsOnlyForCompatibleWorkers(t *testing.T) {
 	}{
 		{name: "wait then run the lane", toolchain: "true", wait: true, wantCode: 75, wantStarts: 1, wantQueue: true},
 		{name: "retry after a lock race", toolchain: "true", wait: true, loseLock: true, wantCode: 75, wantStarts: 2, wantQueue: true},
+		{name: "try the shared worker after a lock race", toolchain: "true", loseLock: true, fallback: true, wantCode: 75, wantStarts: 2},
 		{name: "cancel while waiting", toolchain: "true", wait: true, cancel: true, wantCode: 130, wantQueue: true},
 		{name: "worker lacks the toolchain", toolchain: "false", wait: true, wantCode: 1},
 		{name: "immediate admission check", toolchain: "true", wait: false, wantCode: 1},
@@ -131,9 +178,20 @@ exec bash -c "$remote"
 				},
 				Toolchains: map[string]string{"fixture": test.toolchain},
 			}
+			onlyHost := "worker"
+			if test.fallback {
+				config.Hosts = append(config.Hosts, buildHost{
+					ID: "shared", Enabled: true, SSH: []string{"shared"}, BuildRoot: filepath.Join(base, "shared-builds"),
+					SourceRoot: base, Jobs: 16, JobsWhenBusy: 8,
+				})
+				onlyHost = ""
+			}
 			job := buildJob{
 				repo: "sample", lane: "verify", ref: ref,
-				settings: buildLane{Command: []string{"bash", "-c", "echo ran; exit 75"}, Toolchains: []string{"fixture"}, MinFreeGiB: 1},
+				settings: buildLane{
+					Command:    []string{"bash", "-c", "echo ran with $CARGO_BUILD_JOBS jobs; exit 75"},
+					Toolchains: []string{"fixture"}, MinFreeGiB: 1,
+				},
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -148,7 +206,12 @@ exec bash -c "$remote"
 				case resourcesPath("state"):
 					samples++
 					busy := !test.loseLock && (samples == 1 || test.cancel)
-					if busy {
+					if test.fallback {
+						_, _ = io.WriteString(w, `{"hosts":[
+							{"id":"worker","status":"quiet"},
+							{"id":"shared","status":"working","apps":[{"name":"ComfyUI","running":1,"online":true}]}
+						]}`)
+					} else if busy {
 						_, _ = io.WriteString(w, `{"hosts":[{"id":"worker","status":"working"}],"work":[{"host":"worker","source":"build","state":"running"}]}`)
 					} else {
 						_, _ = io.WriteString(w, `{"hosts":[{"id":"worker","status":"quiet"}]}`)
@@ -177,7 +240,7 @@ exec bash -c "$remote"
 			if test.cancel {
 				stderr.onQueue = cancel
 			}
-			code := runBuild(ctx, job, config, "worker", test.wait, client, &stdout, stderr)
+			code := runBuild(ctx, job, config, onlyHost, test.wait, client, &stdout, stderr)
 			if code != test.wantCode || strings.Contains(stderr.String(), "queued sample/verify") != test.wantQueue {
 				t.Fatalf("got exit %d, stderr %q", code, stderr.String())
 			}
@@ -186,13 +249,17 @@ exec bash -c "$remote"
 			if starts != test.wantStarts {
 				t.Fatalf("worker start attempts = %d, want %d", starts, test.wantStarts)
 			}
-			if test.wantCode == 75 && stdout.String() != "ran\n" {
-				t.Fatalf("lane ran a different number of times: %q", stdout.String())
+			wantOutput := "ran with 2 jobs\n"
+			if test.fallback {
+				wantOutput = "ran with 8 jobs\n"
+			}
+			if test.wantCode == 75 && stdout.String() != wantOutput {
+				t.Fatalf("lane output %q, want %q", stdout.String(), wantOutput)
 			}
 			if test.loseLock && !reflect.DeepEqual(checkouts, []string{"cancelled", "failed"}) {
 				t.Fatalf("checkout states = %v", checkouts)
 			}
-			if !test.wantQueue && samples != 1 {
+			if !test.wait && !test.loseLock && samples != 1 {
 				t.Fatalf("unexpected retry: read %d host samples", samples)
 			}
 		})

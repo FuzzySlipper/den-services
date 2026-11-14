@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-const toolVersion = "1.7.0"
+const toolVersion = "1.8.0"
 
 type catalogReadback struct {
 	Version string         `json:"version"`

@@ -111,7 +111,8 @@ worker-local output path. A lane's `os` is either an `/etc/os-release` `ID`
 published pairs keep the LTS glibc baseline, and den-nimo and den-m5 (Ubuntu
 26.10) are refused for it. Run GPU, window and performance lanes on their usual hosts.
 
-The router ranks enabled workers using fresh Resources activity and CPU load.
+The router tries quiet workers first, then workers with queued work, then
+workers with running work. It uses CPU load to order workers in each group.
 It then checks toolchains and free space on the worker over SSH. Use
 `--host HOST` to restrict selection to one enabled worker. The installed
 config sets `wait_for_worker`. When compatible workers are busy,
@@ -121,10 +122,18 @@ wait for a worker, or press Ctrl+C to cancel. Use `--no-wait` for an immediate
 result when capacity is unavailable. Older config files can enable waiting by
 adding `"wait_for_worker": true`.
 
-Workers with a GPU threshold also require a GPU utilization reading and skip fresh native
-queues and active work reports. ComfyUI exposes its queue on both Strix Halo
-hosts. For GPU work without a native queue report, the router uses active
-Workbench reports and measured GPU utilization.
+On den-nimo and den-m5, a pending or running ComfyUI prompt lowers the
+build worker's priority. Either host can run a build alongside ComfyUI
+when the preferred workers cannot take the lane. Each host still takes one
+routed lane at a time. Both Strix hosts use 16 tool jobs when Resources
+reports them quiet and 8 when it reports work. den-k8 uses 8 jobs. The
+router picks the count at launch and records it in the work log.
+
+`jobs` is the tool parallelism setting, and optional `jobs_when_busy`
+sets a smaller count when Resources reports the host queued or working.
+Custom configurations that set `max_gpu_percent` require a GPU reading and
+skip workers with active work reports, native queues, or GPU use above that
+threshold.
 
 den-k8 fetches Git objects from the den-agents NFS mount and builds on its
 own disk. The den-nimo and den-m5 entries use Git over SSH. Both machines are

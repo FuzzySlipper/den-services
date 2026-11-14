@@ -97,9 +97,10 @@ func runBuild(ctx context.Context, job buildJob, config buildConfig, onlyHost st
 	if wait {
 		checkedBusy = make(map[string]bool)
 	}
+	lostLocks := make(map[string]bool)
 	queued := false
 	for ctx.Err() == nil {
-		worker, busy, err := selectBuildHost(ctx, client, config, job, onlyHost, checkedBusy)
+		worker, busy, err := selectBuildHost(ctx, client, config, job, onlyHost, checkedBusy, lostLocks)
 		if ctx.Err() != nil {
 			break
 		}
@@ -108,8 +109,10 @@ func runBuild(ctx context.Context, job buildJob, config buildConfig, onlyHost st
 			if !lockBusy {
 				return code
 			}
-			busy = true
-			err = fmt.Errorf("no eligible host for %s/%s (%s: another routed build holds the worker lock)", job.repo, job.lane, worker.ID)
+			// Another caller got this worker after our probe. Try the rest
+			// before waiting or returning an immediate admission result.
+			lostLocks[worker.ID] = true
+			continue
 		}
 		if !wait || !busy {
 			return writeRuntimeError(stderr, err)
@@ -122,6 +125,7 @@ func runBuild(ctx context.Context, job buildJob, config buildConfig, onlyHost st
 		case <-ctx.Done():
 		case <-time.After(config.queuePollInterval()):
 		}
+		clear(lostLocks)
 	}
 	_, _ = fmt.Fprintln(stderr, "den-tool build: cancelled before starting the lane")
 	return 130
@@ -154,7 +158,7 @@ func runBuildOnHost(ctx context.Context, job buildJob, worker buildHost, client 
 	report := resourceWorkReport{
 		Host: worker.ID, Title: job.repo + " / " + job.lane, Owner: defaultOwner(), Project: job.repo,
 		Resources: []string{}, State: "running", TTLSeconds: defaultWorkTTLSeconds, Source: buildWorkSource,
-		ExternalID: runID, Note: "Commit " + job.ref,
+		ExternalID: runID, Note: fmt.Sprintf("Commit %s. %d jobs.", job.ref, worker.Jobs),
 	}
 	code := runReportedCommand(ctx, child, client, report, stderr, lockBusy)
 	return code, lockBusy(code)

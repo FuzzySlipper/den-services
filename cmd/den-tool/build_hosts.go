@@ -49,7 +49,7 @@ type buildCandidate struct {
 	cpuPercent float64
 }
 
-func selectBuildHost(ctx context.Context, client *ResourcesClient, config buildConfig, job buildJob, onlyHost string, checkedBusy map[string]bool) (buildHost, bool, error) {
+func selectBuildHost(ctx context.Context, client *ResourcesClient, config buildConfig, job buildJob, onlyHost string, checkedBusy, lostLocks map[string]bool) (buildHost, bool, error) {
 	payload, err := client.Do(ctx, http.MethodGet, resourcesPath("state")+"?work_limit=1", nil)
 	if err != nil {
 		return buildHost{}, false, fmt.Errorf("read build host activity: %w", err)
@@ -63,9 +63,13 @@ func selectBuildHost(ctx context.Context, client *ResourcesClient, config buildC
 	for _, name := range job.settings.Toolchains {
 		checks = append(checks, name, config.Toolchains[name])
 	}
-	canWait := false
+	canWait := len(lostLocks) > 0
 	for _, candidate := range candidates {
 		host := candidate.host
+		if lostLocks[host.ID] {
+			skipped = append(skipped, host.ID+": another routed build holds the worker lock")
+			continue
+		}
 		locked, err := probeBuildHost(ctx, config, job, host, checks)
 		switch {
 		case err != nil:
@@ -134,6 +138,9 @@ func rankBuildHosts(hosts []buildHost, state buildResourcesState, onlyHost strin
 			activity = 0
 		case "queued":
 			activity = 1
+		}
+		if sample.Status != "quiet" && host.JobsWhenBusy > 0 {
+			host.Jobs = host.JobsWhenBusy
 		}
 		cpuPercent := 101.0
 		if sample.Telemetry.CPUPercent != nil {

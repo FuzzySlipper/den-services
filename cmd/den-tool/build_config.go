@@ -28,6 +28,7 @@ type buildHost struct {
 	SourceRoot    string   `json:"source_root"`
 	BuildRoot     string   `json:"build_root"`
 	Jobs          int      `json:"jobs"`
+	JobsWhenBusy  int      `json:"jobs_when_busy"`
 	MaxGPUPercent *float64 `json:"max_gpu_percent"`
 }
 
@@ -76,6 +77,9 @@ func (c buildConfig) validate() error {
 			return fmt.Errorf("host %q needs a unique ID, SSH arguments, a source root, an absolute build root and positive jobs", host.ID)
 		}
 		hosts[host.ID] = true
+		if host.JobsWhenBusy < 0 || host.JobsWhenBusy > host.Jobs {
+			return fmt.Errorf("host %s: jobs_when_busy must be between 0 and jobs", host.ID)
+		}
 		if limit := host.MaxGPUPercent; limit != nil && (*limit < 0 || *limit > 100) {
 			return fmt.Errorf("host %s: max_gpu_percent must be between 0 and 100", host.ID)
 		}
